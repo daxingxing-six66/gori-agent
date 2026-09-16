@@ -1,0 +1,45 @@
+{
+  "name": "@pi/ssh-agent",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Gori SSH backend: HTTP, SQLite, SSH and agent runtime",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "gori-server": "./dist/server/main.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "clean": "node -e \"import('node:fs/promises').then(fs=>fs.rm('dist',{recursive:true,force:true}))\"",
+    "build": "tsgo -p tsconfig.build.json",
+    "dev": "tsx watch src/server/main.ts",
+    "start": "node dist/server/main.js",
+    "test": "vitest --run"
+  },
+  "dependencies": {
+    "@earendil-works/pi-agent-core": "^0.84.2",
+    "@earendil-works/pi-ai": "^0.84.2",
+    "@xterm/addon-serialize": "0.14.0",
+    "@xterm/headless": "6.0.0",
+    "ssh2": "1.17.0",
+    "typebox": "1.3.7"
+  },
+  "devDependencies": {
+    "@types/ssh2": "1.15.5",
+    "tsx": "4.22.1",
+    "vitest": "4.1.11"
+  },
+  "engines": {
+    "node": ">=22.19.0"
+  }
+}

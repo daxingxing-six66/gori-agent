@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="description" content="Gori（小猩）是一款面向个人开发者的轻量 SSH Agent。用自然语言完成单台 Linux 服务器上的日常操作。">
+<title>Gori（小猩）· 轻量 SSH Agent</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23111612'/%3E%3Cpath d='m7 9 7 7-7 7m10 0h8' fill='none' stroke='%2383CAA1' stroke-width='3'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="styles.css"><script src="config.js" defer></script><script src="app.js" defer></script>
+</head>
+<body id="top">
+<header><nav class="wrap"><a class="brand" href="#top">Gori <span>小猩</span></a><div class="nav-links"><a class="page-link" href="#features">功能</a><a class="page-link" href="#product">产品界面</a><button class="repo-link" data-github disabled aria-describedby="repo-note">GitHub ↗</button></div></nav></header>
+<main class="wrap">
+<section class="hero" aria-labelledby="title"><div class="hero-copy"><h1 id="title">Gori <span>小猩</span></h1><p class="lead">Gori（小猩）是一款面向个人开发者的轻量 SSH Agent。用自然语言完成单台 Linux 服务器上的日常操作。</p><div class="actions"><button class="button primary" data-github disabled aria-describedby="repo-note">查看 GitHub ↗</button><a class="button secondary" href="#features">了解功能 ↓</a></div><p class="repo-note" id="repo-note" data-repo-note>仓库链接待配置</p></div>
+<figure class="hero-shot" id="product"><a class="shot" href="assets/workspace.png" data-lightbox aria-label="查看 Gori 工作界面大图"><img src="assets/workspace.png" width="1384" height="900" alt="真实工作界面：左侧自然语言需求与 free -h 调用，右侧终端输出和观测标记。" fetchpriority="high"><span class="zoom">查看大图 ↗</span></a><figcaption>Gori 工作界面：对话与服务器终端并排呈现。</figcaption></figure></section>
+<div class="chapters">
+<section class="chapter" id="features" aria-labelledby="natural-title"><div class="copy"><p class="eyebrow">01 / 自然语言操作</p><h2 id="natural-title">不熟悉命令，<br>也能开始操作。</h2><p>把想在服务器上完成的事情说出来。Gori 通过 SSH 执行对应操作，让日常工作少一些反复搜索命令的步骤。</p><blockquote><span>示例需求</span>帮我看看这台服务器的内存使用情况。</blockquote></div><figure><a class="shot" href="assets/conversation.png" data-lightbox aria-label="查看自然语言操作大图"><img src="assets/conversation.png" width="697" height="470" alt="内存查询需求、已完成的 free -h 调用和消息输入框。" loading="lazy"><span class="zoom">查看大图 ↗</span></a><figcaption>描述需求，在同一处查看操作与结果。</figcaption></figure></section>
+<section class="chapter reverse" aria-labelledby="terminal-title"><div class="copy"><p class="eyebrow">02 / Terminal Mode</p><h2 id="terminal-title">执行了什么，<br>终端里看得见。</h2><p>开启 Terminal Mode 后，Agent 执行的命令会回显到右侧终端。对话中的操作与终端里的命令、输出可以相互对照。</p></div><figure><a class="shot" href="assets/terminal.png" data-lightbox aria-label="查看命令与终端输出大图"><img src="assets/terminal.png" width="1352" height="556" alt="左侧 free -h 工具调用，与右侧终端回显的同一命令和真实内存数据。" loading="lazy"><span class="zoom">查看大图 ↗</span></a><figcaption>从工具调用，到终端中的命令与输出。</figcaption></figure></section>
+<section class="chapter" id="observation" aria-labelledby="observation-title"><div class="copy"><p class="eyebrow">03 / 观测内容可见</p><h2 id="observation-title">它看到了哪一段，<br>你也能看见。</h2><p>Gori 会标记 Agent 观测的终端内容。你可以对照这段内容与对应的操作结果，理解它这次依据了哪些终端信息。</p></div><figure><a class="shot" href="assets/observation.png" data-lightbox aria-label="查看终端观测范围大图"><img src="assets/observation.png" width="622" height="150" alt="真实观测截图：free -h 输出的绿色边界，以及 LLM 已观测至此状态标签。" loading="lazy"><span class="zoom">查看大图 ↗</span></a><figcaption>高亮区域对应一次具体的终端观测内容。</figcaption></figure></section>
+</div>
+<section class="closing"><h2>为个人开发者，保持简单。</h2><p>专注单台 Linux 服务器上的日常操作。</p><button class="button primary" data-github disabled aria-describedby="closing-note">在 GitHub 查看 Gori ↗</button><p class="repo-note" id="closing-note" data-repo-note>仓库链接待配置</p></section>
+</main>
+<footer class="wrap"><span>Gori · 小猩</span><button class="repo-link" data-github disabled aria-describedby="closing-note">GitHub ↗</button></footer>
+<dialog aria-label="产品截图大图" class="lightbox"><button class="close" aria-label="关闭大图">关闭 ×</button><div class="lightbox-content"><img alt=""><p class="lightbox-caption"></p></div></dialog>
+</body></html>

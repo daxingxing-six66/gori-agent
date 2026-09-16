@@ -1,0 +1,21 @@
+name: Bug report
+description: Report a reproducible Gori problem
+body:
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: OS version, Node.js version, Gori version
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      description: Include expected and actual behavior. Remove credentials and private server details.
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant redacted logs

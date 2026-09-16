@@ -1,0 +1,43 @@
+{
+  "name": "gori-agent",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Gori（小猩）是一款面向个人开发者的轻量 SSH Agent。用自然语言完成单台 Linux 服务器上的日常操作",
+  "license": "MIT",
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "workspaces": [
+    "packages/telemetry",
+    "packages/ai",
+    "packages/agent",
+    "packages/ssh-agent",
+    "packages/ssh-agent-web"
+  ],
+  "scripts": {
+    "start": "node scripts/start.mjs",
+    "check": "npm run check:ai-repo && npm run check:model-data && tsgo --noEmit && tsc --noEmit -p packages/ssh-agent-web/tsconfig.json",
+    "check:model-data": "node packages/ai/scripts/check-model-data.ts",
+    "hydrate:model-data": "npm run hydrate-model-data --workspace=@earendil-works/pi-ai",
+    "build": "node scripts/build.mjs",
+    "test:backend": "npm run test --workspace=@pi/ssh-agent",
+    "test:web": "npm run test --workspace=@pi/ssh-agent-web",
+    "check:ai-repo": "node docs/ssh-agent/ai-repo/check.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "22.19.19",
+    "@typescript/native-preview": "7.0.0-dev.20260120.1",
+    "shx": "0.4.0",
+    "tsx": "4.22.1",
+    "typescript": "5.9.3",
+    "vitest": "4.1.11"
+  },
+  "overrides": {
+    "protobufjs": "7.6.5",
+    "rimraf": "6.1.2",
+    "gaxios": {
+      "rimraf": "6.1.2"
+    }
+  }
+}

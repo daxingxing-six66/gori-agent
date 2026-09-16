@@ -1,0 +1,18 @@
+export const TERMINAL_UI_DEFAULTS = {
+	sidePanelWidth: "45%",
+	panelTransitionMs: 280,
+	disconnectedNoticeMs: 700,
+	observationMaskDeliveredFadeMs: 220,
+	observationMaskFinishedFadeMs: 420,
+	observationMaskMinimumVisibleMs: 800,
+	observationMaskAuroraCycleMs: 4800,
+	observationCheckpointRetentionMs: 60_000,
+	observationCheckpointCapacity: 4096,
+	resizeDebounceMs: 200,
+	reconnectRetryMs: 1000,
+	timelineRefreshMs: 2000,
+	transitionPollMs: 1000,
+	fontSize: 12,
+	lineHeight: 1.35,
+	scrollbackRows: 2000,
+} as const;
