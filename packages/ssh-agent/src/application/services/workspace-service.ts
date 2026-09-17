@@ -6,11 +6,11 @@ import {
 	type ActiveWorkspaceCredential,
 	type CreateWorkspaceInput,
 	type CreateWorkspaceResult,
-	DEFAULT_WORKSPACE_CONNECTION_OPTIONS,
 	type DeleteWorkspaceInput,
 	type RenameWorkspaceInput,
 	type Workspace,
 } from "../../domain/workspace.ts";
+import { validateWorkspaceConnection } from "../workspace-connection.ts";
 import { buildCredential } from "../credential-factory.ts";
 import type { CredentialRepository, CredentialSecretStore } from "../repositories/credential-repository.ts";
 import type { GuardRepository } from "../repositories/guard-repository.ts";
@@ -66,24 +66,11 @@ export class DefaultWorkspaceService implements WorkspaceService {
 
 	async create(input: CreateWorkspaceInput): Promise<CreateWorkspaceResult> {
 		const displayName = requireDisplayName(input.displayName);
-		const hostname = requireNonEmpty(input.host.hostname, "host.hostname", 253);
+		const { host, connection } = validateWorkspaceConnection(input);
 		if (!isWorkspaceEnvironment(input.environment)) {
 			throw new ManagementError("validation_error", "environment is invalid", "environment");
 		}
-		if (!Number.isSafeInteger(input.host.port) || input.host.port < 1 || input.host.port > 65_535) {
-			throw new ManagementError("validation_error", "host.port must be between 1 and 65535", "host.port");
-		}
 		const defaultCwd = requireNonEmpty(input.defaultCwd, "defaultCwd", 4096);
-		const connection = { ...DEFAULT_WORKSPACE_CONNECTION_OPTIONS, ...input.connection };
-		for (const [field, value] of Object.entries(connection)) {
-			if (!Number.isSafeInteger(value) || value < 0) {
-				throw new ManagementError(
-					"validation_error",
-					`${field} must be a non-negative integer`,
-					`connection.${field}`,
-				);
-			}
-		}
 
 		const now = this.clock.now();
 		const workspaceId = this.ids.next();
@@ -98,8 +85,7 @@ export class DefaultWorkspaceService implements WorkspaceService {
 			displayName,
 			environment: input.environment,
 			host: {
-				hostname,
-				port: input.host.port,
+				...host,
 				hostKey: null,
 			},
 			activeCredentialId: activeCredential.id,

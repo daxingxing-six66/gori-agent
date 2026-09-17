@@ -209,9 +209,23 @@ function parseCredential(value: unknown, prefix: string): CreateCredentialInput 
 export function parseCreateWorkspace(value: unknown): CreateWorkspaceInput {
 	const body = object(value, "body");
 	exactKeys(body, ["displayName", "environment", "host", "credential", "defaultCwd", "connection"]);
+	return {
+		displayName: string(body, "displayName"),
+		environment: parseEnvironment(string(body, "environment")),
+		defaultCwd: string(body, "defaultCwd"),
+		...parseWorkspaceConnectionFields(body),
+	};
+}
+
+export function parseTestWorkspaceConnection(value: unknown): Pick<CreateWorkspaceInput, "host" | "credential" | "connection"> {
+	const body = object(value, "body");
+	exactKeys(body, ["host", "credential", "connection"]);
+	return parseWorkspaceConnectionFields(body);
+}
+
+function parseWorkspaceConnectionFields(body: JsonObject): Pick<CreateWorkspaceInput, "host" | "credential" | "connection"> {
 	const host = object(body.host, "host");
 	exactKeys(host, ["hostname", "port"], "host");
-	const environment = parseEnvironment(string(body, "environment"));
 	const connectionValue = body.connection;
 	let connection: CreateWorkspaceInput["connection"];
 	if (connectionValue !== undefined) {
@@ -226,14 +240,11 @@ export function parseCreateWorkspace(value: unknown): CreateWorkspaceInput {
 		};
 	}
 	return {
-		displayName: string(body, "displayName"),
-		environment,
 		host: {
 			hostname: string(host, "hostname"),
 			port: number(host, "port"),
 		},
 		credential: parseCredential(body.credential, "credential"),
-		defaultCwd: string(body, "defaultCwd"),
 		...(connection === undefined ? {} : { connection }),
 	};
 }

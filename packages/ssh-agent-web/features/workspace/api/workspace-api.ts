@@ -1,5 +1,7 @@
 import type {
 	CreateWorkspaceInput,
+	TestWorkspaceConnectionInput,
+	TestWorkspaceConnectionResult,
 	CreateWorkspaceResult,
 	Workspace,
 	WorkspaceSessionTree,
@@ -7,6 +9,8 @@ import type {
 import { apiRequest } from "@/shared/api/client";
 
 export const workspaceApi = {
+	testConnection: (input: TestWorkspaceConnectionInput, signal?: AbortSignal) =>
+		apiRequest<TestWorkspaceConnectionResult>("/api/workspaces/test-connection", { method: "POST", body: input, signal }),
 	getTree: (signal?: AbortSignal) => apiRequest<WorkspaceSessionTree>("/api/workspace-session-tree", { signal }),
 	create: (input: CreateWorkspaceInput) =>
 		apiRequest<CreateWorkspaceResult>("/api/workspaces", { method: "POST", body: input }),

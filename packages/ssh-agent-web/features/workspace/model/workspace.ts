@@ -58,3 +58,6 @@ export interface ActivateWorkspaceCredentialResult {
 	workspace: Workspace;
 	activeCredential: Credential;
 }
+
+export type TestWorkspaceConnectionInput = Pick<CreateWorkspaceInput, "host" | "credential" | "connection">;
+export interface TestWorkspaceConnectionResult { success: true; }

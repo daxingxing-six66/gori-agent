@@ -70,8 +70,12 @@ async function serve(
 		acceptLanguage:
 			typeof incoming.headers["accept-language"] === "string" ? incoming.headers["accept-language"] : null,
 	});
+	const abort = new AbortController();
+	const onDisconnect = () => { if (!outgoing.writableFinished) abort.abort(new Error("HTTP client disconnected")); };
+	incoming.once("aborted", onDisconnect);
+	outgoing.once("close", onDisconnect);
 	try {
-		const request = await toWebRequest(incoming, maxRequestBodyBytes);
+		const request = await toWebRequest(incoming, maxRequestBodyBytes, abort.signal);
 		const url = new URL(request.url);
 		const response =
 			request.method === "GET" && url.pathname === "/healthz"
@@ -82,9 +86,11 @@ async function serve(
 				: request.method === "OPTIONS" && url.pathname.startsWith("/api/")
 					? preflightResponse(request, allowedOrigins)
 					: await handleRequest(request);
+		if (outgoing.destroyed) { await response.body?.cancel(); return; }
 		applyCors(request, response.headers, allowedOrigins);
 		await writeWebResponse(outgoing, response, request.method === "HEAD");
 	} catch (error) {
+		if (outgoing.destroyed) return;
 		if (outgoing.headersSent) {
 			outgoing.destroy(error instanceof Error ? error : undefined);
 			return;
@@ -110,10 +116,13 @@ async function serve(
 			),
 			false,
 		);
+	} finally {
+		incoming.off("aborted", onDisconnect);
+		outgoing.off("close", onDisconnect);
 	}
 }
 
-async function toWebRequest(incoming: IncomingMessage, maxRequestBodyBytes: number): Promise<Request> {
+async function toWebRequest(incoming: IncomingMessage, maxRequestBodyBytes: number, signal: AbortSignal): Promise<Request> {
 	const method = incoming.method ?? "GET";
 	const headers = new Headers();
 	for (const [name, value] of Object.entries(incoming.headers)) {
@@ -125,8 +134,6 @@ async function toWebRequest(incoming: IncomingMessage, maxRequestBodyBytes: numb
 		}
 	}
 	const url = new URL(incoming.url ?? "/", "http://ssh-agent.local");
-	const abort = new AbortController();
-	incoming.once("aborted", () => abort.abort(new Error("HTTP client disconnected")));
 	const streaming =
 		(method === "PUT" && /^\/api\/workspaces\/[^/]+\/sftp\/transfers\/[^/]+\/content$/u.test(url.pathname)) ||
 		(method === "POST" && /^\/api\/sessions\/[^/]+\/attachments$/u.test(url.pathname));
@@ -139,7 +146,7 @@ async function toWebRequest(incoming: IncomingMessage, maxRequestBodyBytes: numb
 	const init: RequestInit & { duplex?: "half" } = {
 		method,
 		headers,
-		signal: abort.signal,
+		signal,
 		...(body === undefined ? {} : { body, ...(streaming ? { duplex: "half" as const } : {}) }),
 	};
 	return new Request(url, init);

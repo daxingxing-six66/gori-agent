@@ -11,14 +11,7 @@ export interface BuildCredentialOptions {
 
 export function buildCredential(options: BuildCredentialOptions): Credential {
 	const { input } = options;
-	const displayName = requireDisplayName(input.displayName);
-	const remoteUser = requireNonEmpty(input.remoteUser, "remoteUser", 128);
-	if (input.secret.type === "private_key") {
-		requireNonEmpty(input.secret.privateKey, "privateKey", 1024 * 1024);
-		if (input.secret.passphrase !== undefined) requireNonEmpty(input.secret.passphrase, "passphrase", 4096);
-	} else {
-		requireNonEmpty(input.secret.password, "password", 4096);
-	}
+	const { displayName, remoteUser } = validateCredentialInput(input);
 
 	const base = {
 		id: options.id,
@@ -33,4 +26,17 @@ export function buildCredential(options: BuildCredentialOptions): Credential {
 	return input.secret.type === "private_key"
 		? { ...base, type: "private_key", hasPassphrase: input.secret.passphrase !== undefined }
 		: { ...base, type: "password" };
+}
+
+export function validateCredentialInput(input: CreateCredentialInput): { displayName: string; remoteUser: string } {
+	const displayName = requireDisplayName(input.displayName);
+	const remoteUser = requireNonEmpty(input.remoteUser, "remoteUser", 128);
+	if (input.secret.type === "private_key") {
+		requireNonEmpty(input.secret.privateKey, "privateKey", 1024 * 1024);
+		if (input.secret.passphrase !== undefined) requireNonEmpty(input.secret.passphrase, "passphrase", 4096);
+	} else {
+		requireNonEmpty(input.secret.password, "password", 4096);
+	}
+
+	return { displayName, remoteUser };
 }

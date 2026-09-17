@@ -13,6 +13,8 @@ export function ManagementDialog({
 	submitLabel,
 	submitting,
 	submitDisabled = false,
+	footerLeading,
+	footerNotice,
 }: {
 	title: string;
 	description?: string;
@@ -22,6 +24,8 @@ export function ManagementDialog({
 	submitLabel: string;
 	submitting: boolean;
 	submitDisabled?: boolean;
+	footerLeading?: ReactNode;
+	footerNotice?: ReactNode;
 }) {
 	const intl = useIntl();
 	useEffect(() => {
@@ -40,9 +44,15 @@ export function ManagementDialog({
 					<button type="button" className="rounded-lg p-2 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700" onClick={onClose} aria-label={intl.formatMessage({ id: "common.close" })}><X size={16} /></button>
 				</header>
 				<div className="app-scrollbar min-h-0 flex-1 space-y-4 overflow-y-auto px-5 py-5">{children}</div>
-				<footer className="flex justify-end gap-2 border-t border-[var(--line-soft)] px-5 py-4">
-					<button type="button" className="h-9 rounded-lg border border-[var(--line)] px-4 text-[10px] font-semibold text-zinc-600 hover:bg-zinc-50" onClick={onClose}>{intl.formatMessage({ id: "common.cancel" })}</button>
-					<button type="submit" className="h-9 rounded-lg bg-[#397b5c] px-4 text-[10px] font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50" disabled={submitting || submitDisabled}>{submitting ? intl.formatMessage({ id: "common.submitting" }) : submitLabel}</button>
+				<footer className="shrink-0 border-t border-[var(--line-soft)] px-5 py-4">
+					{footerNotice ? <div className="mb-3">{footerNotice}</div> : null}
+					<div className="flex flex-wrap items-center justify-end gap-2">
+						{footerLeading ? <div className="mr-auto">{footerLeading}</div> : null}
+						<div className="ml-auto flex items-center gap-2">
+							<button type="button" className="h-9 rounded-lg border border-[var(--line)] px-4 text-[10px] font-semibold text-zinc-600 hover:bg-zinc-50" onClick={onClose}>{intl.formatMessage({ id: "common.cancel" })}</button>
+							<button type="submit" className="h-9 rounded-lg bg-[#397b5c] px-4 text-[10px] font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50" disabled={submitting || submitDisabled}>{submitting ? intl.formatMessage({ id: "common.submitting" }) : submitLabel}</button>
+						</div>
+					</div>
 				</footer>
 			</form>
 		</div>

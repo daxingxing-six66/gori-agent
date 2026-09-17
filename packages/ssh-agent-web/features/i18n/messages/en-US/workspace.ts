@@ -1,4 +1,8 @@
 export const enUSWorkspaceMessages = {
+	"workspace.testConnection.button": "Test connection",
+	"workspace.testConnection.loading": "Testing…",
+	"workspace.testConnection.success": "Connected successfully. SSH authentication passed.",
+	"workspace.testConnection.required": "Enter a valid host, port, Credential, and connection settings.",
 	"workspace.tabs.overview": "Overview",
 	"workspace.tabs.guard": "Guard",
 	"workspace.tabs.credentials": "Credentials",

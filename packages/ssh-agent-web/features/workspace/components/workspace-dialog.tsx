@@ -1,6 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
+import { LoaderCircle } from "lucide-react";
+import { NoticeCard } from "@/components/notice-card";
+import { canTestConnection, ConnectionTestController } from "../runtime/connection-test-controller";
 import { useIntl } from "react-intl";
 import {
 	DialogError,
@@ -56,6 +59,21 @@ export function WorkspaceDialog({ onClose, onCreated }: {
 	const [keepaliveMaxCount, setKeepaliveMaxCount] = useState("3");
 	const [submitting, setSubmitting] = useState(false);
 	const [error, setError] = useState<ApiError | null>(null);
+	const [connectionTest] = useState(() => new ConnectionTestController(workspaceApi.testConnection));
+	const testState = useSyncExternalStore(connectionTest.subscribe, connectionTest.getSnapshot, connectionTest.getSnapshot);
+	useEffect(() => () => connectionTest.reset(), [connectionTest]);
+	const testInput = credential === null ? null : {
+		host: { hostname, port: port.trim() ? Number(port) : Number.NaN }, credential,
+		connection: {
+			connectTimeoutMs: connectTimeoutMs.trim() ? Number(connectTimeoutMs) : Number.NaN,
+			keepaliveIntervalMs: keepaliveIntervalMs.trim() ? Number(keepaliveIntervalMs) : Number.NaN,
+			keepaliveMaxCount: keepaliveMaxCount.trim() ? Number(keepaliveMaxCount) : Number.NaN,
+		},
+	};
+	const testEnabled = canTestConnection(testInput);
+	const testing = testState.status === "testing";
+	const close = () => { connectionTest.reset(); onClose(); };
+	const configureCredential = () => { connectionTest.reset(); setCreatingCredential(true); };
 	const defaultCwdError = !isAbsoluteRemotePath(defaultCwd) ? intl.formatMessage({ id: "workspace.defaultCwd.invalid" }) : undefined;
 
 	if (creatingCredential) {
@@ -64,6 +82,7 @@ export function WorkspaceDialog({ onClose, onCreated }: {
 			initialValue={credential ?? undefined}
 			onClose={() => setCreatingCredential(false)}
 			onSubmitted={(input) => {
+				connectionTest.reset();
 				setCredential(input);
 				setError(null);
 				setCreatingCredential(false);
@@ -74,13 +93,22 @@ export function WorkspaceDialog({ onClose, onCreated }: {
 	return <ManagementDialog
 		title={intl.formatMessage({ id: "workspace.create" })}
 		description={intl.formatMessage({ id: "workspace.create.description" })}
-		onClose={onClose}
+		onClose={close}
 		submitLabel={intl.formatMessage({ id: "workspace.create" })}
 		submitting={submitting}
-		submitDisabled={!hasCredentialSecret(credential) || defaultCwdError !== undefined}
+		submitDisabled={testing || !hasCredentialSecret(credential) || defaultCwdError !== undefined}
+		footerLeading={<span title={!testEnabled ? intl.formatMessage({ id: "workspace.testConnection.required" }) : undefined}>
+			<button type="button" className="inline-flex h-9 items-center gap-2 rounded-lg border border-[var(--line)] px-4 text-[10px] font-semibold text-[var(--text-secondary)] hover:bg-[var(--surface-muted)] disabled:cursor-not-allowed disabled:opacity-50" disabled={!testEnabled || testing || submitting} aria-describedby={!testEnabled ? "connection-test-requirements" : undefined} aria-busy={testing} onClick={() => { if (testInput) void connectionTest.run(testInput); }}>
+				{testing ? <LoaderCircle size={14} className="motion-safe:animate-spin" aria-hidden="true" /> : null}
+				{intl.formatMessage({ id: testing ? "workspace.testConnection.loading" : "workspace.testConnection.button" })}
+			</button>
+			{!testEnabled ? <span id="connection-test-requirements" className="sr-only">{intl.formatMessage({ id: "workspace.testConnection.required" })}</span> : null}
+		</span>}
+		footerNotice={testState.status === "success" ? <NoticeCard tone="info" message={intl.formatMessage({ id: "workspace.testConnection.success" })} /> : testState.status === "error" ? <NoticeCard tone="error" message={localizedErrorMessage(testState.error)} /> : undefined}
 		onSubmit={(event) => {
 			event.preventDefault();
-			if (!hasCredentialSecret(credential) || defaultCwdError !== undefined) return;
+			if (connectionTest.getSnapshot().status === "testing" || submitting || !hasCredentialSecret(credential) || defaultCwdError !== undefined) return;
+			connectionTest.reset();
 			setSubmitting(true);
 			setError(null);
 			void workspaceApi.create({
@@ -113,22 +141,22 @@ export function WorkspaceDialog({ onClose, onCreated }: {
 		<div className="grid gap-4 sm:grid-cols-2">
 			<DialogField label={intl.formatMessage({ id: "workspace.field.displayName" })} error={validationError(error, "displayName")}><input className={dialogInputClass} required autoFocus value={displayName} onChange={(event) => setDisplayName(event.target.value)} /></DialogField>
 			<DialogField label={intl.formatMessage({ id: "workspace.field.environment" })} error={validationError(error, "environment")}><CustomSelect ariaLabel={intl.formatMessage({ id: "workspace.field.environment" })} value={environment} onChange={(value) => setEnvironment(value as WorkspaceEnvironment)} options={[{ value: "production", label: intl.formatMessage({ id: "workspace.environment.production" }) }, { value: "staging", label: intl.formatMessage({ id: "workspace.environment.staging" }) }, { value: "development", label: intl.formatMessage({ id: "workspace.environment.development" }) }, { value: "other", label: intl.formatMessage({ id: "workspace.environment.other" }) }]} /></DialogField>
-			<DialogField label={intl.formatMessage({ id: "workspace.field.hostname" })} error={validationError(error, "host.hostname")}><input className={dialogInputClass} required value={hostname} onChange={(event) => setHostname(event.target.value)} /></DialogField>
-			<DialogField label={intl.formatMessage({ id: "workspace.field.port" })} error={validationError(error, "host.port")}><input className={dialogInputClass} required type="number" min="1" max="65535" value={port} onChange={(event) => setPort(event.target.value)} /></DialogField>
+			<DialogField label={intl.formatMessage({ id: "workspace.field.hostname" })} error={validationError(error, "host.hostname")}><input className={dialogInputClass} required value={hostname} onChange={(event) => { connectionTest.reset(); setHostname(event.target.value); }} /></DialogField>
+			<DialogField label={intl.formatMessage({ id: "workspace.field.port" })} error={validationError(error, "host.port")}><input className={dialogInputClass} required type="number" min="1" max="65535" value={port} onChange={(event) => { connectionTest.reset(); setPort(event.target.value); }} /></DialogField>
 		</div>
 		<div className="block">
 			<div className="mb-1.5 flex items-center text-[9px] font-semibold uppercase tracking-[0.08em] text-zinc-500">
 				<span>{intl.formatMessage({ id: "workspace.field.firstCredential" })}</span>
-				<button type="button" className="font-normal text-[#397b5c] transition-colors hover:text-[#2d674c]" onClick={() => setCreatingCredential(true)}>（{intl.formatMessage({ id: credential ? "workspace.credential.reconfigure" : "workspace.credential.configure" })}）</button>
+				<button type="button" className="font-normal text-[#397b5c] transition-colors hover:text-[#2d674c]" onClick={configureCredential}>（{intl.formatMessage({ id: credential ? "workspace.credential.reconfigure" : "workspace.credential.configure" })}）</button>
 			</div>
-			{credential ? <button type="button" className="flex w-full items-center justify-between rounded-lg border border-[var(--line)] bg-white px-3 py-2.5 text-left" onClick={() => setCreatingCredential(true)}><span><span className="block text-[11px] font-medium text-zinc-800">{credential.displayName}</span><span className="mt-0.5 block text-[9px] text-zinc-400">{credential.remoteUser} · {intl.formatMessage({ id: credential.type === "private_key" ? "workspace.credential.privateKey" : "workspace.credential.password" })}</span></span><span className="text-[9px] text-[#397b5c]">{intl.formatMessage({ id: "common.edit" })}</span></button> : <button type="button" className="w-full rounded-lg border border-dashed border-[#9bb9a8] bg-[#f5f8f5] px-3 py-3 text-left text-[10px] text-[#397b5c]" onClick={() => setCreatingCredential(true)}>{intl.formatMessage({ id: "workspace.credential.required" })}</button>}
+			{credential ? <button type="button" className="flex w-full items-center justify-between rounded-lg border border-[var(--line)] bg-white px-3 py-2.5 text-left" onClick={configureCredential}><span><span className="block text-[11px] font-medium text-zinc-800">{credential.displayName}</span><span className="mt-0.5 block text-[9px] text-zinc-400">{credential.remoteUser} · {intl.formatMessage({ id: credential.type === "private_key" ? "workspace.credential.privateKey" : "workspace.credential.password" })}</span></span><span className="text-[9px] text-[#397b5c]">{intl.formatMessage({ id: "common.edit" })}</span></button> : <button type="button" className="w-full rounded-lg border border-dashed border-[#9bb9a8] bg-[#f5f8f5] px-3 py-3 text-left text-[10px] text-[#397b5c]" onClick={configureCredential}>{intl.formatMessage({ id: "workspace.credential.required" })}</button>}
 			{error?.code === "validation_error" && error.field?.replace(/^body\./, "").startsWith("credential.") ? <p className="mt-1 text-[9px] leading-4 text-rose-600" role="alert">{error.message}</p> : null}
 		</div>
 		<DialogField label={intl.formatMessage({ id: "workspace.field.defaultCwd" })} error={defaultCwdError ?? validationError(error, "defaultCwd")}><input className={dialogInputClass} required value={defaultCwd} onChange={(event) => setDefaultCwd(event.target.value)} /></DialogField>
 		<div className="grid gap-4 sm:grid-cols-3">
-			<DialogField label={intl.formatMessage({ id: "workspace.field.connectTimeout" })} error={validationError(error, "connection.connectTimeoutMs")}><input className={dialogInputClass} required type="number" min="1" value={connectTimeoutMs} onChange={(event) => setConnectTimeoutMs(event.target.value)} /></DialogField>
-			<DialogField label={intl.formatMessage({ id: "workspace.field.keepaliveInterval" })} error={validationError(error, "connection.keepaliveIntervalMs")}><input className={dialogInputClass} required type="number" min="1" value={keepaliveIntervalMs} onChange={(event) => setKeepaliveIntervalMs(event.target.value)} /></DialogField>
-			<DialogField label={intl.formatMessage({ id: "workspace.field.keepaliveMaxCount" })} error={validationError(error, "connection.keepaliveMaxCount")}><input className={dialogInputClass} required type="number" min="1" value={keepaliveMaxCount} onChange={(event) => setKeepaliveMaxCount(event.target.value)} /></DialogField>
+			<DialogField label={intl.formatMessage({ id: "workspace.field.connectTimeout" })} error={validationError(error, "connection.connectTimeoutMs")}><input className={dialogInputClass} required type="number" min="1" value={connectTimeoutMs} onChange={(event) => { connectionTest.reset(); setConnectTimeoutMs(event.target.value); }} /></DialogField>
+			<DialogField label={intl.formatMessage({ id: "workspace.field.keepaliveInterval" })} error={validationError(error, "connection.keepaliveIntervalMs")}><input className={dialogInputClass} required type="number" min="1" value={keepaliveIntervalMs} onChange={(event) => { connectionTest.reset(); setKeepaliveIntervalMs(event.target.value); }} /></DialogField>
+			<DialogField label={intl.formatMessage({ id: "workspace.field.keepaliveMaxCount" })} error={validationError(error, "connection.keepaliveMaxCount")}><input className={dialogInputClass} required type="number" min="1" value={keepaliveMaxCount} onChange={(event) => { connectionTest.reset(); setKeepaliveMaxCount(event.target.value); }} /></DialogField>
 		</div>
 	</ManagementDialog>;
 }

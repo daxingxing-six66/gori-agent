@@ -1,3 +1,4 @@
+import type { ConnectionTestService } from "../application/services/connection-test-service.ts";
 import { reportFailure } from "../application/failure-reporter.ts";
 import type { SshAgentManagementApi } from "../application/management-api.ts";
 import type { AttachmentService } from "../application/services/attachment-service.ts";
@@ -23,6 +24,7 @@ import {
 	parseCreateCustomLlmProvider,
 	parseCreateSession,
 	parseCreateWorkspace,
+	parseTestWorkspaceConnection,
 	parseEnqueueChatMessage,
 	parseGuardRulePackImport,
 	parseGuardUpdate,
@@ -44,6 +46,7 @@ export function createSshAgentHttpHandler(options: {
 	localFiles: LocalFileSystemService;
 	terminals: TerminalSessionService;
 	attachments: AttachmentService;
+	connectionTests: ConnectionTestService;
 }): SshAgentHttpHandler {
 	return async (request) => {
 		const url = new URL(request.url);
@@ -72,6 +75,7 @@ async function route(
 		localFiles: LocalFileSystemService;
 		terminals: TerminalSessionService;
 		attachments: AttachmentService;
+		connectionTests: ConnectionTestService;
 	},
 	request: Request,
 	locale: BackendLocale,
@@ -322,6 +326,9 @@ async function route(
 		}
 	}
 
+	if (matches(segments, ["api", "workspaces", "test-connection"]) && request.method === "POST") {
+		return json(await options.connectionTests.test(parseTestWorkspaceConnection(await readJson(request)), request.signal));
+	}
 	if (matches(segments, ["api", "workspaces"]) && request.method === "POST") {
 		return json(await api.createWorkspace(parseCreateWorkspace(await readJson(request))), 201);
 	}

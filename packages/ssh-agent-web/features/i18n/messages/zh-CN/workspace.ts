@@ -1,4 +1,8 @@
 export const zhCNWorkspaceMessages = {
+	"workspace.testConnection.button": "测试连接",
+	"workspace.testConnection.loading": "测试中…",
+	"workspace.testConnection.success": "连接成功，SSH 身份认证已通过。",
+	"workspace.testConnection.required": "请填写有效的主机、端口、凭据和连接参数。",
 	"workspace.tabs.overview": "概览",
 	"workspace.tabs.guard": "防护规则",
 	"workspace.tabs.credentials": "凭据",

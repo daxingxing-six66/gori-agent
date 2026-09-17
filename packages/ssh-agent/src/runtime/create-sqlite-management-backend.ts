@@ -1,3 +1,5 @@
+import { ConnectionTestService, type SshConnectionTester } from "../application/services/connection-test-service.ts";
+import { Ssh2ConnectionTester } from "../infrastructure/ssh/ssh2-connection-tester.ts";
 import { randomUUID } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
 import type { CredentialStore, MutableModels } from "@earendil-works/pi-ai";
@@ -59,6 +61,7 @@ import { Ssh2ChannelBroker } from "../infrastructure/ssh/ssh2-channel-broker.ts"
 import { Ssh2HostKeyProbe } from "../infrastructure/ssh/ssh2-host-key-probe.ts";
 
 export interface CreateSqliteManagementBackendOptions {
+	connectionTester?: SshConnectionTester;
 	databasePath: string;
 	credentialEncryptionKey: Uint8Array;
 	clock?: Clock;
@@ -318,9 +321,11 @@ export function createSqliteManagementBackend(options: CreateSqliteManagementBac
 			customLlmProviders,
 			contextCompactionSettings,
 		});
+		const connectionTests = new ConnectionTestService(options.connectionTester ?? new Ssh2ConnectionTester());
 		return {
 			api,
 			handleRequest: createSshAgentHttpHandler({
+				connectionTests,
 				api,
 				transfers: fileTransfers,
 				events,
@@ -346,6 +351,7 @@ export function createSqliteManagementBackend(options: CreateSqliteManagementBac
 					...(abortRun === undefined ? {} : { abortRun }),
 				}),
 			close: async () => {
+				connectionTests.close();
 				clearInterval(heartbeat);
 				llmModelRefresh.close();
 				await chat.close();
