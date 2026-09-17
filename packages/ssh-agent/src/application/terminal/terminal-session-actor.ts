@@ -6,7 +6,12 @@ import type { SessionUseLease } from "../services/session-lifecycle-coordinator.
 import type { TerminalChannelExit, TerminalChannelHandle } from "../ssh-channel-broker.ts";
 import { TerminalCanonicalState, type TerminalSnapshot } from "./terminal-canonical-state.ts";
 import { TERMINAL_DEFAULTS } from "./terminal-defaults.ts";
-import { type TerminalReplayResult, TerminalReplayRing, type TerminalSequencedEvent } from "./terminal-replay-ring.ts";
+import {
+	TerminalReplayGapError,
+	type TerminalReplayResult,
+	TerminalReplayRing,
+	type TerminalSequencedEvent,
+} from "./terminal-replay-ring.ts";
 
 type AttachmentState = "bootstrapping" | "live" | "disconnected";
 
@@ -230,14 +235,25 @@ export class TerminalSessionActor {
 	connectObservationEvents(
 		afterSequence: number,
 		listener: TerminalEventListener,
-	): Promise<{ readonly replay: TerminalReplayResult; disconnect(): void }> {
+	): Promise<{ readonly replay: TerminalReplayResult; readonly incomplete: boolean; disconnect(): void }> {
 		return this.#enqueue(async () => {
 			this.#requireActive();
-			const replay = this.#ring.replayAfter(afterSequence);
+			let replay: TerminalReplayResult;
+			let incomplete = false;
+			try {
+				replay = this.#ring.replayAfter(afterSequence);
+			} catch (error) {
+				if (!(error instanceof TerminalReplayGapError)) throw error;
+				incomplete = true;
+				replay = this.#ring.replayAfter(error.oldestAvailable - 1);
+			}
+			// An oversized single frame can evict the entire ring.
+			if (replay.latestSequence === null && afterSequence < this.#session.eventSequence) incomplete = true;
 			this.#listeners.add(listener);
 			let disconnected = false;
 			return {
 				replay,
+				incomplete,
 				disconnect: () => {
 					if (disconnected) return;
 					disconnected = true;

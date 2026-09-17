@@ -5,6 +5,7 @@ import type { TerminalSequencedEvent } from "./terminal-replay-ring.ts";
 import type { TerminalCanonicalCapture, TerminalSessionActor } from "./terminal-session-actor.ts";
 
 export interface CapturedTerminalObservation {
+	readonly canonical: TerminalCanonicalCapture;
 	readonly sequence: number;
 	readonly geometry: { readonly rows: number; readonly cols: number };
 	readonly kind: "transcript" | "screen";
@@ -27,6 +28,7 @@ export async function captureTerminalObservation(
 	expectation: TerminalObservationExpectation,
 	signal?: AbortSignal,
 ): Promise<CapturedTerminalObservation> {
+	if (signal?.aborted) throw new TerminalObservationCancelledError();
 	let rawByteCount = 0;
 	let quietTimer: ReturnType<typeof setTimeout> | undefined;
 	let promptTimer: ReturnType<typeof setTimeout> | undefined;
@@ -77,6 +79,7 @@ export async function captureTerminalObservation(
 	};
 	const eventConnection = await actor.connectObservationEvents(baseline.sequence, onEvent);
 	for (const event of eventConnection.replay.events) onEvent(event);
+	if (eventConnection.incomplete) settle("output_limit");
 	const abort = (): void => rejectBoundary(new TerminalObservationCancelledError());
 	signal?.addEventListener("abort", abort, { once: true });
 	if (signal?.aborted) abort();
@@ -94,17 +97,22 @@ export async function captureTerminalObservation(
 	try {
 		const boundaryReason = await boundary;
 		const capture = await actor.captureCanonical();
+		if (signal?.aborted) throw new TerminalObservationCancelledError();
 		const kind = expectation === "streaming" ? "screen" : "transcript";
+		const incomplete =
+			eventConnection.incomplete || (kind === "transcript" && !capture.allText.startsWith(baseline.allText));
 		const source = kind === "screen" ? capture.screenText : transcriptAfter(baseline.allText, capture.allText);
+		const warning = incomplete ? "[Terminal history may be incomplete; showing retained terminal text]\n" : "";
 		const limited = limitAgentView(source);
 		return {
+			canonical: capture,
 			sequence: capture.sequence,
 			geometry: capture.geometry,
 			kind,
 			boundaryReason,
-			text: limited.text,
+			text: warning + limited.text,
 			rawByteCount,
-			truncated: limited.truncated,
+			truncated: incomplete || limited.truncated,
 		};
 	} finally {
 		eventConnection.disconnect();

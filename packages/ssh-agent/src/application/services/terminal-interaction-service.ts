@@ -15,6 +15,7 @@ import {
 	captureTerminalObservation,
 	TerminalObservationCancelledError,
 } from "../terminal/terminal-observation-capture.ts";
+import type { TerminalCanonicalCapture, TerminalSessionActor } from "../terminal/terminal-session-actor.ts";
 import type { CommandGuardDecision, CommandGuardEvaluator } from "./command-guard-evaluator.ts";
 import type { TerminalSessionService } from "./terminal-session-service.ts";
 
@@ -39,6 +40,14 @@ export class TerminalInteractionService {
 	readonly #guards: CommandGuardEvaluator;
 	readonly #clock: Clock;
 	readonly #ids: IdGenerator;
+	// Actor lifetime scopes the cursor across Chat Runs, without retaining closed terminals.
+	readonly #observationCursors = new WeakMap<
+		TerminalSessionActor,
+		{
+			delivered: TerminalCanonicalCapture;
+			pending?: { readonly observationId: string; readonly capture: TerminalCanonicalCapture };
+		}
+	>();
 	readonly #inFlight = new Map<
 		string,
 		{ readonly interactionId: string; readonly result: Promise<TerminalInteractionResult> }
@@ -168,6 +177,12 @@ export class TerminalInteractionService {
 		await this.#markObservationStage(result.interaction, result.observation, "delivered", {
 			toolCallId: result.interaction.toolCallId,
 		});
+		const actor = this.#terminals.getActor(result.interaction.sessionId);
+		const cursor = actor && this.#observationCursors.get(actor);
+		if (cursor?.pending?.observationId === result.observation.id) {
+			cursor.delivered = cursor.pending.capture;
+			delete cursor.pending;
+		}
 	}
 
 	async markLatestProcessing(agentRunId: string): Promise<void> {
@@ -196,7 +211,12 @@ export class TerminalInteractionService {
 				status: 409,
 			});
 		}
-		const baseline = await actor.captureCanonical();
+		let cursor = this.#observationCursors.get(actor);
+		if (!cursor) {
+			cursor = { delivered: { sequence: 0, geometry: actor.view.geometry, screenText: "", allText: "" } };
+			this.#observationCursors.set(actor, cursor);
+		}
+		const baseline = cursor.delivered;
 		const input = this.#repository.findInputByInteraction(interaction.id);
 		try {
 			if (request.action.type !== "observe") {
@@ -282,6 +302,7 @@ export class TerminalInteractionService {
 				boundaryReason: observation.boundaryReason,
 				truncated: observation.truncated,
 			});
+			cursor.pending = { observationId: observation.id, capture: captured.canonical };
 			return { interaction: completed, observation };
 		} catch (error) {
 			if (error instanceof TerminalObservationCancelledError) {
