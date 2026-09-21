@@ -4,17 +4,19 @@
 
 ## 当前边界
 
+- 新会话首个 Run 可通过 `generateTitle: true` 启用同模型异步命名；标题任务独立于聊天，不进入消息历史，通过 Workspace SSE 推送。见 [session-title.md](./session-title.md)。
+
 - 每次模型流请求经过包内 Provider 错误边界，附件水合与模型同步异常分别处理。安全原因使用描述符贯穿消息、Run failure、HTTP/SSE；原始文本供超限判断与日志使用，未知内部错误不公开。见 [provider-failures.md](./provider-failures.md)。
 
-- 上下文占用在每次 `turn_end` 和自动压缩保存摘要后推送 `context.updated`；刷新通过独立查询恢复，手动压缩返回 `contextUsage`。模式 Prompt 已提取至 `application/chat-context.ts`，工具共享静态定义；有效消息按 compact 边界加载，不能把 Agent 完整 transcript 当作压缩后 Context。见 [context-usage.md](./context-usage.md)。
+- 上下文占用在每次 `turn_end` 和自动压缩保存摘要后推送 `context.updated`；刷新通过独立查询恢复，手动压缩返回 `contextUsage`。头部组装纯函数位于 `application/chat-context.ts`，工具共享静态定义；有效消息按 compact 边界加载，不能把 Agent 完整 transcript 当作压缩后 Context。见 [context-usage.md](./context-usage.md)。
 
-- Session 增加 `workDir` 与 `autoAudit`；本地目录与远端 Workspace `defaultCwd` 相互独立。
+- Session 保存 `workDir` 与 `autoAudit`；创建时未指定 `workDir` 则从 Workspace `defaultCwd` 继承并验证本地目录，创建后独立保存。已有 Session 的 null 值仍使用服务默认目录。
 - Session 详情从最近一次 `chat_runs` 记录投影 `chatModelSelection`；首次 Run 显式选模型，后续 Run 可继承，模型与 thinking level 变化按当前 `pi-ai` 目录重新校验。
 - 模型选择从 SSH Agent 的有效目录读取。上游明确返回所选模型不再受支持时，Run 以 `chat_model_not_supported` 失败，最终 assistant 消息携带统一安全失败报告，在公开投影中显示用户友好提示，同时该模型立即从有效目录和持久化快照删除；不会触发一次无意义的即时刷新。
-- `ChatService` 保留 Chat use case、活动 Run 互斥、创建顺序和资源归属，`chat-run-executor.ts` 负责执行结果选择与逐项清理。`ChatRunRuntime` 唯一持有单 Run 的 Agent、Node execution environment 及取消/延续/steer/模型状态；`ChatAgentRuntimeFactory` 装配模式互斥的 Tool、SFTP、Agent callback 和 system prompt。System Prompt 通过 Agent `initialState.systemPrompt` 独立于消息历史注入：稳定的共享前缀用 `terminal-model-tag-policy` 介绍 `<terminal-model-on>`/`<terminal-model-off>` 及其权威优先级，末尾只追加当前模式标签。开启标签说明长期有状态 PTY、Observation 和专用 `terminal_interaction`，关闭标签说明已退出 Terminal Mode、`terminal_interaction` 失效并加入独立执行的 `remote_server_call`。Prompt 不包含动态 Run ID且不重写历史消息，使同一模式的 Prompt Cache 前缀稳定。
+- `ChatService` 保留 Chat use case、活动 Run 与初始化互斥、创建顺序和资源归属，`chat-run-executor.ts` 负责执行与清理。`ChatPromptService` 在首次 Run 组装并持久化不可变头部；后续 Run 直接复用。模式切换以真实 system 消息追加到历史，头部只解释标签及首次环境；两个远端 Tool schema 保持稳定，由运行时门禁限制可用入口。完整边界见 [session-prompt.md](./session-prompt.md)。
 - Chat 与上下文压缩请求只在模型 `provider` 精确为 `opencode-go` 时附加稳定的 `x-opencode-session=<Session ID>` 和 `x-opencode-client=pi`，满足 OpenCode Go 的会话路由要求；其他 Provider 的请求选项和 Header 保持不变。
 - Approval、Tool Call 协调、Queue、AgentEvent 投影、Context 压缩和 Run SSE 分别由 `ChatApprovalService`、`ChatToolCallCoordinator`、`ChatQueueService`、`ChatAgentEventHandler`、`ChatContextService` 和 `ChatRunEventHub` 持有。`ChatContextService` 在每次 Provider 请求前估算完整 payload，必要时用 PI compaction 生成摘要；Provider 尚未输出有效内容就返回上下文超限时，同一扩展点强制压缩并只重试一次。`ChatToolAuthorizationPolicy` 只负责 Tool 分类、远端和 Terminal Guard 预检查、`autoAudit` 决策及 Terminal Approval 结果回写；持久化继续通过 `ChatRepository` 端口隔离。
-- Chat Run 从创建持久化前到 `executeRun` finally 持有 Session lifecycle lease；Session deletion barrier 已建立时不会创建新 Run。Run 创建请求显式冻结 `serverInteractionMode`：普通模式提供 `remote_server_call`，Terminal Mode 改为提供 `terminal_interaction` 并绑定当前 TerminalSession；同一冻结值同时选择本 Run 的模式 System Prompt，因此关闭 Terminal Mode 后的新 Run 不会继承旧的 Terminal 语义。
+- Chat Run 从创建持久化前到执行 finally 持有 Session lifecycle lease；删除屏障建立时拒绝新 Run。Run 冻结 `serverInteractionMode`，Terminal Mode 绑定当前 TerminalSession；模式变化不会重写头部，Provider 请求前复核最新持久化模式，失效时停止当前 Run。
 - `read` 无审批；`write`/`bash`/`remote_server_call`/Terminal submit 受 `autoAudit` 控制。远端命令和 Terminal submit 无论是否自动审批，都先执行 Guard 预检查并在派发前复检。`sftp_upload` 和 `sftp_download` 分别在远端、本地检查同名文件，仅覆盖时在 Tool 执行中读取当前 Session 的 `autoAudit`：开启则自动批准并记录 `source="auto"`，关闭则等待人工审批。并发同名冲突使用同一策略，非普通文件仍拒绝覆盖。所有 Approval 都携带后端生成并持久化的场景描述，SFTP 描述明确指出本地或远程文件覆盖。
 - Run 内 steer/follow-up 使用 Pi Agent 队列；HTTP 请求 ID 和数据库唯一约束负责幂等。用户拒绝或审批超时会在完整 Tool Result 后停止当前 Turn 的自动延续，只取消 steer，follow-up 仍开启新的 Turn。
 - 创建 Run、steer 和 follow-up 都可携带最多四个 Session 图片 Attachment ID；文本可为空但文本与附件不能同时为空。所选模型必须声明支持 `image` 输入，且切换到纯文本模型时当前有效历史不能仍含图片引用。消息和 Queue 只保存有序 ID；每次 Provider 请求前才安全读取 JPEG、PNG 或 WebP，并临时转换为 `ImageContent`，Base64 不进入 Agent Context、SQLite、SSE 或消息 API。详细边界见 [chat-image-input.md](./chat-image-input.md)。
@@ -26,7 +28,7 @@
 - 进入已有 Session 时 Chat 消息区自动定位到最新消息；用户上滚超过底部阈值后停止跟随流式内容并显示“回到最新消息”按钮，返回底部后恢复自动跟随。
 - Chat 输入区可直接更新 Session 的 `autoAudit`，但活动 Run 期间禁用修改；模型选择器与发送或停止操作位于同一操作区。新 Session 输入区可在首次发送前通过系统目录选择器设置本地 `workDir`，创建请求会携带该绝对路径；Session 编辑弹窗复用同一选择器，两处都不接受手填路径。
 - Session 模型偏好恢复会重新解析当前 Provider 与模型目录；恢复请求使用递增令牌隔离 Session，Abort 不会标记恢复完成，过期请求不能覆盖新 Session。历史模型已失效时结束加载并要求重新选择，目录请求失败时允许显式重试。
-- Chat 输入区使用统一 Composer Menu：消息开头的 `/` 只唤起即时前端工具，合法位置的 `@` 同时提供工具与本机文件；没有匹配工具时隐藏工具分组，工具与文件均无匹配时只显示统一空状态。选择工具不会创建 Chat 消息或 Agent Tool Call。真实 Session 的工具组提供 Terminal Mode 和手动上下文压缩；压缩与活动 Run 互斥，完成后直接合并同步 HTTP 响应中的摘要消息，空上下文显示跳过提示。文件仍可在普通文本间插入 `file`/`folder` Token；已有 Session 从其有效本地目录逐级浏览，新 Session 创建前从系统根目录浏览。发送内容仍是包含自闭合标签的普通消息字符串，历史消息只把标签渲染为行内引用，不新增独立 Reference 实体。
+- Chat 输入区使用统一 Composer Menu：消息开头的 `/` 只唤起即时前端工具，合法位置的 `@` 同时提供工具与本机文件；没有匹配工具时隐藏工具分组，工具与文件均无匹配时只显示统一空状态。选择工具不会创建用户 Chat 消息或 Agent Tool Call；Terminal 状态提交会追加 system 模式记录。真实 Session 的工具组提供 Terminal Mode 和手动上下文压缩；压缩与活动 Run 互斥，完成后直接合并同步 HTTP 响应中的摘要消息，空上下文显示跳过提示。文件仍可在普通文本间插入 `file`/`folder` Token；已有 Session 从其有效本地目录逐级浏览，新 Session 创建前从系统根目录浏览。发送内容仍是包含自闭合标签的普通消息字符串，历史消息只把标签渲染为行内引用，不新增独立 Reference 实体。
 - Composer 可从拖拽文件和剪贴板的 `FileList` 或 `ClipboardItem` 读取图片；上传成功后保存完整 Attachment 投影，并仅将已成功上传、尚未移除的图片按选择顺序随新 Run、`follow_up` 或 `steer` 的 `attachmentIds` 提交。纯图片消息可发送，上传或本地预处理尚未完成时不能发送。发送成功后只清除浏览器预览和 Composer 选择状态，不删除后端附件。消息历史与新 Run 的乐观 User Message 会保留后端 Attachment 投影中的受控 `contentUrl`，仅 JPEG、PNG、WebP 通过 API Base URL 以惰加载图片回显；前端不读取或拼接 `storagePath`。完整接口约束见 [Chat 图片附件联调](../frontend/chat-image-attachment-integration.md)。
 - Composer 草稿状态与历史时间线隔离：普通输入只重渲染输入区，`ChatTimeline` 与消息行使用稳定回调和 memo 避免重复协调 Markdown、Tool 与审批卡片。Token 编辑器以已同步值避免 React 回写后的二次 DOM 序列化；普通输入不 normalize DOM，粘贴和 Token 结构变更才 normalize。中文输入法组合期间关闭菜单并延后至 composition end 同步，因此不会用中间拼写状态触发 `/`、`@` 或文件检索。
 - Markdown 同时把 fenced code 和未标注语言的缩进代码识别为块级代码，避免目录树等预格式化内容被压缩。

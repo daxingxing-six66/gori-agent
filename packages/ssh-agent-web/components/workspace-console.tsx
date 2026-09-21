@@ -25,7 +25,7 @@ import {
 	useSftpTransferManager,
 } from "@/features/sftp/components/sftp-transfer-provider";
 import { workspaceApi } from "@/features/workspace/api/workspace-api";
-import { NameDialog } from "@/features/workspace/components/name-dialog";
+import { WorkspaceEditDialog } from "@/features/workspace/components/workspace-edit-dialog";
 import { useWorkspaceTree } from "@/features/workspace/components/workspace-tree-context";
 
 const workspaceTabs: readonly { id: "overview" | "guard" | "credentials" | "files"; labelId: MessageId; icon: typeof Gauge }[] = [
@@ -48,7 +48,7 @@ function WorkspaceConsoleContent({ workspaceId }: { workspaceId: string }) {
 	const { tree, loading, error, refresh } = useWorkspaceTree();
 	const transferManager = useSftpTransferManager();
 	const [activeTab, setActiveTab] = useState<WorkspaceTab>("overview");
-	const [renameDialogOpen, setRenameDialogOpen] = useState(false);
+	const [editDialogOpen, setEditDialogOpen] = useState(false);
 	const [mutationError, setMutationError] = useState<string | null>(null);
 	const treeItem = tree?.workspaces.find((item) => item.workspace.id === workspaceId);
 
@@ -67,7 +67,7 @@ function WorkspaceConsoleContent({ workspaceId }: { workspaceId: string }) {
 					<div className="flex min-w-0 flex-1 items-center gap-2"><Link href="/" className="shrink-0 rounded-lg p-2 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700" aria-label={intl.formatMessage({ id: "workspace.backToSessions" })} onClick={(event) => { if (!transferManager.confirmNavigation()) event.preventDefault(); }}><ArrowLeft size={17} /></Link><div className="mx-1 h-5 w-px shrink-0 bg-zinc-200" /><nav className="app-scrollbar flex min-w-0 flex-1 gap-1 overflow-x-auto self-stretch" aria-label={intl.formatMessage({ id: "workspace.pages" })}>
 						{workspaceTabs.map((tab) => { const Icon = tab.icon; return <button key={tab.id} className={`flex h-full shrink-0 items-center gap-2 border-b-2 px-3 text-[10px] font-semibold transition ${activeTab === tab.id ? "border-zinc-900 text-zinc-900" : "border-transparent text-zinc-400 hover:text-zinc-700"}`} onClick={() => setActiveTab(tab.id)}><Icon size={14} /> {intl.formatMessage({ id: tab.labelId })}</button>; })}
 					</nav></div>
-					<div className="flex items-center gap-2"><button className="rounded-lg border border-[var(--line)] p-2 text-zinc-500 hover:bg-zinc-50" aria-label={intl.formatMessage({ id: "workspace.rename" })} onClick={() => setRenameDialogOpen(true)}><Pencil size={13} /></button><button className="rounded-lg border border-[var(--line)] p-2 text-zinc-500 hover:bg-rose-50 hover:text-rose-600 disabled:cursor-not-allowed disabled:opacity-40" disabled={sessions.length > 0} title={intl.formatMessage({ id: sessions.length > 0 ? "workspace.delete.blocked" : "workspace.delete" })} aria-label={intl.formatMessage({ id: "workspace.delete" })} onClick={() => {
+					<div className="flex items-center gap-2"><button className="rounded-lg border border-[var(--line)] p-2 text-zinc-500 hover:bg-zinc-50" aria-label={intl.formatMessage({ id: "workspace.edit" })} onClick={() => setEditDialogOpen(true)}><Pencil size={13} /></button><button className="rounded-lg border border-[var(--line)] p-2 text-zinc-500 hover:bg-rose-50 hover:text-rose-600 disabled:cursor-not-allowed disabled:opacity-40" disabled={sessions.length > 0} title={intl.formatMessage({ id: sessions.length > 0 ? "workspace.delete.blocked" : "workspace.delete" })} aria-label={intl.formatMessage({ id: "workspace.delete" })} onClick={() => {
 						if (!transferManager.confirmNavigation()) return;
 						if (!window.confirm(intl.formatMessage({ id: "workspace.delete.confirm" }, { name: workspace.displayName }))) return;
 						void workspaceApi.delete(workspace.id, workspace.revision).then(async () => { await refresh(); router.push("/"); }).catch((requestError: unknown) => { setMutationError(localizedErrorMessage(requestError)); void refresh(); });
@@ -84,6 +84,6 @@ function WorkspaceConsoleContent({ workspaceId }: { workspaceId: string }) {
 					</div>
 				</div>
 			</main>
-		</div>{renameDialogOpen ? <NameDialog title={intl.formatMessage({ id: "workspace.rename" })} initialValue={workspace.displayName} submitLabel={intl.formatMessage({ id: "common.save" })} onClose={() => setRenameDialogOpen(false)} onSubmit={async (displayName) => { await workspaceApi.rename(workspace.id, displayName, workspace.revision); setRenameDialogOpen(false); await refresh(); }} /> : null}</>
+		</div>{editDialogOpen ? <WorkspaceEditDialog workspace={workspace} onClose={() => setEditDialogOpen(false)} onSubmit={async (input) => { await workspaceApi.update(workspace.id, { ...input, expectedRevision: workspace.revision }); setEditDialogOpen(false); await refresh(); }} /> : null}</>
 	);
 }

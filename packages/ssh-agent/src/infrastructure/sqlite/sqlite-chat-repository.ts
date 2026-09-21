@@ -398,6 +398,11 @@ export class SqliteChatRepository implements ChatRepository {
 			: undefined;
 	}
 
+	latestSystemMessage(sessionId: string): ChatMessageProjection | undefined {
+		const row = this.database.prepare("SELECT * FROM chat_messages WHERE session_id = ? AND message_type = 'system' ORDER BY sequence DESC LIMIT 1").get(sessionId);
+		return row ? messageFromRow(row, []) : undefined;
+	}
+
 	latestCompaction(sessionId: string): StoredChatCompaction | undefined {
 		const row = this.database
 			.prepare(
@@ -502,6 +507,7 @@ export class SqliteChatRepository implements ChatRepository {
 
 function messageType(message: AgentMessage): string {
 	switch (message.role) {
+		case "system":
 		case "user":
 		case "assistant":
 		case "custom":

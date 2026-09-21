@@ -1,6 +1,8 @@
 import type { BackendMessageKey } from "./en-US.ts";
 
 export const zhCNMessages = {
+	"chat.system_messages_unsupported": "当前模型接口无法保留运行时 system 消息，请选择使用 OpenAI Chat Completions、Responses 或 Mistral 接口的模型。",
+	"chat.prompt_not_initialized": "请先发送一条聊天消息初始化此会话，再压缩上下文。",
 	"provider.request_failed": "模型请求失败：{reason}",
 	"provider.empty_error_body": "模型请求失败（HTTP {status}），厂商未返回错误详情",
 	"provider.request_rejected": "模型服务拒绝了请求",

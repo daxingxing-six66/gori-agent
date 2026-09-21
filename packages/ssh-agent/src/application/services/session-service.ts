@@ -56,7 +56,8 @@ export class DefaultSessionService implements SessionService {
 	}
 
 	async create(input: CreateSessionInput): Promise<Session> {
-		if (!(await this.workspaces.findById(input.workspaceId))) {
+		const workspace = await this.workspaces.findById(input.workspaceId);
+		if (!workspace) {
 			throw new ManagementError("not_found", `Workspace not found: ${input.workspaceId}`);
 		}
 		const now = this.clock.now();
@@ -64,7 +65,7 @@ export class DefaultSessionService implements SessionService {
 			id: this.ids.next(),
 			workspaceId: input.workspaceId,
 			displayName: requireDisplayName(input.displayName),
-			workDir: input.workDir === undefined ? null : await normalizeWorkDir(input.workDir),
+			workDir: await normalizeWorkDir(input.workDir ?? workspace.defaultCwd),
 			autoAudit: input.autoAudit ?? false,
 			terminalContextCursor: 0,
 			revision: 1,

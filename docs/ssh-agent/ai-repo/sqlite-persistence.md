@@ -5,7 +5,8 @@
 ## 当前边界
 
 - 使用 Node `node:sqlite`，启动时开启 foreign keys、busy timeout；文件数据库使用 WAL。
-- schema 由版本化 migration 管理，当前版本为 v15；v7 增加 Session 本地配置、Chat Run、消息、队列、审批和 Agent Session 投影表，v8 为 Tool Approval 增加持久化描述，v9 增加每个 LLM Provider 的最后一次成功模型目录快照，v10 增加 TerminalSession、Interaction、Input、Observation、Timeline 和 Chat Run 交互模式字段，v11 增加自定义 LLM Provider 聚合，v12 为 Chat 消息增加类型、Provider 和 Usage 投影并移除旧 Agent Session 投影表，v13 为 Tool Approval 描述和 Terminal failure 增加可选 message key/values 元数据，v14 增加 Session Attachment 元数据、同名唯一约束和级联删除，v15 增加有序 `chat_message_attachments` 关系。
+- schema 由版本化 migration 管理，当前版本为 v17；v7 增加 Session 本地配置、Chat Run、消息、队列、审批和 Agent Session 投影表，v8 为 Tool Approval 增加持久化描述，v9 增加每个 LLM Provider 的最后一次成功模型目录快照，v10 增加 TerminalSession、Interaction、Input、Observation、Timeline 和 Chat Run 交互模式字段，v11 增加自定义 LLM Provider 聚合，v12 为 Chat 消息增加类型、Provider 和 Usage 投影并移除旧 Agent Session 投影表，v13 为 Tool Approval 描述和 Terminal failure 增加可选 message key/values 元数据，v14 增加 Session Attachment 元数据、同名唯一约束和级联删除，v15 增加有序 `chat_message_attachments` 关系，v16 增加不可变 `chat_prompt_snapshots`，通过触发器原子记录初始模式及 Terminal active 边界变化。见 [session-prompt.md](./session-prompt.md)。
+- v17 兼容开发期间已执行的两种 v16 结构：在同一事务内重建快照表，去除早期 `initial_mode NOT NULL` 列，逐字保留头部文本及其版本、创建时间，重建模式触发器；仅为缺失 `runtimeEventId` 的已生成模式消息补齐原消息 ID，不改变顺序和标签。不重新生成已有快照，也不清空业务数据。失败时表、触发器、消息修补与版本记录一起回滚；重复启动跳过已完成的版本。
 - v1 到 v2 采用开发期重建策略：带业务数据的 v1 数据库会拒绝启动并提示人工备份、删除；程序不会自动删除或搬迁旧数据。
 - Credential 元数据与认证材料分表。认证材料使用 AES-256-GCM，加密 AAD 绑定 `credentialId:authVersion`；32 字节密钥必须由进程外部注入。
 - LLM Provider Credential 同样按元数据和 Secret 分表，使用独立 AAD `llm-provider:providerId:revision`，不会与 SSH Credential 混淆。
@@ -49,3 +50,5 @@
 | 持久化和密文测试 | [management-api.test.ts](../../../packages/ssh-agent/test/management-api.test.ts)、[command-operation-service.test.ts](../../../packages/ssh-agent/test/command-operation-service.test.ts) |
 
 修改 schema 时必须追加 migration，不能改写已经应用的 migration 语义；同时检查重建前置条件、行映射、Repository、事务回滚和文件数据库重开测试。
+
+升级回归：`packages/ssh-agent/test/chat-prompt-migration.test.ts` 使用冻结的两种 v16 SQL fixture 验证带数据升级、空快照升级、原文保留、模式消息修补、不可变约束、级联删除、回滚重试及幂等性。

@@ -1,3 +1,4 @@
+import { supportsConversationSystemMessages } from "../utils/system-messages.ts";
 import type {
 	Api,
 	AssistantMessage,
@@ -66,6 +67,9 @@ export function transformMessages<TApi extends Api>(
 	model: Model<TApi>,
 	normalizeToolCallId?: (id: string, model: Model<TApi>, source: AssistantMessage) => string,
 ): Message[] {
+	if (messages.some((message) => message.role === "system") && !supportsConversationSystemMessages(model.api)) {
+		throw new Error(`API ${model.api} does not support chronological system messages`);
+	}
 	// Build a map of original tool call IDs to normalized IDs
 	const toolCallIdMap = new Map<string, string>();
 	// Normalize null/undefined content from untyped callers (custom tools, hand-built
@@ -207,7 +211,7 @@ export function transformMessages<TApi extends Api>(
 		} else if (msg.role === "toolResult") {
 			existingToolResultIds.add(msg.toolCallId);
 			result.push(msg);
-		} else if (msg.role === "user") {
+		} else if (msg.role === "user" || msg.role === "system") {
 			// User message interrupts tool flow - insert synthetic results for orphaned calls
 			insertSyntheticToolResults();
 			result.push(msg);

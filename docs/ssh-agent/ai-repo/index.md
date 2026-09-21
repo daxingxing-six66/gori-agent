@@ -17,6 +17,7 @@
 | Workspace、Session、Credential 的实体、Service、Repository 和生命周期约束 | [management-domain.md](./management-domain.md) | `packages/ssh-agent/src/domain/`、`packages/ssh-agent/src/application/` |
 | Guard 配置、规则 ID、匹配模式和整体 PATCH 语义 | [guard.md](./guard.md) | `packages/ssh-agent/src/domain/guard.ts`、`packages/ssh-agent/src/application/services/guard-service.ts` |
 | LLM Provider/Model 目录、Provider Credential 和 pi-ai 接入 | [llm-provider.md](./llm-provider.md) | `packages/ssh-agent/src/domain/llm-provider.ts`、`packages/ssh-agent/src/application/services/llm-provider-service.ts` |
+| 创建工作区前测试地址与草稿凭据、临时 SSH 认证和取消 | [connection-test.md](./connection-test.md) | `packages/ssh-agent/src/application/services/connection-test-service.ts`、`packages/ssh-agent-web/features/workspace/components/workspace-dialog.tsx` |
 | SSH Connection Key、连接复用、Channel、主机校验、保活和重连 | [connection-runtime.md](./connection-runtime.md) | `packages/ssh-agent/src/infrastructure/ssh/ssh2-connection-pool.ts` |
 | Session 命令 FIFO、进程并发限制、Operation、Guard 执行校验、Tool、失败和事件 | [command-execution.md](./command-execution.md) | `packages/ssh-agent/src/application/services/session-command-scheduler.ts`、`packages/ssh-agent/src/application/services/command-operation-service.ts` |
 | SQLite schema、migration、Repository、Credential 加密和运行时装配 | [sqlite-persistence.md](./sqlite-persistence.md) | `packages/ssh-agent/src/infrastructure/sqlite/` |
@@ -28,6 +29,8 @@
 | Session 附件上传、自动命名、受控图片回显、SQLite 元数据和生命周期约束 | [attachments.md](./attachments.md) | `packages/ssh-agent/src/application/services/attachment-service.ts` |
 | Chat 图片附件引用、真实格式校验、Provider 多模态投影和引用持久化 | [chat-image-input.md](./chat-image-input.md) | `packages/ssh-agent/src/application/services/chat-attachment-service.ts` |
 | SFTP 文件管理、Transfer、Workspace SSE 和 Linux 实时监控 | [sftp-monitoring.md](./sftp-monitoring.md) | `packages/ssh-agent/src/application/services/file-transfer-service.ts`、`packages/ssh-agent/src/application/services/remote-metrics-service.ts` |
+| 新会话首条消息自动标题、模型命名和 SSE 更新 | [session-title.md](./session-title.md) | `packages/ssh-agent/src/application/services/session-title-service.ts` |
+| 首次 Run 固定头部、环境快照、模式 system 消息与缓存边界 | [session-prompt.md](./session-prompt.md) | `packages/ssh-agent/src/application/services/chat-prompt-service.ts`、`packages/ssh-agent/src/application/chat-context.ts` |
 | Session Chat、Pi Agent 事件、本地工具、审批、队列和压缩 | [chat-runtime.md](./chat-runtime.md) | `packages/ssh-agent/src/application/services/chat-service.ts`、`packages/agent/src/harness/agent-harness.ts` |
 | Provider 请求前检查、上下文超限恢复、摘要消息、压缩 Setting 和手动压缩 | [context-compaction.md](./context-compaction.md) | `packages/ssh-agent/src/application/services/chat-context-service.ts`、`packages/agent/src/agent-loop.ts` |
 | Session 上下文占用查询、Turn/压缩完成快照与 SSE | [context-usage.md](./context-usage.md) | `packages/ssh-agent/src/application/chat-context.ts`、`packages/ssh-agent/src/application/services/chat-context-service.ts` |

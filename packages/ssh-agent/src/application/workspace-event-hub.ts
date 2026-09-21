@@ -1,3 +1,4 @@
+import type { Session } from "../domain/session.ts";
 import type { FileTransfer } from "../domain/file-transfer.ts";
 import type { BackendLocale, BackendMessageKey } from "../i18n/message.ts";
 import { localizePublicValue } from "../i18n/projection.ts";
@@ -37,9 +38,10 @@ export type WorkspaceEvent =
 			data: { sampledAt: number; code: string; message: string; messageKey?: BackendMessageKey };
 	  }
 	| { type: "connection.snapshot"; data: ConnectionPoolSnapshot }
+	| { type: "session.updated"; data: Pick<Session, "id" | "workspaceId" | "displayName" | "revision" | "updatedAt"> }
 	| { type: "transfer.updated"; data: FileTransfer };
 
-export type WorkspaceEventTopic = "monitoring" | "connection" | "transfers";
+export type WorkspaceEventTopic = "monitoring" | "connection" | "transfers" | "sessions";
 
 interface Subscriber {
 	topics: ReadonlySet<WorkspaceEventTopic>;
@@ -147,6 +149,7 @@ export class WorkspaceEventHub {
 }
 
 function topicFor(type: WorkspaceEvent["type"]): WorkspaceEventTopic {
+	if (type === "session.updated") return "sessions";
 	if (type.startsWith("monitor.")) return "monitoring";
 	if (type === "connection.snapshot") return "connection";
 	return "transfers";

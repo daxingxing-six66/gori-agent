@@ -68,12 +68,14 @@ export interface ActiveWorkspaceCredential {
 	activeCredential: Credential;
 }
 
-/** Workspace edits intentionally expose only displayName. */
-export interface RenameWorkspaceInput {
+export interface UpdateWorkspaceInput {
 	id: WorkspaceId;
 	displayName: string;
+	defaultCwd?: string;
 	expectedRevision: number;
 }
+
+export type RenameWorkspaceInput = UpdateWorkspaceInput;
 
 export interface DeleteWorkspaceInput {
 	id: WorkspaceId;

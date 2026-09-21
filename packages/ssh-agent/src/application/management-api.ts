@@ -31,7 +31,7 @@ import type {
 	CreateWorkspaceInput,
 	CreateWorkspaceResult,
 	DeleteWorkspaceInput,
-	RenameWorkspaceInput,
+	UpdateWorkspaceInput,
 	Workspace,
 } from "../domain/workspace.ts";
 import type { ContextCompactionSettingsService } from "./services/context-compaction-settings-service.ts";
@@ -194,8 +194,8 @@ export class SshAgentManagementApi {
 		return this.workspaces.activateCredential(input);
 	}
 
-	renameWorkspace(input: RenameWorkspaceInput): Promise<Workspace> {
-		return this.workspaces.rename(input);
+	updateWorkspace(input: UpdateWorkspaceInput): Promise<Workspace> {
+		return this.workspaces.update(input);
 	}
 
 	deleteWorkspace(input: DeleteWorkspaceInput): Promise<void> {

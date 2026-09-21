@@ -1,4 +1,6 @@
 export const enUSMessages = {
+	"chat.system_messages_unsupported": "The selected API cannot preserve runtime system messages. Select a model using OpenAI Chat Completions, Responses, or Mistral.",
+	"chat.prompt_not_initialized": "Start a chat run to initialize this session before compacting its context.",
 	"provider.request_failed": "Model request failed: {reason}",
 	"provider.empty_error_body": "Model request failed (HTTP {status}); the provider returned no error details",
 	"provider.request_rejected": "The model service rejected the request",

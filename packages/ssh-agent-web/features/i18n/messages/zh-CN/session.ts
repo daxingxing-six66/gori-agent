@@ -30,7 +30,7 @@ export const zhCNSessionMessages = {
 	"session.new.workDir.select": "选择工作目录",
 	"session.new.workDir.title": "选择 Session 工作目录",
 	"session.new.workDir.label": "工作目录",
-	"session.new.workDir.useDefault": "使用系统默认工作目录",
+	"session.new.workDir.useDefault": "使用工作区默认工作目录",
 	"session.new.autoApproval": "自动审批",
 	"session.new.autoApproval.label": "自动审批受 Guard 约束的工具操作",
 	"session.new.autoApproval.hint": "自动批准本地 write/bash 和普通模式远程命令；Workspace Guard 始终生效",

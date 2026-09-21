@@ -84,7 +84,15 @@ export interface CompactionSummaryMessage {
 	timestamp: number;
 }
 
-export type AgentMessage = UserMessage | AssistantMessage | ToolResultMessage | CompactionSummaryMessage;
+export interface SystemMessage {
+	role: "system";
+	content: TextContent[];
+	timestamp: number;
+	runtimeMode?: "command" | "terminal";
+	runtimeEventId?: string;
+}
+
+export type AgentMessage = SystemMessage | UserMessage | AssistantMessage | ToolResultMessage | CompactionSummaryMessage;
 
 export interface ChatMessage {
 	id: string;
@@ -222,6 +230,7 @@ export type ChatStreamEvent =
 
 export function isAgentMessage(value: unknown): value is AgentMessage {
 	if (!isRecord(value) || typeof value.timestamp !== "number") return false;
+	if (value.role === "system") return isContentArray(value.content, ["text"]);
 	if (value.role === "user") return typeof value.content === "string" || isContentArray(value.content, ["text", "image"]);
 	if (value.role === "assistant") return isContentArray(value.content, ["text", "thinking", "toolCall"]);
 	if (value.role === "compactionSummary") return typeof value.summary === "string" && typeof value.tokensBefore === "number";

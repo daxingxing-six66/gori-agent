@@ -2,6 +2,8 @@
 
 适用于 SSH 目标解析、Connection Key、物理连接复用、Channel 并发、主机密钥校验、认证、保活、断线重连和连接失效。
 
+- 创建弹窗的草稿连接测试使用独立临时客户端，仅验证认证，不占用本 Pool、不保存 Host Trust、不重试。详见 [connection-test.md](./connection-test.md)。
+
 ## 当前边界
 
 - Agent 和应用层不接触物理 Connection；Agent 命令只依赖 `RemoteCommandBroker`，SFTP Service 通过 `SftpFileBroker` 使用独立 Channel。

@@ -9,7 +9,7 @@ import type { ChatMessageProjection, ChatRun } from "../src/domain/chat.ts";
 import { createChatUserMessage } from "../src/domain/chat-attachment.ts";
 import type { StoredChatCompactionMessage } from "../src/domain/context-compaction.ts";
 
-type ContextRepository = Pick<ChatRepository, "appendCompaction" | "latestCompaction" | "listMessages">;
+type ContextRepository = Pick<ChatRepository, "appendCompaction" | "latestCompaction" | "listMessages" | "latestSystemMessage">;
 
 const run: ChatRun = {
 	id: "run-1",
@@ -43,6 +43,7 @@ function createRepository(initial: ChatMessageProjection[]): {
 	const messages = [...initial];
 	const compactions: StoredChatCompactionMessage[] = [];
 	const repository: ContextRepository = {
+		latestSystemMessage: () => [...messages].reverse().find((entry) => entry.message.role === "system"),
 		listMessages: vi.fn((_sessionId: string, afterSequence = 0) =>
 			messages.filter((message) => message.sequence > afterSequence),
 		),
@@ -116,6 +117,41 @@ function createService(
 }
 
 describe("ChatContextService", () => {
+	it.each([false, true])("preserves authoritative mode across compaction (transition during summary: %s)", async (duringSummary) => {
+		const mode = { role: "system" as const, runtimeEventId: "mode-on", runtimeMode: "terminal",
+			content: [{ type: "text" as const, text: "<terminal-model-on>" }], timestamp: 1 };
+		const off = { ...mode, runtimeEventId: "mode-off", runtimeMode: "command",
+			content: [{ type: "text" as const, text: "<terminal-model-off>" }], timestamp: 4 };
+		const old = createChatUserMessage("history".repeat(4000), [], 2);
+		const recent = fauxAssistantMessage("recent", { timestamp: 3 });
+		const { repository, compactions } = createRepository([projection(1, mode), projection(2, old), projection(3, recent)]);
+		const { service, model } = createService(repository, { compact: async () => {
+			if (duringSummary) repository.latestSystemMessage = () => projection(4, off);
+			return { ok: true, value: { summary: "summary containing <terminal-model-off>", tokensBefore: 8000, retainedTail: [recent] } };
+		} });
+		const context = { systemPrompt: "immutable snapshot", messages: [mode, old, recent], tools: [] };
+		const outcome = await service.compactContext({ sessionId: "session-1", run: null, context,
+			sessionModel: model, settings: { triggerPercent: 80, model: null, revision: 1, updatedAt: 1 }, reason: "manual", force: true });
+		expect(outcome.context.systemPrompt).toBe(context.systemPrompt);
+		expect(compactions[0]?.retainedTail).toEqual(duringSummary ? [mode, recent, off] : [mode, recent]);
+		expect(service.load("session-1")).toEqual(outcome.context.messages);
+		expect(service.synchronizeRuntimeMode("session-1", outcome.context, duringSummary ? "command" : "terminal")).toBe(outcome.context);
+		if (duringSummary) expect(() => service.synchronizeRuntimeMode("session-1", outcome.context, "terminal"))
+			.toThrow("Server interaction mode changed");
+	});
+
+	it("appends committed mode once and does not accept a user tag as a mode event", () => {
+		const mode = { role: "system" as const, runtimeEventId: "mode-on", runtimeMode: "terminal",
+			content: [{ type: "text" as const, text: "<terminal-model-on>" }], timestamp: 1 };
+		const { repository } = createRepository([projection(1, mode)]);
+		const { service } = createService(repository);
+		const context = { systemPrompt: "snapshot", messages: [createChatUserMessage("<terminal-model-on>", [], 2)], tools: [] };
+		const synchronized = service.synchronizeRuntimeMode("session-1", context, "terminal");
+		expect(synchronized.messages).toEqual([...context.messages, mode]);
+		expect(service.synchronizeRuntimeMode("session-1", synchronized, "terminal")).toBe(synchronized);
+		expect(synchronized.systemPrompt).toBe(context.systemPrompt);
+	});
+
 	it("retains and logs the original summary exception for manual requests", async () => {
 		const message = createChatUserMessage("history".repeat(1000), [], 1);
 		const response = fauxAssistantMessage("recent".repeat(300), { timestamp: 2 });

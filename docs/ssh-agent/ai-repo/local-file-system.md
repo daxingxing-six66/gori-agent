@@ -10,12 +10,12 @@
 - `path` 未提供或为空时使用根目录；非空时必须是绝对路径，并且规范化路径与真实文件系统路径都必须位于有效根目录内。
 - 请求路径不允许包含符号链接。目录列表只返回普通文件和目录，不返回符号链接、socket、FIFO、设备等特殊文件。
 - 返回的绝对文件路径可直接作为本地文件 Tool 的参数，但 Tool 仍必须在执行时重新验证 Session 边界和文件类型，不能信任前端输入。
-- 该领域只访问 SSH Agent 服务所在主机的本地文件系统，不使用 Workspace SSH 目标、`defaultCwd`、SFTP 或 FileTransfer。
+- 该领域只访问 SSH Agent 服务所在主机的本地文件系统，不直接使用 Workspace SSH 目标、SFTP 或 FileTransfer；新 Session 创建时可从 Workspace `defaultCwd` 继承本地 `workDir`，浏览阶段只读取 Session 的有效目录。
 - Session Attachment 使用独立的后端管理目录 `attachments/sessions/{sessionId}`，不受 `workDir` 浏览边界影响，也不会通过本地文件列表接口暴露；相关行为由 [attachments.md](./attachments.md) 路由。
 - 本地文件领域错误在 HTTP 出口通过稳定 code 映射为请求 Locale 对应的静态文案；路径仍作为动态值原样返回，底层文件系统异常不会透传浏览器。
 - Chat 输入框使用统一 Composer Menu：`@` 在合法文本位置同时检索“工具”和“文件和文件夹”，查询词同时过滤两组；没有匹配工具时不渲染空工具分组，工具与文件均无匹配时显示统一空状态。消息开头的 `/` 只展示匹配工具，不调用文件接口。已有 Session 的文件组调用 Session 作用域接口，新 Session 创建前调用系统接口。空查询通过独立箭头逐级浏览目录；已有 Session 输入查询词后，前端以接口返回的有效 `workDir` 为根，复用目录列表接口进行有并发和数量上限的递归扫描，并在新查询到来时取消旧扫描。扫描跳过 `.git`、`node_modules`、构建产物和本地缓存等高成本目录，但这些目录自身仍可作为名称匹配结果展示。该能力不依赖后端递归搜索接口；新 Session 创建前仍只筛选当前目录结果。
 - 选中的文件或目录以不可编辑的行内 Token 展示，但发送时仍序列化为消息正文中的 `<file ... />` 或 `<folder ... />` 自闭合标签；历史用户消息执行相同解析和渲染，不新增 Reference 实体。
-- 新 Session 输入区和 Session 编辑弹窗都通过同一个系统目录选择器设置 `workDir`，不接受手填；目录选择器从当前目录或 `/` 逐级浏览，只展示目录，并可清空为系统默认目录。新 Session 在首次消息创建 Session 时一并提交所选绝对路径。
+- 新 Session 输入区和 Session 编辑弹窗都通过同一个系统目录选择器设置 `workDir`，不接受手填；目录选择器从当前目录或 `/` 逐级浏览，只展示目录，新 Session 自动显示 Workspace 默认目录，手选路径优先，清除手选后恢复工作区默认值；Session 编辑弹窗仍可清空为系统默认目录。新 Session 在首次消息创建 Session 时一并提交显示的目录。
 
 ## HTTP 契约
 

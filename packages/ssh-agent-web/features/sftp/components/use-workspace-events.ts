@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { parseSessionUpdate, type SessionUpdate } from "@/features/workspace/model/session-update";
 import { useLocale } from "@/features/i18n/components/locale-context";
 import { apiUrlWithLocale } from "@/shared/api/client";
 import { nextWorkspaceEventStreamState } from "../model/sftp-state";
@@ -13,6 +14,8 @@ import type {
 } from "../model/sftp";
 
 interface WorkspaceEventHandlers {
+	onSession?(session: SessionUpdate): void;
+	onReady?(): void;
 	onMetrics?(snapshot: RemoteMetricsSnapshot): void;
 	onMonitorError?(error: MonitorError): void;
 	onConnection?(snapshot: ConnectionPoolSnapshot): void;
@@ -49,12 +52,17 @@ export function useWorkspaceEvents(
 		events.onopen = () => setStreamState((current) => nextWorkspaceEventStreamState(current, "open"));
 		events.onerror = () => setStreamState((current) => nextWorkspaceEventStreamState(current, "error"));
 		const removers = [
+			listen<unknown>("session.updated", (value) => {
+				const session = parseSessionUpdate(value);
+				if (session && session.workspaceId === workspaceId) handlersRef.current.onSession?.(session);
+			}),
 			listen<RemoteMetricsSnapshot>("monitor.snapshot", (value) => handlersRef.current.onMetrics?.(value)),
 			listen<MonitorError>("monitor.error", (value) => handlersRef.current.onMonitorError?.(value)),
 			listen<ConnectionPoolSnapshot>("connection.snapshot", (value) => handlersRef.current.onConnection?.(value)),
 			listen<FileTransfer>("transfer.updated", (value) => handlersRef.current.onTransfer?.(value)),
 			listen("stream.ready", () => {
 				setStreamState((current) => nextWorkspaceEventStreamState(current, "ready"));
+				handlersRef.current.onReady?.();
 				if (receivedReady) handlersRef.current.onReconnect?.();
 				receivedReady = true;
 			}),

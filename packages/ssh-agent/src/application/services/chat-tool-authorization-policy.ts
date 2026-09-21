@@ -38,6 +38,15 @@ export class ChatToolAuthorizationPolicy {
 		toolName: string;
 		args: unknown;
 	}): Promise<PreparedToolAuthorization> {
+		if (
+			(input.toolName === "remote_server_call" && input.run.serverInteractionMode !== "command") ||
+			(input.toolName === "terminal_interaction" && input.run.serverInteractionMode !== "terminal")
+		) {
+			return {
+				kind: "block", block: true, terminate: true,
+				reason: `${input.toolName} is unavailable in the current server interaction mode`,
+			};
+		}
 		if (input.toolName === "read") return { kind: "allow" };
 		if (input.toolName === "sftp_upload" || input.toolName === "sftp_download") {
 			return { kind: "defer_to_tool" };

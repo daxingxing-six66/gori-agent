@@ -183,7 +183,9 @@ export function convertResponsesMessages<TApi extends Api>(
 
 	let msgIndex = 0;
 	for (const msg of transformedMessages) {
-		if (msg.role === "user") {
+		if (msg.role === "system") {
+			messages.push({ role: "system", content: msg.content.map((part) => ({ type: "input_text" as const, text: sanitizeSurrogates(part.text) })) });
+		} else if (msg.role === "user") {
 			if (typeof msg.content === "string") {
 				messages.push({
 					role: "user",

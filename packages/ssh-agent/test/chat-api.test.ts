@@ -4,6 +4,9 @@ import { join } from "node:path";
 import { createModels, fauxAssistantMessage, fauxProvider, fauxToolCall } from "@earendil-works/pi-ai";
 import { Type } from "typebox";
 import { describe, expect, it } from "vitest";
+import { ChatPromptService } from "../src/application/services/chat-prompt-service.ts";
+import { SqliteChatPromptRepository } from "../src/infrastructure/sqlite/sqlite-chat-prompt-repository.ts";
+import { SqliteWorkspaceRepository } from "../src/infrastructure/sqlite/sqlite-workspace-repository.ts";
 import { ChatAttachmentService } from "../src/application/services/chat-attachment-service.ts";
 import { createChatService } from "../src/application/services/create-chat-service.ts";
 import { progressToolUpdate } from "../src/application/tool-update-protocol.ts";
@@ -154,7 +157,7 @@ describe("SSH Agent Chat API", () => {
 
 			await waitFor(async () => {
 				const messages = await json(backend.handleRequest, "GET", `/api/sessions/${sessionId}/chat/messages`);
-				return (messages.body as { messages: unknown[] }).messages.length >= 2;
+				return JSON.stringify(messages.body).includes("hello from chat");
 			});
 			const messages = await json(backend.handleRequest, "GET", `/api/sessions/${sessionId}/chat/messages`);
 			expect(JSON.stringify(messages.body)).toContain("hello from chat");
@@ -350,6 +353,10 @@ describe("SSH Agent Chat API", () => {
 		const executedCommands: string[] = [];
 		let nextId = 0;
 		const chat = createChatService({
+			prompts: new ChatPromptService(
+				new SqliteChatPromptRepository(backend.database),
+				new SqliteWorkspaceRepository(backend.database),
+			),
 			chatRepository: new SqliteChatRepository(backend.database),
 			chatAttachments: new ChatAttachmentService({
 				attachments: new SqliteAttachmentRepository(backend.database),
@@ -676,6 +683,10 @@ describe("SSH Agent Chat API", () => {
 			});
 			let nextId = 0;
 			const chat = createChatService({
+			prompts: new ChatPromptService(
+				new SqliteChatPromptRepository(backend.database),
+				new SqliteWorkspaceRepository(backend.database),
+			),
 				chatRepository: new SqliteChatRepository(backend.database),
 				chatAttachments: new ChatAttachmentService({
 					attachments: new SqliteAttachmentRepository(backend.database),
@@ -870,6 +881,10 @@ describe("SSH Agent Chat API", () => {
 		let nextId = 0;
 		let downloadExecuted = false;
 		const chat = createChatService({
+			prompts: new ChatPromptService(
+				new SqliteChatPromptRepository(backend.database),
+				new SqliteWorkspaceRepository(backend.database),
+			),
 			chatRepository: new SqliteChatRepository(backend.database),
 			chatAttachments: new ChatAttachmentService({
 				attachments: new SqliteAttachmentRepository(backend.database),

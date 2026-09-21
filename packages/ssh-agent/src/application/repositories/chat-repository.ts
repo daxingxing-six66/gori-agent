@@ -69,5 +69,6 @@ export interface ChatRepository {
 		reason: NonNullable<ToolApproval["rejectionReason"]>,
 		resolvedAt: number,
 	): ToolApproval | undefined;
+	latestSystemMessage(sessionId: string): ChatMessageProjection | undefined;
 	latestCompaction(sessionId: string): StoredChatCompaction | undefined;
 }

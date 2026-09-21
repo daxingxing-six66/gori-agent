@@ -7,7 +7,7 @@ import {
 	type CreateWorkspaceInput,
 	type CreateWorkspaceResult,
 	type DeleteWorkspaceInput,
-	type RenameWorkspaceInput,
+	type UpdateWorkspaceInput,
 	type Workspace,
 } from "../../domain/workspace.ts";
 import { validateWorkspaceConnection } from "../workspace-connection.ts";
@@ -25,7 +25,7 @@ export interface WorkspaceService {
 	get(id: WorkspaceId): Promise<Workspace>;
 	list(filter?: WorkspaceListFilter): Promise<Workspace[]>;
 	activateCredential(input: ActivateWorkspaceCredentialInput): Promise<ActiveWorkspaceCredential>;
-	rename(input: RenameWorkspaceInput): Promise<Workspace>;
+	update(input: UpdateWorkspaceInput): Promise<Workspace>;
 	delete(input: DeleteWorkspaceInput): Promise<void>;
 }
 
@@ -155,7 +155,7 @@ export class DefaultWorkspaceService implements WorkspaceService {
 		return result;
 	}
 
-	async rename(input: RenameWorkspaceInput): Promise<Workspace> {
+	async update(input: UpdateWorkspaceInput): Promise<Workspace> {
 		requirePositiveRevision(input.expectedRevision);
 		const current = await this.get(input.id);
 		if (current.revision !== input.expectedRevision) {
@@ -164,6 +164,7 @@ export class DefaultWorkspaceService implements WorkspaceService {
 		const updated: Workspace = {
 			...current,
 			displayName: requireDisplayName(input.displayName),
+			defaultCwd: input.defaultCwd === undefined ? current.defaultCwd : requireNonEmpty(input.defaultCwd, "defaultCwd", 4096),
 			revision: current.revision + 1,
 			updatedAt: this.clock.now(),
 		};

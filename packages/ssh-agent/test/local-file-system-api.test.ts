@@ -84,6 +84,11 @@ describe("Session local file system API", () => {
 				body: JSON.stringify({ displayName: "default-directory" }),
 			}),
 		);
+		const reset = await backend.handleRequest(new Request("http://localhost/api/sessions/id-5", {
+			method: "PATCH", headers: { "content-type": "application/json" },
+			body: JSON.stringify({ workDir: null, expectedRevision: 1 }),
+		}));
+		expect(reset.status).toBe(200);
 		const listing = await request(backend, "/api/sessions/id-5/local-files");
 		expect(listing.body).toMatchObject({ rootPath: outsidePath, currentPath: outsidePath });
 	});

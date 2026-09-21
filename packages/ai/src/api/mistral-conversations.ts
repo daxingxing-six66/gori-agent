@@ -785,6 +785,10 @@ function toChatMessages(messages: Message[], supportsImages: boolean): MistralCh
 	const result: MistralChatMessage[] = [];
 
 	for (const msg of messages) {
+		if (msg.role === "system") {
+			result.push({ role: "system", content: sanitizeSurrogates(msg.content.map((part) => part.text).join("\n")) });
+			continue;
+		}
 		if (msg.role === "user") {
 			if (typeof msg.content === "string") {
 				result.push({ role: "user", content: sanitizeSurrogates(msg.content) });

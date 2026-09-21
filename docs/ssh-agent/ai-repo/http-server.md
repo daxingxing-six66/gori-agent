@@ -2,11 +2,15 @@
 
 适用于管理 API 路由、JSON 校验、错误映射、Node HTTP 适配、CORS、请求体限制、环境变量和进程生命周期。
 
+- `POST /api/workspaces/test-connection` 接收尚未保存的地址、Credential 和连接参数，认证成功返回 `{ success: true }`，不创建工作区或执行命令。Node 适配器在响应连接提前关闭时取消 Request，包括请求体已读完的情况；正常结束不取消。详见 [connection-test.md](./connection-test.md)。
+
 ## 请求链路
 
 `Node IncomingMessage` 由 HTTP 适配器转换为 Web `Request`，随后进入 HTTP handler、Service 和 Repository；响应按相反方向返回。SFTP 与 SSE 协议见 [sftp-overview-realtime-integration.md](../frontend/sftp-overview-realtime-integration.md)。
 
 ## 当前边界
+
+- 首次 Chat Run 接受可选 `generateTitle` 布尔值；Workspace SSE 可显式订阅 `sessions` topic 接收 `session.updated`。原默认 topics 和 SSE 传输机制不变，见 [session-title.md](./session-title.md)。
 
 - `GET /api/sessions/:sessionId/chat/context-usage` 只读返回占用快照或 null，使用 `no-store`；手动压缩响应包含同结构 `contextUsage`。联调见 [context-usage-integration.md](../frontend/context-usage-integration.md)。
 

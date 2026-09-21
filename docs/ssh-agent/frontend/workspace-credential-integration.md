@@ -26,7 +26,7 @@ Credential ───── 1 Workspace
 4. 切换活动 Credential 是独立操作，通过 Workspace revision 做乐观并发控制。
 5. 当前活动 Credential 不能直接删除，必须先显式切换到其他 Credential。
 6. 删除 Workspace 时，后端级联删除其 Credential、加密 Secret、Host Trust 和 Guard；仍有 Session 时继续拒绝删除 Workspace。
-7. Credential 的 `password`、`privateKey` 和 `passphrase` 只写。前端不得将它们写入日志、持久化状态、错误追踪或 analytics，提交完成后应立即清空。
+7. Credential 的 `password`、`privateKey` 和 `passphrase` 只写。前端不得将它们写入日志、持久化状态、错误追踪或 analytics，创建提交完成后应立即清空；可选连接测试后保留内存草稿供重试或创建，关闭弹窗时释放。
 
 推荐前端流程：
 
@@ -469,3 +469,32 @@ Workspace 节点不再返回 `credentialId`，改为 `activeCredentialId`：
   }
 }
 ```
+
+
+### 2.11 创建前测试连接
+
+```http
+POST /api/workspaces/test-connection
+Content-Type: application/json
+Accept-Language: zh-CN
+```
+
+```json
+{
+  "host": { "hostname": "127.0.0.1", "port": 22 },
+  "credential": { "displayName": "SSH", "remoteUser": "deploy", "type": "password", "password": "write-only" },
+  "connection": { "connectTimeoutMs": 10000, "keepaliveIntervalMs": 15000, "keepaliveMaxCount": 3 }
+}
+```
+
+`credential` 也接受第 2.2 节的私钥结构。`connection` 可省略或只提供部分字段，默认值与创建接口一致；测试超时必须是 `1..2147483647` 毫秒的整数。顶层不接收工作区名称、环境、目录、ID 或 Host Key。
+
+认证成功返回 `200 { "success": true }`，不执行命令、不保存凭据或主机信任、不创建工作区。成功与失败均关闭临时连接；前端取消请求及服务关闭也会释放连接。首次正式连接仍按既有 TOFU 流程处理。
+
+参数错误为 `400 validation_error`；认证失败、私钥无效为 `401 authentication_failed/invalid_private_key`；连接拒绝、DNS 失败、网络不可达、超时和传输丢失为 `502`，分别使用 `connection_refused/dns_lookup_failed/network_unreachable/connection_timeout/transport_lost`。错误沿用 `{ error: { code, message, errorId, ... } }`，静态原因按请求语言返回，不包含秘密或底层原始异常。
+
+测试连接是可选操作，不是创建的前置条件。测试按钮不提交创建表单；加载期间禁用重复测试和创建。修改连接信息、打开凭据配置或关闭弹窗时取消测试并清除旧结果，修改名称/环境/目录不清除结果。测试后保留凭据草稿，创建提交完成后仍清空秘密。
+
+## 编辑工作区
+
+`PATCH /api/workspaces/:workspaceId` 接收 `{ displayName: string, defaultCwd?: string, expectedRevision: number }`，成功返回更新后的 Workspace，revision 加一。省略 `defaultCwd` 保留原值；传入值必须非空且不超过 4096 字符。其他连接字段仍不允许修改，版本冲突返回 409。前端通过系统目录选择器提供目录，保存后刷新资源树；仅后续新 Session 继承该目录，不回填旧 Session。

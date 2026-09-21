@@ -1,6 +1,6 @@
 # LLM Provider 功能代码路由
 
-适用于 `pi-ai` 内置 Provider/Model 基线、SSH Agent 远端模型快照、应用级 LLM Provider Credential、SQLite 加密适配和管理 HTTP API。Chat Run 请求显式选择 Provider、Model 和 thinking level，本领域不保存默认模型。
+适用于 `pi-ai` 内置 Provider/Model 基线、SSH Agent 远端模型快照、应用级 LLM Provider Credential、SQLite 加密适配和管理 HTTP API。Chat Run 请求显式选择 Provider、Model 和 thinking level，后端不保存默认模型；浏览器只缓存用户最近切换的 Provider/Model 标识供新会话预选，见 [前端路由](./ssh-agent-web.md)。
 
 ## 当前边界
 
@@ -23,6 +23,8 @@
 - 自定义 Provider 使用用户维护的静态模型目录，不参与 `pi.dev` 启动或两小时刷新。删除 Provider 会同步清除 Credential、Secret 和遗留目录快照；API Key 切换为无认证时也会原子清除 Credential。
 - OAuth HTTP 流程不属于当前实现。
 - Provider 管理和模型选择异常在 HTTP/Chat SSE 出口通过稳定 code 本地化；Provider/Model 名称与 ID、上游响应和模型输出不翻译，底层 Provider 异常不得直接返回浏览器。
+
+Chat 模型另需支持按历史位置保留 system 消息；目前聊天适配为 OpenAI Completions/Responses 与 Mistral，不支持的协议在 Run 创建前返回 `chat_system_messages_unsupported`。管理目录能力保持原样，详见 [session-prompt.md](./session-prompt.md)。
 
 ## 代码位置
 

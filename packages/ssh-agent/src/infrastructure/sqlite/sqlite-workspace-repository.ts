@@ -69,8 +69,8 @@ export class SqliteWorkspaceRepository implements WorkspaceRepository {
 
 	async update(workspace: Workspace, expectedRevision: number): Promise<boolean> {
 		const result = this.database
-			.prepare("UPDATE workspaces SET display_name = ?, revision = ?, updated_at = ? WHERE id = ? AND revision = ?")
-			.run(workspace.displayName, workspace.revision, workspace.updatedAt, workspace.id, expectedRevision);
+			.prepare("UPDATE workspaces SET display_name = ?, default_cwd = ?, revision = ?, updated_at = ? WHERE id = ? AND revision = ?")
+			.run(workspace.displayName, workspace.defaultCwd, workspace.revision, workspace.updatedAt, workspace.id, expectedRevision);
 		return result.changes === 1;
 	}
 

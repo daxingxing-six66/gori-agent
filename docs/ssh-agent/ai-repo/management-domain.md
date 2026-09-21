@@ -2,10 +2,14 @@
 
 适用于 Workspace、Session、Credential 的字段、生命周期、Service、Repository 接口以及 Workspace + Session tree 查询。HTTP 传输和 SQLite 实现分别由其他文档路由。
 
+- 工作区创建与草稿连接测试共用 `application/workspace-connection.ts` 的地址/连接参数校验，以及 `credential-factory.ts` 的 Credential 校验。草稿测试不创建任何领域实体，见 [connection-test.md](./connection-test.md)。
+
 ## 当前边界
 
-- Workspace 保存服务器静态信息、活动 Credential 引用、默认工作目录和连接参数；普通编辑只允许修改 `displayName`。创建时 `hostKey` 为 `null`，首次 Tool 调用后从 Workspace 所有的 Host Trust 记录水合。
-- Session 固定绑定一个 Workspace；可编辑 `displayName`、本地 `workDir` 和 `autoAudit`。显式工作目录必须存在且为目录，活动 Chat Run 期间不能修改后两项。
+- 新会话首条消息可异步生成标题，使用 Session revision 条件更新避免覆盖手动编辑，成功后通过 Workspace SSE 通知前端。见 [session-title.md](./session-title.md)。
+
+- Workspace 保存服务器静态信息、活动 Credential 引用、默认工作目录和连接参数；普通编辑允许修改 `displayName` 和可选 `defaultCwd`，省略目录时保留旧值；目录沿用创建时的非空及长度校验，SQLite 更新通过 revision 防止覆盖并发修改。创建时 `hostKey` 为 `null`，首次 Tool 调用后从 Workspace 所有的 Host Trust 记录水合。
+- Session 固定绑定一个 Workspace；可编辑 `displayName`、本地 `workDir` 和 `autoAudit`。创建时未传 `workDir` 则继承 Workspace `defaultCwd` 并规范化、持久化；显式路径优先。继承与显式工作目录都必须存在且为目录，活动 Chat Run 期间不能修改后两项。
 - 单 Session 详情响应会组合 Chat 领域的最近模型选择投影；该字段不是 Session 实体，也不进入 Workspace + Session Tree。
 - Session 删除使用进程内 deletion barrier 阻止新的 Chat Run、Command Operation、Attachment upload、Terminal open 和 Session update。活动 Chat Run、Command Operation 或 Attachment upload 阻止删除；仅有 TerminalSession 时由 Terminal Service 先关闭资源再删除。数据库删除成功后只清理该 Session 的附件目录，清理失败记录日志但不回滚已经完成的删除。
 - Credential 只能属于一个 Workspace；一个 Workspace 可以有多个 Credential，但通过 `activeCredentialId` 同时只使用一个。认证材料通过独立的 Secret Store 写入，当前提供 Workspace 范围的创建、读取、列表和删除，没有编辑接口。

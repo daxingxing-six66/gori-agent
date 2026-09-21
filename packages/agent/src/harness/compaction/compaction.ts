@@ -272,6 +272,7 @@ export function estimateTokens(message: AgentMessage): number {
 	let chars = 0;
 
 	switch (message.role) {
+		case "system":
 		case "user": {
 			chars = estimateTextAndImageContentChars(
 				(message as { content: string | Array<{ type: string; text?: string }> }).content,
@@ -321,6 +322,7 @@ function findValidCutPoints(entries: Entry[], startIndex: number, endIndex: numb
 					case "custom":
 					case "branchSummary":
 					case "compactionSummary":
+					case "system":
 					case "user":
 					case "assistant":
 						cutPoints.push(i);

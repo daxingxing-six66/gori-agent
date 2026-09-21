@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useIntl } from "react-intl";
 import {
 	ChevronRight,
@@ -35,11 +35,10 @@ export function WorkspaceSidebar({ activeWorkspaceId, activeSessionId }: Workspa
 	const intl = useIntl();
 	const localizedErrorMessage = useLocalizedErrorMessage();
 	const router = useRouter();
-	const { tree, loading, error, refresh } = useWorkspaceTree();
+	const { tree, loading, error, refresh, workspaceExpansion, setWorkspaceExpanded } = useWorkspaceTree();
 	const { openSettings } = useSettings();
 	const transferManager = useSftpTransferManagerOptional();
 	const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-	const [expandedWorkspaceIds, setExpandedWorkspaceIds] = useState<string[]>([]);
 	const [workspaceDialogOpen, setWorkspaceDialogOpen] = useState(false);
 	const [renameSession, setRenameSession] = useState<Session | null>(null);
 	const [deleteSession, setDeleteSession] = useState<Session | null>(null);
@@ -47,13 +46,11 @@ export function WorkspaceSidebar({ activeWorkspaceId, activeSessionId }: Workspa
 	const [deleteSessionError, setDeleteSessionError] = useState<string | null>(null);
 	const [mutationError, setMutationError] = useState<string | null>(null);
 
-	const toggleWorkspace = (workspaceId: string) => {
-		setExpandedWorkspaceIds((expandedIds) =>
-			expandedIds.includes(workspaceId)
-				? expandedIds.filter((id) => id !== workspaceId)
-				: [...expandedIds, workspaceId],
-		);
-	};
+	useEffect(() => {
+		if (activeWorkspaceId && workspaceExpansion[activeWorkspaceId] === undefined) {
+			setWorkspaceExpanded(activeWorkspaceId, true);
+		}
+	}, [activeWorkspaceId, workspaceExpansion, setWorkspaceExpanded]);
 
 	return (
 		<>
@@ -86,13 +83,13 @@ export function WorkspaceSidebar({ activeWorkspaceId, activeSessionId }: Workspa
 							<div className="app-scrollbar min-h-0 space-y-2 overflow-y-auto">
 								{tree?.workspaces.map(({ workspace, sessions }) => {
 									const activeWorkspace = activeWorkspaceId === workspace.id;
-									const expanded = activeWorkspace || expandedWorkspaceIds.includes(workspace.id);
+									const expanded = workspaceExpansion[workspace.id] ?? activeWorkspace;
 									const sessionListId = `${workspace.id}-sessions`;
 
 									return (
 										<section key={workspace.id} className="py-0.5">
 											<div className={`flex items-center gap-0.5 rounded-lg transition ${activeWorkspace ? "bg-black/[0.025] text-zinc-900" : "text-zinc-500 hover:bg-black/[0.035] hover:text-zinc-800"}`}>
-											<button type="button" className="ml-1 grid h-8 w-6 shrink-0 place-items-center rounded-md text-zinc-400 transition hover:bg-white/70 hover:text-zinc-700" onClick={() => toggleWorkspace(workspace.id)} aria-label={intl.formatMessage({ id: expanded ? "sidebar.workspace.sessions.collapse" : "sidebar.workspace.sessions.expand" }, { name: workspace.displayName })} aria-expanded={expanded} aria-controls={sessionListId}>
+											<button type="button" className="ml-1 grid h-8 w-6 shrink-0 place-items-center rounded-md text-zinc-400 transition hover:bg-white/70 hover:text-zinc-700" onClick={() => setWorkspaceExpanded(workspace.id, !expanded)} aria-label={intl.formatMessage({ id: expanded ? "sidebar.workspace.sessions.collapse" : "sidebar.workspace.sessions.expand" }, { name: workspace.displayName })} aria-expanded={expanded} aria-controls={sessionListId}>
 													<ChevronRight size={13} className={`transition-transform ${expanded ? "rotate-90" : ""}`} />
 												</button>
 											<Link href={`/workspaces/${workspace.id}/chat/new`} className="group flex min-w-0 flex-1 items-center gap-2.5 py-2 pr-1 text-left" aria-label={intl.formatMessage({ id: "sidebar.workspace.newSession" }, { name: workspace.displayName })} onClick={(event) => { if (transferManager && !transferManager.confirmNavigation()) event.preventDefault(); }}>

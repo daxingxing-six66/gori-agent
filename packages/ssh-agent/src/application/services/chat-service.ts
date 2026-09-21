@@ -1,6 +1,6 @@
 import { stat } from "node:fs/promises";
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
-import { getSupportedThinkingLevels, type Models } from "@earendil-works/pi-ai";
+import { getSupportedThinkingLevels, supportsConversationSystemMessages, type Models } from "@earendil-works/pi-ai";
 import type {
 	ChatMessageListCursor,
 	ChatMessagePage,
@@ -28,12 +28,26 @@ import type { ChatAgentRuntimeFactory } from "./chat-agent-runtime-factory.ts";
 import type { ChatApprovalService } from "./chat-approval-service.ts";
 import type { ChatAttachmentService } from "./chat-attachment-service.ts";
 import type { ChatContextService } from "./chat-context-service.ts";
+import type { ChatPromptService } from "./chat-prompt-service.ts";
 import type { ChatQueueService } from "./chat-queue-service.ts";
 import { executeChatRun, PendingRunCommits } from "./chat-run-executor.ts";
 import type { ChatToolCallCoordinator } from "./chat-tool-call-coordinator.ts";
 import type { ContextCompactionSettingsService } from "./context-compaction-settings-service.ts";
 import type { LlmModelCatalog } from "./llm-model-catalog.ts";
+import type { SessionTitleService } from "./session-title-service.ts";
 import type { SessionLifecycleCoordinator, SessionUseLease } from "./session-lifecycle-coordinator.ts";
+
+export interface CreateChatRunInput {
+	sessionId: string;
+	requestId: string;
+	generateTitle?: boolean;
+	providerId?: string;
+	modelId?: string;
+	thinkingLevel?: ThinkingLevel;
+	message: string;
+	attachmentIds?: string[];
+	serverInteractionMode: "command" | "terminal";
+}
 
 type ActiveRun = {
 	runtime: ChatRunRuntime;
@@ -42,6 +56,8 @@ type ActiveRun = {
 type ContextCompactionSettingsReader = Pick<ContextCompactionSettingsService, "get">;
 
 export interface ChatServiceDependencies {
+	prompts: ChatPromptService;
+	titles?: SessionTitleService;
 	chatRepository: ChatRepository;
 	sessions: SessionRepository;
 	models: Models;
@@ -62,6 +78,8 @@ export interface ChatServiceDependencies {
 }
 
 export class ChatService {
+	private readonly prompts: ChatPromptService;
+	private readonly titles?: SessionTitleService;
 	private readonly chatRepository: ChatRepository;
 	private readonly sessions: SessionRepository;
 	private readonly models: Models;
@@ -74,6 +92,7 @@ export class ChatService {
 	private readonly pendingCommits = new PendingRunCommits();
 	private readonly runningTasks = new Set<Promise<void>>();
 	private closing = false;
+	private readonly preparing = new Map<string, Promise<ChatRun>>();
 	private readonly active = new Map<string, ActiveRun>();
 	private readonly events: ChatRunEventHub;
 	private readonly approvals: ChatApprovalService;
@@ -86,6 +105,8 @@ export class ChatService {
 	private readonly attachments: ChatServiceDependencies["attachments"];
 
 	constructor(options: ChatServiceDependencies) {
+		this.prompts = options.prompts;
+		this.titles = options.titles;
 		this.chatRepository = options.chatRepository;
 		this.sessions = options.sessions;
 		this.models = options.models;
@@ -107,7 +128,7 @@ export class ChatService {
 
 	hasActiveRun(sessionId: string): Promise<boolean> {
 		this.pendingCommits.reconcile(sessionId);
-		return Promise.resolve(this.active.has(sessionId));
+		return Promise.resolve(this.active.has(sessionId) || this.preparing.has(sessionId));
 	}
 
 	async getActiveRun(sessionId: string): Promise<ChatRun | null> {
@@ -130,19 +151,27 @@ export class ChatService {
 		const run = this.chatRepository.findLatestRun(sessionId);
 		if (!run) return null;
 		const model = this.catalog.getModel(run.providerId, run.modelId);
-		return model ? this.context.usage(model, createChatContext(run, this.context.load(sessionId))) : null;
+		const systemPrompt = this.prompts.read(sessionId);
+		if (!model || systemPrompt === undefined) return null;
+		return this.context.usage(model, createChatContext(systemPrompt, this.context.load(sessionId)));
 	}
 
-	async createRun(input: {
-		sessionId: string;
-		requestId: string;
-		providerId?: string;
-		modelId?: string;
-		thinkingLevel?: ThinkingLevel;
-		message: string;
-		attachmentIds?: string[];
-		serverInteractionMode: "command" | "terminal";
-	}): Promise<ChatRun> {
+	async createRun(input: CreateChatRunInput): Promise<ChatRun> {
+		if (this.closing) throw new ChatError("chat_session_busy", "Chat service is closing", 503);
+		this.pendingCommits.reconcile(input.sessionId);
+		const existing = this.chatRepository.findRunByRequest(input.sessionId, input.requestId);
+		if (existing) return existing;
+		if (this.preparing.has(input.sessionId)) throw new ChatError("chat_session_busy", "Session Run is being initialized", 409);
+		const task = this.startRun(input);
+		this.preparing.set(input.sessionId, task);
+		try {
+			return await task;
+		} finally {
+			this.preparing.delete(input.sessionId);
+		}
+	}
+
+	private async startRun(input: CreateChatRunInput): Promise<ChatRun> {
 		if (this.closing) throw new ChatError("chat_session_busy", "Chat service is closing", 503);
 		this.pendingCommits.reconcile(input.sessionId);
 		const existing = this.chatRepository.findRunByRequest(input.sessionId, input.requestId);
@@ -166,6 +195,8 @@ export class ChatService {
 			const selection = this.resolveModelSelection(input);
 			const model = this.catalog.getModel(selection.providerId, selection.modelId);
 			if (!model) throw new ChatError("chat_model_not_found", "The selected model is unavailable", 404);
+			if (!supportsConversationSystemMessages(model.api))
+				throw new ChatError("chat_system_messages_unsupported", "The selected API cannot preserve runtime system messages", 409);
 			if (!getSupportedThinkingLevels(model).includes(selection.thinkingLevel))
 				throw new ChatError(
 					"chat_thinking_level_unsupported",
@@ -178,7 +209,7 @@ export class ChatService {
 			if (!message && attachmentIds.length === 0)
 				throw new ChatError("chat_message_invalid", "message must not be empty");
 			await this.attachments.validateReferences(session.id, attachmentIds, model);
-			const history = this.context.load(session.id);
+			let history = this.context.load(session.id);
 			this.attachments.requireImageModelForContext(model, history);
 			const now = Date.now();
 			const userMessage = createChatUserMessage(message, attachmentIds, now);
@@ -199,16 +230,25 @@ export class ChatService {
 				createdAt: now,
 				updatedAt: now,
 			};
+			const firstRun = this.chatRepository.findLatestRun(session.id) === undefined;
 			this.chatRepository.insertRun(run);
 			let runtime: ChatRunRuntime;
 			try {
+				const systemPrompt = await this.prompts.initialize(session, workDir);
+				if (this.closing) throw new ChatError("chat_session_busy", "Chat service is closing", 503);
+				history = this.context.load(session.id);
 				runtime = await this.runtimeFactory.create({
+					systemPrompt,
 					run,
 					model,
 					workDir,
 					history,
 					compactionSettings: this.contextCompactionSettings.get(),
 				});
+				if (this.closing) {
+					await runtime.dispose();
+					throw new ChatError("chat_session_busy", "Chat service is closing", 503);
+				}
 			} catch (error) {
 				this.updateRun(run, "failed", runFailure(error, { stage: "runtime_setup", runId, sessionId: session.id }));
 				throw error;
@@ -225,6 +265,7 @@ export class ChatService {
 			});
 			this.runningTasks.add(task);
 			void task.finally(() => this.runningTasks.delete(task));
+			if (firstRun && input.generateTitle) this.titles?.start(session, model, message);
 			return run;
 		} finally {
 			try {
@@ -244,7 +285,7 @@ export class ChatService {
 	async compactSession(sessionId: string, signal?: AbortSignal): Promise<ManualChatCompactionResult> {
 		if (this.closing) throw new ChatError("chat_session_busy", "Chat service is closing", 503);
 		this.pendingCommits.reconcile(sessionId);
-		if (this.active.has(sessionId) || this.manualCompactions.has(sessionId)) {
+		if (this.active.has(sessionId) || this.preparing.has(sessionId) || this.manualCompactions.has(sessionId)) {
 			throw new ChatError("chat_session_busy", "Session already has an active Chat operation", 409);
 		}
 		this.manualCompactions.add(sessionId);
@@ -261,6 +302,10 @@ export class ChatService {
 					attempts: 0,
 					contextUsage: await this.getContextUsage(sessionId),
 				};
+			const systemPrompt = this.prompts.read(sessionId);
+			if (systemPrompt === undefined) {
+				throw new ChatError("chat_prompt_not_initialized", "Start a Run before compacting this session", 409);
+			}
 			const selection = this.chatRepository.findLatestRun(sessionId);
 			if (!selection) {
 				throw new ChatError("chat_compaction_model_unavailable", "Session has no model selection", 409);
@@ -270,7 +315,7 @@ export class ChatService {
 			const outcome = await this.context.compactContext({
 				sessionId,
 				run: null,
-				context: createChatContext(selection, messages),
+				context: createChatContext(systemPrompt, messages),
 				sessionModel: model,
 				settings: this.contextCompactionSettings.get(),
 				reason: "manual",
@@ -414,6 +459,7 @@ export class ChatService {
 
 	async close(): Promise<void> {
 		this.closing = true;
+		await this.titles?.close();
 		for (const activeRun of this.active.values()) {
 			activeRun.runtime.requestCancellation();
 			activeRun.runtime.abortAgent();
@@ -422,7 +468,7 @@ export class ChatService {
 		let timer: ReturnType<typeof setTimeout> | undefined;
 		try {
 			await Promise.race([
-				Promise.allSettled([...this.runningTasks]),
+				Promise.allSettled([...this.runningTasks, ...this.preparing.values()]),
 				new Promise<never>((_, reject) => {
 					timer = setTimeout(() => reject(new Error("Chat shutdown did not settle within 10 seconds")), 10_000);
 				}),

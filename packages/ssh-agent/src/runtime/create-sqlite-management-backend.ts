@@ -1,3 +1,5 @@
+import { ChatPromptService } from "../application/services/chat-prompt-service.ts";
+import { SqliteChatPromptRepository } from "../infrastructure/sqlite/sqlite-chat-prompt-repository.ts";
 import { ConnectionTestService, type SshConnectionTester } from "../application/services/connection-test-service.ts";
 import { Ssh2ConnectionTester } from "../infrastructure/ssh/ssh2-connection-tester.ts";
 import { randomUUID } from "node:crypto";
@@ -24,6 +26,7 @@ import { DefaultLlmProviderService } from "../application/services/llm-provider-
 import { DefaultLocalFileSystemService } from "../application/services/local-file-system-service.ts";
 import { RemoteMetricsService } from "../application/services/remote-metrics-service.ts";
 import { SessionLifecycleCoordinator } from "../application/services/session-lifecycle-coordinator.ts";
+import { SessionTitleService } from "../application/services/session-title-service.ts";
 import { DefaultSessionService } from "../application/services/session-service.ts";
 import { DefaultSshTargetResolver } from "../application/services/ssh-target-resolver.ts";
 import { TerminalInteractionService } from "../application/services/terminal-interaction-service.ts";
@@ -222,6 +225,8 @@ export function createSqliteManagementBackend(options: CreateSqliteManagementBac
 			ids,
 		});
 		chat = createChatService({
+			prompts: new ChatPromptService(new SqliteChatPromptRepository(database), workspaces),
+			titles: new SessionTitleService({ models: llmModels, sessions, events }),
 			chatRepository,
 			chatAttachments,
 			sessions,

@@ -30,7 +30,7 @@ export const enUSSessionMessages = {
 	"session.new.workDir.select": "Choose working directory",
 	"session.new.workDir.title": "Choose Session working directory",
 	"session.new.workDir.label": "Working directory",
-	"session.new.workDir.useDefault": "Use the system default working directory",
+	"session.new.workDir.useDefault": "Use the workspace default working directory",
 	"session.new.autoApproval": "Auto approval",
 	"session.new.autoApproval.label": "Automatically approve tool operations that remain subject to Guard",
 	"session.new.autoApproval.hint": "Automatically approve local write/bash and normal-mode remote commands; Workspace Guard always applies",

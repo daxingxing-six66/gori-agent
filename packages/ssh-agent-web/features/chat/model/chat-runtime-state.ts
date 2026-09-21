@@ -309,10 +309,11 @@ function dedupeTimeline(timeline: ChatTimelineEntry[]): ChatTimelineEntry[] {
 }
 
 function messageKey(message: AgentMessage): string {
-	return `live:${message.role}:${message.timestamp}${message.role === "toolResult" ? `:${message.toolCallId}` : ""}`;
+	return `live:${messageFingerprint(message)}`;
 }
 
 function messageFingerprint(message: AgentMessage): string {
+	if (message.role === "system" && message.runtimeEventId) return `system:${message.runtimeEventId}`;
 	return `${message.role}:${message.timestamp}${message.role === "toolResult" ? `:${message.toolCallId}` : ""}`;
 }
 

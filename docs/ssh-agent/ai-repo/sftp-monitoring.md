@@ -4,6 +4,8 @@
 
 ## 当前边界
 
+- Workspace SSE 新增可选 `sessions` topic 与 `session.updated`，复用原事件格式、分发和心跳；原 monitoring/connection/transfers 订阅不受影响。见 [session-title.md](./session-title.md)。
+
 - HTTP SFTP 和监控不进入 Session FIFO、Guard 或 LLM。`sftp_upload` 和 `sftp_download` Agent Tool 直接使用 `SftpFileBroker` 流式传输文件，文件内容不进入 LLM，也不创建 `FileTransfer`。
 - SFTP Tool 的检查、等待覆盖审批、传输进度和固定结果提示携带包内消息描述符；Agent Context 与持久化仍使用规范英文或原始动态内容，Chat SSE 只翻译浏览器投影。上传和下载覆盖审批继续共用 `ToolApproval`，对外仅返回按 Locale 生成的场景 `description`。
 - Workspace Target Resolver 与 Session Resolver 共享 Workspace、Host Trust 和活动 Credential 解析。

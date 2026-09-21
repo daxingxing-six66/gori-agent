@@ -1,10 +1,12 @@
 import { renderToStaticMarkup } from "react-dom/server";
+import { IntlProvider } from "react-intl";
 import { describe, expect, it } from "vitest";
 import {
 	directoryBreadcrumbs,
 } from "../features/session/components/local-directory-picker.tsx";
 import { SessionDialog } from "../features/session/components/session-dialog.tsx";
 import type { Session } from "../features/session/model/session.ts";
+import { zhCNMessages } from "../features/i18n/messages/zh-CN";
 
 const session: Session = {
 	id: "session-1",
@@ -21,7 +23,9 @@ const session: Session = {
 describe("Session local directory picker", () => {
 	it("renders the work directory as a read-only selected path", () => {
 		const markup = renderToStaticMarkup(
-			<SessionDialog session={session} onClose={() => {}} onSubmit={() => Promise.resolve()} />,
+			<IntlProvider locale="zh-CN" messages={zhCNMessages}>
+				<SessionDialog session={session} onClose={() => {}} onSubmit={() => Promise.resolve()} />
+			</IntlProvider>,
 		);
 
 		expect(markup).toContain("选择目录");

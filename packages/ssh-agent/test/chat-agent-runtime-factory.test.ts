@@ -96,6 +96,7 @@ describe("ChatAgentRuntimeFactory", () => {
 			model: context.model,
 			workDir: process.cwd(),
 			history: [],
+			systemPrompt: "immutable snapshot",
 		});
 		try {
 			runtime.toAgentError(new ChatCompactionError("chat_context_compaction_failed", "private internal failure"));
@@ -126,6 +127,7 @@ describe("ChatAgentRuntimeFactory", () => {
 			model: context.model,
 			workDir: process.cwd(),
 			history: [],
+			systemPrompt: "immutable snapshot",
 		});
 		context.faux.setResponses([
 			() => {
@@ -154,6 +156,7 @@ describe("ChatAgentRuntimeFactory", () => {
 			model: context.model,
 			workDir: process.cwd(),
 			history: [],
+			systemPrompt: "immutable snapshot",
 		});
 		vi.spyOn(context.models, "streamSimple").mockImplementation(() => {
 			throw Object.assign(new Error("max_tokens must be <= 8192"), { status: 400 });
@@ -178,6 +181,7 @@ describe("ChatAgentRuntimeFactory", () => {
 			model: context.model,
 			workDir: process.cwd(),
 			history: [],
+			systemPrompt: "immutable snapshot",
 		});
 		const streamSimple = vi.spyOn(context.models, "streamSimple");
 		const providerContext: Context = { messages: [] };
@@ -206,6 +210,7 @@ describe("ChatAgentRuntimeFactory", () => {
 			model: context.model,
 			workDir: process.cwd(),
 			history: [],
+			systemPrompt: "immutable snapshot",
 		});
 		const streamSimple = vi.spyOn(context.models, "streamSimple");
 		const providerContext: Context = { messages: [] };
@@ -226,24 +231,20 @@ describe("ChatAgentRuntimeFactory", () => {
 			model: context.model,
 			workDir: process.cwd(),
 			history: [],
+			systemPrompt: "immutable snapshot",
 		});
 		const options = context.getAgentOptions();
+		expect(options?.initialState?.systemPrompt).toBe("immutable snapshot");
 
 		expect(options?.initialState?.tools?.map((tool) => tool.name)).toEqual([
 			"read",
 			"write",
 			"bash",
 			"remote_server_call",
+			"terminal_interaction",
 			"sftp_upload",
 			"sftp_download",
 		]);
-		expect(options?.initialState?.systemPrompt).toContain("<terminal-model-tag-policy>");
-		expect(options?.initialState?.systemPrompt).toContain("priority: authoritative_runtime_boundary");
-		expect(options?.initialState?.systemPrompt).toContain("<terminal-model-off>\nTerminal Mode has exited");
-		expect(options?.initialState?.systemPrompt).toContain("remote_server_call is available");
-		expect(options?.initialState?.systemPrompt).toContain("terminal_interaction is unavailable");
-		expect(options?.initialState?.systemPrompt).not.toContain("<terminal-model-on>\nTerminal Mode is active");
-		expect(options?.initialState?.systemPrompt).not.toContain("runtime_capability_boundary");
 		expect(options).toMatchObject({
 			steeringMode: "one-at-a-time",
 			followUpMode: "one-at-a-time",
@@ -258,7 +259,7 @@ describe("ChatAgentRuntimeFactory", () => {
 		await runtime.dispose();
 	});
 
-	it("replaces the command Tool and prompt in Terminal Mode", async () => {
+	it("keeps both definitions and the supplied snapshot in Terminal Mode", async () => {
 		const context = createContext();
 		const run: ChatRun = {
 			...commandRun,
@@ -270,25 +271,20 @@ describe("ChatAgentRuntimeFactory", () => {
 			model: context.model,
 			workDir: process.cwd(),
 			history: [],
+			systemPrompt: "immutable snapshot",
 		});
 		const options = context.getAgentOptions();
+		expect(options?.initialState?.systemPrompt).toBe("immutable snapshot");
 
 		expect(options?.initialState?.tools?.map((tool) => tool.name)).toEqual([
 			"read",
 			"write",
 			"bash",
+			"remote_server_call",
 			"terminal_interaction",
 			"sftp_upload",
 			"sftp_download",
 		]);
-		expect(options?.initialState?.systemPrompt).toContain("<terminal-model-tag-policy>");
-		expect(options?.initialState?.systemPrompt).toContain("priority: authoritative_runtime_boundary");
-		expect(options?.initialState?.systemPrompt).toContain("<terminal-model-on>\nTerminal Mode is active");
-		expect(options?.initialState?.systemPrompt).toContain("A long-lived, stateful remote PTY is attached");
-		expect(options?.initialState?.systemPrompt).toContain("terminal_interaction for remote terminal operations");
-		expect(options?.initialState?.systemPrompt).toContain("remote_server_call is unavailable");
-		expect(options?.initialState?.systemPrompt).not.toContain("<terminal-model-off>\nTerminal Mode has exited");
-		expect(options?.initialState?.systemPrompt).not.toContain("runtime_capability_boundary");
 		expect(context.createRemoteTool).not.toHaveBeenCalled();
 		expect(context.createTerminalTool).toHaveBeenCalledWith({
 			sessionId: "session-1",
@@ -327,6 +323,7 @@ describe("ChatAgentRuntimeFactory", () => {
 				model: context.model,
 				workDir: process.cwd(),
 				history: [],
+			systemPrompt: "immutable snapshot",
 			}),
 		).rejects.toThrow("Agent construction failed");
 		expect(cleanup).toHaveBeenCalledOnce();

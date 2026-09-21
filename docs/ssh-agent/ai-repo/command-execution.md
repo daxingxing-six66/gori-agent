@@ -6,7 +6,7 @@
 
 Chat 的 `remote_server_call` 在创建人工审批前调用 `CommandOperationService.preflightGuard()`；批准后正式 `submit()` 仍会再次执行 Guard 校验，避免审批等待期间规则变化。
 
-该 Tool 仅在普通交互模式暴露；用户开启 Terminal Mode 后，同一 Run 的 Tool 集合改为 `terminal_interaction`，不会同时保留两个远端执行入口。
+该 Tool 仅在普通交互模式可执行；两种模式保持相同 Tool schema，通过 Chat 授权策略和 Runtime 执行实现拒绝错误模式入口。模式切换只追加 system 记录，见 [session-prompt.md](./session-prompt.md)。
 
 - Tool 只接受 command、可选绝对 cwd（也支持 `~`/`~/...`）和 timeoutMs；Session 由后端创建 Tool 时绑定，Workspace/主机/Credential 不进入模型参数。
 - 命令先持久化，再进入按 `sessionId` 隔离的内存 FIFO；同一 Session 严格串行，不同 Session 可以并发。Command Operation 从创建记录前到终态持有 Session lifecycle lease；删除屏障先建立时，新命令不会进入持久化或队列。

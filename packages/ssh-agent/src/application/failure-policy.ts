@@ -79,6 +79,8 @@ const CODE_MESSAGES: Readonly<Record<string, BackendMessageKey>> = {
 	chat_session_busy: "chat.session_busy",
 	chat_run_not_found: "chat.run_not_found",
 	chat_run_not_active: "chat.run_not_active",
+	chat_system_messages_unsupported: "chat.system_messages_unsupported",
+	chat_prompt_not_initialized: "chat.prompt_not_initialized",
 	chat_model_not_found: "chat.model_not_found",
 	chat_model_not_supported: "chat.model_not_supported",
 	chat_model_selection_invalid: "chat.model_selection_invalid",

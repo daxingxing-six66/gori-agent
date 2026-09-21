@@ -28,7 +28,7 @@ import {
 	parseEnqueueChatMessage,
 	parseGuardRulePackImport,
 	parseGuardUpdate,
-	parseRename,
+	parseUpdateWorkspace,
 	parseUpdateContextCompactionSettings,
 	parseUpdateCustomLlmProvider,
 	parseUpdateSession,
@@ -335,8 +335,8 @@ async function route(
 	if (segments.length === 3 && segments[1] === "workspaces") {
 		const workspaceId = segments[2];
 		if (request.method === "PATCH") {
-			const input = parseRename(await readJson(request));
-			return json(await api.renameWorkspace({ id: workspaceId, ...input }));
+			const input = parseUpdateWorkspace(await readJson(request));
+			return json(await api.updateWorkspace({ id: workspaceId, ...input }));
 		}
 		if (request.method === "DELETE") {
 			await api.deleteWorkspace({ id: workspaceId, expectedRevision: expectedRevision(url) });
@@ -589,7 +589,7 @@ function transferLimit(url: URL): number {
 	return limit;
 }
 function parseTopics(url: URL): ReadonlySet<WorkspaceEventTopic> {
-	const allowed = new Set<WorkspaceEventTopic>(["monitoring", "connection", "transfers"]);
+	const allowed = new Set<WorkspaceEventTopic>(["monitoring", "connection", "transfers", "sessions"]);
 	const values = (url.searchParams.get("topics") ?? "monitoring,connection,transfers").split(",");
 	const topics = new Set<WorkspaceEventTopic>();
 	for (const value of values) {

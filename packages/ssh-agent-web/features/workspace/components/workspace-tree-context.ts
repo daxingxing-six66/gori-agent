@@ -9,6 +9,8 @@ export interface WorkspaceTreeContextValue {
 	loading: boolean;
 	error: ApiError | null;
 	refresh(): Promise<void>;
+	workspaceExpansion: Record<string, boolean>;
+	setWorkspaceExpanded(workspaceId: string, expanded: boolean): void;
 }
 
 export const WorkspaceTreeContext = createContext<WorkspaceTreeContextValue | null>(null);

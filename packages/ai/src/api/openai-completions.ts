@@ -1183,7 +1183,9 @@ export function convertMessages(
 			});
 		}
 
-		if (msg.role === "user") {
+		if (msg.role === "system") {
+			params.push({ role: "system", content: sanitizeSurrogates(msg.content.map((part) => part.text).join("\n")) });
+		} else if (msg.role === "user") {
 			if (typeof msg.content === "string") {
 				params.push({
 					role: "user",

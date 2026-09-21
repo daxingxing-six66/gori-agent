@@ -21,7 +21,7 @@ type ListMessagesOptions = { limit?: number } & (
 export const chatApi = {
 	getContextUsage: (sessionId: string, signal?: AbortSignal) =>
 		apiRequest<{ contextUsage: ChatContextUsage | null }>(`${root(sessionId)}/context-usage`, { signal }),
-	createRun: (sessionId: string, input: { requestId: string; providerId: string; modelId: string; thinkingLevel?: ThinkingLevel; message: string; attachmentIds?: string[]; serverInteractionMode: "command" | "terminal" }) =>
+	createRun: (sessionId: string, input: { requestId: string; generateTitle?: boolean; providerId: string; modelId: string; thinkingLevel?: ThinkingLevel; message: string; attachmentIds?: string[]; serverInteractionMode: "command" | "terminal" }) =>
 		apiRequest<ChatRun>(`${root(sessionId)}/runs`, { method: "POST", body: input }),
 	getActiveRun: (sessionId: string) =>
 		apiRequest<{ run: ChatRun | null }>(`${root(sessionId)}/runs/active`),

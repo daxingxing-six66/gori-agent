@@ -92,7 +92,9 @@ export function serializeConversation(messages: Message[]): string {
 	const parts: string[] = [];
 
 	for (const msg of messages) {
-		if (msg.role === "user") {
+		if (msg.role === "system") {
+			parts.push(`[System (historical)]: ${contentText(msg.content, "")}`);
+		} else if (msg.role === "user") {
 			const content = contentText(msg.content, "");
 			if (content) parts.push(`[User]: ${content}`);
 		} else if (msg.role === "assistant") {

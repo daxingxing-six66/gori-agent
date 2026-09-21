@@ -258,10 +258,10 @@ export function parseActivateCredential(value: unknown): { credentialId: string;
 	};
 }
 
-export function parseRename(value: unknown): { displayName: string; expectedRevision: number } {
+export function parseUpdateWorkspace(value: unknown): { displayName: string; defaultCwd?: string; expectedRevision: number } {
 	const body = object(value, "body");
-	exactKeys(body, ["displayName", "expectedRevision"]);
-	return { displayName: string(body, "displayName"), expectedRevision: number(body, "expectedRevision") };
+	exactKeys(body, ["displayName", "defaultCwd", "expectedRevision"]);
+	return { displayName: string(body, "displayName"), defaultCwd: optionalString(body, "defaultCwd"), expectedRevision: number(body, "expectedRevision") };
 }
 
 export function parseCreateSession(value: unknown): { displayName: string; workDir?: string; autoAudit?: boolean } {
@@ -299,6 +299,7 @@ export function parseUpdateSession(value: unknown): {
 
 export function parseCreateChatRun(value: unknown): {
 	requestId: string;
+	generateTitle?: boolean;
 	providerId?: string;
 	modelId?: string;
 	thinkingLevel?: ThinkingLevel;
@@ -309,6 +310,7 @@ export function parseCreateChatRun(value: unknown): {
 	const body = object(value, "body");
 	exactKeys(body, [
 		"requestId",
+		"generateTitle",
 		"providerId",
 		"modelId",
 		"thinkingLevel",
@@ -316,6 +318,8 @@ export function parseCreateChatRun(value: unknown): {
 		"attachmentIds",
 		"serverInteractionMode",
 	]);
+	if (body.generateTitle !== undefined && typeof body.generateTitle !== "boolean")
+		invalid("generateTitle must be a boolean", "generateTitle");
 	const thinkingLevel = optionalString(body, "thinkingLevel");
 	if (thinkingLevel !== undefined && !isThinkingLevel(thinkingLevel))
 		invalid("thinkingLevel is invalid", "thinkingLevel");
@@ -329,6 +333,7 @@ export function parseCreateChatRun(value: unknown): {
 	}
 	return {
 		requestId: string(body, "requestId"),
+		...(body.generateTitle === undefined ? {} : { generateTitle: body.generateTitle as boolean }),
 		...(providerId === undefined ? {} : { providerId }),
 		...(modelId === undefined ? {} : { modelId }),
 		...(thinkingLevel === undefined ? {} : { thinkingLevel }),

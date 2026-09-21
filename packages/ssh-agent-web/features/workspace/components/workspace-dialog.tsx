@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState, useSyncExternalStore } from "react";
-import { LoaderCircle } from "lucide-react";
+import { Folder, LoaderCircle } from "lucide-react";
+import { LocalDirectoryPicker } from "@/features/session/components/local-directory-picker";
 import { NoticeCard } from "@/components/notice-card";
 import { canTestConnection, ConnectionTestController } from "../runtime/connection-test-controller";
 import { useIntl } from "react-intl";
@@ -54,6 +55,7 @@ export function WorkspaceDialog({ onClose, onCreated }: {
 	const [hostname, setHostname] = useState("");
 	const [port, setPort] = useState("22");
 	const [defaultCwd, setDefaultCwd] = useState(DEFAULT_WORKSPACE_CWD);
+	const [directoryPickerOpen, setDirectoryPickerOpen] = useState(false);
 	const [connectTimeoutMs, setConnectTimeoutMs] = useState("10000");
 	const [keepaliveIntervalMs, setKeepaliveIntervalMs] = useState("15000");
 	const [keepaliveMaxCount, setKeepaliveMaxCount] = useState("3");
@@ -75,6 +77,14 @@ export function WorkspaceDialog({ onClose, onCreated }: {
 	const close = () => { connectionTest.reset(); onClose(); };
 	const configureCredential = () => { connectionTest.reset(); setCreatingCredential(true); };
 	const defaultCwdError = !isAbsoluteRemotePath(defaultCwd) ? intl.formatMessage({ id: "workspace.defaultCwd.invalid" }) : undefined;
+
+	if (directoryPickerOpen) {
+		return <LocalDirectoryPicker
+			initialPath={defaultCwd}
+			onClose={() => setDirectoryPickerOpen(false)}
+			onSelect={(path) => { setDefaultCwd(path); setDirectoryPickerOpen(false); }}
+		/>;
+	}
 
 	if (creatingCredential) {
 		return <CredentialDialog
@@ -152,7 +162,13 @@ export function WorkspaceDialog({ onClose, onCreated }: {
 			{credential ? <button type="button" className="flex w-full items-center justify-between rounded-lg border border-[var(--line)] bg-white px-3 py-2.5 text-left" onClick={configureCredential}><span><span className="block text-[11px] font-medium text-zinc-800">{credential.displayName}</span><span className="mt-0.5 block text-[9px] text-zinc-400">{credential.remoteUser} · {intl.formatMessage({ id: credential.type === "private_key" ? "workspace.credential.privateKey" : "workspace.credential.password" })}</span></span><span className="text-[9px] text-[#397b5c]">{intl.formatMessage({ id: "common.edit" })}</span></button> : <button type="button" className="w-full rounded-lg border border-dashed border-[#9bb9a8] bg-[#f5f8f5] px-3 py-3 text-left text-[10px] text-[#397b5c]" onClick={configureCredential}>{intl.formatMessage({ id: "workspace.credential.required" })}</button>}
 			{error?.code === "validation_error" && error.field?.replace(/^body\./, "").startsWith("credential.") ? <p className="mt-1 text-[9px] leading-4 text-rose-600" role="alert">{error.message}</p> : null}
 		</div>
-		<DialogField label={intl.formatMessage({ id: "workspace.field.defaultCwd" })} error={defaultCwdError ?? validationError(error, "defaultCwd")}><input className={dialogInputClass} required value={defaultCwd} onChange={(event) => setDefaultCwd(event.target.value)} /></DialogField>
+		<DialogField label={intl.formatMessage({ id: "workspace.field.defaultCwd" })} hint={intl.formatMessage({ id: "session.workDir.description" })} error={defaultCwdError ?? validationError(error, "defaultCwd")}>
+			<button type="button" className={`${dialogInputClass} flex items-center gap-2 text-left disabled:opacity-50`} disabled={submitting} aria-label={intl.formatMessage({ id: "session.workDir.chooseLabel" })} onClick={() => setDirectoryPickerOpen(true)}>
+				<Folder size={15} className="shrink-0 text-zinc-400" />
+				<span className="min-w-0 flex-1 truncate font-mono" title={defaultCwd}>{defaultCwd}</span>
+				<span className="shrink-0 text-[10px] text-[#397b5c]">{intl.formatMessage({ id: "session.workDir.chooseLabel" })}</span>
+			</button>
+		</DialogField>
 		<div className="grid gap-4 sm:grid-cols-3">
 			<DialogField label={intl.formatMessage({ id: "workspace.field.connectTimeout" })} error={validationError(error, "connection.connectTimeoutMs")}><input className={dialogInputClass} required type="number" min="1" value={connectTimeoutMs} onChange={(event) => { connectionTest.reset(); setConnectTimeoutMs(event.target.value); }} /></DialogField>
 			<DialogField label={intl.formatMessage({ id: "workspace.field.keepaliveInterval" })} error={validationError(error, "connection.keepaliveIntervalMs")}><input className={dialogInputClass} required type="number" min="1" value={keepaliveIntervalMs} onChange={(event) => { connectionTest.reset(); setKeepaliveIntervalMs(event.target.value); }} /></DialogField>

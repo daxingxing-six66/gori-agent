@@ -18,11 +18,12 @@ import { type Api, createAssistantMessageEventStream, type Model, type Models } 
 import { ChatError, type ChatRun } from "../../domain/chat.ts";
 import type { ChatCompactionSettings } from "../../domain/context-compaction.ts";
 import { type BackendMessageDescriptor, backendMessage } from "../../i18n/message.ts";
-import { systemPromptFor } from "../chat-context.ts";
 import { ChatRunRuntime } from "../chat-run-runtime.ts";
 import { runFailure } from "../failure-policy.ts";
 import { reportFailure } from "../failure-reporter.ts";
 import { type ProviderFailureMessage, providerFailureStream } from "../provider-failure.ts";
+import { remoteServerCallDefinition } from "../tools/remote-server-call-tool.ts";
+import { terminalInteractionDefinition } from "../tools/terminal-interaction-tool.ts";
 import type { RequestSftpDownloadOverwriteApproval } from "../tools/sftp-download-tool.ts";
 import type { RequestSftpOverwriteApproval } from "../tools/sftp-upload-tool.ts";
 import type { ChatAgentEventHandler } from "./chat-agent-event-handler.ts";
@@ -89,6 +90,7 @@ export class ChatAgentRuntimeFactory {
 	}
 
 	async create(input: {
+		systemPrompt: string;
 		run: ChatRun;
 		model: Model<Api>;
 		workDir: string;
@@ -129,14 +131,18 @@ export class ChatAgentRuntimeFactory {
 						bash.execute(id, params as BashToolInput, signal, update, { env }),
 				},
 			] satisfies AgentTool[];
-			const serverTool =
+			const remoteTool =
 				input.run.serverInteractionMode === "command"
 					? this.#createRemoteTool(input.run.sessionId, () => requireRuntime().abortAgent())
-					: this.#createTerminalTool({
+					: unavailableTool(remoteServerCallDefinition);
+			const terminalTool =
+				input.run.serverInteractionMode === "terminal"
+					? this.#createTerminalTool({
 							sessionId: input.run.sessionId,
 							terminalSessionId: requireTerminalSessionId(input.run),
 							agentRunId: input.run.id,
-						});
+						})
+					: unavailableTool(terminalInteractionDefinition);
 			const requestSftpOverwriteApproval = async (
 				toolName: "sftp_upload" | "sftp_download",
 				toolCallId: string,
@@ -189,10 +195,10 @@ export class ChatAgentRuntimeFactory {
 			const agent = this.#createAgent({
 				onRunFailure: (error) => requireRuntime().captureFailure(error),
 				initialState: {
-					systemPrompt: systemPromptFor(input.run),
+					systemPrompt: input.systemPrompt,
 					model: input.model,
 					thinkingLevel: input.run.thinkingLevel,
-					tools: [...localTools, serverTool, sftpUploadTool, sftpDownloadTool],
+					tools: [...localTools, remoteTool, terminalTool, sftpUploadTool, sftpDownloadTool],
 					messages: input.history,
 				},
 				streamFn: async (selectedModel, context, options) => {
@@ -238,15 +244,20 @@ export class ChatAgentRuntimeFactory {
 									const outcome = await contextService.compactContext({
 										sessionId: input.run.sessionId,
 										run: input.run,
-										context,
+										context: contextService.synchronizeRuntimeMode(
+											input.run.sessionId, context, input.run.serverInteractionMode,
+										),
 										sessionModel: model,
 										settings: compactionSettings,
 										reason: "threshold",
 										force: false,
 										signal,
 									});
-									contextService.recordProviderRequest(input.run.id, model, outcome.context);
-									return outcome.context === context ? undefined : { context: outcome.context };
+									const synchronized = contextService.synchronizeRuntimeMode(
+										input.run.sessionId, outcome.context, input.run.serverInteractionMode,
+									);
+									contextService.recordProviderRequest(input.run.id, model, synchronized);
+									return synchronized === context ? undefined : { context: synchronized };
 								} catch (error) {
 									throw requireRuntime().toAgentError(error);
 								}
@@ -257,14 +268,18 @@ export class ChatAgentRuntimeFactory {
 									const outcome = await contextService.compactContext({
 										sessionId: input.run.sessionId,
 										run: input.run,
-										context,
+										context: contextService.synchronizeRuntimeMode(
+											input.run.sessionId, context, input.run.serverInteractionMode,
+										),
 										sessionModel: model,
 										settings: compactionSettings,
 										reason: "overflow",
 										force: true,
 										signal,
 									});
-									return { context: outcome.context };
+									return { context: contextService.synchronizeRuntimeMode(
+										input.run.sessionId, outcome.context, input.run.serverInteractionMode,
+									) };
 								} catch (error) {
 									throw requireRuntime().toAgentError(error, message);
 								}
@@ -378,4 +393,14 @@ function attachmentFailureStream(model: Model<Api>, error: unknown) {
 function requireTerminalSessionId(run: ChatRun): string {
 	if (run.terminalSessionId === null) throw new Error("Terminal-mode Chat Run is missing its TerminalSession binding");
 	return run.terminalSessionId;
+}
+
+function unavailableTool(definition: Pick<AgentTool, "name" | "description" | "parameters">): AgentTool {
+	return {
+		...definition,
+		label: definition.name,
+		execute: async () => {
+			throw new Error(`${definition.name} is unavailable in the current server interaction mode`);
+		},
+	};
 }

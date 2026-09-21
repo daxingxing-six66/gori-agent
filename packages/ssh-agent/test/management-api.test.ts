@@ -19,6 +19,49 @@ class SequentialIds implements IdGenerator {
 }
 
 describe("SQLite management HTTP API", () => {
+	it("updates the workspace directory with revision checks and preserves existing Session directories", async () => {
+		const backend = createBackend();
+		const directory = await mkdtemp(join(tmpdir(), "gori-workspace-edit-"));
+		try {
+			await createWorkspace(backend.handleRequest);
+			await request(backend.handleRequest, "POST", "/api/workspaces/id-1/sessions", { displayName: "old" });
+			const result = await request(backend.handleRequest, "PATCH", "/api/workspaces/id-1", { displayName: "edited", defaultCwd: directory, expectedRevision: 1 });
+			expect(result).toMatchObject({ status: 200, body: { displayName: "edited", defaultCwd: directory, revision: 2 } });
+			expect(backend.database.prepare("SELECT default_cwd FROM workspaces WHERE id='id-1'").get()?.default_cwd).toBe(directory);
+			expect(backend.database.prepare("SELECT work_dir FROM sessions WHERE id='id-4'").get()?.work_dir).toBe(await realpath("/tmp"));
+			const next = await request(backend.handleRequest, "POST", "/api/workspaces/id-1/sessions", { displayName: "new" });
+			expect(next.body).toMatchObject({ workDir: await realpath(directory) });
+			const stale = await request(backend.handleRequest, "PATCH", "/api/workspaces/id-1", { displayName: "stale", defaultCwd: "/", expectedRevision: 1 });
+			expect(stale.status).toBe(409);
+			const empty = await request(backend.handleRequest, "PATCH", "/api/workspaces/id-1", { displayName: "edited", defaultCwd: " ", expectedRevision: 2 });
+			expect(empty.status).toBe(400);
+			const rename = await request(backend.handleRequest, "PATCH", "/api/workspaces/id-1", { displayName: "name only", expectedRevision: 2 });
+			expect(rename).toMatchObject({ status: 200, body: { defaultCwd: directory, revision: 3 } });
+		} finally { await backend.close(); await rm(directory, { recursive: true, force: true }); }
+	});
+
+	it("inherits the workspace directory only on creation and respects explicit overrides", async () => {
+		const backend = createBackend();
+		const directory = await mkdtemp(join(tmpdir(), "gori-session-default-"));
+		try {
+			const normalized = await realpath(directory);
+			await createWorkspace(backend.handleRequest);
+			backend.database.prepare("UPDATE workspaces SET default_cwd = ? WHERE id = 'id-1'").run(directory);
+			const inherited = await request(backend.handleRequest, "POST", "/api/workspaces/id-1/sessions", { displayName: "inherited" });
+			expect(inherited.status).toBe(201);
+			expect(inherited.body).toMatchObject({ workDir: await realpath(directory) });
+			const explicit = await request(backend.handleRequest, "POST", "/api/workspaces/id-1/sessions", { displayName: "override", workDir: tmpdir() });
+			expect(explicit.status).toBe(201);
+			expect(explicit.body).toMatchObject({ workDir: await realpath(tmpdir()) });
+			await rm(directory, { recursive: true, force: true });
+			const invalid = await request(backend.handleRequest, "POST", "/api/workspaces/id-1/sessions", { displayName: "missing directory" });
+			expect(invalid.status).toBe(400);
+			expect(invalid.body).toMatchObject({ error: { code: "validation_error" } });
+			const saved = backend.database.prepare("SELECT work_dir FROM sessions WHERE id = 'id-4'").get();
+			expect(saved?.work_dir).toBe(normalized);
+		} finally { await backend.close(); await rm(directory, { recursive: true, force: true }); }
+	});
+
 	it("atomically creates a Workspace, its active Credential, default Guard, and Sessions", async () => {
 		const backend = createBackend();
 		try {
@@ -74,7 +117,7 @@ describe("SQLite management HTTP API", () => {
 			expect(sessionResponse.body).toMatchObject({
 				id: "id-4",
 				workspaceId: "id-1",
-				workDir: null,
+				workDir: await realpath("/tmp"),
 				autoAudit: false,
 			});
 			const updatedSession = await request(backend.handleRequest, "PATCH", "/api/sessions/id-4", {

@@ -2,6 +2,16 @@
 
 本文只索引 `packages/ssh-agent-web/`。目标是把前端功能修改快速路由到源码，不记录当前实现步骤、接口字段全集或后端行为；涉及服务端契约时，应另行查阅对应后端功能文档和源码。
 
+创建工作区弹窗底部左侧提供可选“测试连接”，测试当前草稿，无需工作区名称或有效默认目录；结果复用 NoticeCard，在操作栏上方显示。ManagementDialog 增加可选 footerLeading/footerNotice 插槽，取消和创建保持右侧一组。测试期间禁用重复测试与创建，编辑连接字段、进入凭据配置或关闭时取消并清除结果；请求序号避免旧结果回写。实现、契约与测试见 [connection-test.md](./connection-test.md)。
+
+侧边栏的工作区展开状态由根布局中的 `WorkspaceTreeProvider` 按工作区 ID 独立保存，切换工作区或会话页面不会收起其他工作区。首次进入尚无展开记录的工作区时默认展开；手动收起（包括当前工作区）会保留到本次页面生命周期结束，刷新浏览器后重新初始化。
+
+创建工作区的默认工作目录通过 `LocalDirectoryPicker` 选择，复用新建聊天的 `GET /api/local-files` 本机目录浏览、筛选及面包屑。打开选择器时暂时卸载外层管理弹窗，取消/Escape 只返回草稿，确认后回填 `defaultCwd`；其余表单和连接测试结果保留。
+
+新会话先使用本地化占位标题，首条消息成功启动后由同模型异步命名；WorkspaceTreeProvider 订阅当前工作区的 session.updated 更新侧边栏和页面标题，首次连接及重连均刷新持久化数据。见 [session-title.md](./session-title.md)。
+
+Chat 协议接受 runtime system 消息，状态按 `runtimeEventId` 保留同毫秒内的不同切换。时间线不把模式协议显示为 Assistant 气泡，也不因仅有模式记录而隐藏空会话提示。回归见 `tests/chat-system-messages.test.tsx`。
+
 ## 使用顺序
 
 1. 先从“页面与总装配”确定功能出现在哪个页面。
@@ -28,7 +38,7 @@
 | Workspace/Session 树加载与全局刷新 | `features/workspace/components/workspace-tree-provider.tsx` | `workspace-tree-context.ts`、`features/workspace/api/workspace-api.ts`、`features/workspace/model/workspace.ts` | `tests/api-clients.test.ts` |
 | Workspace 创建、重命名、删除 | `features/workspace/components/workspace-dialog.tsx`、`components/workspace-console.tsx` | `features/workspace/components/name-dialog.tsx`、`features/workspace/api/workspace-api.ts`；创建时复用 Credential 表单与 SFTP 绝对路径校验 | `tests/api-clients.test.ts`、`tests/sftp-state.test.ts` |
 | SSH Credential 创建、列表、切换、删除 | `features/credential/components/credential-manager.tsx` | `credential-dialog.tsx`、`api/credential-api.ts`、`model/credential.ts` | `tests/api-clients.test.ts` |
-| Session 创建、首次发送前选择工作目录、命名、自动审批、重命名和删除 | `features/session/components/new-session-chat.tsx`、`components/workspace-sidebar.tsx` | `session-dialog.tsx`、`session-delete-dialog.tsx`、`local-directory-picker.tsx`、`api/session-api.ts`、`model/session.ts`、`model/session-name.ts` | `tests/session-name.test.ts`、`tests/session-directory-picker.test.tsx`、`tests/api-clients.test.ts` |
+| Session 创建、首次发送前选择工作目录、命名、自动审批、重命名和删除 | `features/session/components/new-session-chat.tsx`、`components/workspace-sidebar.tsx` | `session-dialog.tsx`、`session-delete-dialog.tsx`、`local-directory-picker.tsx`、`api/session-api.ts`、`model/session.ts`、`features/workspace/model/session-update.ts` | `tests/session-title.test.tsx`、`tests/session-directory-picker.test.tsx`、`tests/api-clients.test.ts` |
 | Guard 规则编辑、开关、创建和删除 | `features/guard/components/guard-editor.tsx` | `guard-rule-dialog.tsx`、`guard-rule-switch.tsx`、`model/guard.ts`、`model/guard-editor-state.ts` | `tests/guard-editor-state.test.ts` |
 | Guard 自动保存、冲突恢复和 optimistic 开关回滚 | `features/guard/components/use-guard-autosave.ts` | `api/guard-api.ts`、`model/guard-editor-state.ts` | `tests/guard-editor-state.test.ts`、`tests/api-clients.test.ts` |
 | Guard 规则包浏览和导入 | `features/guard/components/guard-rule-pack-dialog.tsx` | `model/guard-rule-pack-state.ts`、`api/guard-api.ts` | `tests/guard-rule-pack-state.test.tsx` |
@@ -88,3 +98,9 @@ Chat 错误展示复用 `features/chat/components/chat-failure-details.tsx`，�
 - 改 Session Chat：通常需要一起检查 Chat、LLM Provider、Session 和 Terminal 四个目录，因为 `chat-console.tsx` 在一处组合它们。
 - 改 Workspace Files/Overview：通常需要一起检查 `workspace-console.tsx`、SFTP transfer provider 和 Workspace SSE hook。
 - 历史原型未挂载到路由，修改它不会影响真实 Chat/Workspace 页面；真实功能入口分别是 `chat-console.tsx` 和 `workspace-console.tsx`。
+
+新会话目录默认显示当前 Workspace `defaultCwd`，异步树加载后直接派生，不覆盖手动选择；清除覆盖恢复工作区默认目录。首次发送提交显示路径，创建成功后使用返回的规范化目录。回归见 `tests/new-session-default-directory.test.tsx`。
+
+模型选择器仅在用户切换 Provider/Model 时，将标识写入浏览器全局 `localStorage`（`gori:last-model-selection:v1`），同模型不重复写入；不缓存凭据、模型能力或思考强度。新会话挂载时读取并通过 `resolveConfiguredModel` 校验可用性后预选，存储损坏、不可用模型和目录查询失败均保留手动选择入口；手选及卸载会取消恢复，迟到响应不覆盖用户选择。已有会话继续使用自身模型记录，自动恢复和发送消息不写全局缓存。缓存跨工作区、刷新和同源标签页共享，不跨浏览器同步。
+
+工作区控制台铅笔入口使用 `workspace-edit-dialog.tsx` 编辑名称和默认目录，复用 `LocalDirectoryPicker` 浏览本机目录；保存通过 Workspace PATCH 携带 `displayName/defaultCwd/expectedRevision`，成功后刷新共享树。取消目录选择保留草稿，保存失败保留弹窗与路径。已有 Session 目录不随 Workspace 默认值变更。

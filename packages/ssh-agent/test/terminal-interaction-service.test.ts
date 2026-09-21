@@ -1,5 +1,5 @@
 import { DatabaseSync } from "node:sqlite";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type {
 	CommandGuardDecision,
 	CommandGuardEvaluator,
@@ -43,6 +43,9 @@ class FakeHandle implements TerminalChannelHandle {
 	async write(data: Uint8Array): Promise<void> {
 		this.written.push(data.slice());
 		this.#onData(new TextEncoder().encode("result\r\n$ "));
+	}
+	emit(text: string): void {
+		this.#onData(new TextEncoder().encode(text));
 	}
 	async resize(_geometry: TerminalGeometry): Promise<void> {}
 	setReadPaused(): void {}
@@ -144,6 +147,85 @@ async function setup(guards: CommandGuardEvaluator) {
 }
 
 describe("TerminalInteractionService", () => {
+	it.each(["observe", "submit", "key"] as const)("reads gap output with %s and preserves output arriving before delivery", async (action) => {
+		const context = await setup(new Decisions([]));
+		try {
+			const base = { sessionId: "session-1", terminalSessionId: context.terminal.id, agentRunId: "run-1", expectation: "finite" as const };
+			const emit = async (text: string) => {
+				context.broker.handle!.emit(text);
+				await context.terminals.getActor("session-1")!.captureCanonical();
+			};
+			await emit("READY\r\n$ ");
+			const first = await context.interactions.execute({ ...base, toolCallId: "ready", action: { type: "observe" } });
+			expect(first.observation.agentViewText).toContain("READY");
+			await context.interactions.markDelivered(first);
+			await emit("\r\nGAP-MARKER\r\n$ ");
+			const request = { ...base, toolCallId: "gap", action: action === "submit" ? { type: "submit" as const, input: "echo probe" } : action === "key" ? { type: "key" as const, key: "CTRL_C" as const } : { type: "observe" as const } };
+			if (action === "submit") await context.interactions.preflightSubmit(request, false);
+			const second = await context.interactions.execute(request);
+			expect(second.observation.startSequence).toBe(first.observation.endSequence);
+			expect(second.observation.agentViewText).toContain("GAP-MARKER");
+			expect(second.observation.agentViewText).not.toContain("READY");
+			expect(second.observation.rawByteCount).toBeGreaterThan(0);
+			await emit("\r\nAFTER-CAPTURE\r\n$ ");
+			await context.interactions.markDelivered(second);
+			const third = await context.interactions.execute({ ...base, toolCallId: "later", action: { type: "observe" } });
+			expect(third.observation.agentViewText).toContain("AFTER-CAPTURE");
+			expect(third.observation.agentViewText).not.toContain("GAP-MARKER");
+			await context.interactions.markDelivered(third);
+			vi.useFakeTimers();
+			const empty = context.interactions.execute({ ...base, toolCallId: "empty", action: { type: "observe" } });
+			await vi.advanceTimersByTimeAsync(30_000);
+			expect((await empty).observation).toMatchObject({ agentViewText: "", rawByteCount: 0 });
+		} finally {
+			vi.useRealTimers();
+			await context.terminals.shutdown();
+			context.database.close();
+		}
+	});
+
+	it("retains unread output after cancellation and failed delivery with idempotent retry", async () => {
+		const context = await setup(new Decisions([]));
+		try {
+			const base = { sessionId: "session-1", terminalSessionId: context.terminal.id, agentRunId: "run-1", expectation: "finite" as const, action: { type: "observe" as const } };
+			context.broker.handle!.emit("UNREAD\r\n$ ");
+			await context.terminals.getActor("session-1")!.captureCanonical();
+			await expect(context.interactions.execute({ ...base, toolCallId: "cancel" }, AbortSignal.abort())).rejects.toMatchObject({ name: "TerminalObservationCancelledError" });
+			const request = { ...base, toolCallId: "retry" };
+			const result = await context.interactions.execute(request);
+			expect(result.observation.agentViewText).toContain("UNREAD");
+			const failure = vi.spyOn(context.repository, "markObservationStage").mockReturnValueOnce(false);
+			await expect(context.interactions.markDelivered(result)).rejects.toMatchObject({ code: "terminal_persistence_failed" });
+			failure.mockRestore();
+			const retried = await context.interactions.execute(request);
+			expect(retried.observation.id).toBe(result.observation.id);
+			await context.interactions.markDelivered(retried);
+			context.broker.handle!.emit("\r\nNEW\r\n$ ");
+			const next = await context.interactions.execute({ ...base, toolCallId: "next" });
+			expect(next.observation.agentViewText).toContain("NEW");
+			expect(next.observation.agentViewText).not.toContain("UNREAD");
+		} finally {
+			await context.terminals.shutdown();
+			context.database.close();
+		}
+	});
+
+	it("warns and returns retained text when replay has overflowed", async () => {
+		const context = await setup(new Decisions([]));
+		try {
+			for (let i = 0; i < 4100; i++) context.broker.handle!.emit(`line-${i}\r\n`);
+			await context.terminals.getActor("session-1")!.captureCanonical();
+			const result = await context.interactions.execute({ sessionId: "session-1", terminalSessionId: context.terminal.id, agentRunId: "run-1", toolCallId: "overflow", expectation: "finite", action: { type: "observe" } });
+			expect(result.observation.truncated).toBe(true);
+			expect(result.observation.agentViewText).toContain("Terminal history may be incomplete");
+			expect(result.observation.agentViewText).toContain("line-4099");
+			await context.interactions.markDelivered(result);
+		} finally {
+			await context.terminals.shutdown();
+			context.database.close();
+		}
+	}, 15_000);
+
 	it("persists approved input bytes, observation and timeline before returning", async () => {
 		const context = await setup(
 			new Decisions([

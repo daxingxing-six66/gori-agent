@@ -2,21 +2,21 @@
 
 import { FolderOpen, LoaderCircle, Send, ShieldCheck, Sparkles, X } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useIntl } from "react-intl";
 import { WorkspaceSidebar } from "@/components/workspace-sidebar";
 import { ToggleSwitch } from "@/components/toggle-switch";
 import { chatApi } from "@/features/chat/api/chat-api";
 import { ChatTokenEditor, type ChatComposerTool, type ChatTokenEditorHandle } from "@/features/chat/components/chat-token-editor";
-import { hasChatComposerContent, visibleChatComposerText } from "@/features/chat/model/chat-composer";
+import { hasChatComposerContent } from "@/features/chat/model/chat-composer";
 import { useLocalizedErrorMessage } from "@/features/i18n/components/use-localized-error-message";
 import { resolveConfiguredModel } from "@/features/llm-provider/api/llm-provider-api";
 import { ModelThinkingSelector } from "@/features/llm-provider/components/model-thinking-selector";
 import { thinkingLevelForModel, type LlmModel, type ThinkingLevel } from "@/features/llm-provider/model/llm-provider";
+import { readLastModelSelection } from "@/features/llm-provider/model/last-model-selection";
 import { sessionApi } from "@/features/session/api/session-api";
 import { LocalDirectoryPicker } from "@/features/session/components/local-directory-picker";
 import type { Session } from "@/features/session/model/session";
-import { sessionNameFromMessage } from "@/features/session/model/session-name";
 import { useWorkspaceTree } from "@/features/workspace/components/workspace-tree-context";
 import { ApiError } from "@/shared/errors/api-error";
 
@@ -30,11 +30,28 @@ export function NewSessionChat({ workspaceId }: { workspaceId: string }) {
 	const [model, setModel] = useState<LlmModel | null>(null);
 	const [thinkingLevel, setThinkingLevel] = useState<ThinkingLevel>("off");
 	const [autoAudit, setAutoAudit] = useState(false);
-	const [workDir, setWorkDir] = useState("");
+	const [selectedWorkDir, setWorkDir] = useState<string | null>(null);
 	const [directoryPickerOpen, setDirectoryPickerOpen] = useState(false);
 	const [createdSession, setCreatedSession] = useState<Session | null>(null);
+	const workDir = createdSession?.workDir ?? selectedWorkDir ?? workspace?.defaultCwd ?? "";
 	const [submitting, setSubmitting] = useState(false);
 	const [submitError, setSubmitError] = useState<string | null>(null);
+	const modelRestoreRef = useRef<AbortController | null>(null);
+	useEffect(() => {
+		const controller = new AbortController();
+		modelRestoreRef.current = controller;
+		const previous = readLastModelSelection();
+		if (previous) {
+			void resolveConfiguredModel(previous, controller.signal).then((restored) => {
+				if (controller.signal.aborted || !restored) return;
+				setModel(restored);
+				setThinkingLevel(thinkingLevelForModel(restored, "off"));
+			}).catch(() => {
+				// A stale preference or unavailable catalog leaves manual selection available.
+			});
+		}
+		return () => controller.abort();
+	}, []);
 	const editorRef = useRef<ChatTokenEditorHandle>(null);
 	const requestIdRef = useRef<string | null>(null);
 	const hasContent = hasChatComposerContent(draft);
@@ -62,7 +79,7 @@ export function NewSessionChat({ workspaceId }: { workspaceId: string }) {
 		try {
 			let session = createdSession;
 			if (!session) {
-				session = await sessionApi.create(workspaceId, sessionNameFromMessage(visibleChatComposerText(message), intl.formatMessage({ id: "session.name.fallback" })), {
+				session = await sessionApi.create(workspaceId, intl.formatMessage({ id: "session.name.fallback" }), {
 					autoAudit,
 					workDir: workDir || undefined,
 				});
@@ -74,6 +91,7 @@ export function NewSessionChat({ workspaceId }: { workspaceId: string }) {
 			requestIdRef.current = requestId;
 			await chatApi.createRun(session.id, {
 				requestId,
+				generateTitle: true,
 				providerId: model.providerId,
 				modelId: model.id,
 				thinkingLevel,
@@ -102,6 +120,7 @@ export function NewSessionChat({ workspaceId }: { workspaceId: string }) {
 	};
 
 	const selectModel = (nextModel: LlmModel | null) => {
+		modelRestoreRef.current?.abort();
 		setModel(nextModel);
 		setThinkingLevel(nextModel ? thinkingLevelForModel(nextModel, thinkingLevel) : "off");
 		setSubmitError(null);
@@ -155,7 +174,7 @@ export function NewSessionChat({ workspaceId }: { workspaceId: string }) {
 											<FolderOpen size={12} className="shrink-0 text-zinc-400" />
 											<span className="truncate text-[9px] font-medium leading-none text-zinc-500">{workDirLabel || intl.formatMessage({ id: "session.new.workDir.label" })}</span>
 										</button>
-										{workDir ? <button type="button" className="grid h-6 w-6 shrink-0 place-items-center rounded-md text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-700 disabled:cursor-default disabled:opacity-40" aria-label={intl.formatMessage({ id: "session.new.workDir.useDefault" })} title={intl.formatMessage({ id: "session.new.workDir.useDefault" })} disabled={sessionSettingsLocked} onClick={() => setWorkDir("")}><X size={10} /></button> : null}
+										{selectedWorkDir !== null ? <button type="button" className="grid h-6 w-6 shrink-0 place-items-center rounded-md text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-700 disabled:cursor-default disabled:opacity-40" aria-label={intl.formatMessage({ id: "session.new.workDir.useDefault" })} title={intl.formatMessage({ id: "session.new.workDir.useDefault" })} disabled={sessionSettingsLocked} onClick={() => setWorkDir(null)}><X size={10} /></button> : null}
 									</div>
 									<div className="flex shrink-0 items-center gap-2 px-1.5 text-[9px] font-medium text-zinc-500" title={intl.formatMessage({ id: "session.new.autoApproval.hint" })}>
 										<ShieldCheck size={12} className={autoAudit ? "text-[#397b5c]" : "text-zinc-400"} /><span>{intl.formatMessage({ id: "session.new.autoApproval" })}</span><ToggleSwitch checked={autoAudit} disabled={sessionSettingsLocked} label={intl.formatMessage({ id: "session.new.autoApproval.label" })} onChange={setAutoAudit} />

@@ -8,16 +8,20 @@ import { ChatAgentRuntimeFactory, type ChatAgentRuntimeFactoryOptions } from "./
 import { ChatApprovalService } from "./chat-approval-service.ts";
 import type { ChatAttachmentService } from "./chat-attachment-service.ts";
 import { ChatContextService } from "./chat-context-service.ts";
+import type { ChatPromptService } from "./chat-prompt-service.ts";
 import { ChatQueueService } from "./chat-queue-service.ts";
 import { ChatService } from "./chat-service.ts";
 import { ChatToolAuthorizationPolicy } from "./chat-tool-authorization-policy.ts";
 import { ChatToolCallCoordinator } from "./chat-tool-call-coordinator.ts";
 import type { ContextCompactionSettingsService } from "./context-compaction-settings-service.ts";
 import type { LlmModelCatalog } from "./llm-model-catalog.ts";
+import type { SessionTitleService } from "./session-title-service.ts";
 import type { SessionLifecycleCoordinator } from "./session-lifecycle-coordinator.ts";
 import type { TerminalInteractionService } from "./terminal-interaction-service.ts";
 
 export interface CreateChatServiceOptions {
+	prompts: ChatPromptService;
+	titles?: SessionTitleService;
 	chatRepository: ChatRepository;
 	chatAttachments: ChatAttachmentService;
 	sessions: SessionRepository;
@@ -96,6 +100,8 @@ export function createChatService(options: CreateChatServiceOptions): ChatServic
 			createSftpDownloadTool: options.createSftpDownloadTool,
 		});
 	return new ChatService({
+		prompts: options.prompts,
+		...(options.titles ? { titles: options.titles } : {}),
 		chatRepository: options.chatRepository,
 		sessions: options.sessions,
 		models: options.models,

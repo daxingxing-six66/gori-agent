@@ -30,7 +30,7 @@ export const ChatMessageRow = memo(function ChatMessageRow({
 }) {
 	const intl = useIntl();
 	const message = entry.message;
-	if (message.role === "toolResult") return null;
+	if (message.role === "toolResult" || message.role === "system") return null;
 	if (message.role === "compactionSummary") {
 		return (
 			<details className="group rounded-xl border border-[var(--line-soft)] bg-[var(--surface-muted)] px-3.5 py-3">

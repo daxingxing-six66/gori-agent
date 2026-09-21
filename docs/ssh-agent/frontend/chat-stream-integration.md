@@ -64,7 +64,7 @@ type SessionDetails = Session & {
 `POST /api/sessions/{sessionId}/chat/runs`
 
 ```json
-{"requestId":"req-1","providerId":"anthropic","modelId":"claude-sonnet-test","thinkingLevel":"medium","message":"检查服务状态","attachmentIds":["attachment-1"],"serverInteractionMode":"command"}
+{"requestId":"req-1","providerId":"openai","modelId":"gpt-4.1","thinkingLevel":"medium","message":"检查服务状态","attachmentIds":["attachment-1"],"serverInteractionMode":"command"}
 ```
 
 `attachmentIds` 可省略；图片输入的上传顺序、模型能力和错误码见 [Chat 图片附件前端联调](./chat-image-attachment-integration.md)。
@@ -133,6 +133,26 @@ interface GetActiveChatRunResponse {
 ```
 
 没有活动 Runtime 时返回 `{"run":null}`。Session 不存在返回 `404 chat_session_not_found`。服务重启不会恢复 Run；启动恢复会先将遗留 `pending/running` Run 标记为 `failed + chat_run_interrupted`，因此接口返回 `run=null`。
+
+## 固定头部与模式记录
+
+头部在首次 Run 初始化并保存快照，后续会话运行不修改。内容含初始本地目录、本地 OS 类型/版本/架构和配置的远端地址/端口；不含远端工作区名称及默认目录。旧会话在升级后的下一次 Run 初始化一次。
+
+Terminal 开启/关闭不提交普通聊天输入；服务端随状态提交追加模式 system 记录，和其他消息共用分页 sequence。前端应接受下列 AgentMessage 分支，保留其历史身份，不将其渲染为 Assistant 气泡：
+
+```ts
+interface RuntimeSystemMessage {
+  role: "system";
+  content: Array<{ type: "text"; text: "<terminal-model-on>" | "<terminal-model-off>" }>;
+  runtimeEventId: string;
+  runtimeMode: "command" | "terminal";
+  timestamp: number;
+}
+```
+
+模式记录没有 runId。相同 timestamp 下的不同 runtimeEventId 不能合并；前端不能伪造 system role，Run/Queue 请求仍只提交普通文本/附件。头部和 Tool 定义在模式切换时保持不变，后端另有执行门禁。
+
+聊天当前支持按历史位置保留 system 消息的 OpenAI Chat Completions、Responses、Mistral API；其他协议在创建前返回 `409 chat_system_messages_unsupported`。这项校验与 Provider 管理目录分开：历史模型选择仍可回显，使用不支持协议的旧会话需选择兼容模型再继续。第三方兼容服务的实际行为以服务端协议为准。
 
 ## 消息和队列
 
@@ -295,6 +315,8 @@ chat_session_not_found
 chat_run_not_found
 chat_run_not_active
 chat_model_not_found
+chat_system_messages_unsupported
+chat_prompt_not_initialized
 chat_model_selection_invalid
 chat_model_selection_required
 chat_thinking_level_unsupported

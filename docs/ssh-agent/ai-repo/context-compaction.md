@@ -6,7 +6,7 @@
 
 - 摘要请求的厂商原因在 PI 错误包装前提取，统一复用模型错误模块。手动 HTTP、自动 SSE、失败 Assistant 与 Run failure 保留相同安全原因和 retryable；内部 cause/stack 只进入日志。见 [provider-failures.md](./provider-failures.md)。
 
-- 占用展示复用同一估算。手动压缩和离线占用查询由 `application/chat-context.ts` 构造包含模式 Prompt 和工具定义的 Context；自动压缩每次提交摘要后另发 `context.updated`，手动响应包含 `contextUsage`。见 [context-usage.md](./context-usage.md)。
+- 占用展示复用同一估算。手动压缩和离线占用查询由 `application/chat-context.ts` 构造包含已保存头部快照和稳定工具定义的 Context；自动压缩每次提交摘要后另发 `context.updated`，手动响应包含 `contextUsage`。见 [context-usage.md](./context-usage.md)。
 
 - Agent Core 提供 `beforeProviderRequest` 和 `recoverProviderError` 两个通用扩展点。前者可在每次 Provider 调用前替换 Run 内 Context、模型或 thinking level；后者只接收尚未产生有效流式内容、尚未写入 transcript 的终态错误，并且最多恢复重试一次。`transformContext` 仍只转换单次请求，不替换 Run 内 Context。
 - `pi-ai` 在 Agent 边界通过 `isContextOverflow()` 把不同 Provider 的超限文本规范化为 `AssistantMessage.errorCode="context_overflow"`。已经发送文本、思考内容或 Tool Call 的失败不回滚、不重试。
@@ -22,6 +22,8 @@
 - 有效 Provider Usage 加后续消息估算超过近期保留预算时，按消息字符估算与 Usage 占用的比例缩小切分预算；字符估算只分配保留范围，不能否定已知超额。失效或错误响应的 Usage 不参与修正。确实无法合法切分时返回 `chat_context_no_compactable_history`，不误报 `nothing_to_compact`；不改变自动触发阈值及二次压缩条件。
 - 压缩失败的稳定 code 和后端固定 SSE 说明通过消息描述符在浏览器出口本地化；压缩摘要正文、Provider 输出、模型 ID 和 Token 数据保持原样。
 - 压缩准备和摘要失败包装时保留原始 cause，失败日志输出异常栈及 cause；CLI 将日志写入本地滚动文件，见 [logging.md](./logging.md)。公开响应仍不暴露诊断栈。
+
+最新 runtime system 模式记录在每次压缩中单独保留，不依靠摘要转述；摘要请求期间新提交的模式也会保留，避免被 compact 边界吞掉。头部不重组，详见 [session-prompt.md](./session-prompt.md)。
 
 ## 固定算法参数
 

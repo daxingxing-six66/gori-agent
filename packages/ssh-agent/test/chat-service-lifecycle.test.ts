@@ -7,6 +7,9 @@ import { createModels, fauxAssistantMessage, fauxProvider } from "@earendil-work
 import { Type } from "typebox";
 import { describe, expect, it, vi } from "vitest";
 import { ChatRunRuntime } from "../src/application/chat-run-runtime.ts";
+import { ChatPromptService } from "../src/application/services/chat-prompt-service.ts";
+import { SqliteChatPromptRepository } from "../src/infrastructure/sqlite/sqlite-chat-prompt-repository.ts";
+import { SqliteWorkspaceRepository } from "../src/infrastructure/sqlite/sqlite-workspace-repository.ts";
 import { ChatAttachmentService } from "../src/application/services/chat-attachment-service.ts";
 import { createChatService } from "../src/application/services/create-chat-service.ts";
 import { SessionLifecycleCoordinator } from "../src/application/services/session-lifecycle-coordinator.ts";
@@ -51,6 +54,10 @@ describe("ChatService Run lifecycle", () => {
 		let cleanup: ReturnType<typeof vi.spyOn> | undefined;
 		let nextId = 0;
 		const chat = createChatService({
+			prompts: new ChatPromptService(
+				new SqliteChatPromptRepository(backend.database),
+				new SqliteWorkspaceRepository(backend.database),
+			),
 			chatRepository: new SqliteChatRepository(backend.database),
 			chatAttachments: new ChatAttachmentService({
 				attachments: new SqliteAttachmentRepository(backend.database),

@@ -7,8 +7,8 @@ import {
 	prepareCompaction,
 	shouldCompact,
 } from "@earendil-works/pi-agent-core";
-import { type Api, type AssistantMessage, estimateContextTokens, type Model, type Models } from "@earendil-works/pi-ai";
-import type { ChatMessageProjection, ChatRun } from "../../domain/chat.ts";
+import { type Api, type AssistantMessage, estimateContextTokens, type Model, type Models, type SystemMessage } from "@earendil-works/pi-ai";
+import { ChatError, type ChatMessageProjection, type ChatRun } from "../../domain/chat.ts";
 import type { ChatContextUsage } from "../../domain/chat-context-usage.ts";
 import {
 	ChatCompactionError,
@@ -34,7 +34,7 @@ const CALIBRATION_ALPHA = 0.2;
 const CALIBRATION_MIN = 1;
 const CALIBRATION_MAX = 2;
 
-type ContextRepository = Pick<ChatRepository, "appendCompaction" | "latestCompaction" | "listMessages">;
+type ContextRepository = Pick<ChatRepository, "appendCompaction" | "latestCompaction" | "listMessages" | "latestSystemMessage">;
 
 interface EstimateSnapshot {
 	raw: number;
@@ -101,6 +101,19 @@ export class ChatContextService {
 			...entry.message.retainedTail,
 			...this.#repository.listMessages(sessionId, entry.sequence).map((message) => message.message),
 		];
+	}
+
+	/** Terminal loss may happen between tool turns; append its committed event once. */
+	synchronizeRuntimeMode<T extends ChatContext>(sessionId: string, context: T, mode: ChatRun["serverInteractionMode"]): T {
+		const latest = this.#repository.latestSystemMessage(sessionId)?.message;
+		if (!isRuntimeModeMessage(latest)) return context;
+		if (latest.runtimeMode !== mode) {
+			throw new ChatError("server_interaction_mode_conflict", "Server interaction mode changed during the run", 409);
+		}
+		if (context.messages.some((message) =>
+			isRuntimeModeMessage(message) && message.runtimeEventId === latest.runtimeEventId,
+		)) return context;
+		return { ...context, messages: [...context.messages, latest] };
 	}
 
 	recordProviderRequest(runId: string, model: Model<Api>, context: ChatContext): EstimateSnapshot {
@@ -320,7 +333,11 @@ export class ChatContextService {
 			const message: StoredChatCompactionMessage = {
 				role: "compactionSummary",
 				summary: result.summary,
-				retainedTail: result.retainedTail.map((entry) => this.#attachments.restoreCompactionMessage(entry)),
+				retainedTail: preserveRuntimeMode(
+					context.messages,
+					result.retainedTail.map((entry) => this.#attachments.restoreCompactionMessage(entry)),
+					this.#repository.latestSystemMessage(input.sessionId)?.message,
+				),
 				tokensBefore: result.tokensBefore,
 				details: result.details,
 				usage: result.usage,
@@ -481,4 +498,29 @@ function reduction(before: number, after: number): number {
 
 function clamp(value: number, minimum: number, maximum: number): number {
 	return Math.min(maximum, Math.max(minimum, value));
+}
+
+/** Retain the last authoritative mode when its original position was summarized. */
+function preserveRuntimeMode(
+	history: AgentMessage[],
+	tail: AgentMessage[],
+	committed: AgentMessage | undefined,
+): AgentMessage[] {
+	const latest = [...history].reverse().find(isRuntimeModeMessage);
+	const retained = latest && !tail.some(isRuntimeModeMessage) ? [latest, ...tail] : tail;
+	// A terminal can be lost while the summary request is in flight. Its event
+	// precedes the new compaction row in SQLite, so retain it explicitly as well.
+	if (isRuntimeModeMessage(committed) && latest?.runtimeEventId !== committed.runtimeEventId) {
+		return [...retained, committed];
+	}
+	return retained;
+}
+
+function isRuntimeModeMessage(message: AgentMessage | undefined): message is SystemMessage & {
+	runtimeEventId: string;
+	runtimeMode: ChatRun["serverInteractionMode"];
+} {
+	return message?.role === "system" &&
+		"runtimeEventId" in message && typeof message.runtimeEventId === "string" &&
+		"runtimeMode" in message && (message.runtimeMode === "command" || message.runtimeMode === "terminal");
 }

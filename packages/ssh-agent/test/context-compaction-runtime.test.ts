@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { fauxAssistantMessage, fauxProvider, fauxToolCall } from "@earendil-works/pi-ai";
 import { describe, expect, it } from "vitest";
 import { createChatUserMessage } from "../src/domain/chat-attachment.ts";
+import { SqliteChatPromptRepository } from "../src/infrastructure/sqlite/sqlite-chat-prompt-repository.ts";
 import { SqliteChatRepository } from "../src/infrastructure/sqlite/sqlite-chat-repository.ts";
 import { createSqliteManagementBackend } from "../src/runtime/create-sqlite-management-backend.ts";
 import { createTestLlmModels } from "./test-llm-models.ts";
@@ -669,6 +670,10 @@ function insertHistory(
 			"INSERT INTO chat_runs (id, session_id, workspace_id, request_id, provider_id, model_id, thinking_level, server_interaction_mode, terminal_session_id, status, created_at, started_at, finished_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, 'off', 'command', NULL, 'completed', 1, 1, 1, 1)",
 		)
 		.run("history-run", input.sessionId, input.workspaceId, "history", input.providerId, input.modelId);
+	// A completed historical Run already has its immutable head and initial mode.
+	new SqliteChatPromptRepository(database).createOnce({
+		sessionId: input.sessionId, systemPrompt: "Test session prompt", version: 1, createdAt: 0,
+	});
 	const insertMessage = database.prepare(
 		"INSERT INTO chat_messages (id, session_id, run_id, sequence, message_type, provider, usage_json, message_json, created_at) VALUES (?, ?, 'history-run', ?, ?, ?, ?, ?, ?)",
 	);
@@ -677,7 +682,7 @@ function insertHistory(
 		insertMessage.run(
 			`history-user-${index}`,
 			input.sessionId,
-			index * 2 + 1,
+			index * 2 + 2,
 			"user",
 			null,
 			null,
@@ -692,7 +697,7 @@ function insertHistory(
 		insertMessage.run(
 			`history-assistant-${index}`,
 			input.sessionId,
-			index * 2 + 2,
+			index * 2 + 3,
 			"assistant",
 			input.providerId,
 			JSON.stringify(assistantMessage.usage),
