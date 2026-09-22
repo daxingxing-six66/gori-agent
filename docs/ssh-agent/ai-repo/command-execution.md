@@ -4,6 +4,8 @@
 
 ## 当前边界
 
+- Agent 批次保留一个串行工具使整批串行的规则；remote_server_call 与 Terminal 工具均保持串行，文件工具的路径并发不会使同批部署命令提前执行。见 [文件工具并发](./file-tool-concurrency.md)。
+
 Chat 的 `remote_server_call` 在创建人工审批前调用 `CommandOperationService.preflightGuard()`；批准后正式 `submit()` 仍会再次执行 Guard 校验，避免审批等待期间规则变化。
 
 该 Tool 仅在普通交互模式可执行；两种模式保持相同 Tool schema，通过 Chat 授权策略和 Runtime 执行实现拒绝错误模式入口。模式切换只追加 system 记录，见 [session-prompt.md](./session-prompt.md)。

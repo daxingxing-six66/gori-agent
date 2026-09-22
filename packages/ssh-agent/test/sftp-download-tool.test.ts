@@ -90,6 +90,25 @@ class FakeSftpBroker implements SftpFileBroker {
 }
 
 describe("sftp_download Tool", () => {
+	it("does not open a staging file while queued and exposes queue saturation", async () => {
+		const fixture = await createFixture();
+		vi.spyOn(fixture.broker, "download").mockImplementation(async () => {
+			expect(await readdir(fixture.downloads)).toEqual([]);
+			throw new FileTransferError("transfer_queue_full", "queue full", 429);
+		});
+		await expect(fixture.tool(vi.fn()).execute("queue-full", { remoteFilePath: "/remote/artifact.bin", targetPath: fixture.downloads }))
+			.rejects.toMatchObject({ details: { status: "failed", presentationMessage: { key: "sftp.transfer_queue_full" } } });
+		expect(await readdir(fixture.downloads)).toEqual([]);
+	});
+
+	it("creates an empty local file even when download emits no chunks", async () => {
+		const fixture = await createFixture();
+		fixture.broker.content = new Uint8Array();
+		fixture.broker.entries.set("/remote/artifact.bin", entry("/remote/artifact.bin", "file", 0));
+		await fixture.tool(vi.fn()).execute("empty", { remoteFilePath: "/remote/artifact.bin", targetPath: fixture.downloads });
+		expect(await readFile(join(fixture.downloads, "artifact.bin"))).toHaveLength(0);
+	});
+
 	it("streams a remote file into a local directory without approval", async () => {
 		const fixture = await createFixture();
 		const approval = vi.fn<RequestSftpDownloadOverwriteApproval>();

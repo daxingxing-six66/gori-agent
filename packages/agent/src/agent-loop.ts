@@ -548,6 +548,18 @@ async function executeToolCalls(
 	if (config.toolExecution === "sequential" || hasSequentialToolCall) {
 		return executeToolCallsSequential(currentContext, assistantMessage, toolCalls, config, signal, emit);
 	}
+	const restrictions = new Set(toolCalls.map((call) =>
+		currentContext.tools?.find((tool) => tool.name === call.name)?.requiresSequentialExecution));
+	for (const restrict of restrictions) {
+		if (!restrict) continue;
+		let sequential = true;
+		try {
+			sequential = await restrict(toolCalls, signal);
+		} catch {
+			// A scheduling check must never turn uncertain access into concurrent writes.
+		}
+		if (sequential) return executeToolCallsSequential(currentContext, assistantMessage, toolCalls, config, signal, emit);
+	}
 	return executeToolCallsParallel(currentContext, assistantMessage, toolCalls, config, signal, emit);
 }
 

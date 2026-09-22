@@ -10,7 +10,9 @@ import type {
 	SshChannelBroker,
 	UploadRemoteFileInput,
 } from "../../application/ssh-channel-broker.ts";
-import type { SftpDirectoryEntry } from "../../domain/file-transfer.ts";
+import { FileTransferError, type SftpDirectoryEntry } from "../../domain/file-transfer.ts";
+import { createSshError } from "./ssh2-errors.ts";
+import { SftpTransferLimiter } from "./sftp-transfer-limiter.ts";
 import { Ssh2ConnectionPool, type Ssh2ConnectionPoolOptions } from "./ssh2-connection-pool.ts";
 import { Ssh2ExecCommandBroker } from "./ssh2-exec-command-broker.ts";
 import { Ssh2SftpFileBroker } from "./ssh2-sftp-file-broker.ts";
@@ -20,6 +22,7 @@ export class Ssh2ChannelBroker implements SshChannelBroker {
 	private readonly pool: Ssh2ConnectionPool;
 	private readonly commands: Ssh2ExecCommandBroker;
 	private readonly files: Ssh2SftpFileBroker;
+	private readonly transfers = new SftpTransferLimiter();
 	readonly terminals: Ssh2TerminalChannelBroker;
 
 	constructor(secrets: CredentialSecretStore, options: Ssh2ConnectionPoolOptions = {}) {
@@ -42,11 +45,13 @@ export class Ssh2ChannelBroker implements SshChannelBroker {
 	}
 
 	upload(input: UploadRemoteFileInput): Promise<RemoteUploadResult> {
-		return this.files.upload(input);
+		return this.transfers.run(input, () => this.files.upload(input),
+			() => createSshError("upload_cancelled", "execution", "cancel", "File upload was cancelled"));
 	}
 
 	download(input: DownloadRemoteFileInput): Promise<RemoteDownloadResult> {
-		return this.files.download(input);
+		return this.transfers.run(input, () => this.files.download(input),
+			() => new FileTransferError("transfer_cancelled", "File download was cancelled", 409));
 	}
 
 	deleteFile(input: SftpPathInput): Promise<void> {
@@ -58,14 +63,18 @@ export class Ssh2ChannelBroker implements SshChannelBroker {
 	}
 
 	invalidateWorkspace(workspaceId: string): void {
+		this.transfers.cancelQueued((target) => target.workspaceId === workspaceId);
 		this.pool.invalidateWorkspace(workspaceId);
 	}
 
 	invalidateCredential(credentialId: string): void {
+		this.transfers.cancelQueued((target) => target.credentialId === credentialId);
 		this.pool.invalidateCredential(credentialId);
 	}
 
 	close(): void {
+		this.transfers.close();
+		this.files.close();
 		this.pool.close();
 	}
 }

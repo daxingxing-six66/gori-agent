@@ -4,6 +4,10 @@
 
 ## 当前边界
 
+- 后端共享 Broker 的上传和下载共用 20 个活动名额、3000 个 FIFO 等待位置；满队列返回 `transfer_queue_full`，公开异常状态 429，Tool 失败提示支持中英文。排队不新增 Transfer 状态，目录/stat/delete 不占传输名额。Agent 下载收到数据后才打开本地临时文件，空文件在下载成功后创建。
+
+- Agent 文件工具按同批次读写路径判断是否并发；底层所有 SFTP 操作复用同连接身份的一个 Channel，各自持有独立文件句柄，空闲 1 秒释放。单任务取消不关闭共享 Channel。详见 [文件工具并发与 Channel 复用](./file-tool-concurrency.md)。
+
 - Workspace SSE 新增可选 `sessions` topic 与 `session.updated`，复用原事件格式、分发和心跳；原 monitoring/connection/transfers 订阅不受影响。见 [session-title.md](./session-title.md)。
 
 - HTTP SFTP 和监控不进入 Session FIFO、Guard 或 LLM。`sftp_upload` 和 `sftp_download` Agent Tool 直接使用 `SftpFileBroker` 流式传输文件，文件内容不进入 LLM，也不创建 `FileTransfer`。

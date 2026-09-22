@@ -85,6 +85,7 @@ export const zhCNMessages = {
 	"sftp.transfer_invalid_state": "文件传输当前状态不允许执行该操作",
 	"sftp.transfer_size_mismatch": "已传输字节数与预期文件大小不一致",
 	"sftp.transfer_cancelled": "文件传输已取消",
+	"sftp.transfer_queue_full": "文件传输等待队列已满，请稍后重试。",
 	"sftp.transfer_interrupted": "文件传输因服务重启而中断",
 	"sftp.transfer_result_uncertain": "文件传输结果不确定，请检查目标位置后再重试。",
 	"sftp.permission_denied": "没有远程路径的访问权限",

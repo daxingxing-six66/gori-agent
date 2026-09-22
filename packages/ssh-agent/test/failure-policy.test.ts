@@ -2,10 +2,18 @@ import { describe, expect, it, vi } from "vitest";
 import { normalizePublicError, runFailure } from "../src/application/failure-policy.ts";
 import { failureIdentity, linkFailureIdentity, reportFailure } from "../src/application/failure-reporter.ts";
 import { ChatError } from "../src/domain/chat.ts";
+import { FileTransferError } from "../src/domain/file-transfer.ts";
 import { SshAgentError } from "../src/domain/ssh-failure.ts";
 import { localizePublicValue } from "../src/i18n/projection.ts";
+import { formatBackendMessage } from "../src/i18n/message.ts";
 
 describe("shared failure policy", () => {
+	it("preserves transfer queue saturation status and localizes the public message", () => {
+		const failure = normalizePublicError(new FileTransferError("transfer_queue_full", "queue full", 429));
+		expect(failure).toMatchObject({ code: "transfer_queue_full", status: 429 });
+		expect(formatBackendMessage("zh-CN", failure.message)).toBe("文件传输等待队列已满，请稍后重试。");
+		expect(formatBackendMessage("en-US", failure.message)).toBe("File transfer queue is full. Try again later.");
+	});
 	it("keeps known SSH failures and the same identity across Run and HTTP", () => {
 		const error = new SshAgentError({
 			code: "connection_timeout",

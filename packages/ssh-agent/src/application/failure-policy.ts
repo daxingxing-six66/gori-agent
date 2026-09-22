@@ -122,6 +122,7 @@ const CODE_MESSAGES: Readonly<Record<string, BackendMessageKey>> = {
 	transfer_invalid_state: "sftp.transfer_invalid_state",
 	transfer_size_mismatch: "sftp.transfer_size_mismatch",
 	transfer_cancelled: "sftp.transfer_cancelled",
+	transfer_queue_full: "sftp.transfer_queue_full",
 	transfer_interrupted: "sftp.transfer_interrupted",
 	transfer_result_uncertain: "sftp.transfer_result_uncertain",
 	sftp_permission_denied: "sftp.permission_denied",

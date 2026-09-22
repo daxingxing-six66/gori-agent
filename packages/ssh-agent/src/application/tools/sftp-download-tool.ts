@@ -161,7 +161,9 @@ export function createSftpDownloadTool(options: {
 				const destinationPath = localPath;
 				const expectedBytes = totalBytes;
 				temporaryPath = join(targetDirectory, `.${posix.basename(remoteFilePath)}.pi-download-${randomUUID()}.tmp`);
-				const handle = await open(temporaryPath, "wx", 0o600);
+				const stagingPath = temporaryPath;
+				// Queued downloads must not each hold an open local file descriptor.
+				let handle: Awaited<ReturnType<typeof open>> | undefined;
 				try {
 					const progress = progressReporter(expectedBytes, remoteFilePath, destinationPath, overwrite, update);
 					progress(0, true);
@@ -174,6 +176,7 @@ export function createSftpDownloadTool(options: {
 							throwIfAborted(activeSignal);
 							if (bytesWritten + chunk.byteLength > expectedBytes)
 								throw new Error("The remote file grew while it was being downloaded");
+							handle ??= await open(stagingPath, "wx", 0o600);
 							let chunkOffset = 0;
 							while (chunkOffset < chunk.byteLength) {
 								const result = await handle.write(
@@ -195,10 +198,12 @@ export function createSftpDownloadTool(options: {
 					bytesTransferred = result.bytesTransferred;
 					if (bytesWritten !== expectedBytes || result.bytesTransferred !== expectedBytes)
 						throw new Error("Downloaded bytes do not match the remote file size");
+					// Empty files have no onData callback, but still need a staging file.
+					handle ??= await open(stagingPath, "wx", 0o600);
 					await handle.sync();
 					progress(result.bytesTransferred, true);
 				} finally {
-					await handle.close();
+					await handle?.close();
 				}
 
 				throwIfAborted(activeSignal);
@@ -408,6 +413,9 @@ function toolError(error: unknown, details: Omit<SftpDownloadDetails, "status">)
 }
 
 function downloadFailureMessage(error: unknown, cancelled: boolean) {
+	if (error instanceof FileTransferError && error.code === "transfer_queue_full") {
+		return backendMessage("sftp.transfer_queue_full");
+	}
 	if (error instanceof SftpDownloadApprovalRejectedError) {
 		const suffix =
 			error.reason === "user_rejected"

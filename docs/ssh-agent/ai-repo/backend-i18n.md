@@ -4,6 +4,8 @@
 
 ## 当前边界
 
+- 文件传输等待队列满使用稳定 code `transfer_queue_full` 和词典 Key `sftp.transfer_queue_full`；公开异常保留 429，上传/下载 Tool 结果也携带该描述符供浏览器本地化。
+
 - 新模型错误在请求边界生成安全描述，浏览器显示本地化场景前缀和保留原语言的厂商原因；未知内部异常继续使用通用提示。来源标记不公开，旧记录不反向解析。见 [provider-failures.md](./provider-failures.md)。
 
 - 运行时实现只位于 `packages/ssh-agent`。前端协议字段、业务错误 code、HTTP status、SSE event type 和 Tool 机器名称保持稳定。

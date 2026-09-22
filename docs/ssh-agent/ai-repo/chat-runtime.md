@@ -4,6 +4,8 @@
 
 ## 当前边界
 
+- 文件工具批次仅允许 read/SFTP 上传/SFTP 下载在无路径冲突时并行；包含其他串行工具或路径读写/写写冲突则整批按模型顺序执行。详见 [文件工具并发](./file-tool-concurrency.md)。
+
 - 新会话首个 Run 可通过 `generateTitle: true` 启用同模型异步命名；标题任务独立于聊天，不进入消息历史，通过 Workspace SSE 推送。见 [session-title.md](./session-title.md)。
 
 - 每次模型流请求经过包内 Provider 错误边界，附件水合与模型同步异常分别处理。安全原因使用描述符贯穿消息、Run failure、HTTP/SSE；原始文本供超限判断与日志使用，未知内部错误不公开。见 [provider-failures.md](./provider-failures.md)。

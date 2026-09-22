@@ -83,6 +83,7 @@ export const enUSMessages = {
 	"sftp.transfer_invalid_state": "The file transfer is not in a valid state for this operation",
 	"sftp.transfer_size_mismatch": "The transferred byte count does not match the expected file size",
 	"sftp.transfer_cancelled": "File transfer was cancelled",
+	"sftp.transfer_queue_full": "File transfer queue is full. Try again later.",
 	"sftp.transfer_interrupted": "File transfer was interrupted by a server restart",
 	"sftp.transfer_result_uncertain": "The file transfer result is uncertain. Inspect the destination before retrying.",
 	"sftp.permission_denied": "Permission was denied for the remote path",

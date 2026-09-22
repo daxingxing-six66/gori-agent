@@ -250,6 +250,11 @@ describe("ChatAgentRuntimeFactory", () => {
 			followUpMode: "one-at-a-time",
 			toolExecution: "parallel",
 		});
+		for (const tool of options?.initialState?.tools ?? []) {
+			const parallel = ["read", "sftp_upload", "sftp_download"].includes(tool.name);
+			expect(tool.executionMode).toBe(parallel ? "parallel" : "sequential");
+			if (parallel) expect(tool.requiresSequentialExecution).toBeTypeOf("function");
+		}
 		expect(context.createRemoteTool).toHaveBeenCalledWith("session-1", expect.any(Function));
 		expect(context.createTerminalTool).not.toHaveBeenCalled();
 

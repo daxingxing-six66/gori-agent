@@ -12,12 +12,13 @@ import { FileTransferError, type SftpDirectoryEntry } from "../../domain/file-tr
 import { SshAgentError } from "../../domain/ssh-failure.ts";
 import type { Ssh2ConnectionContext, Ssh2ConnectionPool } from "./ssh2-connection-pool.ts";
 import { createSshError } from "./ssh2-errors.ts";
+import { Ssh2SftpChannelPool } from "./ssh2-sftp-channel-pool.ts";
 
 export class Ssh2SftpFileBroker implements SftpFileBroker {
-	private readonly pool: Ssh2ConnectionPool;
+	private readonly channels: Ssh2SftpChannelPool;
 
 	constructor(pool: Ssh2ConnectionPool) {
-		this.pool = pool;
+		this.channels = new Ssh2SftpChannelPool(pool);
 	}
 
 	listDirectory(input: SftpPathInput): Promise<{ path: string; entries: SftpDirectoryEntry[] }> {
@@ -48,12 +49,8 @@ export class Ssh2SftpFileBroker implements SftpFileBroker {
 		if (!input.remotePath || input.remotePath.endsWith("/")) {
 			throw createSshError("invalid_request", "request", "validate", "Remote upload path must identify a file");
 		}
-		return await this.pool.withChannelSlot({
-			target: input.target,
-			signal: input.signal,
-			cancellationError: uploadCancellationError,
-			operation: (context) => this.uploadWithConnection(context, input),
-		});
+		return await this.channels.use(input,
+			(sftp, context) => this.uploadWithConnection(sftp, context, input), uploadCancellationError);
 	}
 
 	download(input: DownloadRemoteFileInput): Promise<RemoteDownloadResult> {
@@ -66,7 +63,18 @@ export class Ssh2SftpFileBroker implements SftpFileBroker {
 			const stream = sftp.createReadStream(input.remotePath, { autoClose: false });
 			let streamClose: Promise<void> | undefined;
 			const closeStream = () => {
-				streamClose ??= new Promise<void>((resolve) => stream.close(() => resolve()));
+				streamClose ??= new Promise<void>((resolve) => {
+					if (!context.isCurrent()) { resolve(); return; }
+					const finish = () => {
+						clearTimeout(timer);
+						sftp.removeListener("close", finish);
+						resolve();
+					};
+					const timer = setTimeout(finish, 1_000);
+					timer.unref();
+					sftp.once("close", finish);
+					try { stream.close(finish); } catch { finish(); }
+				});
 				return streamClose;
 			};
 			const onAbort = () => {
@@ -104,32 +112,21 @@ export class Ssh2SftpFileBroker implements SftpFileBroker {
 		});
 	}
 
+	close(): void {
+		this.channels.close();
+	}
+
 	private async uploadWithConnection(
+		sftp: SFTPWrapper,
 		context: Ssh2ConnectionContext,
 		input: UploadRemoteFileInput,
 	): Promise<RemoteUploadResult> {
 		const temporaryPath = temporaryUploadPath(input.remotePath);
-		let sftp: SFTPWrapper | undefined;
 		let handle: Buffer | undefined;
 		let bytesTransferred = 0;
 		let committing = false;
+		let iterator: AsyncIterator<Uint8Array> | undefined;
 		try {
-			sftp = await interruptibleUpload(
-				context,
-				input.signal,
-				false,
-				openSftp(context).catch((error: unknown) => {
-					throw createSshError(
-						"sftp_channel_open_failed",
-						"channel",
-						"acquire_channel",
-						"Failed to open SSH SFTP channel",
-						undefined,
-						false,
-						error instanceof Error ? error : undefined,
-					);
-				}),
-			);
 			const existing = await lstatOptional(sftp, input.remotePath);
 			if (existing !== undefined) {
 				const existingEntry = directoryEntryForPath(input.remotePath, existing);
@@ -141,38 +138,57 @@ export class Ssh2SftpFileBroker implements SftpFileBroker {
 				if (!existing.isFile())
 					throw new FileTransferError("unsupported_file_type", "Only regular files can be overwritten", 409);
 			}
-			handle = await interruptibleUpload(context, input.signal, false, openRemoteFile(sftp, temporaryPath));
-			const iterator = input.data[Symbol.asyncIterator]();
+			handle = await interruptibleUpload(context, sftp, input.signal, false, () =>
+				openRemoteFile(sftp, temporaryPath).then(async (opened) => {
+					if (input.signal.aborted || !context.isCurrent()) {
+						if (context.isCurrent()) {
+							const cleanupSignal = AbortSignal.timeout(1_000);
+							await interruptibleUpload(context, sftp, cleanupSignal, false, () => closeRemoteFile(sftp, opened)).catch(() => {});
+							await interruptibleUpload(context, sftp, cleanupSignal, false, () => unlinkRemoteFile(sftp, temporaryPath)).catch(() => {});
+						}
+						throw uploadCancellationError();
+					}
+					return opened;
+				}));
+			iterator = input.data[Symbol.asyncIterator]();
 			while (true) {
-				const next = await interruptibleUpload(context, input.signal, false, iterator.next());
+				const next = await interruptibleUpload(context, sftp, input.signal, false, () => iterator!.next());
 				if (next.done) break;
 				const chunk = next.value;
 				if (chunk.byteLength === 0) continue;
 				const buffer = Buffer.from(chunk);
 				await interruptibleUpload(
 					context,
+					sftp,
 					input.signal,
 					false,
-					writeRemoteFile(sftp, handle, buffer, bytesTransferred),
+					() => writeRemoteFile(sftp, handle!, buffer, bytesTransferred),
 				);
 				bytesTransferred += buffer.byteLength;
-				await interruptibleUpload(context, input.signal, false, input.onProgress(bytesTransferred));
+				await interruptibleUpload(context, sftp, input.signal, false, () => input.onProgress(bytesTransferred));
 			}
-			await interruptibleUpload(context, input.signal, false, closeRemoteFile(sftp, handle));
+			await interruptibleUpload(context, sftp, input.signal, false, () => closeRemoteFile(sftp, handle!));
 			handle = undefined;
 			committing = true;
 			await interruptibleUpload(
 				context,
+				sftp,
 				input.signal,
 				true,
-				input.overwrite
+				() => input.overwrite
 					? atomicRenameRemoteFile(sftp, temporaryPath, input.remotePath)
 					: renameRemoteFile(sftp, temporaryPath, input.remotePath),
 			);
 			return { bytesTransferred };
 		} catch (error) {
-			if (handle && sftp) await closeRemoteFile(sftp, handle).catch(() => {});
-			if (sftp) await unlinkRemoteFile(sftp, temporaryPath).catch(() => {});
+			// A dead channel cannot acknowledge cleanup; never mask an uncertain commit by waiting on it.
+			if (context.isCurrent()) {
+				const cleanupSignal = AbortSignal.timeout(1_000);
+				if (handle) await interruptibleUpload(context, sftp, cleanupSignal, false,
+					() => closeRemoteFile(sftp, handle!)).catch(() => {});
+				await interruptibleUpload(context, sftp, cleanupSignal, false,
+					() => unlinkRemoteFile(sftp, temporaryPath)).catch(() => {});
+			}
 			if (error instanceof SshAgentError || error instanceof FileTransferError) throw error;
 			throw createSshError(
 				committing ? "upload_commit_failed" : "upload_failed",
@@ -184,7 +200,8 @@ export class Ssh2SftpFileBroker implements SftpFileBroker {
 				error instanceof Error ? error : undefined,
 			);
 		} finally {
-			sftp?.end();
+			// Closing a source belongs to this upload, never to the shared SFTP channel.
+			if (iterator?.return) void Promise.resolve(iterator.return()).catch(() => {});
 		}
 	}
 
@@ -192,31 +209,23 @@ export class Ssh2SftpFileBroker implements SftpFileBroker {
 		input: SftpPathInput,
 		operation: (sftp: SFTPWrapper, context: Ssh2ConnectionContext) => Promise<T>,
 	): Promise<T> {
-		return this.pool.withChannelSlot({
-			target: input.target,
-			signal: input.signal,
-			cancellationError: () => new FileTransferError("transfer_cancelled", "SFTP operation was cancelled", 409),
-			operation: async (context) => {
-				let sftp: SFTPWrapper | undefined;
-				try {
-					sftp = await openSftp(context);
-					return await operation(sftp, context);
-				} catch (error) {
-					if (error instanceof FileTransferError || error instanceof SshAgentError) throw error;
-					throw mapSftpError(error);
-				} finally {
-					sftp?.end();
-				}
-			},
+		return this.channels.use(input, async (sftp, context) => {
+			try {
+				return await operation(sftp, context);
+			} catch (error) {
+				if (error instanceof FileTransferError || error instanceof SshAgentError) throw error;
+				throw mapSftpError(error);
+			}
 		});
 	}
 }
 
 function interruptibleUpload<T>(
 	context: Ssh2ConnectionContext,
+	sftp: SFTPWrapper,
 	signal: AbortSignal,
 	committing: boolean,
-	operation: Promise<T>,
+	operation: () => Promise<T>,
 ): Promise<T> {
 	return new Promise<T>((resolve, reject) => {
 		let settled = false;
@@ -225,6 +234,8 @@ function interruptibleUpload<T>(
 			settled = true;
 			signal.removeEventListener("abort", onAbort);
 			context.client.removeListener("close", onClose);
+			sftp.removeListener("close", onClose);
+			sftp.removeListener("error", onClose);
 			callback();
 		};
 		const onAbort = () =>
@@ -262,15 +273,21 @@ function interruptibleUpload<T>(
 		}
 		signal.addEventListener("abort", onAbort, { once: true });
 		context.client.once("close", onClose);
-		operation.then(
+		sftp.once("close", onClose);
+		sftp.once("error", onClose);
+		if (!context.isCurrent()) { onClose(); return; }
+		Promise.resolve().then(() => {
+			if (signal.aborted) throw uploadCancellationError();
+			return operation();
+		}).then(
 			(value) => finish(() => resolve(value)),
 			(error: unknown) =>
 				finish(() =>
 					reject(
-						error instanceof SshAgentError || error instanceof FileTransferError
+						(error instanceof SshAgentError || error instanceof FileTransferError) && !(committing && !context.isCurrent())
 							? error
 							: createSshError(
-									committing ? "upload_commit_failed" : "upload_failed",
+									committing && !context.isCurrent() ? "upload_result_uncertain" : committing ? "upload_commit_failed" : "upload_failed",
 									"execution",
 									committing ? "commit" : "upload",
 									committing ? "Failed to commit the uploaded file" : "Failed to upload the file",
@@ -293,15 +310,6 @@ function temporaryUploadPath(remotePath: string): string {
 	const directory = remotePath.slice(0, separator + 1);
 	const filename = remotePath.slice(separator + 1);
 	return `${directory}.${filename}.pi-upload-${randomUUID()}.tmp`;
-}
-
-function openSftp(context: Ssh2ConnectionContext): Promise<SFTPWrapper> {
-	return new Promise((resolve, reject) => {
-		context.client.sftp((error, sftp) => {
-			if (error) reject(error);
-			else resolve(sftp);
-		});
-	});
 }
 
 function openRemoteFile(sftp: SFTPWrapper, remotePath: string): Promise<Buffer> {

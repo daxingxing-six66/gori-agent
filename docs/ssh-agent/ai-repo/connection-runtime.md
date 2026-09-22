@@ -6,7 +6,11 @@
 
 ## 当前边界
 
-- Agent 和应用层不接触物理 Connection；Agent 命令只依赖 `RemoteCommandBroker`，SFTP Service 通过 `SftpFileBroker` 使用独立 Channel。
+- `Ssh2ChannelBroker` 的上传下载共用 20 个活动名额和 3000 个 FIFO 等待位置，独立于 Connection/Channel 容量；Workspace/Credential 失效同时取消匹配的排队传输，关闭时拒绝新传输并清空队列。详见 [文件传输限流](./file-tool-concurrency.md)。
+
+- SFTP 的 list/stat/delete/上传/下载按完整 Connection Key 共享一个 Channel，多个文件并发使用独立句柄，最后一次操作结束后空闲 1 秒回收。单个取消不关闭其他任务的 Channel；断线/失效后新请求新建，旧任务不重放。详见 [文件工具并发](./file-tool-concurrency.md)。
+
+- Agent 和应用层不接触物理 Connection；Agent 命令只依赖 `RemoteCommandBroker`，SFTP Service 通过 `SftpFileBroker` 使用共享的 SFTP Channel，与 exec/PTY Channel 分离。
 - `Ssh2ChannelBroker` 是组合入口；`Ssh2ConnectionPool` 只管理物理 Connection 和 Channel slot，Exec、SFTP 与长期 PTY 协议生命周期分别位于独立 adapter。
 - 进程级 Pool 按 Workspace、主机信任、Credential 身份/认证版本和远端用户隔离；每个键最多一个物理 Connection、8 个 Channel。
 - 命令应用层另有默认 16 的进程级 Operation 并发限制；它限制跨 Session 的总执行量，不替代每个 Connection 的 8 Channel 容量约束。

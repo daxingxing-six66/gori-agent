@@ -112,6 +112,14 @@ class FakeSftpBroker implements SftpFileBroker {
 }
 
 describe("sftp_upload Tool", () => {
+	it("exposes queue saturation without consuming the local file", async () => {
+		const fixture = await createFixture("artifact.bin", new Uint8Array([1]));
+		vi.spyOn(fixture.broker, "upload").mockRejectedValue(new FileTransferError("transfer_queue_full", "queue full", 429));
+		await expect(fixture.tool(vi.fn()).execute("queue-full", { sourceFilePath: "artifact.bin", targetPath: "/remote" }))
+			.rejects.toMatchObject({ details: { status: "failed", presentationMessage: { key: "sftp.transfer_queue_full" } } });
+		expect(fixture.broker.uploads).toEqual([]);
+	});
+
 	it("streams a local file to the remote directory without approval when the destination is absent", async () => {
 		const fixture = await createFixture("artifact.bin", new Uint8Array([1, 2, 3, 4]));
 		const approval = vi.fn<RequestSftpOverwriteApproval>();

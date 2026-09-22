@@ -64,6 +64,7 @@ export type FileTransferErrorCode =
 	| "transfer_invalid_state"
 	| "transfer_size_mismatch"
 	| "transfer_cancelled"
+	| "transfer_queue_full"
 	| "transfer_interrupted"
 	| "transfer_result_uncertain"
 	| "sftp_permission_denied"

@@ -380,6 +380,9 @@ function toolError(error: unknown, details: Omit<SftpUploadDetails, "status">): 
 }
 
 function uploadFailureMessage(error: unknown, cancelled: boolean) {
+	if (error instanceof FileTransferError && error.code === "transfer_queue_full") {
+		return backendMessage("sftp.transfer_queue_full");
+	}
 	if (error instanceof SftpApprovalRejectedError) {
 		const suffix =
 			error.reason === "user_rejected"

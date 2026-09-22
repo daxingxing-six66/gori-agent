@@ -32,6 +32,7 @@ import type { ChatContextService } from "./chat-context-service.ts";
 import type { ChatQueueService } from "./chat-queue-service.ts";
 import type { ChatToolCallCoordinator } from "./chat-tool-call-coordinator.ts";
 import { addOpenCodeGoSessionHeaders } from "./opencode-go-session.ts";
+import { configureFileToolConcurrency } from "./file-tool-concurrency.ts";
 
 type ToolCallCoordinator = Pick<ChatToolCallCoordinator, "beforeToolCall" | "requestSftpOverwriteApproval">;
 type QueueService = Pick<ChatQueueService, "cancelSteeringAfterTurn">;
@@ -198,7 +199,9 @@ export class ChatAgentRuntimeFactory {
 					systemPrompt: input.systemPrompt,
 					model: input.model,
 					thinkingLevel: input.run.thinkingLevel,
-					tools: [...localTools, remoteTool, terminalTool, sftpUploadTool, sftpDownloadTool],
+					tools: configureFileToolConcurrency(
+						[...localTools, remoteTool, terminalTool, sftpUploadTool, sftpDownloadTool], env,
+					),
 					messages: input.history,
 				},
 				streamFn: async (selectedModel, context, options) => {

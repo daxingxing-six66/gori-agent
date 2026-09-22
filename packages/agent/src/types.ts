@@ -471,6 +471,13 @@ export interface AgentTool<TParameters extends TSchema = TSchema, TDetails = any
 	 * If omitted, the default execution mode applies.
 	 */
 	executionMode?: ToolExecutionMode;
+	/**
+	 * Optional batch-level restriction, evaluated before argument validation or authorization.
+	 * Raw calls must be treated as untrusted. Return true if the entire batch must run
+	 * sequentially (for example, overlapping file paths). Cannot relax a static
+	 * sequential mode. Shared callbacks run once per batch; failures fall back to serial.
+	 */
+	requiresSequentialExecution?: (calls: readonly AgentToolCall[], signal?: AbortSignal) => boolean | Promise<boolean>;
 }
 
 /** Context snapshot passed into the low-level agent loop. */
