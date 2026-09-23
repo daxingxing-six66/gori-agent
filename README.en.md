@@ -38,9 +38,9 @@ For different ports on macOS/Linux, run `SSH_AGENT_PORT=4311 npm run build`, the
 
 ## Data and security
 
-Data and the credential key live in `~/.gori-agent` (`%USERPROFILE%\.gori-agent` on Windows). Stop the app before backing up the entire directory. The launcher can use a different directory through `SSH_AGENT_DATA_DIR`. Losing `credential-key` makes saved credentials unrecoverable.
+Data and the credential key live in `~/.gori-agent` (`%USERPROFILE%\.gori-agent` on Windows). Stop the app before backing up the entire directory. The launcher and direct/development backend share this default and can use a different directory through `SSH_AGENT_DATA_DIR`. Losing `credential-key` makes saved credentials unrecoverable.
 
-Logs are stored in `packages/ssh-agent/logs/`. Redact private details before sharing them. The application has no login system and is intended for local single-user use. Do not expose it directly to a public network. Read [SECURITY.md](SECURITY.md).
+Attachments and logs are stored in `attachments/` and `logs/` beneath the data directory. Explicit database and working-directory overrides remain supported. Existing data is not moved automatically; see [migration](docs/migration.md). Redact private details before sharing them. The application has no login system and is intended for local single-user use. Do not expose it directly to a public network. Read [SECURITY.md](SECURITY.md).
 
 ## Development
 

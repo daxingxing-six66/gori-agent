@@ -4,7 +4,7 @@
 
 ## 当前边界
 
-- 文件实际保存在 `{attachmentBaseDir}/attachments/sessions/{sessionId}/{name}`；默认 `attachmentBaseDir` 为后端进程工作目录。数据库 `storage_path` 只保存后端生成的相对路径。
+- 文件实际保存在 `{attachmentBaseDir}/attachments/sessions/{sessionId}/{name}`；默认 `attachmentBaseDir` 为 `SSH_AGENT_DATA_DIR` 或 `~/.gori-agent`；CLI 显式传入解析后的数据目录，不依赖当前源码路径。数据库 `storage_path` 只保存后端生成的相对路径。
 - 上传接口接收原始字节流，不接收 multipart、Base64 或客户端路径。单文件上限为 20 MiB；可选 `Content-Length` 必须与实际读取字节数一致。
 - 文件名不能是空白、`.`、`..`，不能包含路径分隔符、NUL/控制字符，UTF-8 编码后不能超过 255 bytes。MIME 类型来自 `Content-Type`，缺省为 `application/octet-stream`，不执行内容嗅探。
 - 上传先写同目录 `0600` 独占临时文件，再通过硬链接原子发布。原始名称已占用时在最后一个扩展名前依次追加 `-1`、`-2`；并发发布冲突会继续递增，不覆盖已有文件。发布后写入数据库；任一步失败或请求取消都会清理本次临时文件和已发布文件。

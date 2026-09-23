@@ -2,16 +2,16 @@
 
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import { readSshAgentServerEnvironment } from "./environment.ts";
-import { createFileConsole, DEFAULT_LOG_DIRECTORY } from "./file-logger.ts";
+import { createFileConsole } from "./file-logger.ts";
 import { createSshAgentServer } from "./ssh-agent-server.ts";
 
 process.umask(0o077);
 
 try {
-	globalThis.console = createFileConsole();
-	process.stdout.write(`SSH Agent logs: ${DEFAULT_LOG_DIRECTORY}\n`);
-	process.on("uncaughtExceptionMonitor", (error) => console.error("Uncaught exception", error));
 	const options = readSshAgentServerEnvironment();
+	globalThis.console = createFileConsole({ directory: options.logDirectory });
+	process.stdout.write(`Gori data: ${options.dataDirectory}\nSSH Agent logs: ${options.logDirectory}\n`);
+	process.on("uncaughtExceptionMonitor", (error) => console.error("Uncaught exception", error));
 	const server = createSshAgentServer({
 		...options,
 		llmModelsFactory: (credentials) => builtinModels({ credentials }),

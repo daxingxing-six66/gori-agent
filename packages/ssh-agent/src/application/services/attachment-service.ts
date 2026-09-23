@@ -1,3 +1,4 @@
+import { resolveDataDirectory } from "../../data-directory.ts";
 import { constants } from "node:fs";
 import { type FileHandle, link, lstat, mkdir, open, rm } from "node:fs/promises";
 import { join, posix, resolve } from "node:path";
@@ -57,7 +58,7 @@ export class AttachmentService {
 		this.#clock = options.clock;
 		this.#ids = options.ids;
 		this.#lifecycle = options.lifecycle;
-		this.#baseDir = resolve(options.attachmentBaseDir ?? process.cwd());
+		this.#baseDir = resolve(options.attachmentBaseDir ?? resolveDataDirectory());
 		this.#sessionsDir = join(this.#baseDir, "attachments", "sessions");
 	}
 

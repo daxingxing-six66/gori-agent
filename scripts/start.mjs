@@ -1,6 +1,5 @@
 import { spawn, spawnSync } from 'node:child_process';
-import { randomBytes } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { createServer } from 'node:net';
@@ -40,21 +39,9 @@ for (const port of [webPort, apiPort]) {
     server.listen(port, '127.0.0.1', () => server.close(resolveReady));
   });
 }
-const data = resolve(process.env.SSH_AGENT_DATA_DIR || join(homedir(), '.gori-agent'));
+const dataValue = process.env.SSH_AGENT_DATA_DIR?.trim() || join(homedir(), '.gori-agent');
+const data = resolve(dataValue === '~' ? homedir() : dataValue.startsWith('~/') ? join(homedir(), dataValue.slice(2)) : dataValue);
 mkdirSync(data, { recursive: true, mode: 0o700 });
-const keyPath = join(data, 'credential-key');
-if (!existsSync(keyPath) && existsSync(join(data, 'ssh-agent.sqlite'))) {
-  throw new Error('Database exists but its key is missing. Restore credential-key from backup before starting.');
-}
-try {
-  writeFileSync(keyPath, randomBytes(32).toString('base64'), { flag: 'wx', mode: 0o600 });
-} catch (error) {
-  if (error.code !== 'EEXIST') throw error;
-}
-const key = readFileSync(keyPath, 'utf8').trim();
-if (Buffer.from(key, 'base64').length !== 32 || Buffer.from(key, 'base64').toString('base64') !== key) {
-  throw new Error('Saved key is invalid. Restore your backup; do not generate a replacement.');
-}
 const children = [];
 let stopping = false;
 function stop(code = 0) {
@@ -73,9 +60,9 @@ const backend = spawn(process.execPath, [join(root, 'packages/ssh-agent/dist/ser
   cwd: data, stdio: 'inherit',
   env: {
     ...process.env,
-    SSH_AGENT_DATABASE_PATH: join(data, 'ssh-agent.sqlite'),
-    SSH_AGENT_CREDENTIAL_KEY_BASE64: key,
-    SSH_AGENT_LOCAL_CWD: join(data, 'workspace'),
+    SSH_AGENT_DATA_DIR: data,
+    SSH_AGENT_DATABASE_PATH: process.env.SSH_AGENT_DATABASE_PATH?.trim() === ':memory:' ? ':memory:' : resolve(process.env.SSH_AGENT_DATABASE_PATH?.trim() || join(data, 'ssh-agent.sqlite')),
+    SSH_AGENT_LOCAL_CWD: process.env.SSH_AGENT_LOCAL_CWD || join(data, 'workspace'),
     SSH_AGENT_HOST: '127.0.0.1', SSH_AGENT_PORT: String(apiPort),
     SSH_AGENT_CORS_ORIGINS: `http://127.0.0.1:${webPort},http://localhost:${webPort}`,
   },
@@ -92,7 +79,7 @@ try {
     } catch { /* Backend may still be starting. */ }
     await new Promise(resolve => setTimeout(resolve, 500));
   }
-  if (!ready || stopping) throw new Error(`Backend did not start. Check packages/ssh-agent/logs and port ${apiPort}.`);
+  if (!ready || stopping) throw new Error(`Backend did not start. Check ${join(data, 'logs')} and port ${apiPort}.`);
   const webCli = join(root, 'node_modules/vinext/dist/cli.js');
   if (!existsSync(webCli)) throw new Error('Vinext CLI not found; run setup again.');
   const web = spawn(process.execPath, [webCli, 'start', '--hostname', '127.0.0.1', '--port', String(webPort)], {

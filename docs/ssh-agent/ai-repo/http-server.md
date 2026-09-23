@@ -15,7 +15,7 @@
 - `GET /api/sessions/:sessionId/chat/context-usage` 只读返回占用快照或 null，使用 `no-store`；手动压缩响应包含同结构 `contextUsage`。联调见 [context-usage-integration.md](../frontend/context-usage-integration.md)。
 
 - 默认监听 `127.0.0.1:3001`，提供 `/healthz` 和 `/api/*`。
-- CLI 把 console 日志写入包内 `logs/`，按本地日期及 10 MiB 分段；启动、关闭和未捕获异常保留错误栈。见 [logging.md](./logging.md)。
+- CLI 把 console 日志写入数据目录的 `logs/`，按本地日期及 10 MiB 分段；启动、关闭和未捕获异常保留错误栈。见 [logging.md](./logging.md)。
 - 支持 Workspace + Session tree、Workspace 范围 Credential、活动 Credential 切换、Workspace、Session 和 Guard 管理路由；Guard 还提供后端预设规则包目录查询和原子导入接口；全局 Credential 路由已经移除。
 - Workspace 创建请求只接收 hostname/port，不接收前端提供的 Host Key；创建响应和首次 Tool 调用前的 Tree 返回 `hostKey: null`，自动 TOFU 后 Tree 返回后端持久化的信任记录。
 - `/api/llm/providers` 和 Provider 模型路由读取 `pi-ai` 运行时目录；LLM Provider Credential 路由只返回元数据，API Key 和环境认证值只写。
@@ -23,7 +23,7 @@
 - REST 与 SSE 在出口协商 `zh-CN`/`en-US`：REST 使用 `Accept-Language`，SSE 的 `locale` 查询参数优先于该 Header，缺省为 `zh-CN`。响应保持原 JSON/SSE 结构，只替换后端静态字符串，并携带 `Content-Language`；使用 Header 协商时同时携带 `Vary: Accept-Language`。
 - 包内公开异常统一经过 `application/failure-policy.ts` 的 `normalizePublicError()`，HTTP owner 通过共用 reporter 记录诊断；已知和未知错误都携带 errorId。已知领域异常保留稳定 code、status、field、retryable 和安全 details；未知异常只返回 `internal_error` 与可查日志的 `errorId`，底层 message、cause 和 stack 不发送到浏览器。详细边界见 [backend-i18n.md](./backend-i18n.md)。
 - CORS preflight 允许 `PUT`，用于活动 Credential 切换。
-- CLI 从环境变量读取数据库路径、32 字节加密密钥、监听地址、端口、CORS allowlist、请求体上限、进程命令并发上限和 `SSH_AGENT_LOCAL_CWD`，并处理 SIGINT/SIGTERM。默认本地目录为 `~/.ssh-agent/workspace`。
+- CLI 从环境变量读取数据库路径、32 字节加密密钥、监听地址、端口、CORS allowlist、请求体上限、进程命令并发上限和 `SSH_AGENT_LOCAL_CWD`，并处理 SIGINT/SIGTERM。默认数据目录为 `SSH_AGENT_DATA_DIR` 或 `~/.gori-agent`；未显式配置时数据库为其中的 `ssh-agent.sqlite`，本地目录为 `workspace/`，附件与日志也使用该数据目录。未提供环境密钥时创建或复用 `credential-key`，已有数据库缺失密钥则拒绝启动。
 - CLI 通过 `builtinModels()` 注入真实 `pi-ai` 目录；测试通过相同工厂端口注入 faux Provider，不复制内置模型清单。
 - 服务本身不提供 TLS、登录认证或公网访问控制；非 loopback 部署必须由外层安全边界补齐。
 - Workspace SSE 按 monitoring、connection、transfers topic 广播并定时 heartbeat；SSH Command Operation 事件仍不走该 SSE。

@@ -76,7 +76,12 @@ describe("Chat image Attachment API", () => {
 				return (active.body as { run: unknown }).run === null;
 			});
 
-			expect(providerContexts[0]?.messages[0]).toEqual({
+			expect(providerContexts[0]?.messages.map((message) => message.role)).toEqual(["system", "user"]);
+			expect(providerContexts[0]?.messages[0]).toMatchObject({
+				role: "system",
+				content: [{ type: "text", text: "<terminal-model-off>" }],
+			});
+			expect(providerContexts[0]?.messages[1]).toEqual({
 				role: "user",
 				content: [
 					{ type: "image", data: bytes.toString("base64"), mimeType: "image/png" },

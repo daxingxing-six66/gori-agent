@@ -17,7 +17,7 @@ describe("SSH Agent server environment", () => {
 		expect(config.port).toBe(3001);
 		expect(config.maxConcurrentOperations).toBe(16);
 		expect(config.allowedOrigins).toContain("http://localhost:3000");
-		expect(config.localCwd).toBe(join(homedir(), ".ssh-agent", "workspace"));
+		expect(config.localCwd).toBe(join(homedir(), ".gori-agent", "workspace"));
 	});
 
 	it("accepts an absolute local working directory", () => {
@@ -48,10 +48,8 @@ describe("SSH Agent server environment", () => {
 		).toThrow("SSH_AGENT_MAX_CONCURRENT_OPERATIONS must be between 1 and 9007199254740991");
 	});
 
-	it("rejects missing or malformed encryption keys", () => {
-		expect(() => readSshAgentServerEnvironment({ SSH_AGENT_DATABASE_PATH: ":memory:" })).toThrow(
-			"SSH_AGENT_CREDENTIAL_KEY_BASE64 is required",
-		);
+	it("rejects malformed explicitly configured encryption keys", () => {
+
 		expect(() =>
 			readSshAgentServerEnvironment({
 				SSH_AGENT_DATABASE_PATH: ":memory:",

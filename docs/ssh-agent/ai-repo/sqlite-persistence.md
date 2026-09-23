@@ -22,7 +22,7 @@
 - Session 最近模型选择直接查询最新 `chat_runs` 记录，不复制到 `sessions` 表，也不需要新增 migration。
 - Chat 历史使用 `UNIQUE(session_id, sequence)` 索引完成正向和反向范围分页；反向查询在 SQLite 内取最接近边界的记录，Repository 返回前恢复为升序，不需要额外索引或 migration。
 - Chat Run、File Transfer 和 Command Operation 的 JSON failure 继续保留英文 fallback，并可携带 `messageKey/messageValues`；存在元数据时公开查询可按当前 Locale 重新生成 message。旧记录没有 Key 时只使用稳定 code 的唯一映射或原 fallback，不解析历史字符串猜测参数。
-- Attachment 表只保存后端生成的相对 `storage_path` 和文件元数据；文件字节保存在后端工作目录的 `attachments/sessions/{sessionId}`。数据库外键负责 Session 删除后的记录级联，磁盘目录由 Session Service 在删除成功后清理。
+- Attachment 表只保存后端生成的相对 `storage_path` 和文件元数据；文件字节默认保存在数据目录（`SSH_AGENT_DATA_DIR` 或 `~/.gori-agent`）的 `attachments/sessions/{sessionId}`。数据库外键负责 Session 删除后的记录级联，磁盘目录由 Session Service 在删除成功后清理。
 - 普通用户消息和 Attachment 的关联、顺序以 `chat_message_attachments` 为准；用户消息与关系在同一事务写入。同一 Attachment 可关联多条消息，消息或 Session 删除时关系级联清理。`message_json` 仍完整保存 `attachmentIds`，但读取投影按关系表恢复，并返回有序 Attachment 元数据。
 
 - Chat `updateRun()` 在终态分支用一个事务更新 Run、安全 failure_json 及 pending 审批/队列；活动状态条件更新防止覆盖已完成结果，相同终态提交可重入。读取校验 failure 基本结构及版本身份；无版本的历史快照只读，不重写历史原因。
@@ -52,3 +52,5 @@
 修改 schema 时必须追加 migration，不能改写已经应用的 migration 语义；同时检查重建前置条件、行映射、Repository、事务回滚和文件数据库重开测试。
 
 升级回归：`packages/ssh-agent/test/chat-prompt-migration.test.ts` 使用冻结的两种 v16 SQL fixture 验证带数据升级、空快照升级、原文保留、模式消息修补、不可变约束、级联删除、回滚重试及幂等性。
+
+`context-compaction-api.test.ts` 从冻结的 `test/fixtures/schema-v11.sql` 创建带合法 Workspace/Session 与消息的旧库，在外键开启时验证升级到 v17、消息原文和顺序保留、类型/Usage 回填及重复迁移幂等性。不要从最新 schema 反向删表模拟旧版，以免遗留后续版本的触发器与外键。`llm-provider-api.test.ts` 的重开测试验证当前 schema 下凭据可解密、迁移记录及执行时间不被重写，不冒充 v3 升级测试。

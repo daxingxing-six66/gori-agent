@@ -13,10 +13,37 @@ coverage/
 *.sqlite
 *.sqlite-shm
 *.sqlite-wal
+*.sqlite-journal
+*.sqlite3
+*.sqlite3-*
+*.db
+*.db-wal
+*.db-shm
+*.db-journal
 .env*
 !.env.example
 .DS_Store
 .idea/
 .vscode/
+!/docs/
 !docs/site/dist/
 !docs/site/dist/**
+
+# Keep backend tests and their fixtures visible even with local test-directory excludes.
+!packages/ssh-agent/test/
+!packages/ssh-agent/test/*.test.ts
+
+# Private runtime data (including legacy development locations).
+.gori-agent/
+.gori-agent-backups/
+.ssh-agent/
+credential-key
+credential-key.bak
+credential-key.backup
+credential-key.old
+credential-key~
+id_rsa
+id_ecdsa
+id_ed25519
+/packages/ssh-agent/attachments/
+/attachments/

@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import { describe, expect, it } from "vitest";
 import type { IdGenerator } from "../src/domain/ids.ts";
@@ -104,41 +105,25 @@ describe("context compaction HTTP API", () => {
 });
 
 describe("context compaction migration", () => {
-	it("backfills split message columns and removes the obsolete entry table", () => {
+	it("upgrades v11 messages with foreign keys intact and removes the obsolete entry table", () => {
 		const database = new DatabaseSync(":memory:");
 		try {
-			applyMigrations(database);
-			database.exec("PRAGMA foreign_keys = OFF");
+			database.exec("PRAGMA foreign_keys = ON");
+			database.exec(readFileSync(new URL("./fixtures/schema-v11.sql", import.meta.url), "utf8"));
 			database.exec(`
-				DROP TABLE chat_compaction_settings;
-				ALTER TABLE chat_messages RENAME TO chat_messages_v12_current;
-				CREATE TABLE chat_messages (
-					id TEXT PRIMARY KEY,
-					session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
-					run_id TEXT REFERENCES chat_runs(id) ON DELETE SET NULL,
-					sequence INTEGER NOT NULL,
-					message_json TEXT NOT NULL,
-					created_at INTEGER NOT NULL,
-					UNIQUE(session_id, sequence)
-				) STRICT;
-				DROP TABLE chat_messages_v12_current;
-				CREATE TABLE agent_session_entries (
-					session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
-					id TEXT NOT NULL,
-					sequence INTEGER NOT NULL,
-					entry_json TEXT NOT NULL,
-					PRIMARY KEY(session_id, id),
-					UNIQUE(session_id, sequence)
-				) STRICT;
-				DELETE FROM ssh_agent_schema_migrations WHERE version = 12;
+				INSERT INTO workspaces (id, display_name, environment, hostname, port, default_cwd,
+					connect_timeout_ms, keepalive_interval_ms, keepalive_max_count, revision, created_at, updated_at)
+				VALUES ('workspace', 'test', 'development', 'localhost', 22, '/', 1000, 1000, 3, 1, 1, 1);
+				INSERT INTO sessions (id, workspace_id, display_name, revision, created_at, updated_at)
+				VALUES ('session', 'workspace', 'test', 1, 1, 1);
 			`);
 			const insert = database.prepare(
 				"INSERT INTO chat_messages (id, session_id, run_id, sequence, message_json, created_at) VALUES (?, ?, NULL, ?, ?, ?)",
 			);
-			insert.run("user", "missing-session", 1, JSON.stringify({ role: "user", content: "hello" }), 1);
+			insert.run("user", "session", 1, JSON.stringify({ role: "user", content: "hello" }), 1);
 			insert.run(
 				"assistant",
-				"missing-session",
+				"session",
 				2,
 				JSON.stringify({
 					role: "assistant",
@@ -147,8 +132,12 @@ describe("context compaction migration", () => {
 				}),
 				2,
 			);
-			insert.run("tool", "missing-session", 3, JSON.stringify({ role: "toolResult" }), 3);
-			insert.run("compact", "missing-session", 4, JSON.stringify({ role: "compactionSummary" }), 4);
+			insert.run("tool", "session", 3, JSON.stringify({ role: "toolResult" }), 3);
+			insert.run("compact", "session", 4, JSON.stringify({ role: "compactionSummary" }), 4);
+
+			const messagesBefore = database
+				.prepare("SELECT id, sequence, message_json FROM chat_messages ORDER BY sequence")
+				.all();
 
 			applyMigrations(database);
 
@@ -175,6 +164,19 @@ describe("context compaction migration", () => {
 				trigger_percent: 80,
 				revision: 1,
 			});
+			expect(
+				database.prepare("SELECT id, sequence, message_json FROM chat_messages ORDER BY sequence").all(),
+			).toEqual(messagesBefore);
+			expect(database.prepare("PRAGMA foreign_key_check").all()).toEqual([]);
+			expect(database.prepare("SELECT MAX(version) AS version FROM ssh_agent_schema_migrations").get()).toEqual({
+				version: 17,
+			});
+			const versions = database.prepare("SELECT * FROM ssh_agent_schema_migrations ORDER BY version").all();
+			applyMigrations(database);
+			expect(database.prepare("SELECT * FROM ssh_agent_schema_migrations ORDER BY version").all()).toEqual(versions);
+			expect(
+				database.prepare("SELECT id, sequence, message_json FROM chat_messages ORDER BY sequence").all(),
+			).toEqual(messagesBefore);
 		} finally {
 			database.close();
 		}

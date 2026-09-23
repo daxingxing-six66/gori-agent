@@ -1,4 +1,7 @@
-import { describe, expect, it, vi } from "vitest";
+import { mkdtempSync, realpathSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { DefaultCommandGuardEvaluator } from "../src/application/services/command-guard-evaluator.ts";
 import { CommandOperationService } from "../src/application/services/command-operation-service.ts";
 import { DefaultSshTargetResolver } from "../src/application/services/ssh-target-resolver.ts";
@@ -18,6 +21,13 @@ import { SqliteSessionRepository } from "../src/infrastructure/sqlite/sqlite-ses
 import { SqliteWorkspaceRepository } from "../src/infrastructure/sqlite/sqlite-workspace-repository.ts";
 import { createSqliteManagementBackend } from "../src/runtime/create-sqlite-management-backend.ts";
 import { createTestLlmModels } from "./test-llm-models.ts";
+
+const directories: string[] = [];
+
+afterEach(() => {
+	vi.useRealTimers();
+	for (const directory of directories.splice(0)) rmSync(directory, { recursive: true, force: true });
+});
 
 class SequentialIds implements IdGenerator {
 	private value = 1;
@@ -90,7 +100,7 @@ describe("SSH command Operation execution", () => {
 			expect(firstResult.outputTail).toBe("output-1");
 			expect(secondResult.outputTail).toBe("output-2");
 		} finally {
-			fixture.close();
+			await fixture.close();
 		}
 	});
 
@@ -98,7 +108,7 @@ describe("SSH command Operation execution", () => {
 		const fixture = await createFixture();
 		fixture.broker.blockFirst = true;
 		try {
-			const secondSessionId = await createSession(fixture.backend, "Concurrent Session");
+			const secondSessionId = await createSession(fixture.backend, "Concurrent Session", fixture.workDir);
 			const first = fixture.service.submit({ toolCallId: "tool-a", sessionId: "id-4", command: "sleep 10" });
 			await waitFor(() => fixture.broker.commands.length === 1);
 			const second = fixture.service.submit({
@@ -112,7 +122,7 @@ describe("SSH command Operation execution", () => {
 			await first;
 			expect(fixture.broker.maxActive).toBe(2);
 		} finally {
-			fixture.close();
+			await fixture.close();
 		}
 	});
 
@@ -120,8 +130,8 @@ describe("SSH command Operation execution", () => {
 		const fixture = await createFixture({ maxConcurrentOperations: 2 });
 		fixture.broker.blockAll = true;
 		try {
-			const secondSessionId = await createSession(fixture.backend, "Second Session");
-			const thirdSessionId = await createSession(fixture.backend, "Third Session");
+			const secondSessionId = await createSession(fixture.backend, "Second Session", fixture.workDir);
+			const thirdSessionId = await createSession(fixture.backend, "Third Session", fixture.workDir);
 			const first = fixture.service.submit({ toolCallId: "tool-limit-a", sessionId: "id-4", command: "sleep 1" });
 			const second = fixture.service.submit({
 				toolCallId: "tool-limit-b",
@@ -146,7 +156,7 @@ describe("SSH command Operation execution", () => {
 			fixture.broker.releaseAll();
 			await Promise.all([first, second, third]);
 		} finally {
-			fixture.close();
+			await fixture.close();
 		}
 	});
 
@@ -172,7 +182,7 @@ describe("SSH command Operation execution", () => {
 			await first;
 			expect(fixture.broker.commands).toHaveLength(1);
 		} finally {
-			fixture.close();
+			await fixture.close();
 		}
 	});
 
@@ -202,7 +212,7 @@ describe("SSH command Operation execution", () => {
 			fixture.broker.releaseFirst();
 			await first;
 		} finally {
-			fixture.close();
+			await fixture.close();
 			vi.useRealTimers();
 		}
 	});
@@ -245,7 +255,7 @@ describe("SSH command Operation execution", () => {
 			expect(row?.status).toBe("blocked");
 			expect(row?.matched_guard_rule_id).toBeTruthy();
 		} finally {
-			fixture.close();
+			await fixture.close();
 		}
 	});
 
@@ -262,7 +272,7 @@ describe("SSH command Operation execution", () => {
 			});
 			expect(onUpdate).not.toHaveBeenCalled();
 		} finally {
-			fixture.close();
+			await fixture.close();
 		}
 	});
 
@@ -282,7 +292,7 @@ describe("SSH command Operation execution", () => {
 			fixture.broker.releaseFirst();
 			await running;
 		} finally {
-			fixture.close();
+			await fixture.close();
 		}
 	});
 
@@ -330,7 +340,7 @@ describe("SSH command Operation execution", () => {
 				restarted.close();
 			}
 		} finally {
-			fixture.close();
+			await fixture.close();
 		}
 	});
 });
@@ -339,11 +349,15 @@ async function createFixture(options: { maxConcurrentOperations?: number } = {})
 	backend: ReturnType<typeof createSqliteManagementBackend>;
 	broker: FakeBroker;
 	service: CommandOperationService;
-	close(): void;
+	workDir: string;
+	close(): Promise<void>;
 }> {
+	const workDir = realpathSync(mkdtempSync(join(tmpdir(), "command-operation-")));
+	directories.push(workDir);
 	const ids = new SequentialIds();
 	const backend = createSqliteManagementBackend({
 		databasePath: ":memory:",
+		localCwd: workDir,
 		credentialEncryptionKey: new Uint8Array(32).fill(7),
 		clock: { now: () => Date.now() },
 		ids,
@@ -360,7 +374,7 @@ async function createFixture(options: { maxConcurrentOperations?: number } = {})
 		defaultCwd: "/srv/app",
 		connection: { connectTimeoutMs: 10_000 },
 	});
-	await request(backend.handleRequest, "POST", "/api/workspaces/id-1/sessions", { displayName: "Session" });
+	await request(backend.handleRequest, "POST", "/api/workspaces/id-1/sessions", { displayName: "Session", workDir });
 	const broker = new FakeBroker();
 	const operations = new SqliteCommandOperationRepository(backend.database);
 	const sessions = new SqliteSessionRepository(backend.database);
@@ -385,9 +399,10 @@ async function createFixture(options: { maxConcurrentOperations?: number } = {})
 		backend,
 		broker,
 		service,
-		close: () => {
+		workDir,
+		close: async () => {
 			service.close();
-			backend.close();
+			await backend.close();
 		},
 	};
 }
@@ -399,8 +414,9 @@ const staticHostTrust = {
 async function createSession(
 	backend: ReturnType<typeof createSqliteManagementBackend>,
 	displayName: string,
+	workDir: string,
 ): Promise<string> {
-	const response = await request(backend.handleRequest, "POST", "/api/workspaces/id-1/sessions", { displayName });
+	const response = await request(backend.handleRequest, "POST", "/api/workspaces/id-1/sessions", { displayName, workDir });
 	if (typeof response.id !== "string") throw new Error("Session response did not contain an id");
 	return response.id;
 }

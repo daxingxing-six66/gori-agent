@@ -15,7 +15,9 @@ HTTP、SQLite、SSH 与聊天运行时。完整安装步骤见 [根 README](../.
 
 ## 直接启动后端
 
-直接使用 `npm run dev --workspace=@pi/ssh-agent` 时，需要自己提供 `SSH_AGENT_DATABASE_PATH` 和 `SSH_AGENT_CREDENTIAL_KEY_BASE64`。后者必须是固定的 32 字节随机密钥的标准 Base64 表示。后端不会自动加载 .env 文件。
+直接使用 `npm run dev --workspace=@pi/ssh-agent` 时，数据库、credential-key、workspace、attachments 和 logs 默认放在 `~/.gori-agent/`，可通过 `SSH_AGENT_DATA_DIR` 统一更改。首次启动创建密钥，后续复用；已有数据库缺失密钥或密钥格式损坏时拒绝启动。后端不会自动加载 .env 文件。
+
+仍可显式提供 `SSH_AGENT_DATABASE_PATH` 和 `SSH_AGENT_CREDENTIAL_KEY_BASE64`；后者必须是固定的 32 字节随机密钥的标准 Base64 表示。显式密钥优先，不写入 credential-key，使用此方式需自行保管并在后续启动继续提供。
 
 可选配置包括 `SSH_AGENT_HOST`、`SSH_AGENT_PORT`、`SSH_AGENT_LOCAL_CWD`、`SSH_AGENT_CORS_ORIGINS`、`SSH_AGENT_MAX_REQUEST_BODY_BYTES` 和 `SSH_AGENT_MAX_CONCURRENT_OPERATIONS`。以 environment.ts 为准。
 

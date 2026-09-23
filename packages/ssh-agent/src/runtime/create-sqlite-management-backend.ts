@@ -1,3 +1,5 @@
+import { join } from "node:path";
+import { resolveDataDirectory } from "../data-directory.ts";
 import { ChatPromptService } from "../application/services/chat-prompt-service.ts";
 import { SqliteChatPromptRepository } from "../infrastructure/sqlite/sqlite-chat-prompt-repository.ts";
 import { ConnectionTestService, type SshConnectionTester } from "../application/services/connection-test-service.ts";
@@ -233,7 +235,7 @@ export function createSqliteManagementBackend(options: CreateSqliteManagementBac
 			models: llmModels,
 			catalog: llmModelCatalog,
 			contextCompactionSettings,
-			localCwd: options.localCwd ?? process.cwd(),
+			localCwd: options.localCwd ?? join(resolveDataDirectory(), "workspace"),
 			ids,
 			lifecycle: sessionLifecycle,
 			...(options.chatApprovalTimeoutMs === undefined ? {} : { approvalTimeoutMs: options.chatApprovalTimeoutMs }),
@@ -279,7 +281,7 @@ export function createSqliteManagementBackend(options: CreateSqliteManagementBac
 		});
 		const localFiles = new DefaultLocalFileSystemService({
 			sessions,
-			localCwd: options.localCwd ?? process.cwd(),
+			localCwd: options.localCwd ?? join(resolveDataDirectory(), "workspace"),
 		});
 		const credentialService = new DefaultCredentialService({
 			credentials: sshCredentials,

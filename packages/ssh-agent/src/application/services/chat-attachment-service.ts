@@ -1,3 +1,4 @@
+import { resolveDataDirectory } from "../../data-directory.ts";
 import { constants } from "node:fs";
 import { type FileHandle, lstat, open } from "node:fs/promises";
 import { join, posix, resolve } from "node:path";
@@ -33,7 +34,7 @@ export class ChatAttachmentService {
 
 	constructor(options: ChatAttachmentServiceOptions) {
 		this.#attachments = options.attachments;
-		this.#baseDir = resolve(options.attachmentBaseDir ?? process.cwd());
+		this.#baseDir = resolve(options.attachmentBaseDir ?? resolveDataDirectory());
 		this.#sessionsDir = join(this.#baseDir, "attachments", "sessions");
 	}
 

@@ -30,3 +30,16 @@
 ## 后续开发
 
 在 Codex 或编辑器中打开 `gori-agent` 目录。`npm run check` 同时检查 AI 文档摘要、模型目录和 TypeScript 类型。发版不再需要移动 package；发行包与 GitHub Releases 自动化仍是待完成工作。
+
+## 统一运行数据目录
+
+根启动器、直接启动后端和 dev 模式现在默认使用 `~/.gori-agent/`，`SSH_AGENT_DATA_DIR` 可覆盖此目录（支持绝对路径、相对路径和 `~/`）。数据库、保存的密钥、默认 workspace、attachments、logs 均放在其中。相对 DATA_DIR 按启动时工作目录解析；推荐使用绝对路径。显式 DATABASE_PATH/LOCAL_CWD 及已保存的 Session workDir 不会被重写；显式 CREDENTIAL_KEY_BASE64 优先且不自动写入文件，必须继续提供或自行安全备份。
+
+旧数据不会自动搬迁。此前直接启动后端可能使用自定义数据库、环境变量密钥、`~/.ssh-agent/workspace`，附件可能在 `packages/ssh-agent/attachments`，日志在 `packages/ssh-agent/logs`。迁移时：
+
+1. 停止所有访问旧数据的实例，备份数据库、对应密钥、附件和工作目录。
+2. 在空的目标数据目录中成套复制数据库（默认文件名 `ssh-agent.sqlite`）、原密钥（文件名 `credential-key`，标准 Base64）、`attachments/` 和需要保留的 `workspace/`；不要覆盖目标已有数据库或密钥。旧日志可另行归档。
+3. 设置 `SSH_AGENT_DATA_DIR` 指向目标，再启动并检查凭据解密、会话附件和本地目录。数据库的附件相对路径保持不变，无需修改记录。
+4. 已保存的 Workspace defaultCwd、Session workDir 为原路径；移动相关文件后应通过界面更新目录。确认迁移和备份有效前保留旧数据。
+
+只有新数据库才会自动创建密钥；已有数据库缺失密钥时会拒绝启动。不要通过删除数据库或生成新密钥来绕过恢复要求。

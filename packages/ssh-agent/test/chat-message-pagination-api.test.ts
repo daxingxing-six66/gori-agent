@@ -66,6 +66,7 @@ describe("Chat message pagination HTTP API", () => {
 						code: "validation_error",
 						message: "字段 beforeSequence 的值无效",
 						field: "beforeSequence",
+						errorId: expect.any(String),
 					},
 				},
 			});

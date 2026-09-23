@@ -209,7 +209,7 @@ describe("LLM Provider management HTTP API", () => {
 		}
 	});
 
-	it("reopens a v3 database with an encrypted Provider Credential", async () => {
+	it("preserves an encrypted Provider Credential and migration records across reopening", async () => {
 		const directory = await mkdtemp(join(tmpdir(), "pi-ssh-agent-llm-"));
 		const databasePath = join(directory, "management.sqlite");
 		let backend = createBackend(databasePath);
@@ -218,31 +218,21 @@ describe("LLM Provider management HTTP API", () => {
 				type: "api_key",
 				apiKey: "persisted-key",
 			});
-			backend.close();
+			const versionsBefore = backend.database
+				.prepare("SELECT version, applied_at FROM ssh_agent_schema_migrations ORDER BY version")
+				.all();
+			await backend.close();
 			backend = createBackend(databasePath);
 			expect((await backend.llmModels.getAuth("openai"))?.auth.apiKey).toBe("persisted-key");
-			const migrations = backend.database
-				.prepare("SELECT version FROM ssh_agent_schema_migrations ORDER BY version")
-				.all();
-			expect(migrations).toEqual([
-				{ version: 1 },
-				{ version: 2 },
-				{ version: 3 },
-				{ version: 4 },
-				{ version: 5 },
-				{ version: 6 },
-				{ version: 7 },
-				{ version: 8 },
-				{ version: 9 },
-				{ version: 10 },
-				{ version: 11 },
-				{ version: 12 },
-				{ version: 13 },
-				{ version: 14 },
-			]);
+			expect(
+				backend.database
+					.prepare("SELECT version, applied_at FROM ssh_agent_schema_migrations ORDER BY version")
+					.all(),
+			).toEqual(versionsBefore);
+			expect(backend.database.prepare("PRAGMA foreign_key_check").all()).toEqual([]);
 		} finally {
 			try {
-				backend.close();
+				await backend.close();
 			} catch {
 				// The first backend may already be closed when reopening fails.
 			}

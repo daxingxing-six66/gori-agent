@@ -1,5 +1,7 @@
 import { homedir } from "node:os";
 import { isAbsolute, join, resolve } from "node:path";
+import { resolveDataDirectory } from "../data-directory.ts";
+import { readCredentialKey } from "./credential-key.ts";
 import { COMMAND_EXECUTION_DEFAULTS } from "../application/services/command-operation-service.ts";
 import type { CreateSshAgentServerOptions } from "./ssh-agent-server.ts";
 
@@ -11,6 +13,8 @@ const DEFAULT_ALLOWED_ORIGINS = [
 ] as const;
 
 export interface SshAgentServerEnvironmentConfig extends Omit<CreateSshAgentServerOptions, "llmModelsFactory"> {
+	dataDirectory: string;
+	logDirectory: string;
 	host: string;
 	port: number;
 	allowedOrigins: readonly string[];
@@ -19,9 +23,9 @@ export interface SshAgentServerEnvironmentConfig extends Omit<CreateSshAgentServ
 export function readSshAgentServerEnvironment(
 	environment: NodeJS.ProcessEnv = process.env,
 ): SshAgentServerEnvironmentConfig {
-	const databaseValue = required(environment, "SSH_AGENT_DATABASE_PATH");
-	const keyValue = required(environment, "SSH_AGENT_CREDENTIAL_KEY_BASE64");
-	const credentialEncryptionKey = decodeEncryptionKey(keyValue);
+	const dataDirectory = resolveDataDirectory(environment);
+	const databaseValue = environment.SSH_AGENT_DATABASE_PATH?.trim() || join(dataDirectory, "ssh-agent.sqlite");
+	const databasePath = databaseValue === ":memory:" ? databaseValue : resolve(databaseValue);
 	const host = environment.SSH_AGENT_HOST?.trim() || "127.0.0.1";
 	const port = integer(environment.SSH_AGENT_PORT, "SSH_AGENT_PORT", 3001, 1, 65_535);
 	const maxConcurrentOperations = integer(
@@ -43,10 +47,13 @@ export function readSshAgentServerEnvironment(
 		1,
 		Number.MAX_SAFE_INTEGER,
 	);
-	const localCwd = localDirectory(environment.SSH_AGENT_LOCAL_CWD);
+	const localCwd = localDirectory(environment.SSH_AGENT_LOCAL_CWD, dataDirectory);
 	return {
-		databasePath: databaseValue === ":memory:" ? databaseValue : resolve(databaseValue),
-		credentialEncryptionKey,
+		dataDirectory,
+		logDirectory: join(dataDirectory, "logs"),
+		attachmentBaseDir: dataDirectory,
+		databasePath,
+		credentialEncryptionKey: readCredentialKey(dataDirectory, databasePath, environment.SSH_AGENT_CREDENTIAL_KEY_BASE64),
 		host,
 		port,
 		maxConcurrentOperations,
@@ -56,26 +63,12 @@ export function readSshAgentServerEnvironment(
 	};
 }
 
-function localDirectory(value: string | undefined): string {
-	const candidate = value?.trim() || join(homedir(), ".ssh-agent", "workspace");
+function localDirectory(value: string | undefined, dataDirectory: string): string {
+	const candidate = value?.trim() || join(dataDirectory, "workspace");
 	const expanded =
 		candidate === "~" ? homedir() : candidate.startsWith("~/") ? join(homedir(), candidate.slice(2)) : candidate;
 	if (!isAbsolute(expanded)) throw new Error("SSH_AGENT_LOCAL_CWD must be absolute or start with ~/");
 	return resolve(expanded);
-}
-
-function required(environment: NodeJS.ProcessEnv, name: string): string {
-	const value = environment[name]?.trim();
-	if (!value) throw new Error(`${name} is required`);
-	return value;
-}
-
-function decodeEncryptionKey(value: string): Uint8Array {
-	const decoded = Buffer.from(value, "base64");
-	if (decoded.byteLength !== 32 || decoded.toString("base64") !== value) {
-		throw new Error("SSH_AGENT_CREDENTIAL_KEY_BASE64 must be canonical base64 for exactly 32 bytes");
-	}
-	return decoded;
 }
 
 function integer(value: string | undefined, name: string, fallback: number, minimum: number, maximum: number): number {

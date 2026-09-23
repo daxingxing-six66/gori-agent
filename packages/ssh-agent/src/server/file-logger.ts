@@ -2,15 +2,15 @@ import { Console } from "node:console";
 import { appendFileSync, mkdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { Writable } from "node:stream";
-import { fileURLToPath } from "node:url";
+import { resolveDataDirectory } from "../data-directory.ts";
 
-export const DEFAULT_LOG_DIRECTORY = fileURLToPath(new URL("../../logs/", import.meta.url));
+export const DEFAULT_LOG_DIRECTORY = join(resolveDataDirectory(), "logs");
 
 /** Single-process local logging. Each record is written before returning. */
 export function createFileConsole(
 	options: { directory?: string; maxBytes?: number; clock?: () => Date; fallback?: (message: string) => void } = {},
 ): Console {
-	const directory = options.directory ?? DEFAULT_LOG_DIRECTORY;
+	const directory = options.directory ?? join(resolveDataDirectory(), "logs");
 	const maxBytes = options.maxBytes ?? 10 * 1024 * 1024;
 	if (!Number.isSafeInteger(maxBytes) || maxBytes < 1) throw new Error("Log maxBytes must be a positive integer");
 	const clock = options.clock ?? (() => new Date());
