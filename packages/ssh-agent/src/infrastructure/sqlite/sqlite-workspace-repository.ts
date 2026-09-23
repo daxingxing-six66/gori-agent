@@ -7,7 +7,7 @@ import { type WorkspaceRow, workspaceFromRow } from "./rows.ts";
 const WORKSPACE_COLUMNS = `w.id, w.display_name, w.environment, w.hostname, w.port,
 	host_trust.algorithm AS host_key_algorithm, host_trust.fingerprint AS host_key_fingerprint,
 	host_trust.verified_at AS host_key_verified_at,
-	active_credential.id AS active_credential_id, w.default_cwd, w.connect_timeout_ms,
+	active_credential.id AS active_credential_id, w.default_cwd, w.remote_default_cwd, w.connect_timeout_ms,
 	w.keepalive_interval_ms, w.keepalive_max_count, w.revision, w.created_at, w.updated_at`;
 const WORKSPACE_FROM = `workspaces w
 	JOIN credentials active_credential
@@ -48,9 +48,9 @@ export class SqliteWorkspaceRepository implements WorkspaceRepository {
 	async insert(workspace: Workspace): Promise<void> {
 		this.database
 			.prepare(`INSERT INTO workspaces (
-				id, display_name, environment, hostname, port, default_cwd, connect_timeout_ms,
+				id, display_name, environment, hostname, port, default_cwd, remote_default_cwd, connect_timeout_ms,
 				keepalive_interval_ms, keepalive_max_count, revision, created_at, updated_at
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
 			.run(
 				workspace.id,
 				workspace.displayName,
@@ -58,6 +58,7 @@ export class SqliteWorkspaceRepository implements WorkspaceRepository {
 				workspace.host.hostname,
 				workspace.host.port,
 				workspace.defaultCwd,
+				workspace.remoteDefaultCwd ?? "/",
 				workspace.connection.connectTimeoutMs,
 				workspace.connection.keepaliveIntervalMs,
 				workspace.connection.keepaliveMaxCount,
@@ -69,8 +70,8 @@ export class SqliteWorkspaceRepository implements WorkspaceRepository {
 
 	async update(workspace: Workspace, expectedRevision: number): Promise<boolean> {
 		const result = this.database
-			.prepare("UPDATE workspaces SET display_name = ?, default_cwd = ?, revision = ?, updated_at = ? WHERE id = ? AND revision = ?")
-			.run(workspace.displayName, workspace.defaultCwd, workspace.revision, workspace.updatedAt, workspace.id, expectedRevision);
+			.prepare("UPDATE workspaces SET display_name = ?, default_cwd = ?, remote_default_cwd = ?, revision = ?, updated_at = ? WHERE id = ? AND revision = ?")
+			.run(workspace.displayName, workspace.defaultCwd, workspace.remoteDefaultCwd ?? "/", workspace.revision, workspace.updatedAt, workspace.id, expectedRevision);
 		return result.changes === 1;
 	}
 

@@ -701,6 +701,10 @@ const MIGRATIONS = [
 					AND json_extract(message_json, '$.content[0].text') = '<terminal-model-off>'));
 		`,
 	},
+	{
+		version: 18,
+		sql: `ALTER TABLE workspaces ADD COLUMN remote_default_cwd TEXT NOT NULL DEFAULT '/';`,
+	},
 ] as const;
 
 export function applyMigrations(database: DatabaseSync): void {

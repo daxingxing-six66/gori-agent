@@ -4,6 +4,9 @@
 
 - 创建弹窗的草稿连接测试使用独立临时客户端，仅验证认证，不占用本 Pool、不保存 Host Trust、不重试。详见 [connection-test.md](./connection-test.md)。
 
+
+目标解析器只将 Workspace `remoteDefaultCwd`（旧适配器省略时默认 `/`）写入 SSH Target 的 `defaultCwd`，禁止回退到 Workspace 的本地 `defaultCwd`。目录不参与 Connection Key，后续请求读取最新配置，既有 PTY 不迁移当前目录。
+
 ## 当前边界
 
 - `Ssh2ChannelBroker` 的上传下载共用 20 个活动名额和 3000 个 FIFO 等待位置，独立于 Connection/Channel 容量；Workspace/Credential 失效同时取消匹配的排队传输，关闭时拒绝新传输并清空队列。详见 [文件传输限流](./file-tool-concurrency.md)。

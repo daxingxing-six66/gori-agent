@@ -12,6 +12,9 @@
 
 Chat 协议接受 runtime system 消息，状态按 `runtimeEventId` 保留同毫秒内的不同切换。时间线不把模式协议显示为 Assistant 气泡，也不因仅有模式记录而隐藏空会话提示。回归见 `tests/chat-system-messages.test.tsx`。
 
+
+工作区创建/编辑表单区分“默认本地工作目录”与“默认远端工作目录”：本地沿用 LocalDirectoryPicker，远端为绝对路径输入框，默认 `/`。概览分别显示二者；WorkspaceConsole 只将 `remoteDefaultCwd ?? "/"` 传给 SFTP 页，新会话仍继承 `defaultCwd`。
+
 ## 使用顺序
 
 1. 先从“页面与总装配”确定功能出现在哪个页面。
@@ -103,4 +106,4 @@ Chat 错误展示复用 `features/chat/components/chat-failure-details.tsx`，�
 
 模型选择器仅在用户切换 Provider/Model 时，将标识写入浏览器全局 `localStorage`（`gori:last-model-selection:v1`），同模型不重复写入；不缓存凭据、模型能力或思考强度。新会话挂载时读取并通过 `resolveConfiguredModel` 校验可用性后预选，存储损坏、不可用模型和目录查询失败均保留手动选择入口；手选及卸载会取消恢复，迟到响应不覆盖用户选择。已有会话继续使用自身模型记录，自动恢复和发送消息不写全局缓存。缓存跨工作区、刷新和同源标签页共享，不跨浏览器同步。
 
-工作区控制台铅笔入口使用 `workspace-edit-dialog.tsx` 编辑名称和默认目录，复用 `LocalDirectoryPicker` 浏览本机目录；保存通过 Workspace PATCH 携带 `displayName/defaultCwd/expectedRevision`，成功后刷新共享树。取消目录选择保留草稿，保存失败保留弹窗与路径。已有 Session 目录不随 Workspace 默认值变更。
+工作区控制台铅笔入口使用 `workspace-edit-dialog.tsx` 编辑名称和默认目录，复用 `LocalDirectoryPicker` 浏览本机目录；保存通过 Workspace PATCH 携带 `displayName/defaultCwd/remoteDefaultCwd/expectedRevision`，成功后刷新共享树。取消目录选择保留草稿，保存失败保留弹窗与路径。已有 Session 目录不随 Workspace 默认值变更。

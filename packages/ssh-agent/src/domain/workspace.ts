@@ -36,7 +36,10 @@ export interface Workspace {
 	environment: WorkspaceEnvironment;
 	host: WorkspaceHost;
 	activeCredentialId: CredentialId;
+	/** Local default inherited by new sessions. */
 	defaultCwd: string;
+	/** Remote SSH/SFTP directory; omitted by older clients, defaults to /. */
+	remoteDefaultCwd?: string;
 	connection: WorkspaceConnectionOptions;
 	revision: number;
 	createdAt: number;
@@ -48,7 +51,10 @@ export interface CreateWorkspaceInput {
 	environment: WorkspaceEnvironment;
 	host: WorkspaceHostAddress;
 	credential: CreateCredentialInput;
+	/** Local default inherited by new sessions. */
 	defaultCwd: string;
+	/** Remote SSH/SFTP directory; omitted by older clients, defaults to /. */
+	remoteDefaultCwd?: string;
 	connection?: Partial<WorkspaceConnectionOptions>;
 }
 
@@ -72,6 +78,7 @@ export interface UpdateWorkspaceInput {
 	id: WorkspaceId;
 	displayName: string;
 	defaultCwd?: string;
+	remoteDefaultCwd?: string;
 	expectedRevision: number;
 }
 

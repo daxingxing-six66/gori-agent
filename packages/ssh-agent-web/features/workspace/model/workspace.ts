@@ -20,7 +20,10 @@ export interface Workspace {
 		hostKey: WorkspaceHostKey | null;
 	};
 	activeCredentialId: string;
+	/** Local default inherited by new sessions. */
 	defaultCwd: string;
+	/** Remote SSH/SFTP directory; omitted by older clients, defaults to /. */
+	remoteDefaultCwd?: string;
 	connection: {
 		connectTimeoutMs: number;
 		keepaliveIntervalMs: number;
@@ -45,7 +48,10 @@ export interface CreateWorkspaceInput {
 	environment: WorkspaceEnvironment;
 	host: Pick<Workspace["host"], "hostname" | "port">;
 	credential: CreateCredentialInput;
+	/** Local default inherited by new sessions. */
 	defaultCwd: string;
+	/** Remote SSH/SFTP directory; omitted by older clients, defaults to /. */
+	remoteDefaultCwd?: string;
 	connection?: Partial<Workspace["connection"]>;
 }
 

@@ -2,6 +2,9 @@
 
 适用于 Workspace 级文件管理、Transfer 六状态持久化、流式上传下载、Workspace SSE、Connection 快照和远端 Linux 指标采集。
 
+
+文件页面从 Workspace `remoteDefaultCwd` 初始化（省略时 `/`），API 未传 `path` 时使用同一远端默认值；显式 `path` 原样作为远端路径查询，不能在 404 后悄悄替换为其他目录。本地 `defaultCwd` 仅用于会话继承。概览分别展示两个目录。
+
 ## 当前边界
 
 - 后端共享 Broker 的上传和下载共用 20 个活动名额、3000 个 FIFO 等待位置；满队列返回 `transfer_queue_full`，公开异常状态 429，Tool 失败提示支持中英文。排队不新增 Transfer 状态，目录/stat/delete 不占传输名额。Agent 下载收到数据后才打开本地临时文件，空文件在下载成功后创建。

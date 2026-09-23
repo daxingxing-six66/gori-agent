@@ -87,7 +87,7 @@ export class DefaultSshTargetResolver implements SshTargetResolver, WorkspaceSsh
 			credentialId: credential.id,
 			credentialAuthVersion: credential.authVersion,
 			remoteUser: credential.remoteUser,
-			defaultCwd: workspace.defaultCwd,
+			defaultCwd: workspace.remoteDefaultCwd ?? "/",
 			connectTimeoutMs: workspace.connection.connectTimeoutMs,
 			keepaliveIntervalMs: workspace.connection.keepaliveIntervalMs,
 			keepaliveMaxCount: workspace.connection.keepaliveMaxCount,

@@ -371,7 +371,8 @@ async function createFixture(options: { maxConcurrentOperations?: number } = {})
 			port: 22,
 		},
 		credential: { displayName: "root", remoteUser: "root", type: "password", password: "secret" },
-		defaultCwd: "/srv/app",
+		defaultCwd: workDir,
+		remoteDefaultCwd: "/srv/app",
 		connection: { connectTimeoutMs: 10_000 },
 	});
 	await request(backend.handleRequest, "POST", "/api/workspaces/id-1/sessions", { displayName: "Session", workDir });

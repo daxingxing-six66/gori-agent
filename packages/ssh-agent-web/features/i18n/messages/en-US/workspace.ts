@@ -1,4 +1,7 @@
 export const enUSWorkspaceMessages = {
+	"workspace.field.remoteDefaultCwd": "Default remote working directory",
+	"workspace.remoteDefaultCwd.description": "Used for SSH commands and SFTP browsing. Enter an absolute path on the remote server.",
+	"workspace.remoteDefaultCwd.invalid": "The remote working directory must be an absolute path, such as / or /opt/app",
 	"workspace.testConnection.button": "Test connection",
 	"workspace.testConnection.loading": "Testing…",
 	"workspace.testConnection.success": "Connected successfully. SSH authentication passed.",
@@ -29,7 +32,7 @@ export const enUSWorkspaceMessages = {
 	"workspace.field.hostname": "Hostname",
 	"workspace.field.port": "Port",
 	"workspace.field.firstCredential": "Initial Credential",
-	"workspace.field.defaultCwd": "Default working directory",
+	"workspace.field.defaultCwd": "Default local working directory",
 	"workspace.field.connectTimeout": "Connect timeout (ms)",
 	"workspace.field.keepaliveInterval": "Keepalive interval (ms)",
 	"workspace.field.keepaliveMaxCount": "Keepalive retry limit",

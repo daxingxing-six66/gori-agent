@@ -14,7 +14,7 @@ export const workspaceApi = {
 	getTree: (signal?: AbortSignal) => apiRequest<WorkspaceSessionTree>("/api/workspace-session-tree", { signal }),
 	create: (input: CreateWorkspaceInput) =>
 		apiRequest<CreateWorkspaceResult>("/api/workspaces", { method: "POST", body: input }),
-	update: (workspaceId: string, input: { displayName: string; defaultCwd?: string; expectedRevision: number }) =>
+	update: (workspaceId: string, input: { displayName: string; defaultCwd?: string; remoteDefaultCwd?: string; expectedRevision: number }) =>
 		apiRequest<Workspace>(`/api/workspaces/${encodeURIComponent(workspaceId)}`, { method: "PATCH", body: input }),
 	rename: (workspaceId: string, displayName: string, expectedRevision: number) =>
 		apiRequest<Workspace>(`/api/workspaces/${encodeURIComponent(workspaceId)}`, {

@@ -86,7 +86,8 @@ interface Workspace {
     };
   };
   activeCredentialId: string;
-  defaultCwd: string;
+  defaultCwd: string; // 本地 Session 默认目录
+  remoteDefaultCwd: string; // 远端 SSH/SFTP 默认目录
   connection: {
     connectTimeoutMs: number;
     keepaliveIntervalMs: number;
@@ -497,4 +498,6 @@ Accept-Language: zh-CN
 
 ## 编辑工作区
 
-`PATCH /api/workspaces/:workspaceId` 接收 `{ displayName: string, defaultCwd?: string, expectedRevision: number }`，成功返回更新后的 Workspace，revision 加一。省略 `defaultCwd` 保留原值；传入值必须非空且不超过 4096 字符。其他连接字段仍不允许修改，版本冲突返回 409。前端通过系统目录选择器提供目录，保存后刷新资源树；仅后续新 Session 继承该目录，不回填旧 Session。
+`PATCH /api/workspaces/:workspaceId` 接收 `{ displayName: string, defaultCwd?: string, remoteDefaultCwd?: string, expectedRevision: number }`，成功返回更新后的 Workspace，revision 加一。省略 `defaultCwd` 保留原值；传入值必须非空且不超过 4096 字符。其他连接字段仍不允许修改，版本冲突返回 409。前端通过系统目录选择器提供目录，保存后刷新资源树；仅后续新 Session 继承该目录，不回填旧 Session。
+
+本地 `defaultCwd` 与远端 `remoteDefaultCwd` 独立。创建时远端目录可省略，默认 `/`；PATCH 省略则保留。远端值须以 `/` 开头且不含 NUL，长度最多 4096。界面只有本地目录使用本机选择器；SFTP 初始化和未指定 cwd 的远端命令只读取远端字段。v18 为旧工作区增加远端默认 `/`，保留原目录和已有 Session。

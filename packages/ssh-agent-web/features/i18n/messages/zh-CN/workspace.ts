@@ -1,4 +1,7 @@
 export const zhCNWorkspaceMessages = {
+	"workspace.field.remoteDefaultCwd": "默认远端工作目录",
+	"workspace.remoteDefaultCwd.description": "用于 SSH 命令和 SFTP 文件浏览，请填写远端服务器上的绝对路径。",
+	"workspace.remoteDefaultCwd.invalid": "远端工作目录必须是绝对路径，例如 / 或 /opt/app",
 	"workspace.testConnection.button": "测试连接",
 	"workspace.testConnection.loading": "测试中…",
 	"workspace.testConnection.success": "连接成功，SSH 身份认证已通过。",
@@ -29,7 +32,7 @@ export const zhCNWorkspaceMessages = {
 	"workspace.field.hostname": "主机名",
 	"workspace.field.port": "端口",
 	"workspace.field.firstCredential": "首个凭据",
-	"workspace.field.defaultCwd": "默认工作目录",
+	"workspace.field.defaultCwd": "默认本地工作目录",
 	"workspace.field.connectTimeout": "连接超时（毫秒）",
 	"workspace.field.keepaliveInterval": "保活间隔（毫秒）",
 	"workspace.field.keepaliveMaxCount": "保活最大次数",

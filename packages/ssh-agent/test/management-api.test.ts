@@ -521,7 +521,7 @@ describe("SQLite management HTTP API", () => {
 					.get("workspace-1"),
 			).toEqual({ algorithm: "ssh-ed25519", fingerprint: "SHA256:legacy", verified_at: 800 });
 			const workspaceColumns = database.prepare("PRAGMA table_info(workspaces)").all();
-			expect(workspaceColumns.map((column) => column.name)).toEqual(["id"]);
+			expect(workspaceColumns.map((column) => column.name)).toEqual(["id", "remote_default_cwd"]);
 		} finally {
 			database.close();
 		}

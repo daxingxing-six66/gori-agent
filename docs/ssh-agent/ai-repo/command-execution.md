@@ -2,6 +2,9 @@
 
 适用于 `remote_server_call` Tool、Session 内 FIFO、进程并发限制、Command Operation、Guard 执行期校验、输出审计、失败分类和最终 Tool Result。
 
+
+未传 `cwd` 的命令使用 Workspace `remoteDefaultCwd`，默认 `/`；显式 `cwd` 仍优先。Workspace 本地 `defaultCwd` 不参与远端命令目录解析。
+
 ## 当前边界
 
 - Agent 批次保留一个串行工具使整批串行的规则；remote_server_call 与 Terminal 工具均保持串行，文件工具的路径并发不会使同批部署命令提前执行。见 [文件工具并发](./file-tool-concurrency.md)。

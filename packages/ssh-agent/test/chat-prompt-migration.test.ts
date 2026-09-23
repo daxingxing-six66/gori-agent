@@ -10,6 +10,7 @@ function setup(variant: "legacy" | "current") {
 	applyMigrations(db);
 	db.exec(`DROP TRIGGER chat_prompt_initial_mode; DROP TRIGGER chat_prompt_snapshot_immutable;
 		DROP TRIGGER chat_terminal_mode_transition; DROP TABLE chat_prompt_snapshots;
+		ALTER TABLE workspaces DROP COLUMN remote_default_cwd;
 		DELETE FROM ssh_agent_schema_migrations WHERE version > 16;`);
 	db.exec(readFileSync(new URL(`./fixtures/chat-prompt-v16-${variant}.sql`, import.meta.url), "utf8"));
 	db.exec(`INSERT INTO workspaces (id, display_name, environment, hostname, port, default_cwd,

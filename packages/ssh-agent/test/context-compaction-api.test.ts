@@ -169,7 +169,7 @@ describe("context compaction migration", () => {
 			).toEqual(messagesBefore);
 			expect(database.prepare("PRAGMA foreign_key_check").all()).toEqual([]);
 			expect(database.prepare("SELECT MAX(version) AS version FROM ssh_agent_schema_migrations").get()).toEqual({
-				version: 17,
+				version: 18,
 			});
 			const versions = database.prepare("SELECT * FROM ssh_agent_schema_migrations ORDER BY version").all();
 			applyMigrations(database);

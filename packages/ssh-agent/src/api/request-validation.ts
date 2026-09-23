@@ -208,11 +208,12 @@ function parseCredential(value: unknown, prefix: string): CreateCredentialInput 
 
 export function parseCreateWorkspace(value: unknown): CreateWorkspaceInput {
 	const body = object(value, "body");
-	exactKeys(body, ["displayName", "environment", "host", "credential", "defaultCwd", "connection"]);
+	exactKeys(body, ["displayName", "environment", "host", "credential", "defaultCwd", "remoteDefaultCwd", "connection"]);
 	return {
 		displayName: string(body, "displayName"),
 		environment: parseEnvironment(string(body, "environment")),
 		defaultCwd: string(body, "defaultCwd"),
+		remoteDefaultCwd: optionalString(body, "remoteDefaultCwd"),
 		...parseWorkspaceConnectionFields(body),
 	};
 }
@@ -258,10 +259,10 @@ export function parseActivateCredential(value: unknown): { credentialId: string;
 	};
 }
 
-export function parseUpdateWorkspace(value: unknown): { displayName: string; defaultCwd?: string; expectedRevision: number } {
+export function parseUpdateWorkspace(value: unknown): { displayName: string; defaultCwd?: string; remoteDefaultCwd?: string; expectedRevision: number } {
 	const body = object(value, "body");
-	exactKeys(body, ["displayName", "defaultCwd", "expectedRevision"]);
-	return { displayName: string(body, "displayName"), defaultCwd: optionalString(body, "defaultCwd"), expectedRevision: number(body, "expectedRevision") };
+	exactKeys(body, ["displayName", "defaultCwd", "remoteDefaultCwd", "expectedRevision"]);
+	return { displayName: string(body, "displayName"), defaultCwd: optionalString(body, "defaultCwd"), remoteDefaultCwd: optionalString(body, "remoteDefaultCwd"), expectedRevision: number(body, "expectedRevision") };
 }
 
 export function parseCreateSession(value: unknown): { displayName: string; workDir?: string; autoAudit?: boolean } {

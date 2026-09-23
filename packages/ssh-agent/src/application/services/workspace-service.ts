@@ -90,6 +90,7 @@ export class DefaultWorkspaceService implements WorkspaceService {
 			},
 			activeCredentialId: activeCredential.id,
 			defaultCwd,
+			remoteDefaultCwd: requireRemoteDirectory(input.remoteDefaultCwd ?? "/"),
 			connection,
 			revision: 1,
 			createdAt: now,
@@ -165,6 +166,7 @@ export class DefaultWorkspaceService implements WorkspaceService {
 			...current,
 			displayName: requireDisplayName(input.displayName),
 			defaultCwd: input.defaultCwd === undefined ? current.defaultCwd : requireNonEmpty(input.defaultCwd, "defaultCwd", 4096),
+			remoteDefaultCwd: input.remoteDefaultCwd === undefined ? current.remoteDefaultCwd ?? "/" : requireRemoteDirectory(input.remoteDefaultCwd),
 			revision: current.revision + 1,
 			updatedAt: this.clock.now(),
 		};
@@ -192,4 +194,12 @@ export class DefaultWorkspaceService implements WorkspaceService {
 
 function isWorkspaceEnvironment(value: string): value is Workspace["environment"] {
 	return value === "production" || value === "staging" || value === "development" || value === "other";
+}
+
+function requireRemoteDirectory(value: string): string {
+	const path = requireNonEmpty(value, "remoteDefaultCwd", 4096);
+	if (!path.startsWith("/") || path.includes("\0")) {
+		throw new ManagementError("validation_error", "remoteDefaultCwd must be an absolute remote path", "remoteDefaultCwd");
+	}
+	return path;
 }
