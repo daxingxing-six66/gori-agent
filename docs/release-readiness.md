@@ -8,7 +8,7 @@ Status: preparation in progress; no public release has been made.
 | Independent package metadata and lockfile | Prepared; all five workspaces private |
 | npm known-vulnerability audit | 0 findings on 2026-09-11 after targeted updates |
 | Model catalog snapshot validation | Passed |
-| Fresh install and type checks | npm ci --ignore-scripts and npm run check passed in standalone directory with its own installed dependencies |
+| Fresh install and type checks | Reverified on 2026-09-23 from a clean export of commit 5c9dcf1; npm ci --ignore-scripts and npm run check passed with independently installed dependencies |
 | Backend and frontend build | Passed on macOS / Node 24.19.0, including an isolated copy outside the original repository |
 | First initialization and key reuse | Passed: startup creates a 0600 key; restart preserves key and saved application settings; missing/invalid key refuses startup without replacement |
 | One-command setup | Install, build and start stages verified individually; --setup combined invocation not separately repeated |
@@ -45,3 +45,14 @@ Security updates include Next.js 16.3.4, React/React DOM/RSC 19.2.8, Vinext 1.0.
 The candidate was moved into the standalone gori-agent directory. The maintainer requested removal of the welcome page; the root route now contains only the existing workspace sidebar, with no simulated conversation. Branding and the Chinese project description are updated. AI documentation and its linked contracts were imported; private test-environment details were replaced with a safe local guide. AI checks are included in npm run check. The default data directory is now ~/.gori-agent; old data is not automatically moved.
 
 Validation in the final directory: fresh `npm ci --ignore-scripts` passed (0 audit findings); `npm run check` passed with 23 AI feature documents; 10 focused locale/theme tests passed; all five workspaces built successfully. Production startup on 4310/4311 with temporary data passed, and the browser showed Gori with the existing sidebar and no welcome section. Existing build-size/classification notices remain. No Git commit or remote was created.
+
+## Clean-source installation acceptance — 2026-09-23
+
+- Exported all 1,001 tracked files from commit `5c9dcf1` using `git archive` into a fresh temporary directory. The export included the new data-directory code and SQL test fixture, with no `.git`, existing dependencies, build output, private database, saved key, or runtime attachments.
+- Environment: macOS, Node.js 24.19.0, npm 11.17.0. Ran the README commands `npm ci --ignore-scripts`, `npm run check`, `SSH_AGENT_PORT=57516 npm run build`, and `npm start` with `SSH_AGENT_WEB_PORT=57517` and a separate temporary `SSH_AGENT_DATA_DIR`. Child processes received a minimal environment without inherited application or provider credentials.
+- Installation added 764 packages and reported zero known vulnerabilities. AI documentation consistency (27 documents), model snapshot validation, TypeScript checks, and all five workspace builds passed.
+- Production homepage and `/healthz` returned HTTP 200. `/api/workspace-session-tree` returned an empty workspace list and accepted the temporary web origin through CORS.
+- First startup created `credential-key`, `ssh-agent.sqlite`, `workspace/`, and `logs/` in the temporary data directory. The key decoded to 32 bytes and had mode `0600`; the data directory had mode `0700`. SQLite integrity was `ok`; workspace, session, SSH credential, and provider credential tables were empty. Attachments are created on demand and were not uploaded in this smoke test.
+- Browser checks passed for the empty workspace homepage, Settings, the empty provider-credential list, and the Create Workspace dialog. No server or model credentials were entered and no SSH or model calls were made.
+- The temporary launcher was stopped gracefully and both temporary ports were released. Ports 3000 and 3001 and existing application data were not used by this test.
+- No missing source files or blocking README steps were found. Existing build warnings about client chunks above 500 kB and static route classification remain non-blocking. This run verified install/check/build/start as separate steps; it did not repeat the combined `--setup` invocation or cross-platform/full-feature acceptance.
