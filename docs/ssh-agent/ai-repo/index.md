@@ -20,6 +20,7 @@
 | 创建工作区前测试地址与草稿凭据、临时 SSH 认证和取消 | [connection-test.md](./connection-test.md) | `packages/ssh-agent/src/application/services/connection-test-service.ts`、`packages/ssh-agent-web/features/workspace/components/workspace-dialog.tsx` |
 | SSH Connection Key、连接复用、Channel、主机校验、保活和重连 | [connection-runtime.md](./connection-runtime.md) | `packages/ssh-agent/src/infrastructure/ssh/ssh2-connection-pool.ts` |
 | Session 命令 FIFO、进程并发限制、Operation、Guard 执行校验、Tool、失败和事件 | [command-execution.md](./command-execution.md) | `packages/ssh-agent/src/application/services/session-command-scheduler.ts`、`packages/ssh-agent/src/application/services/command-operation-service.ts` |
+| 远端 Linux Landlock、可写根、启动器分发、Full Access 审批与审计 | [remote-sandbox.md](./remote-sandbox.md) | `packages/ssh-agent/src/infrastructure/sandbox/`、`native/landlock-run/` |
 | SQLite schema、migration、Repository、Credential 加密和运行时装配 | [sqlite-persistence.md](./sqlite-persistence.md) | `packages/ssh-agent/src/infrastructure/sqlite/` |
 | HTTP 路由、请求校验、CORS、环境变量、进程启动和关闭 | [http-server.md](./http-server.md) | `packages/ssh-agent/src/api/`、`packages/ssh-agent/src/server/` |
 | 本地日志、按日与大小滚动、异常栈 | [logging.md](./logging.md) | `packages/ssh-agent/src/server/file-logger.ts` |

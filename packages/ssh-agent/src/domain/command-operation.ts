@@ -1,4 +1,5 @@
 import type { OperationId, SessionId, WorkspaceId } from "./ids.ts";
+import type { RemoteSandboxFacts } from "./remote-sandbox.ts";
 import type { SshFailure } from "./ssh-failure.ts";
 import type { SshTargetSnapshot } from "./ssh-target.ts";
 
@@ -19,6 +20,9 @@ export interface CommandOperation {
 	sessionId: SessionId;
 	workspaceId: WorkspaceId;
 	command: string;
+	agentRunId?: string;
+	sandbox?: RemoteSandboxFacts;
+	sandboxJustification?: string;
 	requestedCwd?: string;
 	resolvedCwd?: string;
 	timeoutMs: number;

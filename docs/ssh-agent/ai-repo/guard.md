@@ -2,6 +2,9 @@
 
 适用于 Guard 配置持久化、命令规则字段、规则 ID 所有权、整体 PATCH、预设规则包、revision 冲突和执行期匹配。
 
+
+远端沙箱准备后、最终派发前会再读 Guard；Full Access 审批也不能绕过它。预检查或任一执行检查阻断时，不执行用户命令。见 [remote-sandbox.md](./remote-sandbox.md)。
+
 ## 当前契约
 
 - 每个 Workspace 创建时自动生成一个 Guard，Workspace 删除时由数据库级联删除 Guard。

@@ -9,6 +9,10 @@ import type {
 import { ACTIVE_COMMAND_OPERATION_STATUSES } from "../../domain/command-operation.ts";
 import type { Clock, IdGenerator, OperationId, SessionId } from "../../domain/ids.ts";
 import { normalizeSshFailure, SshAgentError, type SshFailure } from "../../domain/ssh-failure.ts";
+import { sandboxFailure, type RemoteSandboxMode } from "../../domain/remote-sandbox.ts";
+import type { RemoteSandboxProvider } from "./remote-sandbox-provider.ts";
+import { RemoteSandboxApprovalStore, type FullAccessRequest } from "./remote-sandbox-approval-store.ts";
+import { SandboxConfirmationCapture } from "./sandbox-confirmation-capture.ts";
 import type { CommandOperationRepository } from "../repositories/command-operation-repository.ts";
 import type { SessionRepository } from "../repositories/session-repository.ts";
 import type { RemoteCommandBroker } from "../ssh-channel-broker.ts";
@@ -30,6 +34,9 @@ export interface SubmitCommandInput {
 	toolCallId: string;
 	sessionId: SessionId;
 	command: string;
+	agentRunId?: string;
+	sandboxPermissions?: RemoteSandboxMode;
+	justification?: string;
 	cwd?: string;
 	timeoutMs?: number;
 	signal?: AbortSignal;
@@ -43,6 +50,7 @@ export interface CommandOperationResult {
 }
 
 interface PendingCommand {
+	fullAccessRequest?: FullAccessRequest;
 	operationId: OperationId;
 	signal?: AbortSignal;
 	onEvent?: (event: OperationEvent, operation: CommandOperation) => void;
@@ -55,6 +63,8 @@ export class CommandOperationService {
 	private readonly targets: SshTargetResolver;
 	private readonly guards: CommandGuardEvaluator;
 	private readonly broker: RemoteCommandBroker;
+	private readonly sandbox?: RemoteSandboxProvider;
+	private readonly sandboxApprovals: RemoteSandboxApprovalStore;
 	private readonly clock: Clock;
 	private readonly ids: IdGenerator;
 	private readonly lifecycle?: SessionLifecycleCoordinator;
@@ -68,6 +78,8 @@ export class CommandOperationService {
 		targets: SshTargetResolver;
 		guards: CommandGuardEvaluator;
 		broker: RemoteCommandBroker;
+		sandbox?: RemoteSandboxProvider;
+		sandboxApprovals?: RemoteSandboxApprovalStore;
 		clock: Clock;
 		ids: IdGenerator;
 		lifecycle?: SessionLifecycleCoordinator;
@@ -78,6 +90,8 @@ export class CommandOperationService {
 		this.targets = options.targets;
 		this.guards = options.guards;
 		this.broker = options.broker;
+		this.sandbox = options.sandbox;
+		this.sandboxApprovals = options.sandboxApprovals ?? new RemoteSandboxApprovalStore();
 		this.clock = options.clock;
 		this.ids = options.ids;
 		this.lifecycle = options.lifecycle;
@@ -92,6 +106,9 @@ export class CommandOperationService {
 		await this.ready;
 		const command = requireCommand(input.command);
 		const timeoutMs = requireTimeout(input.timeoutMs);
+		const mode = input.sandboxPermissions ?? "workspace_write";
+		if (mode !== "workspace_write" && mode !== "full_access") throw sandboxFailure("invalid_request", "Invalid sandbox permissions");
+		if (mode === "full_access" && !input.justification?.trim()) throw sandboxFailure("invalid_request", "full_access requires a justification");
 		if (this.closed) {
 			return this.createRejectedResult(input, command, timeoutMs, {
 				code: "queue_closed",
@@ -121,6 +138,9 @@ export class CommandOperationService {
 				sessionId: session.id,
 				workspaceId: session.workspaceId,
 				command,
+				agentRunId: input.agentRunId,
+				sandbox: { mode, backend: "none", enforcement: "none", commandMayHaveRun: false },
+				sandboxJustification: input.justification,
 				...(input.cwd === undefined ? {} : { requestedCwd: input.cwd }),
 				timeoutMs,
 				status: "created",
@@ -137,6 +157,10 @@ export class CommandOperationService {
 			await this.emit(operation, "status", { status: "queued" }, input.onEvent);
 			const pending: PendingCommand = {
 				operationId: operation.id,
+				...(mode !== "full_access" ? {} : { fullAccessRequest: {
+					agentRunId: input.agentRunId ?? "", toolCallId: input.toolCallId, sessionId: input.sessionId,
+					command: input.command, cwd: input.cwd, timeoutMs: input.timeoutMs, justification: input.justification ?? "",
+				} }),
 				...(input.signal ? { signal: input.signal } : {}),
 				...(input.onEvent ? { onEvent: input.onEvent } : {}),
 				...(input.abortRun ? { abortRun: input.abortRun } : {}),
@@ -252,6 +276,10 @@ export class CommandOperationService {
 					tail,
 				);
 			}
+			if (operation.sandbox?.mode === "full_access" &&
+				(!pending.fullAccessRequest || !this.sandboxApprovals.consume(pending.fullAccessRequest))) {
+				throw sandboxFailure("sandbox_approval_required", "full_access requires a new human approval for this exact tool call. The command was not executed.");
+			}
 			const target = await this.targets.resolve(operation.sessionId);
 			operation.executionContext = target;
 			operation.resolvedCwd = requireCwd(operation.requestedCwd ?? target.defaultCwd);
@@ -272,20 +300,52 @@ export class CommandOperationService {
 					),
 				operation.timeoutMs,
 			);
-			operation.status = "running";
-			operation.startedAt = this.clock.now();
-			await this.persistTransition(operation, ["dispatching"]);
-			await this.emit(operation, "status", { status: "running" }, pending.onEvent);
 			try {
+				if (pending.signal?.aborted) controller.abort(pending.signal.reason);
+				if (!this.sandbox) throw sandboxFailure("sandbox_unavailable", "Remote sandbox provider is unavailable. The command was not executed.");
+				const prepared = await this.sandbox.prepare({ target, cwd: operation.resolvedCwd, command: operation.command,
+					policy: { mode: operation.sandbox?.mode ?? "workspace_write", sandboxRoot: target.remoteSandboxRoot }, signal: controller.signal });
+				controller.signal.throwIfAborted();
+				const finalDecision = await this.guards.evaluate(operation.workspaceId, operation.command);
+				operation.guardRevision = finalDecision.guardRevision;
+				if (!finalDecision.allowed) {
+					operation.matchedGuardRuleId = finalDecision.matchedRule?.id;
+					try { pending.abortRun?.(); } catch { /* Guard remains authoritative. */ }
+					return await this.finishFailure(operation, "blocked", {
+						code: "guard_blocked", category: "guard", phase: "guard_check",
+						message: finalDecision.matchedRule?.reason ?? "Workspace Guard blocked the command", retryable: false,
+					}, pending, tail);
+				}
+				operation.sandbox = { ...prepared.sandbox, enforcement: "none", commandMayHaveRun: false };
+				operation.status = "running";
+				operation.startedAt = this.clock.now();
+				await this.persistTransition(operation, ["dispatching"]);
+				await this.emit(operation, "status", { status: "running" }, pending.onEvent);
+				if (prepared.confirmation === undefined) operation.sandbox = { ...prepared.sandbox, commandMayHaveRun: true };
+				const confirmation = new SandboxConfirmationCapture({
+					marker: prepared.confirmation,
+					onConfirmed: async () => {
+						operation.sandbox = { ...prepared.sandbox, commandMayHaveRun: true };
+						await this.persistTransition(operation, ["running"]);
+					},
+					onOutput: (chunk) => this.recordOutput(operation, "stderr", chunk, tail, pending.onEvent),
+				});
 				const result = await this.broker.execute({
 					target,
-					command: wrapRemoteCommand(operation.resolvedCwd, operation.command),
+					command: prepared.command,
 					signal: controller.signal,
 					onStdout: (chunk) => this.recordOutput(operation, "stdout", chunk, tail, pending.onEvent),
-					onStderr: (chunk) => this.recordOutput(operation, "stderr", chunk, tail, pending.onEvent),
+					onStderr: (chunk) => confirmation.write(chunk),
 				});
 				operation.exitCode = result.exitCode;
 				operation.exitSignal = result.exitSignal;
+				await confirmation.finish();
+				if (!confirmation.confirmed) {
+					operation.sandbox.commandMayHaveRun = true;
+					throw new SshAgentError({ code: "sandbox_confirmation_missing", category: "sandbox", phase: "execute",
+						message: "Remote confinement could not be confirmed. The command may have run; inspect its effects before another attempt.", retryable: false,
+						safeDetails: { commandMayHaveRun: true } });
+				}
 				await this.emit(operation, "exit", result, pending.onEvent);
 				if (result.exitSignal) {
 					return await this.finishFailure(
@@ -303,17 +363,20 @@ export class CommandOperationService {
 						tail,
 					);
 				}
-				if ((result.exitCode ?? 0) !== 0) {
+				if (result.exitCode === undefined) throw new SshAgentError({ code: "execution_result_uncertain", category: "execution", phase: "execute", message: "Remote command returned no exit status", retryable: false });
+				if (result.exitCode !== 0) {
+					const denialSuspected = operation.sandbox.mode === "workspace_write" && /permission denied|operation not permitted/i.test(tail.text());
+					operation.sandbox.denialSuspected = denialSuspected;
 					return await this.finishFailure(
 						operation,
 						"failed",
 						{
-							code: "remote_exit_non_zero",
+							code: denialSuspected ? "sandbox_denied" : "remote_exit_non_zero",
 							category: "execution",
 							phase: "execute",
-							message: "Remote command exited with a non-zero status",
+							message: denialSuspected ? "A permission failure may be due to the sandbox. This attempt may have partial effects; inspect before requesting a new full_access approval." : "Remote command exited with a non-zero status",
 							retryable: false,
-							safeDetails: { exitCode: result.exitCode ?? -1 },
+							safeDetails: { exitCode: result.exitCode, commandMayHaveRun: true, denialSuspected },
 						},
 						pending,
 						tail,
@@ -337,6 +400,7 @@ export class CommandOperationService {
 				sessionId: operation.sessionId,
 				workspaceId: operation.workspaceId,
 			});
+			if (operation.status === "running" && operation.sandbox && (failure.code === "execution_result_uncertain" || failure.code === "execution_timeout" || failure.code === "execution_cancelled")) operation.sandbox.commandMayHaveRun = true;
 			const status =
 				failure.code === "execution_result_uncertain"
 					? "uncertain"
@@ -454,6 +518,7 @@ export class CommandOperationService {
 		const active = await this.operations.listByStatuses(ACTIVE_COMMAND_OPERATION_STATUSES);
 		for (const operation of active) {
 			const previous = operation.status;
+			if (previous === "running" && operation.sandbox) operation.sandbox.commandMayHaveRun = true;
 			operation.status = previous === "running" ? "uncertain" : "cancelled";
 			operation.failure = {
 				code: previous === "running" ? "execution_result_uncertain" : "service_restarted_before_dispatch",
@@ -477,7 +542,7 @@ export class CommandOperationService {
 
 function requireCommand(value: string): string {
 	const command = value.trim();
-	if (!command) {
+	if (!command || command.includes("\0")) {
 		throw new SshAgentError({
 			code: "invalid_request",
 			category: "request",
@@ -515,16 +580,6 @@ function requireCwd(value: string): string {
 		});
 	}
 	return cwd;
-}
-
-function wrapRemoteCommand(cwd: string, command: string): string {
-	if (cwd === "~") return `cd -- "$HOME" && ${command}`;
-	if (cwd.startsWith("~/")) return `cd -- "$HOME"/${quoteShell(cwd.slice(2))} && ${command}`;
-	return `cd -- ${quoteShell(cwd)} && ${command}`;
-}
-
-function quoteShell(value: string): string {
-	return `'${value.replaceAll("'", `'"'"'`)}'`;
 }
 
 class OutputTail {

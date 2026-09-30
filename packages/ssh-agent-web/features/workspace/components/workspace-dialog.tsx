@@ -19,6 +19,7 @@ import { useLocalizedErrorMessage } from "@/features/i18n/components/use-localiz
 import { workspaceApi } from "@/features/workspace/api/workspace-api";
 import {
 	DEFAULT_WORKSPACE_CWD,
+	isRemoteSandboxRoot,
 	type Workspace,
 	type WorkspaceEnvironment,
 } from "@/features/workspace/model/workspace";
@@ -56,6 +57,7 @@ export function WorkspaceDialog({ onClose, onCreated }: {
 	const [port, setPort] = useState("22");
 	const [defaultCwd, setDefaultCwd] = useState(DEFAULT_WORKSPACE_CWD);
 	const [remoteDefaultCwd, setRemoteDefaultCwd] = useState("/");
+	const [remoteSandboxRoot, setRemoteSandboxRoot] = useState("");
 	const [directoryPickerOpen, setDirectoryPickerOpen] = useState(false);
 	const [connectTimeoutMs, setConnectTimeoutMs] = useState("10000");
 	const [keepaliveIntervalMs, setKeepaliveIntervalMs] = useState("15000");
@@ -77,6 +79,7 @@ export function WorkspaceDialog({ onClose, onCreated }: {
 	const testing = testState.status === "testing";
 	const close = () => { connectionTest.reset(); onClose(); };
 	const configureCredential = () => { connectionTest.reset(); setCreatingCredential(true); };
+	const sandboxRootError = !isRemoteSandboxRoot(remoteSandboxRoot) ? intl.formatMessage({ id: "workspace.sandbox.rootInvalid" }) : undefined;
 	const remoteCwdError = !isAbsoluteRemotePath(remoteDefaultCwd) ? intl.formatMessage({ id: "workspace.remoteDefaultCwd.invalid" }) : undefined;
 
 	if (directoryPickerOpen) {
@@ -107,7 +110,7 @@ export function WorkspaceDialog({ onClose, onCreated }: {
 		onClose={close}
 		submitLabel={intl.formatMessage({ id: "workspace.create" })}
 		submitting={submitting}
-		submitDisabled={testing || !hasCredentialSecret(credential) || remoteCwdError !== undefined}
+		submitDisabled={testing || !hasCredentialSecret(credential) || remoteCwdError !== undefined || sandboxRootError !== undefined}
 		footerLeading={<span title={!testEnabled ? intl.formatMessage({ id: "workspace.testConnection.required" }) : undefined}>
 			<button type="button" className="inline-flex h-9 items-center gap-2 rounded-lg border border-[var(--line)] px-4 text-[10px] font-semibold text-[var(--text-secondary)] hover:bg-[var(--surface-muted)] disabled:cursor-not-allowed disabled:opacity-50" disabled={!testEnabled || testing || submitting} aria-describedby={!testEnabled ? "connection-test-requirements" : undefined} aria-busy={testing} onClick={() => { if (testInput) void connectionTest.run(testInput); }}>
 				{testing ? <LoaderCircle size={14} className="motion-safe:animate-spin" aria-hidden="true" /> : null}
@@ -118,7 +121,7 @@ export function WorkspaceDialog({ onClose, onCreated }: {
 		footerNotice={testState.status === "success" ? <NoticeCard tone="info" message={intl.formatMessage({ id: "workspace.testConnection.success" })} /> : testState.status === "error" ? <NoticeCard tone="error" message={localizedErrorMessage(testState.error)} /> : undefined}
 		onSubmit={(event) => {
 			event.preventDefault();
-			if (connectionTest.getSnapshot().status === "testing" || submitting || !hasCredentialSecret(credential) || remoteCwdError !== undefined) return;
+			if (connectionTest.getSnapshot().status === "testing" || submitting || !hasCredentialSecret(credential) || remoteCwdError !== undefined || sandboxRootError !== undefined) return;
 			connectionTest.reset();
 			setSubmitting(true);
 			setError(null);
@@ -132,6 +135,7 @@ export function WorkspaceDialog({ onClose, onCreated }: {
 				credential,
 				defaultCwd,
 				remoteDefaultCwd,
+				remoteSandboxRoot,
 				connection: {
 					connectTimeoutMs: Number(connectTimeoutMs),
 					keepaliveIntervalMs: Number(keepaliveIntervalMs),
@@ -173,6 +177,9 @@ export function WorkspaceDialog({ onClose, onCreated }: {
 		</DialogField>
 		<DialogField label={intl.formatMessage({ id: "workspace.field.remoteDefaultCwd" })} hint={intl.formatMessage({ id: "workspace.remoteDefaultCwd.description" })} error={remoteCwdError ?? validationError(error, "remoteDefaultCwd")}>
 			<input className={dialogInputClass} aria-label={intl.formatMessage({ id: "workspace.field.remoteDefaultCwd" })} required pattern="/.*" value={remoteDefaultCwd} disabled={submitting} onChange={(event) => setRemoteDefaultCwd(event.target.value)} />
+		</DialogField>
+		<DialogField label={intl.formatMessage({ id: "workspace.field.remoteSandboxRoot" })} hint={intl.formatMessage({ id: "workspace.sandbox.rootDescription" })} error={sandboxRootError}>
+			<input className={dialogInputClass} aria-label={intl.formatMessage({ id: "workspace.field.remoteSandboxRoot" })} required pattern="/.*" value={remoteSandboxRoot} disabled={submitting} onChange={(event) => setRemoteSandboxRoot(event.target.value)} />
 		</DialogField>
 		<div className="grid gap-4 sm:grid-cols-3">
 			<DialogField label={intl.formatMessage({ id: "workspace.field.connectTimeout" })} error={validationError(error, "connection.connectTimeoutMs")}><input className={dialogInputClass} required type="number" min="1" value={connectTimeoutMs} onChange={(event) => { connectionTest.reset(); setConnectTimeoutMs(event.target.value); }} /></DialogField>

@@ -88,6 +88,7 @@ interface Workspace {
   activeCredentialId: string;
   defaultCwd: string; // 本地 Session 默认目录
   remoteDefaultCwd: string; // 远端 SSH/SFTP 默认目录
+  remoteSandboxRoot?: string; // 显式的远端内容可写根
   connection: {
     connectTimeoutMs: number;
     keepaliveIntervalMs: number;
@@ -498,6 +499,10 @@ Accept-Language: zh-CN
 
 ## 编辑工作区
 
-`PATCH /api/workspaces/:workspaceId` 接收 `{ displayName: string, defaultCwd?: string, remoteDefaultCwd?: string, expectedRevision: number }`，成功返回更新后的 Workspace，revision 加一。省略 `defaultCwd` 保留原值；传入值必须非空且不超过 4096 字符。其他连接字段仍不允许修改，版本冲突返回 409。前端通过系统目录选择器提供目录，保存后刷新资源树；仅后续新 Session 继承该目录，不回填旧 Session。
+`PATCH /api/workspaces/:workspaceId` 接收 `{ displayName: string, defaultCwd?: string, remoteDefaultCwd?: string, remoteSandboxRoot?: string, expectedRevision: number }`，成功返回更新后的 Workspace，revision 加一。省略 `defaultCwd` 保留原值；传入值必须非空且不超过 4096 字符。其他连接字段仍不允许修改，版本冲突返回 409。前端通过系统目录选择器提供目录，保存后刷新资源树；仅后续新 Session 继承该目录，不回填旧 Session。
 
 本地 `defaultCwd` 与远端 `remoteDefaultCwd` 独立。创建时远端目录可省略，默认 `/`；PATCH 省略则保留。远端值须以 `/` 开头且不含 NUL，长度最多 4096。界面只有本地目录使用本机选择器；SFTP 初始化和未指定 cwd 的远端命令只读取远端字段。v18 为旧工作区增加远端默认 `/`，保留原目录和已有 Session。
+
+远端沙箱可写根由 `remoteSandboxRoot` 独立配置。POST 省略不推断，PATCH 省略保留；非 `/` 的绝对路径、最多 4096 字符且无 NUL/换行。v19 为旧工作区保留未配置状态，默认远端命令失败关闭。创建/编辑 UI 要求用户显式填写现有远端应用目录，执行前由远端 canonicalization 验证。
+
+`POST /api/workspaces/:workspaceId/sandbox` 无命令请求体，显式检测正式目标的 Landlock 并可能投递启动器；返回 `{ mode: "workspace_write", backend: "landlock", enforcement: "full", abi, launcherVersion, sandboxRoot }` 或既有安全错误结构。检测前显示“尚未验证”，能力不足显示失败，不将部分能力描述为已开启。最低 ABI 5，元数据、网络/IPC、Terminal/SFTP 不属于本策略。见 [远端沙箱](../ai-repo/remote-sandbox.md)。

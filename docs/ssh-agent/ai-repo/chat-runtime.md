@@ -2,6 +2,9 @@
 
 适用于 Session Chat Run、Pi Agent 事件、工具审批、steer/follow-up、本地工具和自动上下文压缩。
 
+
+Runtime Factory 将 Run ID 绑定到远端 Tool。Full Access grant 绑定完整请求，只能消费一次，Run 清理会删除未消费授权；审批不能绕过 Guard。原命令失败不会自动升级权限。见 [remote-sandbox.md](./remote-sandbox.md)。
+
 ## 当前边界
 
 - 文件工具批次仅允许 read/SFTP 上传/SFTP 下载在无路径冲突时并行；包含其他串行工具或路径读写/写写冲突则整批按模型顺序执行。详见 [文件工具并发](./file-tool-concurrency.md)。
@@ -17,9 +20,9 @@
 - 模型选择从 SSH Agent 的有效目录读取。上游明确返回所选模型不再受支持时，Run 以 `chat_model_not_supported` 失败，最终 assistant 消息携带统一安全失败报告，在公开投影中显示用户友好提示，同时该模型立即从有效目录和持久化快照删除；不会触发一次无意义的即时刷新。
 - `ChatService` 保留 Chat use case、活动 Run 与初始化互斥、创建顺序和资源归属，`chat-run-executor.ts` 负责执行与清理。`ChatPromptService` 在首次 Run 组装并持久化不可变头部；后续 Run 直接复用。模式切换以真实 system 消息追加到历史，头部只解释标签及首次环境；两个远端 Tool schema 保持稳定，由运行时门禁限制可用入口。完整边界见 [session-prompt.md](./session-prompt.md)。
 - Chat 与上下文压缩请求只在模型 `provider` 精确为 `opencode-go` 时附加稳定的 `x-opencode-session=<Session ID>` 和 `x-opencode-client=pi`，满足 OpenCode Go 的会话路由要求；其他 Provider 的请求选项和 Header 保持不变。
-- Approval、Tool Call 协调、Queue、AgentEvent 投影、Context 压缩和 Run SSE 分别由 `ChatApprovalService`、`ChatToolCallCoordinator`、`ChatQueueService`、`ChatAgentEventHandler`、`ChatContextService` 和 `ChatRunEventHub` 持有。`ChatContextService` 在每次 Provider 请求前估算完整 payload，必要时用 PI compaction 生成摘要；Provider 尚未输出有效内容就返回上下文超限时，同一扩展点强制压缩并只重试一次。`ChatToolAuthorizationPolicy` 只负责 Tool 分类、远端和 Terminal Guard 预检查、`autoAudit` 决策及 Terminal Approval 结果回写；持久化继续通过 `ChatRepository` 端口隔离。
+- Approval、Tool Call 协调、Queue、AgentEvent 投影、Context 压缩和 Run SSE 分别由 `ChatApprovalService`、`ChatToolCallCoordinator`、`ChatQueueService`、`ChatAgentEventHandler`、`ChatContextService` 和 `ChatRunEventHub` 持有。`ChatContextService` 在每次 Provider 请求前估算完整 payload，必要时用 PI compaction 生成摘要；Provider 尚未输出有效内容就返回上下文超限时，同一扩展点强制压缩并只重试一次。`ChatToolAuthorizationPolicy` 只负责 Tool 分类、远端和 Terminal Guard 预检查、`autoAudit` 决策、逐次 Full Access grant 及 Terminal Approval 结果回写；持久化继续通过 `ChatRepository` 端口隔离。
 - Chat Run 从创建持久化前到执行 finally 持有 Session lifecycle lease；删除屏障建立时拒绝新 Run。Run 冻结 `serverInteractionMode`，Terminal Mode 绑定当前 TerminalSession；模式变化不会重写头部，Provider 请求前复核最新持久化模式，失效时停止当前 Run。
-- `read` 无审批；`write`/`bash`/`remote_server_call`/Terminal submit 受 `autoAudit` 控制。远端命令和 Terminal submit 无论是否自动审批，都先执行 Guard 预检查并在派发前复检。`sftp_upload` 和 `sftp_download` 分别在远端、本地检查同名文件，仅覆盖时在 Tool 执行中读取当前 Session 的 `autoAudit`：开启则自动批准并记录 `source="auto"`，关闭则等待人工审批。并发同名冲突使用同一策略，非普通文件仍拒绝覆盖。所有 Approval 都携带后端生成并持久化的场景描述，SFTP 描述明确指出本地或远程文件覆盖。
+- `read` 无审批；`write`/`bash`/默认 `remote_server_call`/Terminal submit 受 `autoAudit` 控制；`full_access` 远端调用强制人工审批，非空理由进入描述，批准来源必须为 user。远端命令和 Terminal submit 无论是否自动审批，都先执行 Guard 预检查并在派发前复检。`sftp_upload` 和 `sftp_download` 分别在远端、本地检查同名文件，仅覆盖时在 Tool 执行中读取当前 Session 的 `autoAudit`：开启则自动批准并记录 `source="auto"`，关闭则等待人工审批。并发同名冲突使用同一策略，非普通文件仍拒绝覆盖。所有 Approval 都携带后端生成并持久化的场景描述，SFTP 描述明确指出本地或远程文件覆盖。
 - Run 内 steer/follow-up 使用 Pi Agent 队列；HTTP 请求 ID 和数据库唯一约束负责幂等。用户拒绝或审批超时会在完整 Tool Result 后停止当前 Turn 的自动延续，只取消 steer，follow-up 仍开启新的 Turn。
 - 创建 Run、steer 和 follow-up 都可携带最多四个 Session 图片 Attachment ID；文本可为空但文本与附件不能同时为空。所选模型必须声明支持 `image` 输入，且切换到纯文本模型时当前有效历史不能仍含图片引用。消息和 Queue 只保存有序 ID；每次 Provider 请求前才安全读取 JPEG、PNG 或 WebP，并临时转换为 `ImageContent`，Base64 不进入 Agent Context、SQLite、SSE 或消息 API。详细边界见 [chat-image-input.md](./chat-image-input.md)。
 - Run 内互斥生命周期由 `ChatRunRuntime` 的语义方法管理；其 `dispose()` 幂等中止 Agent 并清理 Node execution environment。Approval 等待完成时会同时清理 timeout、AbortSignal listener 和进程内 pending 索引。

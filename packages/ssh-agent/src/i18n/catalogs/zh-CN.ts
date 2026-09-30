@@ -1,6 +1,21 @@
 import type { BackendMessageKey } from "./en-US.ts";
 
 export const zhCNMessages = {
+	"approval.remote_full_access": "本次命令将不受远端文件系统沙箱约束，使用 SSH 用户权限执行。理由：{justification}。是否仅批准本次调用？",
+	"ssh.sandbox_unavailable": "远端沙箱不可用，命令未执行。确需无沙箱执行时，须发起新的 full_access 请求并经人工审批。",
+	"ssh.sandbox_confirmation_missing": "无法确认远端命令已受沙箱约束。命令可能已经执行；再次尝试前请先检查副作用。",
+	"ssh.sandbox_launcher_missing": "缺少随软件分发的 Linux 沙箱启动器，命令未执行。",
+	"ssh.sandbox_launcher_upload_failed": "远端沙箱启动器投递失败，命令未执行。",
+	"ssh.sandbox_probe_failed": "远端 Landlock 强制约束探测失败，命令未执行。",
+	"ssh.sandbox_unsupported_platform": "远端沙箱仅支持 Linux，命令未执行。",
+	"ssh.sandbox_unsupported_architecture": "远端沙箱仅支持 Linux x64 和 arm64，命令未执行。",
+	"ssh.sandbox_partial_enforcement": "远端 Landlock 未达到最低 ABI 5 要求，命令未执行。",
+	"ssh.sandbox_root_invalid": "请配置独立的远端沙箱绝对路径，不可为 / 或包含启动器缓存；命令未执行。",
+	"ssh.sandbox_root_unavailable": "远端沙箱目录不存在或不可读取、进入，命令未执行。",
+	"ssh.sandbox_prepare_failed": "远端沙箱准备失败，命令未执行。",
+	"ssh.sandbox_denied": "权限错误可能由沙箱限制引起。本次执行可能已产生部分副作用；请先检查结果，再决定是否发起新的 full_access 人工审批。",
+	"ssh.sandbox_approval_required": "full_access 必须对本次完整工具调用进行人工审批，命令未执行。",
+
 	"chat.system_messages_unsupported": "当前模型接口无法保留运行时 system 消息，请选择使用 OpenAI Chat Completions、Responses 或 Mistral 接口的模型。",
 	"chat.prompt_not_initialized": "请先发送一条聊天消息初始化此会话，再压缩上下文。",
 	"provider.request_failed": "模型请求失败：{reason}",

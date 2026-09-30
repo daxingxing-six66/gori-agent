@@ -1,4 +1,17 @@
 export const zhCNWorkspaceMessages = {
+	"workspace.field.remoteSandboxRoot": "远端沙箱可写目录",
+	"workspace.sandbox.rootDescription": "默认远端命令可写此目录、/tmp 和 /dev/null。请填写已存在的应用目录，不可包含 Gori 启动器缓存。工作目录与可写边界独立。",
+	"workspace.sandbox.rootInvalid": "请填写非 / 的远端绝对目录。",
+	"workspace.sandbox.title": "远端命令沙箱",
+	"workspace.sandbox.notProbed": "尚未验证",
+	"workspace.sandbox.full": "Landlock 文件访问规则已验证",
+	"workspace.sandbox.unavailable": "不可用",
+	"workspace.sandbox.check": "检测远端沙箱",
+	"workspace.sandbox.checking": "检测中…",
+	"workspace.sandbox.notConfigured": "请先配置可写目录，再执行默认远端命令。",
+	"workspace.sandbox.scope": "约束 remote_server_call。网络、IPC、文件元数据修改、Terminal 和 SFTP 不在此沙箱范围。Full Access 每次调用均需审批。",
+	"workspace.sandbox.checkedAt": "上次检测：{time}",
+
 	"workspace.field.remoteDefaultCwd": "默认远端工作目录",
 	"workspace.remoteDefaultCwd.description": "用于 SSH 命令和 SFTP 文件浏览，请填写远端服务器上的绝对路径。",
 	"workspace.remoteDefaultCwd.invalid": "远端工作目录必须是绝对路径，例如 / 或 /opt/app",

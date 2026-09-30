@@ -7,6 +7,9 @@
 
 目标解析器只将 Workspace `remoteDefaultCwd`（旧适配器省略时默认 `/`）写入 SSH Target 的 `defaultCwd`，禁止回退到 Workspace 的本地 `defaultCwd`。目录不参与 Connection Key，后续请求读取最新配置，既有 PTY 不迁移当前目录。
 
+
+SSH Target 同时携带最新 `remoteSandboxRoot`，它不参与 Connection Key。Landlock Provider 按该身份及 Connection generation 缓存成功探针；重连重新验证。启动器准备使用共享 Broker，不改变物理连接/Channel 的所有权。见 [remote-sandbox.md](./remote-sandbox.md)。
+
 ## 当前边界
 
 - `Ssh2ChannelBroker` 的上传下载共用 20 个活动名额和 3000 个 FIFO 等待位置，独立于 Connection/Channel 容量；Workspace/Credential 失效同时取消匹配的排队传输，关闭时拒绝新传输并清空队列。详见 [文件传输限流](./file-tool-concurrency.md)。

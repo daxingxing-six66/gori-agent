@@ -7,7 +7,7 @@ import type { ChatToolAuthorizationPolicy } from "./chat-tool-authorization-poli
 type ToolAuthorizationPolicy = Pick<
 	ChatToolAuthorizationPolicy,
 	"prepare" | "recordDecision" | "shouldAutoApproveSftpOverwrite"
->;
+> & Partial<Pick<ChatToolAuthorizationPolicy, "clearRun">>;
 type ApprovalService = Pick<ChatApprovalService, "request">;
 
 export class ChatToolCallCoordinator {
@@ -52,11 +52,15 @@ export class ChatToolCallCoordinator {
 				toolCallId: input.toolCallId,
 				toolName: input.toolName,
 				description: `Tool ${input.toolName} requests permission to execute. Continue?`,
-				descriptionMessage: toolExecutionApprovalMessage(input.toolName),
+				descriptionMessage: prepared.descriptionMessage ?? toolExecutionApprovalMessage(input.toolName),
 				autoApprove: prepared.autoApprove,
 			},
 			signal,
 		);
+		if (prepared.remoteFullAccess && decision.approved && decision.source !== "user") {
+			this.#authorization.recordDecision(prepared, false);
+			return { block: true, terminate: true, reason: "full_access requires a human approval for this exact call" };
+		}
 		this.#authorization.recordDecision(prepared, decision.approved);
 		if (decision.approved) return undefined;
 		if (decision.reason === "user_rejected" || decision.reason === "timeout") input.onApprovalRejection();
@@ -105,6 +109,7 @@ export class ChatToolCallCoordinator {
 
 	clearRun(runId: string): void {
 		this.#assistantMessageIds.delete(runId);
+		this.#authorization.clearRun?.(runId);
 	}
 
 	close(): void {

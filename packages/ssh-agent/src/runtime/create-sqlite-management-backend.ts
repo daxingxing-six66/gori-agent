@@ -1,3 +1,5 @@
+import { LandlockRemoteSandboxProvider } from "../infrastructure/sandbox/landlock-remote-sandbox-provider.ts";
+import { RemoteSandboxApprovalStore } from "../application/services/remote-sandbox-approval-store.ts";
 import { join } from "node:path";
 import { resolveDataDirectory } from "../data-directory.ts";
 import { ChatPromptService } from "../application/services/chat-prompt-service.ts";
@@ -156,8 +158,12 @@ export function createSqliteManagementBackend(options: CreateSqliteManagementBac
 		const heartbeat = setInterval(() => events.heartbeat(), 15_000);
 		heartbeat.unref();
 		const commandGuard = new DefaultCommandGuardEvaluator(guards);
+		const sandboxApprovals = new RemoteSandboxApprovalStore();
+		const sandbox = new LandlockRemoteSandboxProvider({ broker: connectionPool });
 		const commandOperations = new CommandOperationService({
 			operations: commandOperationRepository,
+			sandbox,
+			sandboxApprovals,
 			sessions,
 			targets,
 			guards: commandGuard,
@@ -227,6 +233,7 @@ export function createSqliteManagementBackend(options: CreateSqliteManagementBac
 			ids,
 		});
 		chat = createChatService({
+			sandboxApprovals,
 			prompts: new ChatPromptService(new SqliteChatPromptRepository(database), workspaces),
 			titles: new SessionTitleService({ models: llmModels, sessions, events }),
 			chatRepository,
@@ -239,10 +246,11 @@ export function createSqliteManagementBackend(options: CreateSqliteManagementBac
 			ids,
 			lifecycle: sessionLifecycle,
 			...(options.chatApprovalTimeoutMs === undefined ? {} : { approvalTimeoutMs: options.chatApprovalTimeoutMs }),
-			createRemoteTool: (sessionId, abortRun) =>
+			createRemoteTool: (sessionId, abortRun, agentRunId) =>
 				createRemoteServerCallTool({
 					sessionId,
 					operations: commandOperations,
+					agentRunId,
 					...(abortRun === undefined ? {} : { abortRun }),
 				}),
 			createTerminalTool: ({ sessionId, terminalSessionId, agentRunId }) =>
@@ -333,6 +341,7 @@ export function createSqliteManagementBackend(options: CreateSqliteManagementBac
 			api,
 			handleRequest: createSshAgentHttpHandler({
 				connectionTests,
+				probeRemoteSandbox: async (workspaceId, signal) => sandbox.probe(await targets.resolveWorkspace(workspaceId), signal),
 				api,
 				transfers: fileTransfers,
 				events,

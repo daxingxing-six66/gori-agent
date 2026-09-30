@@ -4,6 +4,8 @@ import { tmpdir } from "node:os";
 import { DatabaseSync } from "node:sqlite";
 import { describe, expect, it, vi } from "vitest";
 import { applyMigrations } from "../src/infrastructure/sqlite/migrations.ts";
+import { LandlockRemoteSandboxProvider } from "../src/infrastructure/sandbox/landlock-remote-sandbox-provider.ts";
+import { wrapRemoteCommand } from "../src/infrastructure/sandbox/shell-command.ts";
 import { Ssh2ChannelBroker } from "../src/infrastructure/ssh/ssh2-channel-broker.ts";
 import { createSqliteManagementBackend } from "../src/runtime/create-sqlite-management-backend.ts";
 import { createTestLlmModels } from "./test-llm-models.ts";
@@ -16,6 +18,7 @@ async function request(handle: (r: Request) => Promise<Response>, method: string
 describe("independent workspace directories", () => {
  it("keeps local session inheritance separate from HTTP SFTP and SSH command defaults", async () => {
   const list = vi.spyOn(Ssh2ChannelBroker.prototype, "listDirectory").mockImplementation(async (input) => ({ path: input.remotePath, entries: [] }));
+  vi.spyOn(LandlockRemoteSandboxProvider.prototype, "prepare").mockImplementation(async ({ cwd, command }) => ({ command: wrapRemoteCommand(cwd, command), sandbox: { mode: "workspace_write", backend: "landlock", enforcement: "full", abi: 5 } }));
   const execute = vi.spyOn(Ssh2ChannelBroker.prototype, "execute").mockResolvedValue({ exitCode: 0 });
   const backend = createSqliteManagementBackend({ databasePath: ":memory:", credentialEncryptionKey: new Uint8Array(32).fill(1), llmModelsFactory: createTestLlmModels });
   const call = (method: string, path: string, body?: unknown) => request(backend.handleRequest, method, path, body);
@@ -34,9 +37,9 @@ describe("independent workspace directories", () => {
    expect((await call("GET", `/api/workspaces/${id}/sftp/entries`)).body.path).toBe("/srv/app");
    expect((await call("GET", `/api/workspaces/${id}/sftp/entries?path=%2Fvar`)).body.path).toBe("/var");
    await backend.commandOperations.submit({ sessionId: session.body.id, toolCallId: "default", command: "pwd" });
-   expect(execute.mock.calls.at(-1)?.[0].command).toBe("cd -- '/srv/app' && pwd");
+   expect(execute.mock.calls.at(-1)?.[0].command).toBe(wrapRemoteCommand("/srv/app", "pwd"));
    await backend.commandOperations.submit({ sessionId: session.body.id, toolCallId: "explicit", command: "pwd", cwd: "/opt" });
-   expect(execute.mock.calls.at(-1)?.[0].command).toBe("cd -- '/opt' && pwd");
+   expect(execute.mock.calls.at(-1)?.[0].command).toBe(wrapRemoteCommand("/opt", "pwd"));
    for (const remoteDefaultCwd of ["relative", " ", "~", "/bad\0path"]) {
     expect((await call("PATCH", `/api/workspaces/${id}`, { displayName: "bad", remoteDefaultCwd, expectedRevision: 2 })).status).toBe(400);
    }

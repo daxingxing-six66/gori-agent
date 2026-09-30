@@ -20,3 +20,5 @@
 - `.env.example` 仅是参考，启动器不会自动加载 `.env`。内部变量名仍用 SSH_AGENT；不能把秘密放入 NEXT_PUBLIC 变量。
 
 安装、迁移与平台验证范围见根 README、[migration.md](../../migration.md) 和 [release-readiness.md](../../release-readiness.md)。
+
+后端包随 `resources/sandbox` 携带 Linux x64/arm64 静态启动器和 musl 版权说明。根 `npm run check` 与后端 build 校验源码/产物摘要、ELF 架构及静态链接；修改 C 源码须以 Zig 0.15.2 重建。常规构建不下载 C 编译器。见 [remote-sandbox.md](./remote-sandbox.md)。

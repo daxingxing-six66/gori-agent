@@ -1,4 +1,5 @@
 import type { ConnectionTestService } from "../application/services/connection-test-service.ts";
+import type { RemoteSandboxFacts } from "../domain/remote-sandbox.ts";
 import { reportFailure } from "../application/failure-reporter.ts";
 import type { SshAgentManagementApi } from "../application/management-api.ts";
 import type { AttachmentService } from "../application/services/attachment-service.ts";
@@ -47,6 +48,7 @@ export function createSshAgentHttpHandler(options: {
 	terminals: TerminalSessionService;
 	attachments: AttachmentService;
 	connectionTests: ConnectionTestService;
+	probeRemoteSandbox?: (workspaceId: string, signal: AbortSignal) => Promise<RemoteSandboxFacts>;
 }): SshAgentHttpHandler {
 	return async (request) => {
 		const url = new URL(request.url);
@@ -76,6 +78,7 @@ async function route(
 		terminals: TerminalSessionService;
 		attachments: AttachmentService;
 		connectionTests: ConnectionTestService;
+		probeRemoteSandbox?: (workspaceId: string, signal: AbortSignal) => Promise<RemoteSandboxFacts>;
 	},
 	request: Request,
 	locale: BackendLocale,
@@ -345,6 +348,9 @@ async function route(
 	}
 	if (segments.length === 4 && segments[1] === "workspaces") {
 		const workspaceId = segments[2];
+		if (segments[3] === "sandbox" && request.method === "POST" && options.probeRemoteSandbox) {
+			return json(await options.probeRemoteSandbox(workspaceId, request.signal));
+		}
 		if (segments[3] === "credentials") {
 			if (request.method === "GET") return json(await api.listWorkspaceCredentials(workspaceId));
 			if (request.method === "POST") {

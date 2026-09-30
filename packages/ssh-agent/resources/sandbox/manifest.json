@@ -1,0 +1,10 @@
+{
+  "launcherVersion": "1",
+  "minimumAbi": 5,
+  "compiler": "zig 0.15.2",
+  "sourceSha256": "66c7e5d8d3dd57ddd23c5f2953404586667fcd9f179146e7c2208d26e144de49",
+  "binaries": {
+    "linux-x64": "c9c5371bbd8321b73700bf2d8a87a7e2a175ca344c203cf8c933330d9d2a05bc",
+    "linux-arm64": "8b571e5707b7bb4391def53a67413faa3c32b9d936c06d9ff0163710fe57ba02"
+  }
+}

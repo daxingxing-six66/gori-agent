@@ -2,6 +2,7 @@ import { mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { wrapRemoteCommand } from "../src/infrastructure/sandbox/shell-command.ts";
 import { DefaultCommandGuardEvaluator } from "../src/application/services/command-guard-evaluator.ts";
 import { CommandOperationService } from "../src/application/services/command-operation-service.ts";
 import { DefaultSshTargetResolver } from "../src/application/services/ssh-target-resolver.ts";
@@ -96,7 +97,7 @@ describe("SSH command Operation execution", () => {
 			const [firstResult, secondResult] = await Promise.all([first, second]);
 			expect(firstResult.operation.status).toBe("completed");
 			expect(secondResult.operation.status).toBe("completed");
-			expect(fixture.broker.commands).toEqual(["cd -- '/srv/app' && echo first", "cd -- '/srv/app' && echo second"]);
+			expect(fixture.broker.commands).toEqual([wrapRemoteCommand("/srv/app", "echo first"), wrapRemoteCommand("/srv/app", "echo second")]);
 			expect(firstResult.outputTail).toBe("output-1");
 			expect(secondResult.outputTail).toBe("output-2");
 		} finally {
@@ -390,6 +391,8 @@ async function createFixture(options: { maxConcurrentOperations?: number } = {})
 		}),
 		guards: new DefaultCommandGuardEvaluator(new SqliteGuardRepository(backend.database)),
 		broker,
+		sandbox: { prepare: async ({ cwd, command }) => ({ command: wrapRemoteCommand(cwd, command),
+			sandbox: { mode: "workspace_write", backend: "landlock", enforcement: "full", abi: 5 } }) },
 		clock: { now: () => Date.now() },
 		ids,
 		...(options.maxConcurrentOperations === undefined

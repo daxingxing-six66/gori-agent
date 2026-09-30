@@ -17,6 +17,8 @@ type RemoteServerCallLifecycleEvent =
       toolCallId: string;
       toolName: "remote_server_call";
       args: {
+        sandbox_permissions?: "workspace_write" | "full_access";
+        justification?: string;
         command: string;
         cwd?: string;
         timeoutMs?: number;
@@ -56,6 +58,16 @@ interface RemoteServerCallDetails {
   exitCode?: number;
   exitSignal?: string;
   outputTruncated: boolean;
+  sandbox?: {
+    mode: "workspace_write" | "full_access";
+    backend: "landlock" | "none";
+    enforcement: "full" | "partial" | "none";
+    abi?: number;
+    launcherVersion?: string;
+    sandboxRoot?: string;
+    denialSuspected?: boolean;
+    commandMayHaveRun?: boolean;
+  };
 }
 
 interface RemoteServerCallResult {
@@ -144,3 +156,5 @@ LLM 只接收最终 Tool Result，不接收 SSH 内部状态。失败 `content` 
 - `uncertain` 表示命令可能已经在远端执行，不得自动重放非幂等命令。
 - `guard_blocked` 的结果带有 `terminate=true`，当前 Agent Run 会被终止。
 - 内部 Operation 状态和事件继续写入 SQLite，但不属于前端联调协议。
+
+默认远端调用采用 workspace_write，Full Access 必须提交理由并逐次人工审批，autoAudit 不放行。根目录独立于 cwd；准备失败不退回无沙箱。确认缺失或疑似拒绝可能有副作用，不自动重试。实现与能力边界见 [远端沙箱](../ai-repo/remote-sandbox.md)。

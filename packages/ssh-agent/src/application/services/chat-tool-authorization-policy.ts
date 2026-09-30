@@ -1,5 +1,7 @@
 import type { ChatRun } from "../../domain/chat.ts";
 import type { TerminalObservationExpectation } from "../../domain/terminal.ts";
+import { backendMessage, type BackendMessageDescriptor } from "../../i18n/message.ts";
+import type { FullAccessRequest, RemoteSandboxApprovalStore } from "./remote-sandbox-approval-store.ts";
 import type { SessionRepository } from "../repositories/session-repository.ts";
 import { type TerminalInteractionParameters, terminalInteractionAction } from "../tools/terminal-interaction-tool.ts";
 import type { TerminalInteractionRequest, TerminalInteractionService } from "./terminal-interaction-service.ts";
@@ -11,10 +13,13 @@ export type PreparedToolAuthorization =
 	| {
 			readonly kind: "approval";
 			readonly autoApprove: boolean;
+			readonly remoteFullAccess?: FullAccessRequest;
+			readonly descriptionMessage?: BackendMessageDescriptor;
 			readonly terminalInteraction?: { readonly agentRunId: string; readonly toolCallId: string };
 	  };
 
 export class ChatToolAuthorizationPolicy {
+	readonly #sandboxApprovals?: RemoteSandboxApprovalStore;
 	readonly #sessions: Pick<SessionRepository, "findById">;
 	readonly #terminalInteractions: Pick<TerminalInteractionService, "preflightSubmit" | "approve" | "reject">;
 	readonly #preflightRemoteGuard: (
@@ -24,10 +29,12 @@ export class ChatToolAuthorizationPolicy {
 
 	constructor(options: {
 		sessions: Pick<SessionRepository, "findById">;
+		sandboxApprovals?: RemoteSandboxApprovalStore;
 		terminalInteractions: Pick<TerminalInteractionService, "preflightSubmit" | "approve" | "reject">;
 		preflightRemoteGuard(sessionId: string, command: string): Promise<{ allowed: boolean; reason?: string }>;
 	}) {
 		this.#sessions = options.sessions;
+		this.#sandboxApprovals = options.sandboxApprovals;
 		this.#terminalInteractions = options.terminalInteractions;
 		this.#preflightRemoteGuard = options.preflightRemoteGuard;
 	}
@@ -59,6 +66,18 @@ export class ChatToolAuthorizationPolicy {
 					block: true,
 					reason: decision.reason ?? "Command blocked by Workspace Guard",
 					terminate: true,
+				};
+			}
+			if (isRecord(input.args) && input.args.sandbox_permissions === "full_access") {
+				const args = input.args;
+				if (typeof args.justification !== "string" || !args.justification.trim()) {
+					return { kind: "block", block: true, terminate: true, reason: "full_access requires a non-empty justification" };
+				}
+				return { kind: "approval", autoApprove: false,
+					remoteFullAccess: { agentRunId: input.run.id, sessionId: input.run.sessionId, toolCallId: input.toolCallId,
+						command: remoteCommandFrom(args), cwd: typeof args.cwd === "string" ? args.cwd : undefined,
+						timeoutMs: typeof args.timeoutMs === "number" ? args.timeoutMs : undefined, justification: args.justification },
+					descriptionMessage: backendMessage("approval.remote_full_access", { justification: args.justification }),
 				};
 			}
 		}
@@ -94,12 +113,16 @@ export class ChatToolAuthorizationPolicy {
 		};
 	}
 
+	clearRun(runId: string): void { this.#sandboxApprovals?.clearRun(runId); }
+
 	async shouldAutoApproveSftpOverwrite(sessionId: string): Promise<boolean> {
 		return (await this.#sessions.findById(sessionId))?.autoAudit === true;
 	}
 
 	recordDecision(prepared: PreparedToolAuthorization, approved: boolean): void {
-		if (prepared.kind !== "approval" || prepared.terminalInteraction === undefined) return;
+		if (prepared.kind !== "approval") return;
+		if (prepared.remoteFullAccess && approved && !prepared.autoApprove) this.#sandboxApprovals?.approve(prepared.remoteFullAccess);
+		if (prepared.terminalInteraction === undefined) return;
 		if (approved) {
 			this.#terminalInteractions.approve(
 				prepared.terminalInteraction.agentRunId,

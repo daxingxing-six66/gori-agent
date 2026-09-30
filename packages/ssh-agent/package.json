@@ -17,11 +17,12 @@
   },
   "files": [
     "dist",
+    "resources",
     "README.md"
   ],
   "scripts": {
     "clean": "node -e \"import('node:fs/promises').then(fs=>fs.rm('dist',{recursive:true,force:true}))\"",
-    "build": "tsgo -p tsconfig.build.json",
+    "build": "node ../../native/landlock-run/check-resources.mjs && tsgo -p tsconfig.build.json",
     "dev": "tsx watch src/server/main.ts",
     "start": "node dist/server/main.js",
     "test": "vitest --run"

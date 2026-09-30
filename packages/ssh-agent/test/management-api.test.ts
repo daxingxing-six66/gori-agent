@@ -1,8 +1,11 @@
+import { readFileSync } from "node:fs";
 import { mkdtemp, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { sandboxFailure } from "../src/domain/remote-sandbox.ts";
+import { LandlockRemoteSandboxProvider } from "../src/infrastructure/sandbox/landlock-remote-sandbox-provider.ts";
 import type { IdGenerator } from "../src/domain/ids.ts";
 import { applyMigrations } from "../src/infrastructure/sqlite/migrations.ts";
 import { createSqliteManagementBackend } from "../src/runtime/create-sqlite-management-backend.ts";
@@ -19,6 +22,45 @@ class SequentialIds implements IdGenerator {
 }
 
 describe("SQLite management HTTP API", () => {
+	it("exposes an explicit sandbox probe and safe localized failures without dispatching a command", async () => {
+		const backend = createBackend();
+		const facts = { mode: "workspace_write", backend: "landlock", enforcement: "full", abi: 8, launcherVersion: "1", sandboxRoot: "/opt/app" } as const;
+		const probe = vi.spyOn(LandlockRemoteSandboxProvider.prototype, "probe").mockResolvedValue(facts);
+		try {
+			await createWorkspace(backend.handleRequest, { remoteSandboxRoot: "/opt/app" });
+			backend.database.exec("INSERT INTO workspace_host_trusts VALUES ('id-1','ssh-ed25519','SHA256:test',1)");
+			const result = await request(backend.handleRequest, "POST", "/api/workspaces/id-1/sandbox");
+			expect(result).toEqual({ status: 200, body: facts });
+			expect(probe).toHaveBeenCalledWith(expect.objectContaining({ workspaceId: "id-1", remoteSandboxRoot: "/opt/app" }), expect.any(AbortSignal));
+			probe.mockRejectedValueOnce(sandboxFailure("sandbox_probe_failed", "private host details"));
+			const failed = await request(backend.handleRequest, "POST", "/api/workspaces/id-1/sandbox");
+			expect(failed.status).toBeGreaterThanOrEqual(400);
+			expect(failed.body).toMatchObject({ error: { code: "sandbox_probe_failed", retryable: false, message: "远端 Landlock 强制约束探测失败，命令未执行。" } });
+			expect(JSON.stringify(failed.body)).not.toContain("private host details");
+		} finally { probe.mockRestore(); backend.close(); }
+	});
+	it("keeps the explicit remote sandbox root independent of working directories and preserves it on rename", async () => {
+		const backend = createBackend();
+		try {
+			const created = await createWorkspace(backend.handleRequest, { remoteSandboxRoot: "/opt/app" });
+			expect(created).toMatchObject({ status: 201, body: { workspace: { remoteSandboxRoot: "/opt/app", remoteDefaultCwd: "/" } } });
+			const renamed = await request(backend.handleRequest, "PATCH", "/api/workspaces/id-1", { displayName: "renamed", expectedRevision: 1 });
+			expect(renamed).toMatchObject({ status: 200, body: { remoteSandboxRoot: "/opt/app" } });
+			const updated = await request(backend.handleRequest, "PATCH", "/api/workspaces/id-1", { displayName: "renamed", remoteDefaultCwd: "/etc", remoteSandboxRoot: "/srv/app", expectedRevision: 2 });
+			expect(updated).toMatchObject({ status: 200, body: { remoteSandboxRoot: "/srv/app", remoteDefaultCwd: "/etc" } });
+			const invalid = await request(backend.handleRequest, "PATCH", "/api/workspaces/id-1", { displayName: "renamed", remoteSandboxRoot: "/opt/..", expectedRevision: 3 });
+			expect(invalid.status).toBe(400);
+			expect(backend.database.prepare("SELECT remote_sandbox_root FROM workspaces WHERE id='id-1'").get()?.remote_sandbox_root).toBe("/srv/app");
+		} finally { backend.close(); }
+	});
+	it("does not infer a writable root for older API clients and rejects root-wide write access", async () => {
+		const backend = createBackend();
+		try {
+			expect((await createWorkspace(backend.handleRequest, { remoteSandboxRoot: "/" })).status).toBe(400);
+			await createWorkspace(backend.handleRequest);
+			expect(backend.database.prepare("SELECT remote_sandbox_root FROM workspaces").get()?.remote_sandbox_root).toBeNull();
+		} finally { backend.close(); }
+	});
 	it("updates the workspace directory with revision checks and preserves existing Session directories", async () => {
 		const backend = createBackend();
 		const directory = await mkdtemp(join(tmpdir(), "gori-workspace-edit-"));
@@ -489,31 +531,13 @@ describe("SQLite management HTTP API", () => {
 	it("migrates existing v4 Workspace host keys into the owned Host Trust table", () => {
 		const database = new DatabaseSync(":memory:");
 		try {
-			database.exec(`
-				PRAGMA foreign_keys = ON;
-				CREATE TABLE ssh_agent_schema_migrations (
-					version INTEGER PRIMARY KEY,
-					applied_at INTEGER NOT NULL
-				) STRICT;
-				INSERT INTO ssh_agent_schema_migrations (version, applied_at)
-				VALUES (1, 1), (2, 2), (3, 3), (4, 4);
-				CREATE TABLE workspaces (
-					id TEXT PRIMARY KEY,
-					host_key_algorithm TEXT NOT NULL,
-					host_key_fingerprint TEXT NOT NULL,
-					host_key_verified_at INTEGER NOT NULL
-				) STRICT;
-				CREATE TABLE sessions (
-					id TEXT PRIMARY KEY,
-					workspace_id TEXT NOT NULL REFERENCES workspaces(id),
-					display_name TEXT NOT NULL,
-					terminal_context_cursor INTEGER NOT NULL DEFAULT 0,
-					revision INTEGER NOT NULL,
-					created_at INTEGER NOT NULL,
-					updated_at INTEGER NOT NULL
-				) STRICT;
-				INSERT INTO workspaces VALUES ('workspace-1', 'ssh-ed25519', 'SHA256:legacy', 800);
-			`);
+			database.exec("PRAGMA foreign_keys = ON");
+			database.exec(readFileSync(new URL("./fixtures/schema-v4.sql", import.meta.url), "utf8"));
+			database.exec(`INSERT INTO workspaces (id,display_name,environment,hostname,port,default_cwd,connect_timeout_ms,keepalive_interval_ms,keepalive_max_count,host_key_algorithm,host_key_fingerprint,host_key_verified_at,revision,created_at,updated_at)
+				VALUES ('workspace-1','legacy','development','example.test',22,'/tmp',1000,1000,3,'ssh-ed25519','SHA256:legacy',800,1,1,1)`);
+			database.exec(`INSERT INTO sessions (id,workspace_id,display_name,revision,created_at,updated_at) VALUES ('session-1','workspace-1','legacy',1,1,1);
+				INSERT INTO command_operations (id,tool_call_id,session_id,workspace_id,command_text,timeout_ms,status,queue_deadline_at,created_at)
+				VALUES ('operation-1','tool-1','session-1','workspace-1','legacy command',1000,'completed',1,1)`);
 			applyMigrations(database);
 			expect(
 				database
@@ -521,7 +545,10 @@ describe("SQLite management HTTP API", () => {
 					.get("workspace-1"),
 			).toEqual({ algorithm: "ssh-ed25519", fingerprint: "SHA256:legacy", verified_at: 800 });
 			const workspaceColumns = database.prepare("PRAGMA table_info(workspaces)").all();
-			expect(workspaceColumns.map((column) => column.name)).toEqual(["id", "remote_default_cwd"]);
+			expect(workspaceColumns.map((column) => column.name)).toEqual(expect.arrayContaining(["id", "remote_default_cwd", "remote_sandbox_root"]));
+			expect(workspaceColumns.some((column) => String(column.name).startsWith("host_key_"))).toBe(false);
+			expect(database.prepare("SELECT remote_sandbox_root FROM workspaces").get()?.remote_sandbox_root).toBeNull();
+			expect(database.prepare("SELECT command_text,sandbox_json,agent_run_id FROM command_operations").get()).toEqual({ command_text: "legacy command", sandbox_json: null, agent_run_id: null });
 		} finally {
 			database.close();
 		}
@@ -564,6 +591,7 @@ function createBackend(databasePath = ":memory:") {
 }
 
 interface CreateWorkspaceOptions {
+	remoteSandboxRoot?: string;
 	displayName?: string;
 	credentialDisplayName?: string;
 	password?: string;
@@ -587,6 +615,7 @@ function createWorkspace(
 			password: options.password ?? "password",
 		},
 		defaultCwd: "/tmp",
+		remoteSandboxRoot: options.remoteSandboxRoot,
 	});
 }
 

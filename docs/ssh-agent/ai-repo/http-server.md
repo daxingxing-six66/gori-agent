@@ -7,6 +7,9 @@
 
 Workspace POST/PATCH 接受可选 `remoteDefaultCwd`，响应携带持久化的远端默认目录；创建省略取 `/`，更新省略保留。`defaultCwd` 保留为本地会话默认目录，两个字段独立。
 
+
+Workspace POST/PATCH 另接受可选 `remoteSandboxRoot`，省略分别不设置/保留。`POST /api/workspaces/:id/sandbox` 通过正式目标解析显式检测远端沙箱，成功返回 mode/backend/enforcement/ABI/root；不运行用户脚本，可能创建连接及投递启动器。失败沿用安全本地化错误，不提供 Full Access 直通 HTTP 接口。见 [remote-sandbox.md](./remote-sandbox.md)。
+
 ## 请求链路
 
 `Node IncomingMessage` 由 HTTP 适配器转换为 Web `Request`，随后进入 HTTP handler、Service 和 Repository；响应按相反方向返回。SFTP 与 SSE 协议见 [sftp-overview-realtime-integration.md](../frontend/sftp-overview-realtime-integration.md)。

@@ -40,6 +40,8 @@ export interface Workspace {
 	defaultCwd: string;
 	/** Remote SSH/SFTP directory; omitted by older clients, defaults to /. */
 	remoteDefaultCwd?: string;
+	/** Explicit writable boundary on the remote Linux server. */
+	remoteSandboxRoot?: string;
 	connection: WorkspaceConnectionOptions;
 	revision: number;
 	createdAt: number;
@@ -55,6 +57,8 @@ export interface CreateWorkspaceInput {
 	defaultCwd: string;
 	/** Remote SSH/SFTP directory; omitted by older clients, defaults to /. */
 	remoteDefaultCwd?: string;
+	/** Explicit writable boundary on the remote Linux server. */
+	remoteSandboxRoot?: string;
 	connection?: Partial<WorkspaceConnectionOptions>;
 }
 
@@ -79,6 +83,8 @@ export interface UpdateWorkspaceInput {
 	displayName: string;
 	defaultCwd?: string;
 	remoteDefaultCwd?: string;
+	/** Explicit writable boundary on the remote Linux server. */
+	remoteSandboxRoot?: string;
 	expectedRevision: number;
 }
 

@@ -8,6 +8,7 @@ import type {
 	OperationEventType,
 } from "../../domain/command-operation.ts";
 import type { OperationId, SessionId } from "../../domain/ids.ts";
+import { validRemoteSandboxRoot, type RemoteSandboxFacts } from "../../domain/remote-sandbox.ts";
 import type { SshFailure } from "../../domain/ssh-failure.ts";
 import type { SshTargetSnapshot } from "../../domain/ssh-target.ts";
 import { descriptorForPublicFailure } from "../../i18n/public-error.ts";
@@ -15,7 +16,7 @@ import { descriptorForPublicFailure } from "../../i18n/public-error.ts";
 const OPERATION_COLUMNS = `id, tool_call_id, session_id, workspace_id, command_text, requested_cwd,
 	resolved_cwd, timeout_ms, status, queue_deadline_at, execution_context_json, guard_revision,
 	matched_guard_rule_id, exit_code, exit_signal, failure_json, output_bytes, output_truncated,
-	created_at, enqueued_at, claimed_at, started_at, finished_at`;
+	created_at, enqueued_at, claimed_at, started_at, finished_at, agent_run_id, sandbox_json, sandbox_justification`;
 
 interface CommandOperationRow {
 	id: string;
@@ -41,6 +42,9 @@ interface CommandOperationRow {
 	claimed_at: number | null;
 	started_at: number | null;
 	finished_at: number | null;
+	agent_run_id: string | null;
+	sandbox_json: string | null;
+	sandbox_justification: string | null;
 }
 
 interface OperationEventRow {
@@ -61,7 +65,7 @@ export class SqliteCommandOperationRepository implements CommandOperationReposit
 	async insert(operation: CommandOperation): Promise<void> {
 		this.database
 			.prepare(`INSERT INTO command_operations (${OPERATION_COLUMNS})
-				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
 			.run(...operationValues(operation));
 	}
 
@@ -99,7 +103,7 @@ export class SqliteCommandOperationRepository implements CommandOperationReposit
 				resolved_cwd = ?, timeout_ms = ?, status = ?, queue_deadline_at = ?, execution_context_json = ?,
 				guard_revision = ?, matched_guard_rule_id = ?, exit_code = ?, exit_signal = ?, failure_json = ?,
 				output_bytes = ?, output_truncated = ?, created_at = ?, enqueued_at = ?, claimed_at = ?,
-				started_at = ?, finished_at = ?
+				started_at = ?, finished_at = ?, agent_run_id = ?, sandbox_json = ?, sandbox_justification = ?
 				WHERE id = ? AND status IN (${placeholders})`)
 			.run(...operationValues(operation).slice(1), operation.id, ...expectedStatuses);
 		return result.changes === 1;
@@ -159,6 +163,9 @@ function operationValues(operation: CommandOperation): SQLInputValue[] {
 		operation.claimedAt ?? null,
 		operation.startedAt ?? null,
 		operation.finishedAt ?? null,
+		operation.agentRunId ?? null,
+		operation.sandbox === undefined ? null : JSON.stringify(operation.sandbox),
+		operation.sandboxJustification ?? null,
 	];
 }
 
@@ -181,6 +188,9 @@ function operationFromRow(row: CommandOperationRow): CommandOperation {
 		sessionId: row.session_id,
 		workspaceId: row.workspace_id,
 		command: row.command_text,
+		...(row.agent_run_id === null ? {} : { agentRunId: row.agent_run_id }),
+		...(row.sandbox_json === null ? {} : { sandbox: parseSandboxFacts(row.sandbox_json) }),
+		...(row.sandbox_justification === null ? {} : { sandboxJustification: row.sandbox_justification }),
 		...(row.requested_cwd === null ? {} : { requestedCwd: row.requested_cwd }),
 		...(row.resolved_cwd === null ? {} : { resolvedCwd: row.resolved_cwd }),
 		timeoutMs: row.timeout_ms,
@@ -201,6 +211,42 @@ function operationFromRow(row: CommandOperationRow): CommandOperation {
 		...(row.claimed_at === null ? {} : { claimedAt: row.claimed_at }),
 		...(row.started_at === null ? {} : { startedAt: row.started_at }),
 		...(row.finished_at === null ? {} : { finishedAt: row.finished_at }),
+	};
+}
+
+function parseSandboxFacts(json: string): RemoteSandboxFacts {
+	const value: unknown = JSON.parse(json);
+	if (value === null || typeof value !== "object" || Array.isArray(value)) throw new Error("Invalid stored command sandbox facts");
+	const facts = value as Record<string, unknown>;
+	const mode = facts.mode;
+	const backend = facts.backend;
+	const enforcement = facts.enforcement;
+	const abi = facts.abi;
+	const launcherVersion = facts.launcherVersion;
+	const sandboxRoot = facts.sandboxRoot;
+	const denialSuspected = facts.denialSuspected;
+	const commandMayHaveRun = facts.commandMayHaveRun;
+	if ((mode !== "workspace_write" && mode !== "full_access") ||
+		(backend !== "landlock" && backend !== "none") ||
+		(enforcement !== "full" && enforcement !== "partial" && enforcement !== "none") ||
+		(mode === "full_access" && (backend !== "none" || enforcement !== "none")) ||
+		(backend === "none" && enforcement !== "none") ||
+		(abi !== undefined && (typeof abi !== "number" || !Number.isSafeInteger(abi) || abi < 1)) ||
+		(launcherVersion !== undefined && (typeof launcherVersion !== "string" || launcherVersion.length === 0)) ||
+		(sandboxRoot !== undefined && (typeof sandboxRoot !== "string" || !validRemoteSandboxRoot(sandboxRoot))) ||
+		(denialSuspected !== undefined && typeof denialSuspected !== "boolean") ||
+		(commandMayHaveRun !== undefined && typeof commandMayHaveRun !== "boolean")) {
+		throw new Error("Invalid stored command sandbox facts");
+	}
+	return {
+		mode,
+		backend,
+		enforcement,
+		...(abi === undefined ? {} : { abi }),
+		...(launcherVersion === undefined ? {} : { launcherVersion }),
+		...(sandboxRoot === undefined ? {} : { sandboxRoot }),
+		...(denialSuspected === undefined ? {} : { denialSuspected }),
+		...(commandMayHaveRun === undefined ? {} : { commandMayHaveRun }),
 	};
 }
 

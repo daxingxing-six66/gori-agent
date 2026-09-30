@@ -45,7 +45,7 @@ export interface ChatAgentRuntimeFactoryOptions {
 	agentEvents: AgentEventHandler;
 	context?: ChatContextService;
 	attachments: Pick<ChatAttachmentService, "hydrateProviderContext">;
-	createRemoteTool(sessionId: string, abortRun?: () => void): AgentTool;
+	createRemoteTool(sessionId: string, abortRun?: () => void, agentRunId?: string): AgentTool;
 	createTerminalTool(input: { sessionId: string; terminalSessionId: string; agentRunId: string }): AgentTool;
 	createSftpTool(input: {
 		sessionId: string;
@@ -134,7 +134,7 @@ export class ChatAgentRuntimeFactory {
 			] satisfies AgentTool[];
 			const remoteTool =
 				input.run.serverInteractionMode === "command"
-					? this.#createRemoteTool(input.run.sessionId, () => requireRuntime().abortAgent())
+					? this.#createRemoteTool(input.run.sessionId, () => requireRuntime().abortAgent(), input.run.id)
 					: unavailableTool(remoteServerCallDefinition);
 			const terminalTool =
 				input.run.serverInteractionMode === "terminal"

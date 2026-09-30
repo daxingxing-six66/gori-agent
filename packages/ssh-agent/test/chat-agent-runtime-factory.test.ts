@@ -255,7 +255,7 @@ describe("ChatAgentRuntimeFactory", () => {
 			expect(tool.executionMode).toBe(parallel ? "parallel" : "sequential");
 			if (parallel) expect(tool.requiresSequentialExecution).toBeTypeOf("function");
 		}
-		expect(context.createRemoteTool).toHaveBeenCalledWith("session-1", expect.any(Function));
+		expect(context.createRemoteTool).toHaveBeenCalledWith("session-1", expect.any(Function), "run-1");
 		expect(context.createTerminalTool).not.toHaveBeenCalled();
 
 		const abort = vi.spyOn(context.getAgent()!, "abort");

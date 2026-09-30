@@ -705,6 +705,15 @@ const MIGRATIONS = [
 		version: 18,
 		sql: `ALTER TABLE workspaces ADD COLUMN remote_default_cwd TEXT NOT NULL DEFAULT '/';`,
 	},
+	{
+		version: 19,
+		sql: `
+			ALTER TABLE workspaces ADD COLUMN remote_sandbox_root TEXT;
+			ALTER TABLE command_operations ADD COLUMN agent_run_id TEXT;
+			ALTER TABLE command_operations ADD COLUMN sandbox_json TEXT;
+			ALTER TABLE command_operations ADD COLUMN sandbox_justification TEXT;
+		`,
+	},
 ] as const;
 
 export function applyMigrations(database: DatabaseSync): void {

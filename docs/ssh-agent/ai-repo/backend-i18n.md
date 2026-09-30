@@ -2,6 +2,9 @@
 
 适用于 SSH Agent 后端生成的静态提示、公开异常、Approval 描述、Tool 展示更新，以及 REST/Chat SSE/Workspace SSE/Terminal SSE 的 Locale 协商。
 
+
+沙箱失败 code 通过既有 `ssh.<code>` 映射到双语目录；`sandbox_confirmation_missing` 明确说明可能执行，`sandbox_denied` 仅提示疑似权限拒绝和部分副作用。Full Access 审批用 `approval.remote_full_access`，动态理由保留原文。见 [remote-sandbox.md](./remote-sandbox.md)。
+
 ## 当前边界
 
 - 文件传输等待队列满使用稳定 code `transfer_queue_full` 和词典 Key `sftp.transfer_queue_full`；公开异常保留 429，上传/下载 Tool 结果也携带该描述符供浏览器本地化。

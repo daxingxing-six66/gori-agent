@@ -1,3 +1,4 @@
+import type { RemoteSandboxApprovalStore } from "./remote-sandbox-approval-store.ts";
 import type { Models } from "@earendil-works/pi-ai";
 import type { IdGenerator } from "../../domain/ids.ts";
 import { ChatRunEventHub } from "../chat-run-event-hub.ts";
@@ -28,6 +29,7 @@ export interface CreateChatServiceOptions {
 	models: Models;
 	catalog: LlmModelCatalog;
 	contextCompactionSettings?: ContextCompactionSettingsService;
+	sandboxApprovals?: RemoteSandboxApprovalStore;
 	localCwd: string;
 	ids: IdGenerator;
 	approvalTimeoutMs?: number;
@@ -82,6 +84,7 @@ export function createChatService(options: CreateChatServiceOptions): ChatServic
 			sessions: options.sessions,
 			terminalInteractions: options.terminalInteractions,
 			preflightRemoteGuard: options.preflightRemoteGuard,
+			sandboxApprovals: options.sandboxApprovals,
 		}),
 		approvals,
 	});
