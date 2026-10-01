@@ -21,7 +21,7 @@ import { SqliteSessionRepository } from "../src/infrastructure/sqlite/sqlite-ses
 
 const target: SshTargetSnapshot = { workspaceId: "w", workspaceRevision: 1, hostname: "example.test", port: 22,
  hostKeyAlgorithm: "ssh-ed25519", hostKeyFingerprint: "SHA256:test", credentialId: "c", credentialAuthVersion: 1,
- remoteUser: "test", defaultCwd: "/opt/app/current", remoteSandboxRoot: "/opt/app", connectTimeoutMs: 1000,
+ remoteUser: "test", defaultCwd: "/opt/app", connectTimeoutMs: 1000,
  keepaliveIntervalMs: 1000, keepaliveMaxCount: 3 };
 const binary = Buffer.from("test launcher binary");
 const hash = createHash("sha256").update(binary).digest("hex");
@@ -36,6 +36,7 @@ class RemoteHost {
  rootFailure = false;
  uploadFailure = false;
  probeFailure = false;
+ unavailable = false;
  splitUtf8 = false;
  temporaryRoot = "/tmp\n";
  nullFailure = false;
@@ -52,7 +53,7 @@ class RemoteHost {
   else if (input.command.startsWith("sha256sum")) output = `${this.existingHash}  gori-landlock-run\n`;
   else if (input.command.includes("'--probe'")) {
    if (this.probeFailure) return { exitCode: 125 };
-   output = `gori-landlock: abi=${this.abi} enforcement=${this.abi >= 5 ? "full" : "partial"}\n`;
+   output = this.unavailable ? "gori-landlock: unavailable\n" : `gori-landlock: abi=${this.abi} enforcement=${this.abi >= 5 ? "full" : "partial"}\n`;
   }
   if (output) {
    const buffer = Buffer.from(output);
@@ -77,11 +78,25 @@ function providerFixture() {
  const host = new RemoteHost();
  const loadBinary = vi.fn(async () => binary);
  const provider = new LandlockRemoteSandboxProvider({ broker: host, loadBinary });
- const prepare = (root = "/opt/app") => provider.prepare({ target, cwd: target.defaultCwd,
-  command: "python -c 'print(1)'", policy: { mode: "workspace_write", sandboxRoot: root }, signal: new AbortController().signal });
+ const prepare = (root = "/opt/app") => provider.prepare({ target: { ...target, defaultCwd: root }, cwd: "/opt/app/current",
+  command: "python -c 'print(1)'", signal: new AbortController().signal });
  return { host, provider, loadBinary, prepare };
 }
 describe("Remote launcher distribution and capability", () => {
+	it("prepares a nonce-bound interactive shell using the canonical root and no Bash override", async () => {
+		const f = providerFixture();
+		const prepared = await f.provider.prepareTerminal({ target, signal: new AbortController().signal });
+		expect(prepared.sandbox).toMatchObject({ mode: "workspace_write", backend: "landlock", enforcement: "full", abi: 5, launcherVersion: "3", sandboxRoot: "/opt/app" });
+		expect(prepared.command).toContain("'--ro' '/' '--rw' '/dev/null' '--rw' '/tmp' '--rw' '/opt/app'");
+		expect(prepared.command).toMatch(/^cd -- '\/opt\/app' && exec /);
+		expect(prepared.command).toContain("'--' '--terminal'");
+		expect(prepared.command).not.toContain("/bin/bash");
+		const token = /token=([0-9a-f]{32})$/.exec(prepared.confirmation)?.[1];
+		expect(token).toBeDefined();
+		expect(prepared.command).toContain(`'--confirm-token' '${token}'`);
+		const next = await f.provider.prepareTerminal({ target, signal: new AbortController().signal });
+		expect(next.confirmation).not.toBe(prepared.confirmation);
+	});
  it("does not run later script statements after a failed cwd change", () => {
   const directory = mkdtempSync(join(tmpdir(), "gori-cwd-test-"));
   try {
@@ -94,6 +109,9 @@ describe("Remote launcher distribution and capability", () => {
   const f = providerFixture();
   const result = await f.prepare();
   expect(result).toMatchObject({ sandbox: { mode: "workspace_write", backend: "landlock", enforcement: "full", abi: 5, sandboxRoot: "/opt/app" } });
+  const token = /token=([0-9a-f]{32})\n$/.exec(result.confirmation)?.[1];
+  expect(token).toBeDefined();
+  expect(result.command).toContain(`'--confirm-token' '${token}'`);
   expect(result.command).toContain("'--ro' '/' '--rw' '/dev/null' '--rw' '/tmp' '--rw' '/opt/app'");
   expect(result.command).toContain("'--' '/bin/bash' '--noprofile' '--norc' '-c'");
   expect(f.host.uploads).toHaveLength(1);
@@ -106,6 +124,14 @@ describe("Remote launcher distribution and capability", () => {
   expect(f.host.uploads).toHaveLength(1);
   expect(f.host.commands.filter((c) => c.includes("'--probe'"))).toHaveLength(2);
  });
+ it("does not widen the writable root when a command overrides cwd", async () => {
+  const f = providerFixture();
+  const prepared = await f.provider.prepare({ target, cwd: "/etc", command: "touch example", signal: new AbortController().signal });
+  expect(prepared.sandbox.sandboxRoot).toBe("/opt/app");
+  expect(prepared.command).toContain(shellArgv(["--rw", "/opt/app"]));
+  expect(prepared.command).toContain(shellArgv(["-c", wrapRemoteCommand("/etc", "touch example")]));
+  expect(prepared.command).not.toContain(shellArgv(["--rw", "/etc"]));
+ });
  it("coalesces concurrent deployment and canonicalizes each root", async () => {
   const f = providerFixture();
   await Promise.all([f.prepare(), f.prepare()]);
@@ -114,7 +140,7 @@ describe("Remote launcher distribution and capability", () => {
  });
  it("refreshes the capability for a new credential identity and an explicit probe", async () => {
   const f = providerFixture(); await f.prepare();
-  await f.provider.prepare({ target: { ...target, credentialAuthVersion: 2 }, cwd: "/", command: "true", policy: { mode: "workspace_write", sandboxRoot: "/opt/app" }, signal: new AbortController().signal });
+  await f.provider.prepare({ target: { ...target, credentialAuthVersion: 2 }, cwd: "/", command: "true", signal: new AbortController().signal });
   expect(f.host.commands.filter((c) => c.includes("'--probe'"))).toHaveLength(2);
   await f.provider.probe(target, new AbortController().signal);
   expect(f.host.commands.filter((c) => c.includes("'--probe'"))).toHaveLength(3);
@@ -143,12 +169,21 @@ describe("Remote launcher distribution and capability", () => {
 		await Promise.all([preparation, refresh]);
 		expect(f.host.commands.filter((command) => command.includes("'--probe'"))).toHaveLength(2);
 	});
- it("fails closed if /tmp aliases / or /dev/null is not the null device", async () => {
+	it("fails closed if /tmp aliases another directory or /dev/null is not the null device", async () => {
   const f = providerFixture(); f.host.temporaryRoot = "/\n";
   await expect(f.prepare()).rejects.toMatchObject({ failure: { code: "sandbox_prepare_failed" } });
+	 f.host.temporaryRoot = "/etc\n";
+	 await expect(f.prepare()).rejects.toMatchObject({ failure: { code: "sandbox_prepare_failed" } });
   f.host.temporaryRoot = "/tmp\n"; f.host.nullFailure = true;
   await expect(f.prepare()).rejects.toMatchObject({ failure: { code: "sandbox_prepare_failed" } });
  });
+	it("recognizes a kernel-disabled Landlock probe before requiring a writable root", async () => {
+		const f = providerFixture();
+		f.host.unavailable = true;
+		await expect(f.provider.prepareTerminal({ target: { ...target, defaultCwd: "/" }, signal: new AbortController().signal }))
+			.rejects.toMatchObject({ failure: { code: "sandbox_unavailable" } });
+		expect(f.host.commands.some((command) => command.includes("realpath -e"))).toBe(false);
+	});
  it.each(["/", "/opt/..", "relative", "~", "/opt/\0app"])("rejects invalid root %s before SSH", async (root) => {
   const f = providerFixture();
   await expect(f.prepare(root)).rejects.toMatchObject({ failure: { code: "sandbox_root_invalid", safeDetails: { commandMayHaveRun: false } } });
@@ -193,7 +228,7 @@ const disposers: Array<() => void> = [];
 afterEach(() => { for (const dispose of disposers.splice(0)) dispose(); });
 function operationFixture(options: { sandbox?: RemoteSandboxProvider; noProvider?: boolean; databasePath?: string } = {}) {
  const db = openSshAgentDatabase(options.databasePath ?? ":memory:");
- db.exec(`INSERT INTO workspaces (id,display_name,environment,hostname,port,default_cwd,connect_timeout_ms,keepalive_interval_ms,keepalive_max_count,revision,created_at,updated_at,remote_sandbox_root) VALUES ('w','test','development','example.test',22,'/',1000,1000,3,1,1,1,'/opt/app');
+ db.exec(`INSERT INTO workspaces (id,display_name,environment,hostname,port,default_cwd,remote_default_cwd,connect_timeout_ms,keepalive_interval_ms,keepalive_max_count,revision,created_at,updated_at) VALUES ('w','test','development','example.test',22,'/','/opt/app',1000,1000,3,1,1,1);
  INSERT INTO credentials (id,workspace_id,display_name,type,remote_user,is_active,auth_version,revision,created_at,updated_at) VALUES ('c','w','test','password','test',1,1,1,1,1);
  INSERT INTO sessions (id,workspace_id,display_name,revision,created_at,updated_at,auto_audit) VALUES ('s','w','test',1,1,1,1);`);
  const sessions = new SqliteSessionRepository(db);
@@ -208,9 +243,11 @@ function operationFixture(options: { sandbox?: RemoteSandboxProvider; noProvider
   }
   return { exitCode: 0 };
  }) };
- const sandbox: RemoteSandboxProvider = options.sandbox ?? { prepare: vi.fn<RemoteSandboxProvider["prepare"]>(async ({ command, policy }) => ({
+ const sandbox: RemoteSandboxProvider = options.sandbox ?? { prepareTerminal: async () => { throw new Error("Unexpected Terminal preparation"); }, prepare: vi.fn<RemoteSandboxProvider["prepare"]>(async ({ command, policy, target }) => ({
   command: policy.mode === "full_access" ? `unconfined ${command}` : `confined ${command}`,
-  sandbox: { mode: policy.mode, backend: policy.mode === "full_access" ? "none" : "landlock", enforcement: policy.mode === "full_access" ? "none" : "full", abi: policy.mode === "full_access" ? undefined : 5, sandboxRoot: policy.sandboxRoot },
+  sandbox: policy.mode === "full_access"
+   ? { mode: "full_access", backend: "none", enforcement: "none" }
+   : { mode: "workspace_write", backend: "landlock", enforcement: "full", abi: 5, launcherVersion: "3", sandboxRoot: target.defaultCwd },
   confirmation: policy.mode === "full_access" ? undefined : "gori-landlock: confined abi=5\n",
  })) };
  let id = 0;
@@ -243,16 +280,49 @@ describe("Command execution and one-shot authorization", () => {
   } finally { rmSync(directory, { recursive: true, force: true }); }
  });
 	it.each([
-		"null",
-		JSON.stringify({ mode: "workspace_write", backend: "none", enforcement: "full" }),
-		JSON.stringify({ mode: "workspace_write", backend: "landlock", enforcement: "full", abi: "8" }),
-		JSON.stringify({ mode: "full_access", backend: "landlock", enforcement: "full" }),
-		JSON.stringify({ mode: "workspace_write", backend: "landlock", enforcement: "full", commandMayHaveRun: "yes" }),
-	])("rejects invalid persisted sandbox facts at the SQLite boundary", async (json) => {
+		["JSON null", "null"],
+		["none claiming full enforcement", JSON.stringify({ mode: "workspace_write", backend: "none", enforcement: "full" })],
+		["noninteger ABI", JSON.stringify({ mode: "workspace_write", backend: "landlock", enforcement: "full", abi: "8" })],
+		["Full Access claiming Landlock", JSON.stringify({ mode: "full_access", backend: "landlock", enforcement: "full" })],
+		["nonboolean execution fact", JSON.stringify({ mode: "workspace_write", backend: "landlock", enforcement: "full", commandMayHaveRun: "yes" })],
+		...([
+			["missing ABI", { mode: "workspace_write", backend: "landlock", enforcement: "full", launcherVersion: "3", sandboxRoot: "/opt/app", commandMayHaveRun: true }],
+			["missing launcher version", { mode: "workspace_write", backend: "landlock", enforcement: "full", abi: 5, sandboxRoot: "/opt/app", commandMayHaveRun: true }],
+			["missing sandbox root", { mode: "workspace_write", backend: "landlock", enforcement: "full", abi: 5, launcherVersion: "3", commandMayHaveRun: true }],
+			["noncanonical sandbox root", { mode: "workspace_write", backend: "landlock", enforcement: "full", abi: 5, launcherVersion: "3", sandboxRoot: "/opt/app/", commandMayHaveRun: true }],
+			["ABI below minimum", { mode: "workspace_write", backend: "landlock", enforcement: "full", abi: 4, launcherVersion: "3", sandboxRoot: "/opt/app", commandMayHaveRun: true }],
+			["partial enforcement", { mode: "workspace_write", backend: "landlock", enforcement: "partial", abi: 5, launcherVersion: "3", sandboxRoot: "/opt/app", commandMayHaveRun: true }],
+			["confirmed without execution fact", { mode: "workspace_write", backend: "landlock", enforcement: "full", abi: 5, launcherVersion: "3", sandboxRoot: "/opt/app", commandMayHaveRun: false }],
+			["unconfirmed with denial claim", { mode: "workspace_write", backend: "landlock", enforcement: "none", abi: 5, launcherVersion: "3", sandboxRoot: "/opt/app", commandMayHaveRun: false, denialSuspected: false }],
+			["none carrying Landlock ABI", { mode: "workspace_write", backend: "none", enforcement: "none", abi: 5, commandMayHaveRun: false }],
+			["Full Access carrying root", { mode: "full_access", backend: "none", enforcement: "none", sandboxRoot: "/opt/app", commandMayHaveRun: true }],
+			["Full Access claiming denial", { mode: "full_access", backend: "none", enforcement: "none", commandMayHaveRun: true, denialSuspected: true }],
+			["unimplemented backend", { mode: "workspace_write", backend: "bubblewrap", enforcement: "full", sandboxRoot: "/opt/app", commandMayHaveRun: true }],
+		] as const).map(([name, facts]) => [name, JSON.stringify(facts)] as const),
+	] as const)("rejects invalid persisted sandbox facts: %s", async (_name, json) => {
 		const f = operationFixture();
 		const result = await f.service.submit({ toolCallId: "tool", sessionId: "s", command: "echo x" });
 		f.db.prepare("UPDATE command_operations SET sandbox_json = ? WHERE id = ?").run(json, result.operation.id);
 		await expect(f.repository.findById(result.operation.id)).rejects.toThrow("Invalid stored command sandbox facts");
+	});
+	it.each([
+		["queued", { mode: "workspace_write", backend: "none", enforcement: "none", commandMayHaveRun: false }],
+		["failed", { mode: "full_access", backend: "none", enforcement: "none", commandMayHaveRun: false }],
+		["failed", { mode: "full_access", backend: "none", enforcement: "none", commandMayHaveRun: true, denialSuspected: false }],
+		["running", { mode: "workspace_write", backend: "landlock", enforcement: "none", abi: 5, launcherVersion: "3", sandboxRoot: "/opt/app", commandMayHaveRun: false }],
+		["uncertain", { mode: "workspace_write", backend: "landlock", enforcement: "none", abi: 5, launcherVersion: "3", sandboxRoot: "/opt/app", commandMayHaveRun: true }],
+	] as const)("preserves historical %s sandbox facts at the SQLite boundary", async (status, facts) => {
+		const f = operationFixture();
+		const result = await f.service.submit({ toolCallId: "tool", sessionId: "s", command: "echo x" });
+		f.db.prepare("UPDATE command_operations SET status = ?, sandbox_json = ? WHERE id = ?")
+			.run(status, JSON.stringify(facts), result.operation.id);
+		await expect(f.repository.findById(result.operation.id)).resolves.toMatchObject({ status, sandbox: facts });
+	});
+	it("keeps pre-sandbox operations as unknown instead of inventing protection", async () => {
+		const f = operationFixture();
+		const result = await f.service.submit({ toolCallId: "tool", sessionId: "s", command: "echo x" });
+		f.db.prepare("UPDATE command_operations SET sandbox_json = NULL WHERE id = ?").run(result.operation.id);
+		expect((await f.repository.findById(result.operation.id))?.sandbox).toBeUndefined();
 	});
  it("persists actual confinement facts and hides launcher protocol from output", async () => {
   const f = operationFixture(); const result = await f.service.submit({ toolCallId: "tool", sessionId: "s", command: "echo x" });
@@ -278,8 +348,29 @@ describe("Command execution and one-shot authorization", () => {
 		expect(result.operation.sandbox?.enforcement).toBe("full");
 		expect(result.outputTail).toBe("warning: gori-landlock: confined abi=5\n");
 	});
+	it("does not accept a startup line with a different confirmation nonce", async () => {
+		const f = operationFixture({ sandbox: {
+			prepareTerminal: async () => { throw new Error("Unexpected Terminal preparation"); },
+			prepare: async () => ({ command: "confined echo x",
+				sandbox: { mode: "workspace_write", backend: "landlock", enforcement: "full", abi: 5, launcherVersion: "3", sandboxRoot: "/opt/app" },
+				confirmation: "gori-landlock: confined abi=5 token=0123456789abcdef0123456789abcdef\n" }),
+		} });
+		f.broker.execute.mockImplementationOnce(async (input) => {
+			await input.onStderr(Buffer.from("gori-landlock: confined abi=5 token=ffffffffffffffffffffffffffffffff\n"));
+			return { exitCode: 125 };
+		});
+		const result = await f.service.submit({ toolCallId: "t", sessionId: "s", command: "echo x" });
+		expect(result.operation).toMatchObject({ failure: { code: "sandbox_confirmation_missing" }, sandbox: { enforcement: "none", commandMayHaveRun: true } });
+	});
+	it("records possible execution when SSH closes before confinement is confirmed", async () => {
+		const f = operationFixture();
+		f.broker.execute.mockRejectedValueOnce(new Error("SSH channel closed"));
+		const result = await f.service.submit({ toolCallId: "t", sessionId: "s", command: "echo x" });
+		expect(result.operation).toMatchObject({ status: "failed", sandbox: { enforcement: "none", commandMayHaveRun: true } });
+		expect(await f.repository.findById(result.operation.id)).toMatchObject({ sandbox: { commandMayHaveRun: true } });
+	});
  it.each([false, true])("does not dispatch when sandbox preparation is unavailable (missing provider=%s)", async (noProvider) => {
-  const f = operationFixture({ noProvider, sandbox: { prepare: async () => { throw sandboxFailure("sandbox_probe_failed", "not available"); } } });
+  const f = operationFixture({ noProvider, sandbox: { prepareTerminal: async () => { throw new Error("Unexpected Terminal preparation"); }, prepare: async () => { throw sandboxFailure("sandbox_probe_failed", "not available"); } } });
   const result = await f.service.submit({ toolCallId: "t", sessionId: "s", command: "echo must not run" });
   expect(result.operation.status).toBe("failed"); expect(result.operation.sandbox?.commandMayHaveRun).toBe(false);
   expect(f.broker.execute).not.toHaveBeenCalled();
@@ -291,7 +382,7 @@ describe("Command execution and one-shot authorization", () => {
   expect(f.broker.execute).toHaveBeenCalledOnce();
  });
 	it("does not accept an empty confirmation marker", async () => {
-		const f = operationFixture({ sandbox: { prepare: async () => ({
+		const f = operationFixture({ sandbox: { prepareTerminal: async () => { throw new Error("Unexpected Terminal preparation"); }, prepare: async () => ({
 			command: "confined echo x",
 			sandbox: { mode: "workspace_write", backend: "landlock", enforcement: "full", abi: 5, sandboxRoot: "/opt/app" },
 			confirmation: "",

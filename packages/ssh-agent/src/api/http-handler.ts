@@ -26,6 +26,7 @@ import {
 	parseCreateSession,
 	parseCreateWorkspace,
 	parseTestWorkspaceConnection,
+	parseBrowseWorkspaceDirectory,
 	parseEnqueueChatMessage,
 	parseGuardRulePackImport,
 	parseGuardUpdate,
@@ -331,6 +332,10 @@ async function route(
 
 	if (matches(segments, ["api", "workspaces", "test-connection"]) && request.method === "POST") {
 		return json(await options.connectionTests.test(parseTestWorkspaceConnection(await readJson(request)), request.signal));
+	}
+	if (matches(segments, ["api", "workspaces", "browse-directory"]) && request.method === "POST") {
+		const { input, path } = parseBrowseWorkspaceDirectory(await readJson(request));
+		return json(await options.connectionTests.listDirectory(input, path, request.signal));
 	}
 	if (matches(segments, ["api", "workspaces"]) && request.method === "POST") {
 		return json(await api.createWorkspace(parseCreateWorkspace(await readJson(request))), 201);

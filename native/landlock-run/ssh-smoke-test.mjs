@@ -18,7 +18,7 @@ async function request(path, body) {
 try {
 	const { workspace } = await request("/workspaces", { displayName: "Disposable sandbox fixture", environment: "development",
 		host: { hostname: "127.0.0.1", port }, credential: { displayName: "synthetic", remoteUser: "goritest", type: "password", password: "gori-synthetic-test-password" },
-		defaultCwd: "/tmp", remoteDefaultCwd: "/opt/app", remoteSandboxRoot: "/opt/app" });
+		defaultCwd: "/tmp", remoteDefaultCwd: "/opt/app" });
 	const session = await request(`/workspaces/${workspace.id}/sessions`, { displayName: "fixture" });
 	const facts = await request(`/workspaces/${workspace.id}/sandbox`);
 	assert.equal(facts.enforcement, "full");

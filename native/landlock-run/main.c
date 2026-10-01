@@ -2,6 +2,7 @@
 #define _GNU_SOURCE
 #include <errno.h>
 #include <fcntl.h>
+#include <pwd.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -37,6 +38,13 @@ static int failure(const char *stage) {
 	return 125;
 }
 
+static int valid_token(const char *token) {
+	if (strlen(token) != 32) return 0;
+	for (int i = 0; i < 32; i++)
+		if (!((token[i] >= '0' && token[i] <= '9') || (token[i] >= 'a' && token[i] <= 'f'))) return 0;
+	return 1;
+}
+
 static uint64_t rights(int abi) {
 	return V1_FS | (abi >= 2 ? REFER : 0) | (abi >= 3 ? TRUNCATE : 0) | (abi >= 5 ? IOCTL_DEV : 0);
 }
@@ -46,12 +54,58 @@ static int restrict_self(int fd) {
 	return (int)syscall(LL_RESTRICT, fd, 0);
 }
 
-static int add_path(int fd, const char *path, uint64_t access) {
+/* The provider canonicalizes paths earlier, but another process can replace any
+ * component before this launch. Resolve each component from an open directory
+ * without following a newly inserted symlink. Landlock receives this same FD. */
+static int open_rule_path(const char *path) {
 	if (path[0] != '/') { errno = EINVAL; return -1; }
-	int parent = open(path, O_PATH | O_CLOEXEC);
+	int current = open("/", O_PATH | O_DIRECTORY | O_CLOEXEC);
+	if (current < 0) return -1;
+	if (!path[1]) return current;
+	const char *component = path + 1;
+	while (*component) {
+		const char *slash = strchr(component, '/');
+		size_t length = slash ? (size_t)(slash - component) : strlen(component);
+		if (!length || (length == 1 && component[0] == '.') ||
+			(length == 2 && component[0] == '.' && component[1] == '.') ||
+			(slash && !slash[1])) {
+			close(current);
+			errno = EINVAL;
+			return -1;
+		}
+		char *name = strndup(component, length);
+		if (!name) { close(current); return -1; }
+		int next = openat(current, name, O_PATH | O_NOFOLLOW | O_CLOEXEC | (slash ? O_DIRECTORY : 0));
+		int saved = errno;
+		free(name);
+		close(current);
+		if (next < 0) { errno = saved; return -1; }
+		struct stat st;
+		if (fstat(next, &st)) { saved = errno; close(next); errno = saved; return -1; }
+		if (S_ISLNK(st.st_mode)) { close(next); errno = ELOOP; return -1; }
+		current = next;
+		if (!slash) return current;
+		component = slash + 1;
+	}
+	close(current);
+	errno = EINVAL;
+	return -1;
+}
+
+static int add_path(int fd, const char *path, uint64_t access) {
+	int parent = open_rule_path(path);
 	if (parent < 0) return -1;
 	struct stat st;
 	if (fstat(parent, &st)) { close(parent); return -1; }
+	if ((access & WRITE_FILE) && S_ISDIR(st.st_mode)) {
+		struct stat root;
+		if (stat("/", &root)) { close(parent); return -1; }
+		if (st.st_dev == root.st_dev && st.st_ino == root.st_ino) {
+			close(parent);
+			errno = EINVAL;
+			return -1;
+		}
+	}
 	if (!S_ISDIR(st.st_mode)) access &= EXECUTE | READ_FILE | WRITE_FILE | TRUNCATE | IOCTL_DEV;
 	struct path_attr attr = { .allowed_access = access, .parent_fd = parent };
 	int rc = (int)syscall(LL_ADD, fd, 1, &attr, 0);
@@ -99,9 +153,14 @@ static int probe(int abi) {
 int main(int argc, char **argv) {
 	int separator = 0;
 	int probing = argc == 2 && !strcmp(argv[1], "--probe");
+	const char *confirmation_token = NULL;
 	if (!probing) {
 		for (int i = 1; i < argc; i += 2) {
 			if (!strcmp(argv[i], "--")) { separator = i; break; }
+			if (!strcmp(argv[i], "--confirm-token") && i + 1 < argc && valid_token(argv[i + 1])) {
+				confirmation_token = argv[i + 1];
+				continue;
+			}
 			if ((strcmp(argv[i], "--ro") && strcmp(argv[i], "--rw")) || i + 1 >= argc || argv[i + 1][0] != '/') {
 				fprintf(stderr, "gori-landlock-run: invalid arguments\n");
 				return 125;
@@ -112,8 +171,35 @@ int main(int argc, char **argv) {
 			return 125;
 		}
 	}
+	int terminal = !probing && !strcmp(argv[separator + 1], "--terminal");
+	if (terminal && (separator + 2 != argc || !confirmation_token)) {
+		fprintf(stderr, "gori-landlock-run: invalid terminal arguments\n");
+		return 125;
+	}
+	const char *login_shell = NULL;
+	char *login_name = NULL;
+	if (terminal) {
+		struct passwd *account = getpwuid(geteuid());
+		login_shell = account ? account->pw_shell : NULL;
+		if (!login_shell || login_shell[0] != '/' || strchr(login_shell, '\n') || strchr(login_shell, '\r') ||
+			!strrchr(login_shell, '/') || !strrchr(login_shell, '/')[1] || access(login_shell, X_OK)) {
+			fprintf(stderr, "gori-landlock-run: invalid login shell\n");
+			return 125;
+		}
+		const char *base = strrchr(login_shell, '/') + 1;
+		login_name = malloc(strlen(base) + 2);
+		if (!login_name) return failure("login shell allocation failed");
+		login_name[0] = '-';
+		strcpy(login_name + 1, base);
+	}
 	int abi = (int)syscall(LL_CREATE, NULL, 0, 1);
-	if (abi < 0) return failure("landlock unavailable");
+	if (abi < 0) {
+		if (probing && (errno == ENOSYS || errno == EOPNOTSUPP)) {
+			puts("gori-landlock: unavailable");
+			return 0;
+		}
+		return failure("landlock unavailable");
+	}
 	if (probing) return probe(abi);
 	if (abi < MIN_ABI) {
 		fprintf(stderr, "gori-landlock-run: ABI %d is below required ABI %d\n", abi, MIN_ABI);
@@ -123,14 +209,21 @@ int main(int argc, char **argv) {
 	int fd = (int)syscall(LL_CREATE, &attr, sizeof(attr), 0);
 	if (fd < 0) return failure("ruleset creation failed");
 	for (int i = 1; i < separator; i += 2) {
+		if (!strcmp(argv[i], "--confirm-token")) continue;
 		uint64_t access = !strcmp(argv[i], "--rw") ? attr.handled_access_fs : RO;
 		if (add_path(fd, argv[i + 1], access)) { close(fd); return failure("path rule failed"); }
 	}
 	if (restrict_self(fd)) { close(fd); return failure("restrict_self failed"); }
 	close(fd);
 	close_extra_fds();
-	fprintf(stderr, "gori-landlock: confined abi=%d\n", abi);
+	if (confirmation_token) fprintf(stderr, "gori-landlock: confined abi=%d token=%s\n", abi, confirmation_token);
+	else fprintf(stderr, "gori-landlock: confined abi=%d\n", abi);
 	fflush(stderr);
+	if (terminal) {
+		char *const shell_argv[] = { login_name, NULL };
+		execv(login_shell, shell_argv);
+		return failure("login shell exec failed");
+	}
 	execvp(argv[separator + 1], &argv[separator + 1]);
 	return failure("exec failed");
 }

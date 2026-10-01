@@ -1,4 +1,5 @@
 import { LandlockRemoteSandboxProvider } from "../infrastructure/sandbox/landlock-remote-sandbox-provider.ts";
+import { RemoteSandboxCoordinator } from "../infrastructure/sandbox/remote-sandbox-coordinator.ts";
 import { RemoteSandboxApprovalStore } from "../application/services/remote-sandbox-approval-store.ts";
 import { join } from "node:path";
 import { resolveDataDirectory } from "../data-directory.ts";
@@ -159,7 +160,9 @@ export function createSqliteManagementBackend(options: CreateSqliteManagementBac
 		heartbeat.unref();
 		const commandGuard = new DefaultCommandGuardEvaluator(guards);
 		const sandboxApprovals = new RemoteSandboxApprovalStore();
-		const sandbox = new LandlockRemoteSandboxProvider({ broker: connectionPool });
+		const sandbox = new RemoteSandboxCoordinator([
+			new LandlockRemoteSandboxProvider({ broker: connectionPool }),
+		]);
 		const commandOperations = new CommandOperationService({
 			operations: commandOperationRepository,
 			sandbox,
@@ -219,6 +222,7 @@ export function createSqliteManagementBackend(options: CreateSqliteManagementBac
 			terminals: terminalRepository,
 			targets,
 			broker: connectionPool.terminals,
+			sandbox,
 			lifecycle: sessionLifecycle,
 			clock,
 			ids,
@@ -253,13 +257,17 @@ export function createSqliteManagementBackend(options: CreateSqliteManagementBac
 					agentRunId,
 					...(abortRun === undefined ? {} : { abortRun }),
 				}),
-			createTerminalTool: ({ sessionId, terminalSessionId, agentRunId }) =>
-				createTerminalInteractionTool({
+			createTerminalTool: ({ sessionId, terminalSessionId, agentRunId }) => {
+				const sandboxFacts = terminalSessions.getActor(sessionId)?.view.sandbox;
+				if (!sandboxFacts) throw new Error("Active Terminal sandbox state is unavailable");
+				return createTerminalInteractionTool({
 					sessionId,
 					terminalSessionId,
 					agentRunId,
 					interactions: terminalInteractions,
-				}),
+					sandbox: sandboxFacts,
+				});
+			},
 			bindServerInteraction: (sessionId, runId, mode) => terminalSessions.bindRun(sessionId, runId, mode),
 			unbindTerminalRun: (sessionId, runId) => terminalSessions.unbindRun(sessionId, runId),
 			terminalInteractions,

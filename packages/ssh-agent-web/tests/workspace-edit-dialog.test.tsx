@@ -13,6 +13,7 @@ it.each([["zh-CN", zhCNMessages, "选择本地工作目录"], ["en-US", enUSMess
 	expect(html).toContain('title="/projects/example"');
 	expect(html).toContain(`aria-label="${label}"`);
 	expect(html).toContain('type="button"');
-	expect(html).toContain('value="/srv/app"');
+	expect(html).toContain('title="/srv/app"');
 	expect(html).toContain(messages["workspace.field.remoteDefaultCwd"]);
+	expect(html).not.toContain("Remote sandbox writable root");
 });

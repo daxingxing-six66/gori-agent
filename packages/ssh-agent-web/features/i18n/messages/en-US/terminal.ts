@@ -1,6 +1,9 @@
 export const enUSTerminalMessages = {
 	"terminal.tool.close.description": "Close the current persistent Terminal session",
 	"terminal.tool.open.description": "Create a persistent SSH PTY for the Agent",
+	"terminal.fullAccess.name": "Terminal Full Access",
+	"terminal.sandbox.fallbackNotice": "No supported sandbox is available on the remote Linux system. Terminal automatically started with the SSH account's permissions; file operations in this session are not sandboxed.",
+	"terminal.sandbox.fallbackLabel": "Sandbox unavailable · automatic fallback",
 	"terminal.disabled.runActive": "Cannot switch Terminal Mode while a Chat Run is active",
 	"terminal.disabled.loading": "Reading Terminal status",
 	"terminal.disabled.connecting": "Terminal is connecting",

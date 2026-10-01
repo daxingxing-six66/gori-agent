@@ -82,6 +82,11 @@ export interface TerminalChannelExit {
 
 export interface OpenTerminalChannelInput {
 	readonly target: SshTargetSnapshot;
+	readonly launch: { readonly kind: "login_shell" } | {
+		readonly kind: "sandboxed_exec";
+		readonly command: string;
+		readonly confirmation: string;
+	};
 	readonly geometry: TerminalGeometry;
 	readonly term: "xterm-256color";
 	readonly signal: AbortSignal;
@@ -91,6 +96,9 @@ export interface OpenTerminalChannelInput {
 export interface TerminalChannelHandle {
 	readonly connectionGeneration: number;
 	readonly closed: Promise<TerminalChannelExit>;
+	isClosed(): boolean;
+	/** Release startup output only after the TerminalSession is durably active. */
+	startOutput(): void;
 	write(data: Uint8Array): Promise<void>;
 	resize(geometry: TerminalGeometry): Promise<void>;
 	setReadPaused(paused: boolean): void;

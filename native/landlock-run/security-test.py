@@ -65,10 +65,34 @@ with tempfile.TemporaryDirectory(prefix="gori-landlock-test-") as directory:
     finally:
         os.close(descriptor)
     marker = root / "must-not-run"
-    for arguments in [[], ["--rw", "relative", "--", "/bin/true"], ["--rw", str(base / "missing"), "--", "/bin/sh", "-c", f"touch {q(str(marker))}"], ["--ro", "/", "--", "/missing-program"]]:
+    for arguments in [[], ["--rw", "relative", "--", "/bin/true"], ["--ro", "/", "--rw", "/", "--", "/bin/true"],
+                      ["--rw", str(base / "missing"), "--", "/bin/sh", "-c", f"touch {q(str(marker))}"],
+                      ["--ro", "/", "--", "/missing-program"]]:
         result = subprocess.run([launcher] + arguments, capture_output=True)
         assert result.returncode == 125 and not marker.exists(), result
         checks += 1
+
+    # The provider and launcher run at different times. A replaced writable root
+    # must not follow a symlink to / and turn a confined command into a host write.
+    moved_root = base / "app-before-replacement"
+    root.rename(moved_root)
+    root.symlink_to("/", target_is_directory=True)
+    try:
+        result = subprocess.run(rules + ["/bin/sh", "-c", f"echo escaped > {q(str(victim))}"],
+                                cwd=base, capture_output=True, text=True)
+        assert result.returncode == 125 and "gori-landlock: confined" not in result.stderr, result
+        assert victim.read_text() == "preserve", result
+        checks += 1
+    finally:
+        root.unlink()
+        moved_root.rename(root)
+
+    ancestor = base / "alias"
+    ancestor.symlink_to(base, target_is_directory=True)
+    result = subprocess.run([launcher, "--ro", "/", "--rw", str(ancestor / "app"), "--", "/bin/true"],
+                            cwd=base, capture_output=True, text=True)
+    assert result.returncode == 125 and "gori-landlock: confined" not in result.stderr, result
+    checks += 1
 
     # Simulate a host without the Landlock syscall using an inherited seccomp filter.
     class Filter(ctypes.Structure):
@@ -84,8 +108,10 @@ with tempfile.TemporaryDirectory(prefix="gori-landlock-test-") as directory:
         if libc.prctl(38, 1, 0, 0, 0) or libc.prctl(22, 2, ctypes.byref(program), 0, 0):
             os._exit(99)
 
-    for arguments in [["--probe"], ["--ro", "/", "--rw", str(root), "--", "/bin/sh", "-c", f"touch {q(str(marker))}"]]:
-        result = subprocess.run([launcher] + arguments, preexec_fn=without_landlock, capture_output=True)
-        assert result.returncode == 125 and not marker.exists(), result
-        checks += 1
+    unavailable = subprocess.run([launcher, "--probe"], preexec_fn=without_landlock, capture_output=True, text=True)
+    assert unavailable.returncode == 0 and unavailable.stdout == "gori-landlock: unavailable\n", unavailable
+    checks += 1
+    result = subprocess.run([launcher, "--ro", "/", "--rw", str(root), "--", "/bin/sh", "-c", f"touch {q(str(marker))}"], preexec_fn=without_landlock, capture_output=True)
+    assert result.returncode == 125 and not marker.exists(), result
+    checks += 1
 print(f"Passed {checks} real-kernel checks", flush=True)

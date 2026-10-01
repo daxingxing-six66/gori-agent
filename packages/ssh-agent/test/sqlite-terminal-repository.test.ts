@@ -27,6 +27,8 @@ const terminalSession = (overrides: Partial<TerminalSession> = {}): TerminalSess
 	openRequestId: "open-1",
 	closeRequestId: null,
 	status: "opening",
+	requestedSandboxMode: null,
+	sandbox: null,
 	revision: 1,
 	geometry: { rows: 36, cols: 120 },
 	eventSequence: 0,
@@ -239,5 +241,47 @@ describe("SqliteTerminalRepository", () => {
 		} finally {
 			database.close();
 		}
+	});
+
+	it("keeps legacy Terminal facts unknown and rejects corrupted sandbox claims", () => {
+		const database = createDatabase();
+		try {
+			const repository = new SqliteTerminalRepository(database);
+			repository.insertSession(terminalSession({ status: "closed" }));
+			expect(repository.findSession("terminal-1")).toMatchObject({ requestedSandboxMode: null, sandbox: null });
+			database.prepare("UPDATE terminal_sessions SET requested_sandbox_mode = 'workspace_write', sandbox_json = ? WHERE id = 'terminal-1'")
+				.run(JSON.stringify({ mode: "full_access", backend: "none", enforcement: "none", approvedAt: 10 }));
+			expect(() => repository.findSession("terminal-1")).toThrow("Invalid persisted Terminal sandbox mode");
+			database.prepare("UPDATE terminal_sessions SET sandbox_json = ? WHERE id = 'terminal-1'")
+				.run(JSON.stringify({ mode: "full_access", backend: "none", enforcement: "none", source: "landlock_unavailable", detectedAt: 10 }));
+			expect(repository.findSession("terminal-1")?.sandbox).toMatchObject({ mode: "full_access", source: "landlock_unavailable" });
+			database.prepare("UPDATE terminal_sessions SET sandbox_json = ? WHERE id = 'terminal-1'")
+				.run(JSON.stringify({ mode: "full_access", backend: "none", enforcement: "none", source: "sandbox_unavailable", detectedAt: 10 }));
+			expect(repository.findSession("terminal-1")?.sandbox).toMatchObject({ mode: "full_access", source: "sandbox_unavailable" });
+			database.prepare("UPDATE terminal_sessions SET sandbox_json = ? WHERE id = 'terminal-1'")
+				.run(JSON.stringify({ mode: "workspace_write", backend: "landlock", enforcement: "full", abi: 5,
+					launcherVersion: "3", sandboxRoot: "/opt/app/" }));
+			expect(() => repository.findSession("terminal-1")).toThrow("Invalid persisted Terminal sandbox facts");
+			database.prepare("UPDATE terminal_sessions SET sandbox_json = ? WHERE id = 'terminal-1'")
+				.run(JSON.stringify({ mode: "full_access", backend: "none", enforcement: "none", source: "landlock_unavailable", detectedAt: -1 }));
+			expect(() => repository.findSession("terminal-1")).toThrow("Invalid persisted Terminal sandbox facts");
+			database.prepare("UPDATE terminal_sessions SET sandbox_json = ? WHERE id = 'terminal-1'").run('{bad json');
+			expect(() => repository.findSession("terminal-1")).toThrow("Invalid persisted Terminal sandbox JSON");
+		} finally { database.close(); }
+	});
+
+	it("adds nullable sandbox columns to a v19 Terminal table", () => {
+		const database = new DatabaseSync(":memory:");
+		try {
+			database.exec("CREATE TABLE ssh_agent_schema_migrations(version INTEGER PRIMARY KEY, applied_at INTEGER NOT NULL) STRICT");
+			const recorded = database.prepare("INSERT INTO ssh_agent_schema_migrations VALUES (?, 1)");
+			for (let version = 1; version <= 19; version++) recorded.run(version);
+			database.exec("CREATE TABLE terminal_sessions (id TEXT PRIMARY KEY, status TEXT NOT NULL) STRICT");
+			database.exec("CREATE TABLE workspaces (id TEXT PRIMARY KEY, remote_default_cwd TEXT NOT NULL DEFAULT '/', remote_sandbox_root TEXT) STRICT");
+			database.exec("INSERT INTO terminal_sessions VALUES ('legacy', 'closed')");
+			applyMigrations(database);
+			const row = database.prepare("SELECT requested_sandbox_mode, sandbox_json FROM terminal_sessions WHERE id = 'legacy'").get() as Record<string, unknown>;
+			expect(row).toEqual({ requested_sandbox_mode: null, sandbox_json: null });
+		} finally { database.close(); }
 	});
 });

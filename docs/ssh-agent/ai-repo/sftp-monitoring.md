@@ -5,6 +5,8 @@
 
 文件页面从 Workspace `remoteDefaultCwd` 初始化（省略时 `/`），API 未传 `path` 时使用同一远端默认值；显式 `path` 原样作为远端路径查询，不能在 404 后悄悄替换为其他目录。本地 `defaultCwd` 仅用于会话继承。概览分别展示两个目录。
 
+工作区远端默认目录选择器复用正式 SFTP 的目录投影：已有工作区调用其列表 API，创建草稿经独立临时 SSH/SFTP 连接调用 `POST /api/workspaces/browse-directory`；后者不进入共享 Pool，也不持久化凭据。选择器仅显示目录并在确认时采用远端规范化路径。见 [connection-test.md](./connection-test.md)。
+
 ## 当前边界
 
 - 后端共享 Broker 的上传和下载共用 20 个活动名额、3000 个 FIFO 等待位置；满队列返回 `transfer_queue_full`，公开异常状态 429，Tool 失败提示支持中英文。排队不新增 Transfer 状态，目录/stat/delete 不占传输名额。Agent 下载收到数据后才打开本地临时文件，空文件在下载成功后创建。
@@ -41,7 +43,7 @@
 | Agent SFTP 上传/下载、条件覆盖审批和 Tool 进度 | `packages/ssh-agent/src/application/tools/sftp-upload-tool.ts`、`packages/ssh-agent/src/application/tools/sftp-download-tool.ts` |
 | SSE 广播 | `packages/ssh-agent/src/application/workspace-event-hub.ts` |
 | Collector 和 Linux parser | `packages/ssh-agent/src/application/services/remote-metrics-service.ts` |
-| ssh2 SFTP adapter | `packages/ssh-agent/src/infrastructure/ssh/ssh2-sftp-file-broker.ts` |
+| ssh2 SFTP adapter 与共用目录投影 | `packages/ssh-agent/src/infrastructure/ssh/ssh2-sftp-file-broker.ts`、`packages/ssh-agent/src/infrastructure/ssh/read-sftp-directory.ts` |
 | 组合 Broker 和共享 Connection Pool | `packages/ssh-agent/src/infrastructure/ssh/ssh2-channel-broker.ts`、`packages/ssh-agent/src/infrastructure/ssh/ssh2-connection-pool.ts` |
 | SQLite Transfer Repository | `packages/ssh-agent/src/infrastructure/sqlite/sqlite-file-transfer-repository.ts` |
 | HTTP/SSE 路由 | `packages/ssh-agent/src/api/http-handler.ts` |

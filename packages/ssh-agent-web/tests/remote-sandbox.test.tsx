@@ -7,12 +7,12 @@ import { RemoteSandboxPanel } from "../features/workspace/components/remote-sand
 import { WorkspaceEditDialog } from "../features/workspace/components/workspace-edit-dialog";
 import { isRemoteSandboxRoot, type Workspace } from "../features/workspace/model/workspace";
 
-const workspace = { id: "remote /host", displayName: "test", defaultCwd: "/local", remoteDefaultCwd: "/etc", remoteSandboxRoot: "/opt/app" } as Workspace;
+const workspace = { id: "remote /host", displayName: "test", defaultCwd: "/local", remoteDefaultCwd: "/opt/app" } as Workspace;
 describe("remote sandbox configuration", () => {
 	it.each(["/", "/opt/..", "/./", "", "relative", "~", "/app\0x", "/app\nx"])("rejects %s as a writable root", (root) => {
 		expect(isRemoteSandboxRoot(root)).toBe(false);
 	});
-	it("accepts a dedicated remote root independently of either cwd", () => {
+	it("accepts a non-root remote working directory as the writable root", () => {
 		expect(isRemoteSandboxRoot("/opt/app")).toBe(true);
 		expect(isRemoteSandboxRoot("/opt/../srv/app")).toBe(true);
 	});
@@ -24,13 +24,13 @@ describe("remote sandbox configuration", () => {
 		expect(html).toContain("/opt/app");
 		expect(html).toContain(messages["workspace.sandbox.scope"]);
 	});
-	it("requires explicit configuration for legacy workspaces without inferring their cwd", () => {
-		const legacy = { ...workspace, remoteSandboxRoot: undefined };
+	it("requires a non-root remote directory for legacy workspaces", () => {
+		const legacy = { ...workspace, remoteDefaultCwd: "/" };
 		const messages = messagesByLocale["en-US"];
 		const panel = renderToStaticMarkup(<IntlProvider locale="en-US" messages={messages}><RemoteSandboxPanel workspace={legacy} /></IntlProvider>);
 		expect(panel).toMatch(/<button[^>]*disabled=""/);
 		const edit = renderToStaticMarkup(<IntlProvider locale="en-US" messages={messages}><WorkspaceEditDialog workspace={legacy} onClose={() => {}} onSubmit={async () => {}} /></IntlProvider>);
-		expect(edit).toContain(messages["workspace.sandbox.rootInvalid"]);
+		expect(edit).toContain(messages["workspace.remoteDefaultCwd.invalid"]);
 		expect(edit).toMatch(/<button type="submit"[^>]*disabled=""/);
 	});
 	it("sends an abortable explicit probe without a command body", async () => {

@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { FileEntryWithStats, SFTPWrapper, Stats } from "ssh2";
+import type { SFTPWrapper, Stats } from "ssh2";
 import type {
 	DownloadRemoteFileInput,
 	RemoteDownloadResult,
@@ -13,6 +13,7 @@ import { SshAgentError } from "../../domain/ssh-failure.ts";
 import type { Ssh2ConnectionContext, Ssh2ConnectionPool } from "./ssh2-connection-pool.ts";
 import { createSshError } from "./ssh2-errors.ts";
 import { Ssh2SftpChannelPool } from "./ssh2-sftp-channel-pool.ts";
+import { readSftpDirectory } from "./read-sftp-directory.ts";
 
 export class Ssh2SftpFileBroker implements SftpFileBroker {
 	private readonly channels: Ssh2SftpChannelPool;
@@ -22,20 +23,7 @@ export class Ssh2SftpFileBroker implements SftpFileBroker {
 	}
 
 	listDirectory(input: SftpPathInput): Promise<{ path: string; entries: SftpDirectoryEntry[] }> {
-		return this.withSftp(input, async (sftp) => {
-			const path = await realpath(sftp, input.remotePath);
-			if (!(await lstat(sftp, path)).isDirectory())
-				throw new FileTransferError("not_a_directory", "The remote path is not a directory", 409);
-			const entries = (await readdir(sftp, path))
-				.filter((entry) => entry.filename !== "." && entry.filename !== "..")
-				.map((entry) => directoryEntry(path, entry.filename, entry.attrs))
-				.sort((left, right) => {
-					if (left.type === "directory" && right.type !== "directory") return -1;
-					if (left.type !== "directory" && right.type === "directory") return 1;
-					return left.name.localeCompare(right.name);
-				});
-			return { path, entries };
-		});
+		return this.withSftp(input, (sftp) => readSftpDirectory(sftp, input.remotePath));
 	}
 
 	stat(input: SftpPathInput): Promise<SftpDirectoryEntry> {
@@ -357,18 +345,6 @@ function unlinkRemoteFile(sftp: SFTPWrapper, remotePath: string): Promise<void> 
 	});
 }
 
-function realpath(sftp: SFTPWrapper, remotePath: string): Promise<string> {
-	return new Promise((resolve, reject) =>
-		sftp.realpath(remotePath, (error, path) => (error ? reject(error) : resolve(path))),
-	);
-}
-
-function readdir(sftp: SFTPWrapper, remotePath: string): Promise<FileEntryWithStats[]> {
-	return new Promise((resolve, reject) =>
-		sftp.readdir(remotePath, (error, entries) => (error ? reject(error) : resolve(entries))),
-	);
-}
-
 function lstat(sftp: SFTPWrapper, remotePath: string): Promise<Stats> {
 	return new Promise((resolve, reject) =>
 		sftp.lstat(remotePath, (error, stats) => (error ? reject(error) : resolve(stats))),
@@ -409,11 +385,6 @@ function atomicOverwriteUnsupported(): FileTransferError {
 		"The SSH server does not support atomic file replacement",
 		409,
 	);
-}
-
-function directoryEntry(parentPath: string, name: string, stats: Stats): SftpDirectoryEntry {
-	const separator = parentPath === "/" ? "" : "/";
-	return entryFromStats(name, `${parentPath}${separator}${name}`, stats);
 }
 
 function directoryEntryForPath(remotePath: string, stats: Stats): SftpDirectoryEntry {

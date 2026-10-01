@@ -44,6 +44,8 @@
 
 Workspace/Credential 前端契约见 [workspace-credential-integration.md](../frontend/workspace-credential-integration.md)，SFTP/Overview 实时联调见 [sftp-overview-realtime-integration.md](../frontend/sftp-overview-realtime-integration.md)，LLM Provider 前端契约见 [llm-provider-integration.md](../frontend/llm-provider-integration.md)，SSH 命令事件契约见 [ssh-command-events-integration.md](../frontend/ssh-command-events-integration.md)，Connection Pool 与命令执行的完整设计说明见 [ssh-connection-pool-and-command-execution.md](../design/ssh-connection-pool-and-command-execution.md)，其余请求体和响应体契约见 [frontend-integration.md](../frontend-integration.md)。
 
+远端沙箱的当前后端选择与未来 Bubblewrap 接入边界见 [多后端设计](../design/remote-sandbox-backends.md)。
+
 本地与远程联调约定见 [test-environments.md](../test-environments.md)。真实服务器资料不进入本仓库。
 
 ## 当前实现边界

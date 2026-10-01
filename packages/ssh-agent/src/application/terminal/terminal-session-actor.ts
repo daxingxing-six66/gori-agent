@@ -1,5 +1,5 @@
 import type { Clock, IdGenerator, TerminalAttachmentId } from "../../domain/ids.ts";
-import type { TerminalCloseReason, TerminalGeometry, TerminalSession } from "../../domain/terminal.ts";
+import type { TerminalCloseReason, TerminalGeometry, TerminalSandboxFacts, TerminalSession } from "../../domain/terminal.ts";
 import { TerminalError } from "../../domain/terminal.ts";
 import type { TerminalRepository } from "../repositories/terminal-repository.ts";
 import type { SessionUseLease } from "../services/session-lifecycle-coordinator.ts";
@@ -112,9 +112,9 @@ export class TerminalSessionActor {
 		}).catch((error: unknown) => this.#handleRuntimeFailure(error));
 	}
 
-	activate(channel: TerminalChannelHandle): Promise<TerminalSession> {
+	activate(channel: TerminalChannelHandle, sandbox: TerminalSandboxFacts): Promise<TerminalSession> {
 		return this.#enqueue(async () => {
-			if (this.#session.status !== "opening") {
+			if (this.#session.status !== "opening" || channel.isClosed()) {
 				channel.dispose();
 				throw new TerminalError("terminal_session_unavailable", "Terminal is no longer opening", { status: 409 });
 			}
@@ -124,6 +124,7 @@ export class TerminalSessionActor {
 			const next: TerminalSession = {
 				...previous,
 				status: "active",
+				sandbox,
 				revision: previous.revision + 1,
 				connectionGeneration: channel.connectionGeneration,
 				activatedAt: now,
@@ -132,8 +133,9 @@ export class TerminalSessionActor {
 			};
 			this.#persist(next, previous);
 			this.#session = next;
-			this.#appendTimeline("terminal.active", null);
+			this.#appendTimeline("terminal.active", { sandbox });
 			void channel.closed.then((exit) => this.#handleChannelExit(exit));
+			channel.startOutput();
 			return next;
 		});
 	}
@@ -465,7 +467,9 @@ export class TerminalSessionActor {
 				await this.#finishTerminal("closed", exit);
 				return;
 			}
-			if (this.#session.status === "active") await this.#finishTerminal("lost", exit);
+			if (this.#session.status === "active") {
+				await this.#finishTerminal(exit.kind === "closed" ? "closed" : "lost", exit);
+			}
 		}).catch((error: unknown) => this.#handleRuntimeFailure(error));
 	}
 
@@ -487,6 +491,16 @@ export class TerminalSessionActor {
 		if (this.#runBindings.size > 0 && reason === "user_requested") {
 			throw new TerminalError("session_has_active_chat_run", "Session has an active Chat Run", { status: 409 });
 		}
+		try {
+			await this.#performClose(reason, closeRequestId);
+		} catch (error) {
+			// A failed SQLite transition or event publish must not leave the Shell running.
+			this.#dispose();
+			throw error;
+		}
+	}
+
+	async #performClose(reason: TerminalCloseReason, closeRequestId: string | null): Promise<void> {
 		const previous = this.#session;
 		const sequence = previous.eventSequence + 1;
 		const now = this.#clock.now();
@@ -512,10 +526,21 @@ export class TerminalSessionActor {
 		});
 		this.#appendTimeline("terminal.closing", { reason });
 		const channel = this.#channel;
-		if (channel) await channel.close();
+		let exit: TerminalChannelExit | undefined;
+		if (channel) {
+			try {
+				await channel.close();
+				exit = await channel.closed;
+			} catch (error) {
+				exit = {
+					kind: "error",
+					message: error instanceof Error ? error.message : "Terminal channel close failed",
+				};
+			}
+		}
 		await this.#finishTerminal(
-			reason === "backend_shutdown" ? "lost" : "closed",
-			channel ? { kind: "closed" } : undefined,
+			reason === "backend_shutdown" || exit?.kind === "error" || exit?.kind === "connection_lost" ? "lost" : "closed",
+			exit,
 		);
 	}
 
@@ -535,20 +560,23 @@ export class TerminalSessionActor {
 			failureMessage: exit?.message ?? previous.failureMessage,
 			updatedAt: now,
 		};
-		this.#persist(next, previous);
-		this.#session = next;
-		this.#publish({
-			sequence,
-			type: "terminal.status",
-			emittedAt: now,
-			oldStatus: previous.status,
-			newStatus: status,
-			reason: next.closeReason,
-		});
-		this.#appendTimeline(status === "closed" ? "terminal.closed" : "terminal.lost", {
-			reason: next.closeReason,
-		});
-		this.#dispose();
+		try {
+			this.#persist(next, previous);
+			this.#session = next;
+			this.#publish({
+				sequence,
+				type: "terminal.status",
+				emittedAt: now,
+				oldStatus: previous.status,
+				newStatus: status,
+				reason: next.closeReason,
+			});
+			this.#appendTimeline(status === "closed" ? "terminal.closed" : "terminal.lost", {
+				reason: next.closeReason,
+			});
+		} finally {
+			this.#dispose();
+		}
 	}
 
 	#changeOwner(attachmentId: TerminalAttachmentId | null): void {

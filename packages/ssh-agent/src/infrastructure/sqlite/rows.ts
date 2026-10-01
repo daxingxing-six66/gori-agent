@@ -51,7 +51,6 @@ export interface WorkspaceRow {
 	active_credential_id: string;
 	default_cwd: string;
 	remote_default_cwd: string;
-	remote_sandbox_root: string | null;
 	connect_timeout_ms: number;
 	keepalive_interval_ms: number;
 	keepalive_max_count: number;
@@ -77,7 +76,6 @@ export function workspaceFromRow(row: WorkspaceRow): Workspace {
 		activeCredentialId: row.active_credential_id,
 		defaultCwd: row.default_cwd,
 		remoteDefaultCwd: row.remote_default_cwd,
-		...(row.remote_sandbox_root === null ? {} : { remoteSandboxRoot: row.remote_sandbox_root }),
 		connection: {
 			connectTimeoutMs: row.connect_timeout_ms,
 			keepaliveIntervalMs: row.keepalive_interval_ms,

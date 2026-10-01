@@ -7,7 +7,7 @@ function base(workspaceId: string): string {
 }
 
 export const sftpApi = {
-	listDirectory: (workspaceId: string, path?: string) => apiRequest<{ workspaceId: string; path: string; entries: SftpDirectoryEntry[] }>(`${base(workspaceId)}/entries${path === undefined ? "" : `?path=${encodeURIComponent(path)}`}`),
+	listDirectory: (workspaceId: string, path?: string, signal?: AbortSignal) => apiRequest<{ workspaceId: string; path: string; entries: SftpDirectoryEntry[] }>(`${base(workspaceId)}/entries${path === undefined ? "" : `?path=${encodeURIComponent(path)}`}`, { signal }),
 	listTransfers: (workspaceId: string) => apiRequest<{ transfers: FileTransfer[] }>(`${base(workspaceId)}/transfers?limit=50`),
 	createUpload: (workspaceId: string, remotePath: string, totalBytes: number, overwrite: boolean) => apiRequest<FileTransfer>(`${base(workspaceId)}/transfers`, { method: "POST", body: { direction: "upload", remotePath, totalBytes, overwrite } }),
 	createDownload: (workspaceId: string, remotePath: string) => apiRequest<FileTransfer>(`${base(workspaceId)}/transfers`, { method: "POST", body: { direction: "download", remotePath } }),

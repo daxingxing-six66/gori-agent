@@ -10,8 +10,10 @@ import { useLocale } from "@/features/i18n/components/locale-context";
 import { useTheme } from "@/features/theme/components/theme-context";
 import { terminalApi } from "@/features/terminal/api/terminal-api";
 import { TerminalObservationMask } from "@/features/terminal/components/terminal-observation-mask";
+import { terminalSandboxLabel } from "@/features/terminal/components/terminal-sandbox-label";
 import { TerminalTimeline } from "@/features/terminal/components/terminal-timeline";
 import { TERMINAL_UI_DEFAULTS } from "@/features/terminal/model/terminal-ui-defaults";
+import { shouldRetryTerminalConnection } from "@/features/terminal/model/terminal-retry";
 import type { TerminalSseEnvelope, TerminalStatusResponse } from "@/features/terminal/model/terminal";
 import { applyTerminalTheme, terminalTheme } from "@/features/terminal/model/terminal-theme";
 import {
@@ -55,6 +57,10 @@ export function TerminalPanel({
 	const [observationMask, setObservationMask] = useState<ObservationMaskState | null>(null);
 	const [observationRange, setObservationRange] = useState<ObservationViewportRange | null>(null);
 	const [observationCapturedAt, setObservationCapturedAt] = useState<number | null>(null);
+	const terminalSessionId = status.terminal?.id;
+	const terminalStatus = status.terminal?.status;
+	const sandbox = status.terminal?.sandbox;
+	const { minRows, maxRows, minCols, maxCols } = status.capabilities;
 
 	useEffect(() => {
 		resolvedThemeRef.current = resolvedTheme;
@@ -63,8 +69,9 @@ export function TerminalPanel({
 
 	useEffect(() => {
 		const container = containerRef.current;
-		if (!container || status.terminal?.status !== "active") return;
+		if (!container || terminalStatus !== "active") return;
 		let disposed = false;
+		const attachController = new AbortController();
 		let stream: TerminalEventStream | undefined;
 		let terminal: Terminal | undefined;
 		let attachmentId: string | undefined;
@@ -77,6 +84,7 @@ export function TerminalPanel({
 		let observationFinishDelayTimer: ReturnType<typeof setTimeout> | undefined;
 		let observationFinishedTimer: ReturnType<typeof setTimeout> | undefined;
 		let observationStateEventCount = 0;
+		let failureHandled = false;
 		let currentObservationMask: ObservationMaskState | null = null;
 		let currentObservationShownAt: number | null = null;
 		let observationRangeTracker: TerminalObservationRangeTracker | undefined;
@@ -177,7 +185,7 @@ export function TerminalPanel({
 			const observation = await terminalApi.getObservation(sessionId, observationId);
 			if (
 				disposed ||
-				observation.terminalSessionId !== status.terminal?.id ||
+				observation.terminalSessionId !== terminalSessionId ||
 				!observationRangeTracker
 			) return;
 			observationRangeTracker.resolveObservation(observation, restore);
@@ -185,10 +193,12 @@ export function TerminalPanel({
 		};
 
 		const fail = (value: unknown): void => {
-			if (disposed) return;
+			if (disposed || failureHandled) return;
+			failureHandled = true;
+			stream?.close();
 			setError(localizedErrorMessage(value));
 			void Promise.resolve(onTerminalStateChange()).catch(() => undefined);
-			if (retryTimer === undefined) {
+			if (shouldRetryTerminalConnection(value)) {
 				retryTimer = setTimeout(() => {
 					retryTimer = undefined;
 					if (!disposed) setRetry((current) => current + 1);
@@ -201,8 +211,8 @@ export function TerminalPanel({
 			resizeTimer = setTimeout(() => {
 				const proposed = fitAddon.proposeDimensions();
 				if (!proposed || ownershipEpoch === null || !attachmentId || !terminal) return;
-				const rows = clamp(proposed.rows, status.capabilities.minRows, status.capabilities.maxRows);
-				const cols = clamp(proposed.cols, status.capabilities.minCols, status.capabilities.maxCols);
+				const rows = clamp(proposed.rows, minRows, maxRows);
+				const cols = clamp(proposed.cols, minCols, maxCols);
 				if (rows === terminal.rows && cols === terminal.cols) return;
 				void terminalApi.resize(sessionId, attachmentId, ownershipEpoch, rows, cols).catch(fail);
 			}, TERMINAL_UI_DEFAULTS.resizeDebounceMs);
@@ -218,8 +228,11 @@ export function TerminalPanel({
 			}).catch(fail);
 		};
 
-		void terminalApi.attach(sessionId, crypto.randomUUID()).then(async (bootstrap) => {
-			if (disposed) return;
+		void terminalApi.attach(sessionId, crypto.randomUUID(), attachController.signal).then(async (bootstrap) => {
+			if (disposed) {
+				void terminalApi.detach(sessionId, bootstrap.attachmentId).catch(() => undefined);
+				return;
+			}
 			attachmentId = bootstrap.attachmentId;
 			lastSequence = bootstrap.snapshot.sequence;
 			terminal = new Terminal({
@@ -247,7 +260,7 @@ export function TerminalPanel({
 			);
 			void timelineRestore.then(async (events) => {
 				if (disposed || observationStateEventCount > 0) return;
-				const restored = restoreObservationMaskState(events, status.terminal?.id ?? "");
+				const restored = restoreObservationMaskState(events, terminalSessionId ?? "");
 				if (!restored) return;
 				await loadObservationRange(restored.observationId, true).catch(() => undefined);
 				if (disposed || observationStateEventCount > 0) {
@@ -280,6 +293,7 @@ export function TerminalPanel({
 							throw new Error("Terminal replay did not reach the declared sequence");
 						}
 						await terminalApi.ready(sessionId, attachmentId, lastSequence);
+						if (disposed || failureHandled) return;
 						live = true;
 						if (retryTimer !== undefined) {
 							clearTimeout(retryTimer);
@@ -337,10 +351,7 @@ export function TerminalPanel({
 					if (maskStateEvent) applyObservationMaskEvent(envelope);
 					lastSequence = envelope.sequence;
 				});
-				void writeTail.catch((streamError) => {
-					fail(streamError);
-					setRetry((value) => value + 1);
-				});
+				void writeTail.catch(fail);
 			});
 		}).catch(fail);
 
@@ -352,6 +363,7 @@ export function TerminalPanel({
 		window.addEventListener("pageshow", updateFocus);
 		return () => {
 			disposed = true;
+			attachController.abort();
 			if (resizeTimer !== undefined) clearTimeout(resizeTimer);
 			if (retryTimer !== undefined) clearTimeout(retryTimer);
 			if (observationFinishDelayTimer !== undefined) clearTimeout(observationFinishDelayTimer);
@@ -368,12 +380,12 @@ export function TerminalPanel({
 			terminal?.dispose();
 			if (attachmentId) void terminalApi.detach(sessionId, attachmentId).catch(() => undefined);
 		};
-	}, [locale, localizedErrorMessage, retry, sessionId, status, onTerminalStateChange]);
+	}, [locale, localizedErrorMessage, retry, sessionId, terminalSessionId, terminalStatus, minRows, maxRows, minCols, maxCols, onTerminalStateChange]);
 
 	return (
 		<section className="terminal-panel terminal-panel-shell shrink-0 bg-[var(--terminal-bg)] text-[var(--terminal-ink)]">
 			<div className="flex h-9 items-center justify-between border-b border-[var(--terminal-line)] px-4">
-				<div className="flex items-center gap-2 text-[9px] font-semibold"><span className={`h-1.5 w-1.5 rounded-full ${phase === "live" ? "bg-emerald-400" : "bg-amber-400"}`} />Terminal · {intl.formatMessage({ id: phase === "live" ? owner ? "terminal.panel.liveOwner" : "terminal.panel.liveFollower" : phase === "replaying" ? "terminal.panel.replaying" : "terminal.panel.attaching" })}</div>
+				<div className="flex items-center gap-2 text-[9px] font-semibold"><span className={`h-1.5 w-1.5 rounded-full ${phase === "live" ? "bg-emerald-400" : "bg-amber-400"}`} />Terminal · {intl.formatMessage({ id: phase === "live" ? owner ? "terminal.panel.liveOwner" : "terminal.panel.liveFollower" : phase === "replaying" ? "terminal.panel.replaying" : "terminal.panel.attaching" })}{terminalSandboxLabel(intl, sandbox)}</div>
 				{error ? <button type="button" className="flex items-center gap-1 text-[9px] text-rose-300" onClick={() => setRetry((value) => value + 1)}><RefreshCw size={10} />{intl.formatMessage({ id: "terminal.panel.resync" })}</button> : null}
 			</div>
 			<div className="terminal-viewport relative min-h-0 p-2">

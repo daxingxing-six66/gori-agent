@@ -391,7 +391,7 @@ async function createFixture(options: { maxConcurrentOperations?: number } = {})
 		}),
 		guards: new DefaultCommandGuardEvaluator(new SqliteGuardRepository(backend.database)),
 		broker,
-		sandbox: { prepare: async ({ cwd, command }) => ({ command: wrapRemoteCommand(cwd, command),
+		sandbox: { prepareTerminal: async () => { throw new Error("Unexpected Terminal preparation"); }, prepare: async ({ cwd, command }) => ({ command: wrapRemoteCommand(cwd, command),
 			sandbox: { mode: "workspace_write", backend: "landlock", enforcement: "full", abi: 5 } }) },
 		clock: { now: () => Date.now() },
 		ids,

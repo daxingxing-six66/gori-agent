@@ -20,4 +20,4 @@ for (const [architecture, target] of [["x64", "x86_64-linux-musl"], ["arm64", "a
 	if (result.status !== 0) process.exit(result.status ?? 1);
 	binaries[`linux-${architecture}`] = digest(readFileSync(output));
 }
-writeFileSync(join(resources, "manifest.json"), JSON.stringify({ launcherVersion: "1", minimumAbi: 5, compiler: "zig 0.15.2", sourceSha256: digest(readFileSync(join(directory, "main.c"))), binaries }, null, 2) + "\n");
+writeFileSync(join(resources, "manifest.json"), JSON.stringify({ launcherVersion: "3", minimumAbi: 5, compiler: "zig 0.15.2", sourceSha256: digest(readFileSync(join(directory, "main.c"))), binaries }, null, 2) + "\n");

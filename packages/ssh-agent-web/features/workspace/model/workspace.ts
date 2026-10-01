@@ -22,9 +22,8 @@ export interface Workspace {
 	activeCredentialId: string;
 	/** Local default inherited by new sessions. */
 	defaultCwd: string;
-	/** Remote SSH/SFTP directory; omitted by older clients, defaults to /. */
+	/** Remote SSH/SFTP default directory and Landlock writable root. */
 	remoteDefaultCwd?: string;
-	remoteSandboxRoot?: string;
 	connection: {
 		connectTimeoutMs: number;
 		keepaliveIntervalMs: number;
@@ -51,9 +50,8 @@ export interface CreateWorkspaceInput {
 	credential: CreateCredentialInput;
 	/** Local default inherited by new sessions. */
 	defaultCwd: string;
-	/** Remote SSH/SFTP directory; omitted by older clients, defaults to /. */
+	/** Remote SSH/SFTP default directory and Landlock writable root. */
 	remoteDefaultCwd?: string;
-	remoteSandboxRoot?: string;
 	connection?: Partial<Workspace["connection"]>;
 }
 
@@ -83,7 +81,7 @@ export function parseRemoteSandboxProbe(value: unknown): RemoteSandboxProbe {
 	const facts = value as Record<string, unknown>;
 	if (facts.mode !== "workspace_write" || facts.backend !== "landlock" || facts.enforcement !== "full" ||
 		typeof facts.abi !== "number" || !Number.isSafeInteger(facts.abi) || facts.abi < 5 ||
-		typeof facts.sandboxRoot !== "string" || !isRemoteSandboxRoot(facts.sandboxRoot)) {
+		typeof facts.sandboxRoot !== "string" || !isCanonicalRemoteSandboxRoot(facts.sandboxRoot)) {
 		throw new Error("Invalid remote sandbox probe response");
 	}
 	return { mode: facts.mode, backend: facts.backend, enforcement: facts.enforcement,
@@ -98,4 +96,9 @@ export function isRemoteSandboxRoot(path: string): boolean {
 		else if (part !== "" && part !== ".") segments.push(part);
 	}
 	return segments.length > 0;
+}
+
+/** Runtime facts must contain a canonical path, unlike an unselected input path. */
+export function isCanonicalRemoteSandboxRoot(path: string): boolean {
+	return isRemoteSandboxRoot(path) && path.slice(1).split("/").every((part) => part !== "" && part !== "." && part !== "..");
 }

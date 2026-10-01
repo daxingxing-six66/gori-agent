@@ -3,6 +3,8 @@ import { IntlProvider } from "react-intl";
 import { describe, expect, it, vi } from "vitest";
 import { ManagementDialog } from "../components/management-dialog";
 import { WorkspaceDialog } from "../features/workspace/components/workspace-dialog";
+import { WorkspaceEditDialog } from "../features/workspace/components/workspace-edit-dialog";
+import { RemoteDirectoryPicker } from "../features/workspace/components/remote-directory-picker";
 import { workspaceApi } from "../features/workspace/api/workspace-api";
 import { ConnectionTestController, canTestConnection } from "../features/workspace/runtime/connection-test-controller";
 import type { TestWorkspaceConnectionInput, TestWorkspaceConnectionResult } from "../features/workspace/model/workspace";
@@ -92,6 +94,34 @@ describe("workspace connection test", () => {
 			await expect(workspaceApi.testConnection(draft, abort.signal)).resolves.toEqual({ success: true });
 			expect(fetchMock.mock.calls[0]![0]).toContain("/api/workspaces/test-connection");
 			expect(fetchMock.mock.calls[0]![1]).toMatchObject({ method: "POST", signal: abort.signal, body: JSON.stringify(draft), cache: "no-store" });
+		} finally { vi.unstubAllGlobals(); }
+	});
+	it("uses read-only remote directory selectors in create and edit forms", () => {
+		const render = (node: React.ReactNode) => renderToStaticMarkup(<IntlProvider locale="en-US" messages={enUSMessages}>{node}</IntlProvider>);
+		const create = render(<WorkspaceDialog onClose={() => {}} onCreated={() => {}} />);
+		const edit = render(<WorkspaceEditDialog workspace={{ id: "w", displayName: "W", environment: "development", host: { hostname: "example", port: 22, hostKey: null }, activeCredentialId: "c", defaultCwd: "/", remoteDefaultCwd: "/srv/app", connection: { connectTimeoutMs: 10000, keepaliveIntervalMs: 15000, keepaliveMaxCount: 3 }, revision: 1, createdAt: 1, updatedAt: 1 }} onClose={() => {}} onSubmit={async () => {}} />);
+		for (const html of [create, edit]) {
+			expect(html).toContain('aria-label="Choose remote working directory"');
+			expect(html).not.toMatch(/<input[^>]*aria-label="Default remote working directory"/);
+			expect(html).not.toContain("Remote sandbox writable root");
+		}
+		expect(create).toMatch(/<button[^>]*disabled=""[^>]*aria-label="Choose remote working directory"/);
+		expect(edit).toContain("/srv/app");
+	});
+	it("renders remote SFTP picker with directory-only selection", () => {
+		const html = renderToStaticMarkup(<IntlProvider locale="en-US" messages={enUSMessages}><RemoteDirectoryPicker initialPath="/" load={async () => ({ path: "/", entries: [] })} onClose={() => {}} onSelect={() => {}} /></IntlProvider>);
+		expect(html).toContain('role="dialog"');
+		expect(html).toContain("Choose remote working directory");
+		expect(html).toContain("Choose current directory");
+	});
+	it("sends draft credentials and path to the temporary browse API with cancellation", async () => {
+		const fetchMock = vi.fn().mockResolvedValue(Response.json({ path: "/home/test", entries: [] }));
+		vi.stubGlobal("fetch", fetchMock);
+		const abort = new AbortController();
+		try {
+			await expect(workspaceApi.browseDirectory(draft, "/home/test", abort.signal)).resolves.toEqual({ path: "/home/test", entries: [] });
+			expect(fetchMock.mock.calls[0]![0]).toContain("/api/workspaces/browse-directory");
+			expect(fetchMock.mock.calls[0]![1]).toMatchObject({ method: "POST", signal: abort.signal, body: JSON.stringify({ ...draft, path: "/home/test" }) });
 		} finally { vi.unstubAllGlobals(); }
 	});
 });

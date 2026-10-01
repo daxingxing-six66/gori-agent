@@ -15,14 +15,16 @@ export class ApiError extends Error {
 	readonly code: ApiErrorCode;
 	readonly field?: string;
 	readonly details?: Record<string, unknown>;
+	readonly retryable?: boolean;
 
-	constructor(status: number, code: ApiErrorCode, message: string, field?: string, details?: Record<string, unknown>) {
+	constructor(status: number, code: ApiErrorCode, message: string, field?: string, details?: Record<string, unknown>, retryable?: boolean) {
 		super(message);
 		this.name = "ApiError";
 		this.status = status;
 		this.code = code;
 		this.field = field;
 		this.details = details;
+		this.retryable = retryable;
 	}
 }
 

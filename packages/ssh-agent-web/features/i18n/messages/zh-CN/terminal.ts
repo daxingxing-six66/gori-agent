@@ -1,6 +1,9 @@
 export const zhCNTerminalMessages = {
 	"terminal.tool.close.description": "选择后关闭当前持久化终端会话",
 	"terminal.tool.open.description": "创建持久化 SSH PTY 供 Agent 使用",
+	"terminal.fullAccess.name": "Terminal 完全访问",
+	"terminal.sandbox.fallbackNotice": "当前远端 Linux 没有可用的受限沙箱。Terminal 已自动以 SSH 账号权限运行；本次会话的文件操作不受沙箱保护。",
+	"terminal.sandbox.fallbackLabel": "沙箱不可用 · 自动回退",
 	"terminal.disabled.runActive": "Chat Run 运行期间不可切换",
 	"terminal.disabled.loading": "正在读取 Terminal 状态",
 	"terminal.disabled.connecting": "Terminal 正在连接",

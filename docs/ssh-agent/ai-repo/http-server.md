@@ -3,12 +3,11 @@
 适用于管理 API 路由、JSON 校验、错误映射、Node HTTP 适配、CORS、请求体限制、环境变量和进程生命周期。
 
 - `POST /api/workspaces/test-connection` 接收尚未保存的地址、Credential 和连接参数，认证成功返回 `{ success: true }`，不创建工作区或执行命令。Node 适配器在响应连接提前关闭时取消 Request，包括请求体已读完的情况；正常结束不取消。详见 [connection-test.md](./connection-test.md)。
-
+- `POST /api/workspaces/browse-directory` 以同一草稿连接读取指定远端绝对路径的 SFTP 目录，不创建工作区或持久化凭据。接口请求可取消，细节见 [connection-test.md](./connection-test.md)。
 
 Workspace POST/PATCH 接受可选 `remoteDefaultCwd`，响应携带持久化的远端默认目录；创建省略取 `/`，更新省略保留。`defaultCwd` 保留为本地会话默认目录，两个字段独立。
 
-
-Workspace POST/PATCH 另接受可选 `remoteSandboxRoot`，省略分别不设置/保留。`POST /api/workspaces/:id/sandbox` 通过正式目标解析显式检测远端沙箱，成功返回 mode/backend/enforcement/ABI/root；不运行用户脚本，可能创建连接及投递启动器。失败沿用安全本地化错误，不提供 Full Access 直通 HTTP 接口。见 [remote-sandbox.md](./remote-sandbox.md)。
+Workspace POST/PATCH 只通过 `remoteDefaultCwd` 设置远端默认目录及 Landlock 可写根，不再接收独立根字段。`POST /api/workspaces/:id/sandbox` 通过正式目标解析显式检测远端沙箱，成功返回 mode/backend/enforcement/ABI/root；不运行用户脚本，可能创建连接及投递启动器。失败沿用安全本地化错误，不提供 Full Access 直通 HTTP 接口。见 [remote-sandbox.md](./remote-sandbox.md)。
 
 ## 请求链路
 

@@ -15,11 +15,32 @@ async function request(handle: (r: Request) => Promise<Response>, method: string
  return { status: response.status, body: await response.json() };
 }
 
-describe("independent workspace directories", () => {
+describe("workspace directory boundaries", () => {
+	it("migrates the former writable root into the single remote directory without widening access", () => {
+		const db = new DatabaseSync(":memory:");
+		try {
+			applyMigrations(db);
+			db.exec(`INSERT INTO workspaces (id,display_name,environment,hostname,port,default_cwd,remote_default_cwd,connect_timeout_ms,keepalive_interval_ms,keepalive_max_count,revision,created_at,updated_at)
+				VALUES ('old-root','old','development','remote',22,'/local','/etc',1000,1000,3,1,1,1),
+				('old-cwd','old','development','remote',22,'/local','/srv/project',1000,1000,3,1,1,1);
+				ALTER TABLE workspaces ADD COLUMN remote_sandbox_root TEXT;
+				UPDATE workspaces SET remote_sandbox_root='/srv/allowed' WHERE id='old-root';
+				DELETE FROM ssh_agent_schema_migrations WHERE version=21;`);
+			applyMigrations(db);
+			expect(db.prepare("SELECT id, remote_default_cwd FROM workspaces ORDER BY id").all()).toEqual([
+				{ id: "old-cwd", remote_default_cwd: "/srv/project" },
+				{ id: "old-root", remote_default_cwd: "/srv/allowed" },
+			]);
+			expect(db.prepare("PRAGMA table_info(workspaces)").all().some((column) => column.name === "remote_sandbox_root")).toBe(false);
+		} finally { db.close(); }
+	});
  it("keeps local session inheritance separate from HTTP SFTP and SSH command defaults", async () => {
   const list = vi.spyOn(Ssh2ChannelBroker.prototype, "listDirectory").mockImplementation(async (input) => ({ path: input.remotePath, entries: [] }));
-  vi.spyOn(LandlockRemoteSandboxProvider.prototype, "prepare").mockImplementation(async ({ cwd, command }) => ({ command: wrapRemoteCommand(cwd, command), sandbox: { mode: "workspace_write", backend: "landlock", enforcement: "full", abi: 5 } }));
-  const execute = vi.spyOn(Ssh2ChannelBroker.prototype, "execute").mockResolvedValue({ exitCode: 0 });
+  vi.spyOn(LandlockRemoteSandboxProvider.prototype, "prepare").mockImplementation(async ({ cwd, command }) => ({ command: wrapRemoteCommand(cwd, command), sandbox: { mode: "workspace_write", backend: "landlock", enforcement: "full", abi: 5, launcherVersion: "3", sandboxRoot: "/srv/app" }, confirmation: "test-confirmation\n" }));
+  const execute = vi.spyOn(Ssh2ChannelBroker.prototype, "execute").mockImplementation(async (input) => {
+   await input.onStderr(Buffer.from("test-confirmation\n"));
+   return { exitCode: 0 };
+  });
   const backend = createSqliteManagementBackend({ databasePath: ":memory:", credentialEncryptionKey: new Uint8Array(32).fill(1), llmModelsFactory: createTestLlmModels });
   const call = (method: string, path: string, body?: unknown) => request(backend.handleRequest, method, path, body);
   try {

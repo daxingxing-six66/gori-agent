@@ -1,9 +1,13 @@
 import type { Clock, IdGenerator, SessionId } from "../../domain/ids.ts";
+import { isTerminalSandboxFallbackEligible } from "../../domain/remote-sandbox.ts";
+import { SshAgentError } from "../../domain/ssh-failure.ts";
 import type {
 	TerminalCloseReason,
 	TerminalGeometry,
 	TerminalObservation,
 	TerminalSession,
+	TerminalSandboxFacts,
+	TerminalSandboxMode,
 	TerminalTimelineEvent,
 } from "../../domain/terminal.ts";
 import { effectiveServerInteractionMode, isLiveTerminalStatus, TerminalError } from "../../domain/terminal.ts";
@@ -21,6 +25,7 @@ import type {
 import { TerminalSessionActor } from "../terminal/terminal-session-actor.ts";
 import type { SessionLifecycleCoordinator, SessionUseLease } from "./session-lifecycle-coordinator.ts";
 import type { SshTargetResolver } from "./ssh-target-resolver.ts";
+import type { RemoteSandboxProvider } from "./remote-sandbox-provider.ts";
 
 export interface OpenTerminalInput {
 	readonly sessionId: SessionId;
@@ -53,6 +58,7 @@ export class TerminalSessionService {
 	readonly #terminals: TerminalRepository;
 	readonly #targets: SshTargetResolver;
 	readonly #broker: TerminalChannelBroker;
+	readonly #sandbox: RemoteSandboxProvider;
 	readonly #lifecycle: SessionLifecycleCoordinator;
 	readonly #registry: TerminalRuntimeRegistry;
 	readonly #clock: Clock;
@@ -68,6 +74,7 @@ export class TerminalSessionService {
 		terminals: TerminalRepository;
 		targets: SshTargetResolver;
 		broker: TerminalChannelBroker;
+		sandbox: RemoteSandboxProvider;
 		lifecycle: SessionLifecycleCoordinator;
 		registry?: TerminalRuntimeRegistry;
 		clock: Clock;
@@ -79,6 +86,7 @@ export class TerminalSessionService {
 		this.#terminals = options.terminals;
 		this.#targets = options.targets;
 		this.#broker = options.broker;
+		this.#sandbox = options.sandbox;
 		this.#lifecycle = options.lifecycle;
 		this.#registry = options.registry ?? new TerminalRuntimeRegistry();
 		this.#clock = options.clock;
@@ -119,7 +127,12 @@ export class TerminalSessionService {
 		if (this.#closed)
 			throw new TerminalError("terminal_session_unavailable", "Terminal service is closing", { status: 503 });
 		const existingRequest = this.#terminals.findSessionByOpenRequest(input.sessionId, input.requestId);
-		if (existingRequest) return existingRequest;
+		const requestedSandboxMode: TerminalSandboxMode = "workspace_write";
+		if (existingRequest) {
+			if (existingRequest.requestedSandboxMode !== requestedSandboxMode)
+				throw new TerminalError("terminal_open_request_conflict", "Open request mode differs from the existing TerminalSession", { status: 409 });
+			return existingRequest;
+		}
 		const useLease = this.#lifecycle.acquireUse(input.sessionId, "terminal_open");
 		try {
 			const session = await this.#sessions.findById(input.sessionId);
@@ -159,6 +172,8 @@ export class TerminalSessionService {
 					openRequestId: input.requestId,
 					closeRequestId: null,
 					status: "opening",
+					requestedSandboxMode,
+					sandbox: null,
 					revision: 1,
 					geometry,
 					eventSequence: 0,
@@ -200,7 +215,7 @@ export class TerminalSessionService {
 					interactionId: null,
 					observationId: null,
 					agentRunId: null,
-					data: { rows: geometry.rows, cols: geometry.cols },
+					data: { rows: geometry.rows, cols: geometry.cols, requestedSandboxMode },
 					createdAt: now,
 				});
 				const controller = new AbortController();
@@ -233,6 +248,35 @@ export class TerminalSessionService {
 			const persisted = this.#terminals.findSession(input.terminalSessionId);
 			if (!persisted || persisted.sessionId !== input.sessionId) {
 				throw new TerminalError("terminal_session_not_found", "TerminalSession was not found", { status: 404 });
+			}
+			if (!actor && isLiveTerminalStatus(persisted.status)) {
+				const now = this.#clock.now();
+				const lost: TerminalSession = {
+					...persisted,
+					status: "lost",
+					closeRequestId: input.requestId,
+					closeReason: "connection_lost",
+					closedAt: now,
+					eventSequence: persisted.eventSequence + 1,
+					revision: persisted.revision + 1,
+					updatedAt: now,
+				};
+				if (this.#terminals.updateSession(lost, persisted.status, persisted.revision)) {
+					this.#terminals.appendTimelineEvent({
+						id: this.#ids.next(),
+						terminalSessionId: lost.id,
+						sessionId: lost.sessionId,
+						terminalEventSequence: lost.eventSequence,
+						type: "terminal.lost",
+						interactionId: null,
+						observationId: null,
+						agentRunId: null,
+						data: { reason: lost.closeReason },
+						createdAt: now,
+					});
+					return lost;
+				}
+				return this.#terminals.findSession(input.terminalSessionId) ?? persisted;
 			}
 			return persisted;
 		}
@@ -305,6 +349,7 @@ export class TerminalSessionService {
 			);
 		}
 		if (requestedMode === "command") return null;
+		if (!current?.sandbox) throw new TerminalError("terminal_session_unavailable", "Active Terminal sandbox state is unknown", { status: 409 });
 		const actor = this.#registry.findBySession(sessionId);
 		if (!actor || actor.id !== current?.id) {
 			throw new TerminalError("terminal_session_unavailable", "Active TerminalSession runtime is unavailable", {
@@ -357,13 +402,26 @@ export class TerminalSessionService {
 		try {
 			const open = Promise.resolve().then(async () => {
 				const target = await this.#targets.resolve(actor.sessionId);
-				return this.#broker.open({
+				let sandbox: TerminalSandboxFacts;
+				let launch: Parameters<TerminalChannelBroker["open"]>[0]["launch"];
+				try {
+					const prepared = await this.#sandbox.prepareTerminal({ target, signal: controller.signal });
+					sandbox = prepared.sandbox;
+					launch = { kind: "sandboxed_exec", command: prepared.command, confirmation: prepared.confirmation };
+				} catch (error) {
+					if (!isTerminalSandboxFallbackEligible(error)) throw error;
+					sandbox = { mode: "full_access", backend: "none", enforcement: "none", source: "sandbox_unavailable", detectedAt: this.#clock.now() };
+					launch = { kind: "login_shell" };
+				}
+				const channel = await this.#broker.open({
 					target,
+					launch,
 					geometry: actor.view.geometry,
 					term: "xterm-256color",
 					signal: controller.signal,
 					onData: (bytes) => actor.acceptSshData(bytes),
 				});
+				return { channel, sandbox };
 			});
 			const timeout = new Promise<never>((_resolve, reject) => {
 				openTimeout = setTimeout(() => {
@@ -374,20 +432,20 @@ export class TerminalSessionService {
 				openTimeout.unref();
 			});
 			void open.then(
-				(channel) => {
+				({ channel }) => {
 					if (timedOut) channel.dispose();
 				},
 				() => undefined,
 			);
-			const channel = await Promise.race([open, timeout]);
+			const { channel, sandbox } = await Promise.race([open, timeout]);
 			if (timedOut) {
 				channel.dispose();
 				throw timeoutError;
 			}
-			await actor.activate(channel);
+			await actor.activate(channel, sandbox);
 		} catch (error) {
 			await actor.failOpening(
-				error instanceof TerminalError ? error.code : "terminal_open_failed",
+				error instanceof TerminalError ? error.code : error instanceof SshAgentError ? error.failure.code : "terminal_open_failed",
 				error instanceof Error ? error.message : "Terminal open failed",
 			);
 		} finally {

@@ -28,6 +28,14 @@ describe("Terminal interaction Tool schema", () => {
 		);
 	});
 
+	it("tells the Agent when Terminal opened without Landlock after a capability fallback", () => {
+		const tool = createTerminalInteractionTool({ sessionId: "session-1", terminalSessionId: "terminal-1",
+			agentRunId: "run-1", interactions: {} as TerminalInteractionService,
+			sandbox: { mode: "full_access", backend: "none", enforcement: "none", source: "landlock_unavailable", detectedAt: 10 } });
+		expect(tool.description).toContain("Landlock unavailable");
+		expect(tool.description).toContain("without filesystem confinement");
+	});
+
 	it("keeps the canonical empty observation for the Agent and localizes only the browser projection", async () => {
 		const interactions = {
 			execute: vi.fn(async () => ({
@@ -50,14 +58,16 @@ describe("Terminal interaction Tool schema", () => {
 			terminalSessionId: "terminal-1",
 			agentRunId: "run-1",
 			interactions,
+			sandbox: { mode: "workspace_write", backend: "landlock", enforcement: "full", abi: 8, launcherVersion: "3", sandboxRoot: "/srv/test" },
 		});
 
 		const result = await tool.execute("tool-1", { action: "observe", expectation: "finite" });
 		expect(result.content).toEqual([
 			{ type: "text", text: "No terminal text was observed before this observation boundary." },
+			{ type: "text", text: "Terminal sandbox: Landlock ABI 8; writable root /srv/test." },
 		]);
 		expect(localizePublicValue(result, "zh-CN")).toMatchObject({
-			content: [{ type: "text", text: "在本次观察边界前未检测到终端文本。" }],
+			content: [{ type: "text", text: "在本次观察边界前未检测到终端文本。\nTerminal sandbox: Landlock ABI 8; writable root /srv/test." }],
 		});
 	});
 });

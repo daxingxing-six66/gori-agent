@@ -7,8 +7,11 @@ import {
 	requireTerminalOwnership,
 	requireTerminalStatus,
 	requireTerminalTimeline,
+	terminalSandboxFromTimelineEvent,
 } from "../features/terminal/model/terminal.ts";
 import { TerminalEventStream } from "../features/terminal/runtime/terminal-event-stream.ts";
+import { shouldRetryTerminalConnection } from "../features/terminal/model/terminal-retry.ts";
+import { ApiError } from "../shared/errors/api-error.ts";
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -17,6 +20,8 @@ const terminal = {
 	sessionId: "session-1",
 	workspaceId: "workspace-1",
 	status: "active",
+	requestedSandboxMode: "workspace_write",
+	sandbox: { mode: "workspace_write", backend: "landlock", enforcement: "full", abi: 8, launcherVersion: "2", sandboxRoot: "/srv/test" },
 	geometry: { rows: 36, cols: 120 },
 	eventSequence: 4,
 	ownershipEpoch: 2,
@@ -98,6 +103,13 @@ describe("Terminal response validation", () => {
 	});
 
 	it("rejects malformed state instead of trusting server JSON", () => {
+		const fallback = { mode: "full_access", backend: "none", enforcement: "none", source: "landlock_unavailable", detectedAt: 10 };
+		expect(requireTerminalStatus({ terminal: { ...terminal, sandbox: fallback }, effectiveServerInteractionMode: "terminal", transitionInProgress: false, capabilities: { minRows: 12, maxRows: 120, minCols: 40, maxCols: 320 } }).terminal?.sandbox).toEqual(fallback);
+		const currentFallback = { ...fallback, source: "sandbox_unavailable" };
+		expect(requireTerminalStatus({ terminal: { ...terminal, sandbox: currentFallback }, effectiveServerInteractionMode: "terminal", transitionInProgress: false, capabilities: { minRows: 12, maxRows: 120, minCols: 40, maxCols: 320 } }).terminal?.sandbox).toEqual(currentFallback);
+		expect(() => requireTerminalStatus({ terminal: { ...terminal, sandbox: { mode: "workspace_write", backend: "landlock", enforcement: "full", abi: 5, launcherVersion: "3", sandboxRoot: "/srv/../etc" } }, effectiveServerInteractionMode: "terminal", transitionInProgress: false, capabilities: { minRows: 12, maxRows: 120, minCols: 40, maxCols: 320 } })).toThrow();
+		expect(() => requireTerminalStatus({ terminal: { ...terminal, sandbox: { ...fallback, detectedAt: -1 } }, effectiveServerInteractionMode: "terminal", transitionInProgress: false, capabilities: { minRows: 12, maxRows: 120, minCols: 40, maxCols: 320 } })).toThrow();
+		expect(() => requireTerminalStatus({ terminal: { ...terminal, sandbox: { mode: "full_access", backend: "none", enforcement: "none", approvedAt: 1 } }, effectiveServerInteractionMode: "terminal", transitionInProgress: false, capabilities: { minRows: 12, maxRows: 120, minCols: 40, maxCols: 320 } })).toThrow();
 		expect(() => requireTerminalOwnership({ owner: true, ownershipEpoch: null })).toThrow();
 		expect(() => requireTerminalStatus({
 			terminal,
@@ -150,9 +162,48 @@ describe("Terminal response validation", () => {
 			data: {},
 		}, "terminal.output")).toBeNull();
 	});
+
+	it("validates and exposes actual sandbox facts in active timeline events", () => {
+		const event = { id: "event-2", terminalSessionId: "terminal-1", sessionId: "session-1", timelineSequence: 2,
+			terminalEventSequence: 0, type: "terminal.active", interactionId: null, observationId: null, agentRunId: null,
+			data: { sandbox: terminal.sandbox }, createdAt: 2 };
+		expect(terminalSandboxFromTimelineEvent(requireTerminalTimeline({ events: [event] })[0]!)).toEqual(terminal.sandbox);
+		expect(() => requireTerminalTimeline({ events: [{ ...event, data: { sandbox: { mode: "workspace_write", abi: "8" } } }] })).toThrow();
+	});
 });
 
 describe("Terminal API client", () => {
+	it("preserves a non-retryable missing Terminal Session error and stops automatic attachment retry", async () => {
+		const fetchMock = mockResponse({
+			error: { code: "terminal_session_not_found", message: "未找到 Terminal Session", retryable: false },
+		}, 404);
+		const request = terminalApi.attach("session-1", "request-1");
+		await expect(request).rejects.toMatchObject({
+			status: 404,
+			code: "terminal_session_not_found",
+			retryable: false,
+		});
+		const error = await request.catch((failure: unknown) => failure);
+		expect(error).toBeInstanceOf(ApiError);
+		expect(shouldRetryTerminalConnection(error)).toBe(false);
+		expect(shouldRetryTerminalConnection(new ApiError(503, "terminal_unavailable", "Busy", undefined, undefined, true))).toBe(true);
+		expect(shouldRetryTerminalConnection(new TypeError("Network failure"))).toBe(true);
+		expect(fetchMock).toHaveBeenCalledTimes(1);
+	});
+
+	it("passes cancellation to an in-flight attachment request", async () => {
+		const fetchMock = vi.fn((_url: string, init: RequestInit) => new Promise<Response>((_resolve, reject) => {
+			init.signal?.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError")), { once: true });
+		}));
+		vi.stubGlobal("fetch", fetchMock);
+		const controller = new AbortController();
+		const request = terminalApi.attach("session-1", "request-1", controller.signal);
+		controller.abort();
+		await expect(request).rejects.toMatchObject({ name: "AbortError" });
+		const init = fetchMock.mock.calls[0]?.[1] as RequestInit;
+		expect(init.signal).toBe(controller.signal);
+	});
+
 	it("sends explicit request IDs and owner-scoped resize fields", async () => {
 		let fetchMock = mockResponse(terminal, 202);
 		await terminalApi.open("session / 1", "request-1");

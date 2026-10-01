@@ -22,9 +22,9 @@ export const terminalApi = {
 				body: { requestId, terminalSessionId },
 			}),
 		),
-	attach: async (sessionId: string, requestId: string) =>
+	attach: async (sessionId: string, requestId: string, signal?: AbortSignal) =>
 		requireTerminalAttachment(
-			await apiRequest<unknown>(`${root(sessionId)}/attachments`, { method: "POST", body: { requestId } }),
+			await apiRequest<unknown>(`${root(sessionId)}/attachments`, { method: "POST", body: { requestId }, signal }),
 		),
 	ready: (sessionId: string, attachmentId: string, replayedThroughSequence: number) =>
 		apiRequest<void>(`${root(sessionId)}/attachments/${encodeURIComponent(attachmentId)}/ready`, {

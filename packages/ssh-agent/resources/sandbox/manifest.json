@@ -1,10 +1,10 @@
 {
-  "launcherVersion": "1",
+  "launcherVersion": "3",
   "minimumAbi": 5,
   "compiler": "zig 0.15.2",
-  "sourceSha256": "66c7e5d8d3dd57ddd23c5f2953404586667fcd9f179146e7c2208d26e144de49",
+  "sourceSha256": "fff3917beb2b2afbe0f8024a951d5af93f010ad6d2115d77c3b2abdd10d9515a",
   "binaries": {
-    "linux-x64": "c9c5371bbd8321b73700bf2d8a87a7e2a175ca344c203cf8c933330d9d2a05bc",
-    "linux-arm64": "8b571e5707b7bb4391def53a67413faa3c32b9d936c06d9ff0163710fe57ba02"
+    "linux-x64": "cc05ec0f802a1d0f81ec6a63056ccd6dda763d0f82f06c4c7e29c6a980c75e34",
+    "linux-arm64": "5f4dd7829f217a0bd61aeab6df8c098a1884fec8cde039b4617aef7fb269d657"
   }
 }

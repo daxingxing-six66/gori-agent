@@ -2,16 +2,14 @@
 
 适用于数据库初始化、schema migration、实体映射、Repository 实现、Credential 密文和默认后端装配。
 
-
 v18 为 Workspace 增加非空 `remote_default_cwd`，默认 `/`。原 `default_cwd`、Session `work_dir`、revision 与历史快照原样保留；不凭路径格式或本机存在性猜测旧值所属机器。升级后若需要原远端目录，应在工作区单独设置。回归 `workspace-directories.test.ts` 从冻结旧库验证保留、默认值、外键与幂等性。
 
-
-v19 追加 nullable `workspaces.remote_sandbox_root` 及 `command_operations.agent_run_id/sandbox_json/sandbox_justification`。不推断旧根，不把历史命令标记为已受约束。Operation 保存实际 mode/backend/enforcement/ABI/规范根及可能副作用事实；Repository 读取 `sandbox_json` 时逐字段校验，不把损坏的事实直接断言成领域类型。一次性 Full Access grant 只存内存。旧 v4/v15 回归使用冻结 schema fixture，避免从最新结构反向删表。见 [remote-sandbox.md](./remote-sandbox.md)。
+v19 追加 nullable `workspaces.remote_sandbox_root` 及 `command_operations.agent_run_id/sandbox_json/sandbox_justification`。v21 将已有独立可写根优先迁入 `remote_default_cwd`，再删除 `remote_sandbox_root`；旧根不存在时保留原远端目录。历史命令的约束事实不改写。Operation 保存实际 mode/backend/enforcement/ABI/规范根及可能副作用事实；Repository 按模式、后端和确认状态校验 `sandbox_json`，同时保留旧记录的未知及确认前事实。一次性 Full Access grant 只存内存。旧 v4/v15 回归使用冻结 schema fixture，避免从最新结构反向删表。见 [remote-sandbox.md](./remote-sandbox.md)。
 
 ## 当前边界
 
 - 使用 Node `node:sqlite`，启动时开启 foreign keys、busy timeout；文件数据库使用 WAL。
-- schema 由版本化 migration 管理，当前版本为 v19；v7 增加 Session 本地配置、Chat Run、消息、队列、审批和 Agent Session 投影表，v8 为 Tool Approval 增加持久化描述，v9 增加每个 LLM Provider 的最后一次成功模型目录快照，v10 增加 TerminalSession、Interaction、Input、Observation、Timeline 和 Chat Run 交互模式字段，v11 增加自定义 LLM Provider 聚合，v12 为 Chat 消息增加类型、Provider 和 Usage 投影并移除旧 Agent Session 投影表，v13 为 Tool Approval 描述和 Terminal failure 增加可选 message key/values 元数据，v14 增加 Session Attachment 元数据、同名唯一约束和级联删除，v15 增加有序 `chat_message_attachments` 关系，v16 增加不可变 `chat_prompt_snapshots`，通过触发器原子记录初始模式及 Terminal active 边界变化。见 [session-prompt.md](./session-prompt.md)。
+- schema 由版本化 migration 管理，当前版本为 v21；v7 增加 Session 本地配置、Chat Run、消息、队列、审批和 Agent Session 投影表，v8 为 Tool Approval 增加持久化描述，v9 增加每个 LLM Provider 的最后一次成功模型目录快照，v10 增加 TerminalSession、Interaction、Input、Observation、Timeline 和 Chat Run 交互模式字段，v11 增加自定义 LLM Provider 聚合，v12 为 Chat 消息增加类型、Provider 和 Usage 投影并移除旧 Agent Session 投影表，v13 为 Tool Approval 描述和 Terminal failure 增加可选 message key/values 元数据，v14 增加 Session Attachment 元数据、同名唯一约束和级联删除，v15 增加有序 `chat_message_attachments` 关系，v16 增加不可变 `chat_prompt_snapshots`，通过触发器原子记录初始模式及 Terminal active 边界变化。v20 保存 Terminal 实际沙箱事实，v21 合并远端目录。见 [session-prompt.md](./session-prompt.md)。
 - v17 兼容开发期间已执行的两种 v16 结构：在同一事务内重建快照表，去除早期 `initial_mode NOT NULL` 列，逐字保留头部文本及其版本、创建时间，重建模式触发器；仅为缺失 `runtimeEventId` 的已生成模式消息补齐原消息 ID，不改变顺序和标签。不重新生成已有快照，也不清空业务数据。失败时表、触发器、消息修补与版本记录一起回滚；重复启动跳过已完成的版本。
 - v1 到 v2 采用开发期重建策略：带业务数据的 v1 数据库会拒绝启动并提示人工备份、删除；程序不会自动删除或搬迁旧数据。
 - Credential 元数据与认证材料分表。认证材料使用 AES-256-GCM，加密 AAD 绑定 `credentialId:authVersion`；32 字节密钥必须由进程外部注入。

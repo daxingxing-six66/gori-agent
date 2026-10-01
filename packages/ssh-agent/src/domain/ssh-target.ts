@@ -11,7 +11,6 @@ export interface SshTargetSnapshot {
 	credentialAuthVersion: number;
 	remoteUser: string;
 	defaultCwd: string;
-	remoteSandboxRoot?: string;
 	connectTimeoutMs: number;
 	keepaliveIntervalMs: number;
 	keepaliveMaxCount: number;
@@ -19,7 +18,7 @@ export interface SshTargetSnapshot {
 
 export type SshConnectionKey = Omit<
 	SshTargetSnapshot,
-	"workspaceRevision" | "defaultCwd" | "remoteSandboxRoot" | "connectTimeoutMs" | "keepaliveIntervalMs" | "keepaliveMaxCount"
+	"workspaceRevision" | "defaultCwd" | "connectTimeoutMs" | "keepaliveIntervalMs" | "keepaliveMaxCount"
 >;
 
 export function connectionKeyFor(target: SshTargetSnapshot): SshConnectionKey {

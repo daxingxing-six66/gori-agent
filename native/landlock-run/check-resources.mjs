@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 const resources = new URL("../../packages/ssh-agent/resources/sandbox/", import.meta.url);
 const manifest = JSON.parse(readFileSync(new URL("manifest.json", resources), "utf8"));
 const digest = (data) => createHash("sha256").update(data).digest("hex");
-if (manifest.launcherVersion !== "1" || manifest.minimumAbi !== 5 || manifest.compiler !== "zig 0.15.2") throw new Error("Sandbox manifest has incompatible policy/build metadata");
+if (manifest.launcherVersion !== "3" || manifest.minimumAbi !== 5 || manifest.compiler !== "zig 0.15.2") throw new Error("Sandbox manifest has incompatible policy/build metadata");
 if (digest(readFileSync(new URL("main.c", import.meta.url))) !== manifest.sourceSha256) throw new Error("Rebuild the sandbox launchers after editing main.c");
 const policy = readFileSync(new URL("../../packages/ssh-agent/src/domain/remote-sandbox.ts", import.meta.url), "utf8");
 const source = readFileSync(new URL("main.c", import.meta.url), "utf8");

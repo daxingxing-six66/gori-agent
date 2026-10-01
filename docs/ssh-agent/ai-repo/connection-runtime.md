@@ -2,13 +2,13 @@
 
 适用于 SSH 目标解析、Connection Key、物理连接复用、Channel 并发、主机密钥校验、认证、保活、断线重连和连接失效。
 
-- 创建弹窗的草稿连接测试使用独立临时客户端，仅验证认证，不占用本 Pool、不保存 Host Trust、不重试。详见 [connection-test.md](./connection-test.md)。
+- 创建弹窗的草稿认证测试和远端目录浏览使用独立临时客户端；浏览额外开启一个 SFTP Channel，不占用本 Pool、不保存 Host Trust、不重试。详见 [connection-test.md](./connection-test.md)。
 
 
 目标解析器只将 Workspace `remoteDefaultCwd`（旧适配器省略时默认 `/`）写入 SSH Target 的 `defaultCwd`，禁止回退到 Workspace 的本地 `defaultCwd`。目录不参与 Connection Key，后续请求读取最新配置，既有 PTY 不迁移当前目录。
 
 
-SSH Target 同时携带最新 `remoteSandboxRoot`，它不参与 Connection Key。Landlock Provider 按该身份及 Connection generation 缓存成功探针；重连重新验证。启动器准备使用共享 Broker，不改变物理连接/Channel 的所有权。见 [remote-sandbox.md](./remote-sandbox.md)。
+SSH Target 的 `defaultCwd` 同时供默认命令目录和 Landlock 可写根使用，不参与 Connection Key。Landlock Provider 按连接身份及 generation 缓存成功能力探针；重连重新验证，目录本身仍逐次规范化与校验。启动器准备使用共享 Broker，不改变物理连接/Channel 的所有权。见 [remote-sandbox.md](./remote-sandbox.md)。
 
 ## 当前边界
 

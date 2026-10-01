@@ -1,5 +1,5 @@
-import { validRemoteSandboxRoot } from "../../domain/remote-sandbox.ts";
 import { ManagementError } from "../../domain/errors.ts";
+import { validRemoteSandboxRoot } from "../../domain/remote-sandbox.ts";
 import type { Guard } from "../../domain/guard.ts";
 import type { Clock, IdGenerator, WorkspaceId } from "../../domain/ids.ts";
 import {
@@ -91,8 +91,7 @@ export class DefaultWorkspaceService implements WorkspaceService {
 			},
 			activeCredentialId: activeCredential.id,
 			defaultCwd,
-			remoteDefaultCwd: requireRemoteDirectory(input.remoteDefaultCwd ?? "/"),
-			remoteSandboxRoot: input.remoteSandboxRoot === undefined ? undefined : requireSandboxRoot(input.remoteSandboxRoot),
+			remoteDefaultCwd: input.remoteDefaultCwd === undefined ? "/" : requireRemoteDirectory(input.remoteDefaultCwd),
 			connection,
 			revision: 1,
 			createdAt: now,
@@ -169,7 +168,6 @@ export class DefaultWorkspaceService implements WorkspaceService {
 			displayName: requireDisplayName(input.displayName),
 			defaultCwd: input.defaultCwd === undefined ? current.defaultCwd : requireNonEmpty(input.defaultCwd, "defaultCwd", 4096),
 			remoteDefaultCwd: input.remoteDefaultCwd === undefined ? current.remoteDefaultCwd ?? "/" : requireRemoteDirectory(input.remoteDefaultCwd),
-			remoteSandboxRoot: input.remoteSandboxRoot === undefined ? current.remoteSandboxRoot : requireSandboxRoot(input.remoteSandboxRoot),
 			revision: current.revision + 1,
 			updatedAt: this.clock.now(),
 		};
@@ -201,14 +199,8 @@ function isWorkspaceEnvironment(value: string): value is Workspace["environment"
 
 function requireRemoteDirectory(value: string): string {
 	const path = requireNonEmpty(value, "remoteDefaultCwd", 4096);
-	if (!path.startsWith("/") || path.includes("\0")) {
-		throw new ManagementError("validation_error", "remoteDefaultCwd must be an absolute remote path", "remoteDefaultCwd");
+	if (!validRemoteSandboxRoot(path)) {
+		throw new ManagementError("validation_error", "remoteDefaultCwd must be an absolute remote directory other than /", "remoteDefaultCwd");
 	}
-	return path;
-}
-
-function requireSandboxRoot(value: string): string {
-	const path = requireNonEmpty(value, "remoteSandboxRoot", 4096);
-	if (!validRemoteSandboxRoot(path)) throw new ManagementError("validation_error", "remoteSandboxRoot must be an absolute remote path other than /", "remoteSandboxRoot");
 	return path;
 }

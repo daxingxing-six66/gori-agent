@@ -18,6 +18,7 @@ import type { TerminalGeometry } from "../src/domain/terminal.ts";
 import { applyMigrations } from "../src/infrastructure/sqlite/migrations.ts";
 import { SqliteSessionRepository } from "../src/infrastructure/sqlite/sqlite-session-repository.ts";
 import { SqliteTerminalRepository } from "../src/infrastructure/sqlite/sqlite-terminal-repository.ts";
+import { terminalTestSandbox } from "./terminal-test-sandbox.ts";
 
 class SequentialIds implements IdGenerator {
 	#next = 1;
@@ -27,6 +28,8 @@ class SequentialIds implements IdGenerator {
 }
 
 class FakeHandle implements TerminalChannelHandle {
+	isClosed(): boolean { return false; }
+	startOutput(): void {}
 	readonly connectionGeneration = 1;
 	readonly closed: Promise<TerminalChannelExit>;
 	readonly written: Uint8Array[] = [];
@@ -121,6 +124,7 @@ async function setup(guards: CommandGuardEvaluator) {
 		terminals: repository,
 		targets: { resolve: async () => target },
 		broker,
+		sandbox: terminalTestSandbox,
 		lifecycle: new SessionLifecycleCoordinator(),
 		clock,
 		ids,

@@ -48,7 +48,7 @@ export const remoteServerCallDefinition = {
 	name: "remote_server_call",
 	label: "Remote server command",
 	description:
-		"Execute a shell command in the current SSH Workspace. The Session determines the server and credential; never ask for connection details. Default filesystem content writes are confined to the configured remoteSandboxRoot, /tmp and /dev/null; cwd is only a working directory. Metadata changes, network and IPC are outside this policy. A sandbox failure never falls back to unconfined execution.",
+		"Execute a shell command in the current SSH Workspace. The Session determines the server and credential; never ask for connection details. Default filesystem content writes are confined to the Workspace's default remote working directory, /tmp and /dev/null; a per-command cwd does not expand that boundary. Metadata changes, network and IPC are outside this policy. A sandbox failure never falls back to unconfined execution.",
 	parameters: remoteServerCallParameters,
 };
 

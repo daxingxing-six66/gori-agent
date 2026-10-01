@@ -1,5 +1,11 @@
+import { isCanonicalRemoteSandboxRoot } from "@/features/workspace/model/workspace";
+
 export type TerminalSessionStatus = "opening" | "active" | "closing" | "closed" | "failed" | "lost";
 export type ServerInteractionMode = "command" | "terminal";
+export type TerminalSandboxFacts =
+	| { mode: "workspace_write"; backend: "landlock"; enforcement: "full"; abi: number; launcherVersion: string; sandboxRoot: string }
+	| { mode: "full_access"; backend: "none"; enforcement: "none"; source: "sandbox_unavailable" | "landlock_unavailable"; detectedAt: number }
+	| { mode: "full_access"; backend: "none"; enforcement: "none"; approvedAt: number };
 
 export interface TerminalGeometry {
 	rows: number;
@@ -11,6 +17,8 @@ export interface TerminalSessionView {
 	sessionId: string;
 	workspaceId: string;
 	status: TerminalSessionStatus;
+	requestedSandboxMode: "workspace_write" | "full_access" | null;
+	sandbox: TerminalSandboxFacts | null;
 	geometry: TerminalGeometry;
 	eventSequence: number;
 	ownershipEpoch: number;
@@ -143,6 +151,11 @@ export function requireTerminalTimeline(value: unknown): TerminalTimelineEvent[]
 	return value.events;
 }
 
+export function terminalSandboxFromTimelineEvent(event: TerminalTimelineEvent): TerminalSandboxFacts | null {
+	if (event.type !== "terminal.active" || !isRecord(event.data) || !isSandboxFacts(event.data.sandbox)) return null;
+	return event.data.sandbox;
+}
+
 export function requireTerminalObservation(value: unknown): TerminalObservationView {
 	if (
 		!isRecord(value) ||
@@ -192,6 +205,12 @@ export function parseTerminalEnvelope(value: unknown, expectedType: string): Ter
 
 function isTerminalSession(value: unknown): value is TerminalSessionView {
 	if (!isRecord(value) || !isStatus(value.status) || !isGeometry(value.geometry)) return false;
+	if (value.requestedSandboxMode !== null && value.requestedSandboxMode !== "workspace_write" && value.requestedSandboxMode !== "full_access") return false;
+	if (!isSandboxFacts(value.sandbox)) return false;
+	if (value.sandbox !== null && value.sandbox.mode !== value.requestedSandboxMode &&
+		!(value.requestedSandboxMode === "workspace_write" && value.sandbox.mode === "full_access" && "source" in value.sandbox)) return false;
+	if (value.status === "opening" && value.sandbox !== null) return false;
+	if (value.status === "active" && value.requestedSandboxMode !== null && value.sandbox === null) return false;
 	return (
 		typeof value.id === "string" &&
 		typeof value.sessionId === "string" &&
@@ -204,6 +223,19 @@ function isTerminalSession(value: unknown): value is TerminalSessionView {
 		isFiniteNumber(value.createdAt) &&
 		isFiniteNumber(value.updatedAt)
 	);
+}
+
+function isSandboxFacts(value: unknown): value is TerminalSandboxFacts | null {
+	if (value === null) return true;
+	if (!isRecord(value)) return false;
+	if (value.mode === "full_access") return value.backend === "none" && value.enforcement === "none" && (
+		((value.source === "sandbox_unavailable" || value.source === "landlock_unavailable") && isPositiveSafeInteger(value.detectedAt) && Object.keys(value).length === 5) ||
+		(isPositiveSafeInteger(value.approvedAt) && Object.keys(value).length === 4)
+	);
+	return value.mode === "workspace_write" && value.backend === "landlock" && value.enforcement === "full" &&
+		isPositiveSafeInteger(value.abi) && value.abi >= 5 && typeof value.launcherVersion === "string" &&
+		/^[1-9]\d*$/.test(value.launcherVersion) && typeof value.sandboxRoot === "string" &&
+		isCanonicalRemoteSandboxRoot(value.sandboxRoot) && Object.keys(value).length === 6;
 }
 
 function isSnapshot(value: unknown): value is TerminalSnapshotV1 {
@@ -230,6 +262,7 @@ function isTimelineEvent(value: unknown): value is TerminalTimelineEvent {
 		(value.interactionId === null || typeof value.interactionId === "string") &&
 		(value.observationId === null || typeof value.observationId === "string") &&
 		(value.agentRunId === null || typeof value.agentRunId === "string") &&
+		(value.type !== "terminal.active" || value.data === null || (isRecord(value.data) && isSandboxFacts(value.data.sandbox) && value.data.sandbox !== null)) &&
 		isFiniteNumber(value.createdAt)
 	);
 }

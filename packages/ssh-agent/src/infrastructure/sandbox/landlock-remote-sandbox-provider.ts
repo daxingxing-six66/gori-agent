@@ -1,10 +1,10 @@
-import { createHash, randomUUID } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { posix } from "node:path";
 import { StringDecoder } from "node:string_decoder";
-import type { PreparedRemoteExecution, RemoteSandboxProvider } from "../../application/services/remote-sandbox-provider.ts";
+import type { PreparedRemoteTerminal, PreparedSandboxedExecution, RemoteSandboxBackend } from "../../application/services/remote-sandbox-provider.ts";
 import type { RemoteCommandBroker, SftpFileBroker, SshConnectionPoolControl } from "../../application/ssh-channel-broker.ts";
-import { GORI_LANDLOCK_LAUNCHER_VERSION, GORI_MIN_LANDLOCK_ABI, sandboxFailure, validRemoteSandboxRoot } from "../../domain/remote-sandbox.ts";
+import { canonicalRemoteSandboxRoot, GORI_LANDLOCK_LAUNCHER_VERSION, GORI_MIN_LANDLOCK_ABI, sandboxFailure, validRemoteSandboxRoot } from "../../domain/remote-sandbox.ts";
 import type { SshFailureCode } from "../../domain/ssh-failure.ts";
 import { connectionKeyFor, serializeConnectionKey, type SshTargetSnapshot } from "../../domain/ssh-target.ts";
 import { quoteShell, shellArgv, wrapRemoteCommand } from "./shell-command.ts";
@@ -12,7 +12,7 @@ import { quoteShell, shellArgv, wrapRemoteCommand } from "./shell-command.ts";
 type Broker = RemoteCommandBroker & Pick<SftpFileBroker, "upload" | "deleteFile"> & Partial<Pick<SshConnectionPoolControl, "snapshotWorkspace">>;
 interface Launcher { path: string; abi: number; }
 
-export class LandlockRemoteSandboxProvider implements RemoteSandboxProvider {
+export class LandlockRemoteSandboxProvider implements RemoteSandboxBackend {
 	readonly #broker: Broker;
 	readonly #loadBinary: (architecture: "x64" | "arm64") => Promise<Uint8Array>;
 	readonly #capabilities = new Map<string, { generation: number; launcher: Launcher }>();
@@ -25,51 +25,68 @@ export class LandlockRemoteSandboxProvider implements RemoteSandboxProvider {
 	}
 
 	/** Explicit UI probe discards the cached verdict, without running a user command. */
-	async probe(target: SshTargetSnapshot, signal: AbortSignal): Promise<PreparedRemoteExecution["sandbox"]> {
+	async probe(target: SshTargetSnapshot, signal: AbortSignal): Promise<PreparedSandboxedExecution["sandbox"]> {
 		const key = serializeConnectionKey(connectionKeyFor(target));
 		// An in-flight prepare may populate the cache after deletion. Wait for it, then force a new probe.
 		await this.#preparing.get(key)?.catch(() => {});
 		signal.throwIfAborted();
 		this.#capabilities.delete(key);
-		const prepared = await this.prepare({ target, signal, cwd: "/", command: "true",
-			policy: { mode: "workspace_write", sandboxRoot: target.remoteSandboxRoot } });
+		const prepared = await this.prepare({ target, signal, cwd: "/", command: "true" });
 		return prepared.sandbox;
 	}
 
-	async prepare(input: Parameters<RemoteSandboxProvider["prepare"]>[0]): Promise<PreparedRemoteExecution> {
-		if (input.policy.mode === "full_access") {
-			return { command: wrapRemoteCommand(input.cwd, input.command), sandbox: { mode: "full_access", backend: "none", enforcement: "none" } };
-		}
-		const root = input.policy.sandboxRoot;
+	async prepare(input: Parameters<RemoteSandboxBackend["prepare"]>[0]): Promise<PreparedSandboxedExecution> {
+		const { launcher, sandboxRoot, temporaryRoot } = await this.prepareRules(input.target, input.target.defaultCwd, input.signal);
+		const token = randomBytes(16).toString("hex");
+		return {
+			command: shellArgv([launcher.path, "--confirm-token", token, "--ro", "/", "--rw", "/dev/null", "--rw", temporaryRoot, "--rw", sandboxRoot,
+				"--", "/bin/bash", "--noprofile", "--norc", "-c", wrapRemoteCommand(input.cwd, input.command)]),
+			sandbox: { mode: "workspace_write", backend: "landlock", enforcement: "full", abi: launcher.abi,
+				launcherVersion: GORI_LANDLOCK_LAUNCHER_VERSION, sandboxRoot },
+			confirmation: `gori-landlock: confined abi=${launcher.abi} token=${token}\n`,
+		};
+	}
+
+	async prepareTerminal(input: Parameters<RemoteSandboxBackend["prepareTerminal"]>[0]): Promise<PreparedRemoteTerminal> {
+		// Discover unsupported kernels and architectures even when no writable root is configured.
+		await this.ensureLauncher(input.target, AbortSignal.any([input.signal, AbortSignal.timeout(30_000)]));
+		const { launcher, sandboxRoot, temporaryRoot } = await this.prepareRules(input.target, input.target.defaultCwd, input.signal);
+		const token = randomBytes(16).toString("hex");
+		return {
+			command: `cd -- ${quoteShell(sandboxRoot)} && exec ${shellArgv([launcher.path, "--confirm-token", token, "--ro", "/", "--rw", "/dev/null", "--rw", temporaryRoot,
+				"--rw", sandboxRoot, "--", "--terminal"])}`,
+			sandbox: { mode: "workspace_write", backend: "landlock", enforcement: "full", abi: launcher.abi,
+				launcherVersion: GORI_LANDLOCK_LAUNCHER_VERSION, sandboxRoot },
+			confirmation: `gori-landlock: confined abi=${launcher.abi} token=${token}`,
+		};
+	}
+
+	private async prepareRules(target: SshTargetSnapshot, root: string | undefined, inputSignal: AbortSignal): Promise<{
+		launcher: Launcher; sandboxRoot: string; temporaryRoot: string;
+	}> {
 		if (!root || !validRemoteSandboxRoot(root)) {
-			throw sandboxFailure("sandbox_root_invalid", "Configure an absolute remoteSandboxRoot other than / before using workspace_write. The command was not executed.");
+			throw sandboxFailure("sandbox_root_invalid", "Configure a remote working directory other than / before using workspace_write. The command was not executed.");
 		}
-		const signal = AbortSignal.any([input.signal, AbortSignal.timeout(30_000)]);
-		const canonical = await this.checked(input.target, signal,
+		const signal = AbortSignal.any([inputSignal, AbortSignal.timeout(30_000)]);
+		const canonical = await this.checked(target, signal,
 			`test -d ${quoteShell(root)} && test -r ${quoteShell(root)} && test -x ${quoteShell(root)} && realpath -e -- ${quoteShell(root)}`,
 			"sandbox_root_unavailable");
 		const sandboxRoot = canonical.replace(/\n$/, "");
-		if (!validRemoteSandboxRoot(sandboxRoot) || sandboxRoot.includes("\n")) {
+		if (!canonicalRemoteSandboxRoot(sandboxRoot)) {
 			throw sandboxFailure("sandbox_root_invalid", "Remote sandbox root could not be safely canonicalized. The command was not executed.");
 		}
-		const launcher = await this.ensureLauncher(input.target, signal);
-		const temporaryRoot = (await this.checked(input.target, signal,
+		const launcher = await this.ensureLauncher(target, signal);
+		const temporaryRoot = (await this.checked(target, signal,
 			"test -d /tmp && realpath -e -- /tmp", "sandbox_prepare_failed")).replace(/\n$/, "");
-		if (!validRemoteSandboxRoot(temporaryRoot) || temporaryRoot.includes("\n")) {
+		if (temporaryRoot !== "/tmp") {
 			throw sandboxFailure("sandbox_prepare_failed", "Remote temporary directory is unsafe. The command was not executed.");
 		}
-		await this.checked(input.target, signal, 'test -c /dev/null && test "$(stat -Lc "%t:%T" -- /dev/null)" = "1:3"', "sandbox_prepare_failed");
+		await this.checked(target, signal, 'test -c /dev/null && test "$(stat -Lc "%t:%T" -- /dev/null)" = "1:3"', "sandbox_prepare_failed");
 		// A confined command must not be able to replace the launcher used by later calls.
 		if (isWithin(launcher.path, sandboxRoot) || isWithin(launcher.path, temporaryRoot)) {
 			throw sandboxFailure("sandbox_root_invalid", "The sandbox root must not contain the Gori launcher cache. Use a dedicated application directory. The command was not executed.");
 		}
-		return {
-			command: shellArgv([launcher.path, "--ro", "/", "--rw", "/dev/null", "--rw", temporaryRoot, "--rw", sandboxRoot,
-				"--", "/bin/bash", "--noprofile", "--norc", "-c", wrapRemoteCommand(input.cwd, input.command)]),
-			sandbox: { mode: "workspace_write", backend: "landlock", enforcement: "full", abi: launcher.abi,
-				launcherVersion: GORI_LANDLOCK_LAUNCHER_VERSION, sandboxRoot },
-			confirmation: `gori-landlock: confined abi=${launcher.abi}\n`,
-		};
+		return { launcher, sandboxRoot, temporaryRoot };
 	}
 
 	private async ensureLauncher(target: SshTargetSnapshot, signal: AbortSignal): Promise<Launcher> {
@@ -127,6 +144,8 @@ export class LandlockRemoteSandboxProvider implements RemoteSandboxProvider {
 			}
 		}
 		const probe = await this.checked(target, signal, shellArgv([path, "--probe"]), "sandbox_probe_failed");
+		if (/^gori-landlock: unavailable\n?$/.test(probe))
+			throw sandboxFailure("sandbox_unavailable", "Remote Landlock is unavailable. The command was not executed.");
 		const match = /^gori-landlock: abi=([1-9]\d*) enforcement=(full|partial)\n?$/.exec(probe);
 		if (!match) throw sandboxFailure("sandbox_probe_failed", "Remote sandbox probe returned an invalid result. The command was not executed.");
 		const abi = Number(match[1]);

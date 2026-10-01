@@ -19,6 +19,12 @@ export type TerminalCloseReason =
 	| "backend_restarted"
 	| "open_failed";
 export type ServerInteractionMode = "command" | "terminal";
+export type TerminalSandboxMode = "workspace_write" | "full_access";
+export type TerminalSandboxFacts =
+	| { readonly mode: "workspace_write"; readonly backend: "landlock"; readonly enforcement: "full"; readonly abi: number; readonly launcherVersion: string; readonly sandboxRoot: string }
+	| { readonly mode: "full_access"; readonly backend: "none"; readonly enforcement: "none"; readonly source: "sandbox_unavailable" | "landlock_unavailable"; readonly detectedAt: number }
+	/** Historical sessions opened through the former explicit Full Access entry. */
+	| { readonly mode: "full_access"; readonly backend: "none"; readonly enforcement: "none"; readonly approvedAt: number };
 
 export interface TerminalGeometry {
 	readonly rows: number;
@@ -32,6 +38,10 @@ export interface TerminalSession {
 	readonly openRequestId: string;
 	readonly closeRequestId: string | null;
 	readonly status: TerminalSessionStatus;
+	/** Null on records created before Terminal sandbox support. */
+	readonly requestedSandboxMode: TerminalSandboxMode | null;
+	/** Set only after the selected channel is ready; fallback facts never claim confinement. */
+	readonly sandbox: TerminalSandboxFacts | null;
 	readonly revision: number;
 	readonly geometry: TerminalGeometry;
 	readonly eventSequence: number;

@@ -3,6 +3,7 @@ import { type Static, Type } from "typebox";
 import { SshAgentError } from "../../domain/ssh-failure.ts";
 import {
 	TerminalError,
+	type TerminalSandboxFacts,
 	type TerminalInteractionRequestAction,
 	type TerminalObservationExpectation,
 } from "../../domain/terminal.ts";
@@ -41,6 +42,7 @@ export interface TerminalInteractionDetails extends ToolUpdateDetails {
 	readonly startSequence: number;
 	readonly endSequence: number;
 	readonly truncated: boolean;
+	readonly sandbox?: TerminalSandboxFacts;
 }
 
 export const terminalInteractionDefinition = {
@@ -56,9 +58,11 @@ export function createTerminalInteractionTool(options: {
 	readonly terminalSessionId: string;
 	readonly agentRunId: string;
 	readonly interactions: TerminalInteractionService;
+	readonly sandbox: TerminalSandboxFacts;
 }): AgentTool<typeof terminalInteractionParameters, TerminalInteractionDetails> {
 	return {
 		...terminalInteractionDefinition,
+		description: `${terminalInteractionDefinition.description} Current session: ${sandboxSummary(options.sandbox)}`,
 		executionMode: "sequential",
 		execute: async (toolCallId, params, signal) => {
 			try {
@@ -74,13 +78,14 @@ export function createTerminalInteractionTool(options: {
 					signal,
 				);
 				await options.interactions.markDelivered(result);
-				return toolResult(result);
+				return toolResult(result, options.sandbox);
 			} catch (error) {
 				const presentationMessage = terminalFailureMessage(error);
 				throw new AgentToolError({
 					message: error instanceof Error ? error.message : "Terminal interaction failed",
 					content: [
 						{ type: "text", text: error instanceof Error ? error.message : "Terminal interaction failed" },
+						{ type: "text", text: sandboxSummary(options.sandbox) },
 					],
 					details: {
 						interactionId: "unknown",
@@ -93,7 +98,9 @@ export function createTerminalInteractionTool(options: {
 						startSequence: 0,
 						endSequence: 0,
 						truncated: false,
+						sandbox: options.sandbox,
 						presentationMessage,
+						presentationContentSuffix: `\n${sandboxSummary(options.sandbox)}`,
 					},
 					terminate: false,
 				});
@@ -116,7 +123,7 @@ export function terminalInteractionAction(params: TerminalInteractionParameters)
 	return { type: "observe" };
 }
 
-function toolResult(result: TerminalInteractionResult): {
+function toolResult(result: TerminalInteractionResult, sandbox: TerminalSandboxFacts): {
 	content: Array<{ type: "text"; text: string }>;
 	readonly details: TerminalInteractionDetails;
 } {
@@ -126,7 +133,7 @@ function toolResult(result: TerminalInteractionResult): {
 		? observation.agentViewText
 		: "No terminal text was observed before this observation boundary.";
 	return {
-		content: [{ type: "text", text }],
+		content: [{ type: "text", text }, { type: "text", text: sandboxSummary(sandbox) }],
 		details: {
 			interactionId: result.interaction.id,
 			observationId: observation.id,
@@ -138,9 +145,17 @@ function toolResult(result: TerminalInteractionResult): {
 			startSequence: observation.startSequence,
 			endSequence: observation.endSequence,
 			truncated: observation.truncated,
-			...(hasObservationText ? {} : { presentationMessage: backendMessage("terminal.no_observation_text") }),
+			sandbox,
+			...(hasObservationText ? {} : { presentationMessage: backendMessage("terminal.no_observation_text"), presentationContentSuffix: `\n${sandboxSummary(sandbox)}` }),
 		},
 	};
+}
+
+function sandboxSummary(sandbox: TerminalSandboxFacts): string {
+	if (sandbox.mode === "workspace_write") return `Terminal sandbox: Landlock ABI ${sandbox.abi}; writable root ${sandbox.sandboxRoot}.`;
+	return "source" in sandbox
+		? "Terminal sandbox: Landlock unavailable; SSH account permissions apply without filesystem confinement."
+		: `Terminal sandbox: Full Access confirmed ${new Date(sandbox.approvedAt).toISOString()}.`;
 }
 
 function terminalFailureMessage(error: unknown) {

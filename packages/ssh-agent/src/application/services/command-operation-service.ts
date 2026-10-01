@@ -304,7 +304,7 @@ export class CommandOperationService {
 				if (pending.signal?.aborted) controller.abort(pending.signal.reason);
 				if (!this.sandbox) throw sandboxFailure("sandbox_unavailable", "Remote sandbox provider is unavailable. The command was not executed.");
 				const prepared = await this.sandbox.prepare({ target, cwd: operation.resolvedCwd, command: operation.command,
-					policy: { mode: operation.sandbox?.mode ?? "workspace_write", sandboxRoot: target.remoteSandboxRoot }, signal: controller.signal });
+					policy: { mode: operation.sandbox?.mode ?? "workspace_write" }, signal: controller.signal });
 				controller.signal.throwIfAborted();
 				const finalDecision = await this.guards.evaluate(operation.workspaceId, operation.command);
 				operation.guardRevision = finalDecision.guardRevision;
@@ -316,12 +316,12 @@ export class CommandOperationService {
 						message: finalDecision.matchedRule?.reason ?? "Workspace Guard blocked the command", retryable: false,
 					}, pending, tail);
 				}
-				operation.sandbox = { ...prepared.sandbox, enforcement: "none", commandMayHaveRun: false };
+				// Once dispatch can begin, lost SSH/output/persistence acknowledgements cannot prove the command did not run.
+				operation.sandbox = { ...prepared.sandbox, enforcement: "none", commandMayHaveRun: true };
 				operation.status = "running";
 				operation.startedAt = this.clock.now();
 				await this.persistTransition(operation, ["dispatching"]);
 				await this.emit(operation, "status", { status: "running" }, pending.onEvent);
-				if (prepared.confirmation === undefined) operation.sandbox = { ...prepared.sandbox, commandMayHaveRun: true };
 				const confirmation = new SandboxConfirmationCapture({
 					marker: prepared.confirmation,
 					onConfirmed: async () => {
@@ -400,7 +400,6 @@ export class CommandOperationService {
 				sessionId: operation.sessionId,
 				workspaceId: operation.workspaceId,
 			});
-			if (operation.status === "running" && operation.sandbox && (failure.code === "execution_result_uncertain" || failure.code === "execution_timeout" || failure.code === "execution_cancelled")) operation.sandbox.commandMayHaveRun = true;
 			const status =
 				failure.code === "execution_result_uncertain"
 					? "uncertain"

@@ -15,6 +15,7 @@ import type { TerminalGeometry } from "../src/domain/terminal.ts";
 import { applyMigrations } from "../src/infrastructure/sqlite/migrations.ts";
 import { SqliteSessionRepository } from "../src/infrastructure/sqlite/sqlite-session-repository.ts";
 import { SqliteTerminalRepository } from "../src/infrastructure/sqlite/sqlite-terminal-repository.ts";
+import { terminalTestSandbox } from "./terminal-test-sandbox.ts";
 
 class SequentialIds implements IdGenerator {
 	#next = 1;
@@ -24,6 +25,8 @@ class SequentialIds implements IdGenerator {
 }
 
 class FakeHandle implements TerminalChannelHandle {
+	isClosed(): boolean { return false; }
+	startOutput(): void {}
 	readonly connectionGeneration = 1;
 	readonly closed: Promise<TerminalChannelExit>;
 	readonly resized: TerminalGeometry[] = [];
@@ -118,6 +121,7 @@ describe("Terminal routes", () => {
 			terminals: new SqliteTerminalRepository(database),
 			targets,
 			broker,
+			sandbox: terminalTestSandbox,
 			lifecycle: new SessionLifecycleCoordinator(),
 			clock,
 			ids: new SequentialIds(),
@@ -196,6 +200,7 @@ describe("Terminal routes", () => {
 			terminals: new SqliteTerminalRepository(database),
 			targets: { resolve: async () => target },
 			broker: new FakeBroker(),
+			sandbox: terminalTestSandbox,
 			lifecycle: new SessionLifecycleCoordinator(),
 			clock: { now: () => 1 },
 			ids: new SequentialIds(),
@@ -212,5 +217,23 @@ describe("Terminal routes", () => {
 			await service.shutdown();
 			database.close();
 		}
+	});
+
+	it("exposes only the single Terminal open entry and rejects explicit Full Access requests", async () => {
+		const database = createDatabase();
+		const service = new TerminalSessionService({ sessions: new SqliteSessionRepository(database),
+			terminals: new SqliteTerminalRepository(database), targets: { resolve: async () => target },
+			broker: new FakeBroker(), sandbox: terminalTestSandbox, lifecycle: new SessionLifecycleCoordinator(),
+			clock: { now: () => 100 }, ids: new SequentialIds(), hasActiveChatRun: async () => false });
+		try {
+			await expect(route(service, request("/api/sessions/session-1/terminal/full-access-grants", "POST", { requestId: "full-1" })))
+				.rejects.toThrow("Terminal route did not match");
+			await expect(route(service, request("/api/sessions/session-1/terminal/open", "POST", { requestId: "full-1", sandboxMode: "full_access" })))
+				.rejects.toMatchObject({ code: "validation_error" });
+			const opened = await route(service, request("/api/sessions/session-1/terminal/open", "POST", { requestId: "open-1" }));
+			expect(opened.status).toBe(202);
+			await new Promise<void>((resolve) => setImmediate(resolve));
+			expect((await service.getStatus("session-1")).terminal?.sandbox?.mode).toBe("workspace_write");
+		} finally { await service.shutdown(); database.close(); }
 	});
 });

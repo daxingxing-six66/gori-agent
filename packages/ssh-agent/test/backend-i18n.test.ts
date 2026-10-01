@@ -267,6 +267,8 @@ describe("SSH Agent backend i18n", () => {
 				openRequestId: "open-i18n",
 				closeRequestId: null,
 				status: "failed",
+				requestedSandboxMode: null,
+				sandbox: null,
 				revision: 1,
 				geometry: { rows: 24, cols: 80 },
 				eventSequence: 0,

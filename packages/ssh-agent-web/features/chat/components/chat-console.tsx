@@ -18,6 +18,7 @@ import { resolveConfiguredModel } from "@/features/llm-provider/api/llm-provider
 import { thinkingLevelForModel } from "@/features/llm-provider/model/llm-provider";
 import { sessionApi } from "@/features/session/api/session-api";
 import { TerminalConnectionState } from "@/features/terminal/components/terminal-connection-state";
+import { TerminalSandboxNotice } from "@/features/terminal/components/terminal-sandbox-notice";
 import { TerminalPanel } from "@/features/terminal/components/terminal-panel";
 import { TERMINAL_UI_DEFAULTS } from "@/features/terminal/model/terminal-ui-defaults";
 import { useTerminalMode } from "@/features/terminal/runtime/use-terminal-mode";
@@ -248,8 +249,9 @@ export function ChatConsole({ sessionId }: { sessionId: string }) {
 						<ChatStatus active={active} runStatus={runtime.state.run?.status} connection={runtime.state.connection} queueCount={pendingQueue.length} />
 					</header>
 					{terminalMode.error ? <button type="button" className="w-full border-b border-rose-200 bg-rose-50 px-4 py-2 text-left text-[9px] text-rose-700" onClick={() => terminalMode.setError(null)}>{terminalMode.error}</button> : null}
+					<TerminalSandboxNotice sandbox={terminalActive ? terminalMode.status?.terminal?.sandbox : null} />
 				</div>
-				{terminalActive && terminalMode.status ? <TerminalPanel sessionId={sessionId} status={terminalMode.status} onTerminalStateChange={terminalMode.refresh} /> : null}
+				{terminalActive && terminalMode.transition === null && terminalMode.status ? <TerminalPanel sessionId={sessionId} status={terminalMode.status} onTerminalStateChange={terminalMode.refresh} /> : null}
 				{terminalPresent && terminalTransition ? <TerminalConnectionState phase={terminalTransition} /> : null}
 
 				<div className="session-console-chat relative min-h-0">

@@ -7,6 +7,7 @@ interface ApiErrorPayload {
 		message?: unknown;
 		field?: unknown;
 		details?: unknown;
+		retryable?: unknown;
 	};
 }
 
@@ -91,5 +92,6 @@ async function parseApiError(response: Response): Promise<ApiError> {
 	const details = payload.error?.details !== null && typeof payload.error?.details === "object"
 		? payload.error.details as Record<string, unknown>
 		: undefined;
-	return new ApiError(response.status, code, message, field, details);
+	const retryable = typeof payload.error?.retryable === "boolean" ? payload.error.retryable : undefined;
+	return new ApiError(response.status, code, message, field, details, retryable);
 }

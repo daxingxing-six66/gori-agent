@@ -16,12 +16,15 @@ import type {
 	TerminalObservationExpectation,
 	TerminalObservationKind,
 	TerminalSession,
+	TerminalSandboxFacts,
+	TerminalSandboxMode,
 	TerminalSessionStatus,
 	TerminalTimelineEvent,
 	TerminalTimelineEventType,
 } from "../../domain/terminal.ts";
 import type { BackendMessageKey, BackendMessageValues } from "../../i18n/message.ts";
 import { descriptorForPublicCode } from "../../i18n/public-error.ts";
+import { canonicalRemoteSandboxRoot } from "../../domain/remote-sandbox.ts";
 
 export class SqliteTerminalRepository implements TerminalRepository {
 	readonly #database: DatabaseSync;
@@ -79,8 +82,8 @@ export class SqliteTerminalRepository implements TerminalRepository {
 				connection_generation, term, rows, cols, last_event_sequence, ownership_epoch,
 				last_consumer_activity_at, idle_deadline_at, close_reason, activated_at, closing_at,
 				closed_at, failure_code, failure_message, failure_message_key, failure_message_values_json,
-				created_at, updated_at
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+				created_at, updated_at, requested_sandbox_mode, sandbox_json
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
 			.run(...sessionValues(session, failureMessage));
 	}
 
@@ -93,7 +96,7 @@ export class SqliteTerminalRepository implements TerminalRepository {
 					rows = ?, cols = ?, last_event_sequence = ?, ownership_epoch = ?,
 					last_consumer_activity_at = ?, idle_deadline_at = ?, close_reason = ?, activated_at = ?,
 					closing_at = ?, closed_at = ?, failure_code = ?, failure_message = ?, failure_message_key = ?,
-					failure_message_values_json = ?, updated_at = ?
+					failure_message_values_json = ?, updated_at = ?, requested_sandbox_mode = ?, sandbox_json = ?
 					WHERE id = ? AND status = ? AND revision = ?`)
 				.run(
 					session.closeRequestId,
@@ -116,6 +119,8 @@ export class SqliteTerminalRepository implements TerminalRepository {
 					failureMessage?.key ?? null,
 					failureMessage?.values === undefined ? null : JSON.stringify(failureMessage.values),
 					session.updatedAt,
+					session.requestedSandboxMode,
+					session.sandbox === null ? null : JSON.stringify(session.sandbox),
 					session.id,
 					expectedStatus,
 					expectedRevision,
@@ -376,6 +381,8 @@ function sessionValues(
 		failureMessage?.values === undefined ? null : JSON.stringify(failureMessage.values),
 		session.createdAt,
 		session.updatedAt,
+		session.requestedSandboxMode,
+		session.sandbox === null ? null : JSON.stringify(session.sandbox),
 	];
 }
 
@@ -385,6 +392,14 @@ function optionalSession(row: unknown): TerminalSession | undefined {
 
 function sessionFromRow(row: unknown): TerminalSession {
 	const value = row as Record<string, unknown>;
+	const requestedSandboxMode = readSandboxMode(value.requested_sandbox_mode);
+	const sandbox = readSandboxFacts(value.sandbox_json);
+	if (sandbox !== null && requestedSandboxMode !== sandbox.mode &&
+		!(requestedSandboxMode === "workspace_write" && sandbox.mode === "full_access" && "source" in sandbox))
+		throw new Error("Invalid persisted Terminal sandbox mode");
+	if (value.status === "opening" && sandbox !== null) throw new Error("Opening Terminal cannot claim an active sandbox");
+	if (value.status === "active" && requestedSandboxMode !== null && sandbox === null)
+		throw new Error("Active Terminal sandbox facts are missing");
 	return {
 		id: String(value.id),
 		sessionId: String(value.session_id),
@@ -392,6 +407,8 @@ function sessionFromRow(row: unknown): TerminalSession {
 		openRequestId: String(value.open_request_id),
 		closeRequestId: nullableString(value.close_request_id),
 		status: String(value.status) as TerminalSessionStatus,
+		requestedSandboxMode,
+		sandbox,
 		revision: Number(value.revision),
 		geometry: { rows: Number(value.rows), cols: Number(value.cols) },
 		eventSequence: Number(value.last_event_sequence),
@@ -417,6 +434,35 @@ function sessionFromRow(row: unknown): TerminalSession {
 		createdAt: Number(value.created_at),
 		updatedAt: Number(value.updated_at),
 	};
+}
+
+function readSandboxMode(value: unknown): TerminalSandboxMode | null {
+	if (value === null) return null;
+	if (value === "workspace_write" || value === "full_access") return value;
+	throw new Error("Invalid persisted Terminal sandbox mode");
+}
+
+function readSandboxFacts(value: unknown): TerminalSandboxFacts | null {
+	if (value === null) return null;
+	if (typeof value !== "string") throw new Error("Invalid persisted Terminal sandbox facts");
+	let parsed: unknown;
+	try { parsed = JSON.parse(value) as unknown; }
+	catch { throw new Error("Invalid persisted Terminal sandbox JSON"); }
+	if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("Invalid persisted Terminal sandbox facts");
+	const fact = parsed as Record<string, unknown>;
+	if (fact.mode === "full_access" && fact.backend === "none" && fact.enforcement === "none" &&
+		Number.isSafeInteger(fact.approvedAt) && Number(fact.approvedAt) > 0 && Object.keys(fact).length === 4)
+		return fact as unknown as TerminalSandboxFacts;
+	if (fact.mode === "full_access" && fact.backend === "none" && fact.enforcement === "none" &&
+		(fact.source === "sandbox_unavailable" || fact.source === "landlock_unavailable") && Number.isSafeInteger(fact.detectedAt) &&
+		Number(fact.detectedAt) > 0 && Object.keys(fact).length === 5)
+		return fact as unknown as TerminalSandboxFacts;
+	if (fact.mode === "workspace_write" && fact.backend === "landlock" && fact.enforcement === "full" &&
+		Number.isSafeInteger(fact.abi) && Number(fact.abi) >= 5 && typeof fact.launcherVersion === "string" &&
+		/^[1-9]\d*$/.test(fact.launcherVersion) && typeof fact.sandboxRoot === "string" &&
+		canonicalRemoteSandboxRoot(fact.sandboxRoot) && Object.keys(fact).length === 6)
+		return fact as unknown as TerminalSandboxFacts;
+	throw new Error("Invalid persisted Terminal sandbox facts");
 }
 
 function terminalFailureDescriptor(session: TerminalSession) {

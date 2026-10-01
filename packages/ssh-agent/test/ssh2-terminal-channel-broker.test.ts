@@ -22,11 +22,17 @@ class FakeChannel extends PassThrough {
 
 class FakeClient extends EventEmitter {
 	readonly channels: FakeChannel[] = [];
+	readonly commands: string[] = [];
 
 	shell(_options: unknown, callback: (error: Error | undefined, channel?: ClientChannel) => void): void {
 		const channel = new FakeChannel();
 		this.channels.push(channel);
 		callback(undefined, channel as unknown as ClientChannel);
+	}
+
+	exec(command: string, _options: unknown, callback: (error: Error | undefined, channel?: ClientChannel) => void): void {
+		this.commands.push(command);
+		this.shell(_options, callback);
 	}
 }
 
@@ -71,6 +77,7 @@ describe("Ssh2TerminalChannelBroker", () => {
 		const output: Uint8Array[] = [];
 		const handle = await broker.open({
 			target,
+			launch: { kind: "login_shell" },
 			geometry: { rows: 36, cols: 120 },
 			term: "xterm-256color",
 			signal: new AbortController().signal,
@@ -81,6 +88,8 @@ describe("Ssh2TerminalChannelBroker", () => {
 		const channel = pool.client.channels[0]!;
 		channel.emit("data", Buffer.from("stdout"));
 		channel.stderr.emit("data", Buffer.from("stderr"));
+		expect(output).toEqual([]);
+		handle.startOutput();
 		await handle.resize({ rows: 40, cols: 132 });
 		expect(output.map((chunk) => Buffer.from(chunk).toString("utf8"))).toEqual(["stdout", "stderr"]);
 		expect(channel.windows).toEqual([{ rows: 40, cols: 132 }]);
@@ -98,6 +107,7 @@ describe("Ssh2TerminalChannelBroker", () => {
 		const broker = new Ssh2TerminalChannelBroker(pool, { maxTerminalsPerConnectionGeneration: 1 });
 		const first = await broker.open({
 			target,
+			launch: { kind: "login_shell" },
 			geometry: { rows: 36, cols: 120 },
 			term: "xterm-256color",
 			signal: new AbortController().signal,
@@ -107,6 +117,7 @@ describe("Ssh2TerminalChannelBroker", () => {
 		await expect(
 			broker.open({
 				target,
+				launch: { kind: "login_shell" },
 				geometry: { rows: 36, cols: 120 },
 				term: "xterm-256color",
 				signal: new AbortController().signal,
@@ -115,5 +126,63 @@ describe("Ssh2TerminalChannelBroker", () => {
 		).rejects.toMatchObject({ failure: { code: "channel_limit_reached" } });
 
 		first.dispose();
+	});
+
+	it("waits for a split PTY confirmation and removes its marker before releasing buffered output", async () => {
+		const pool = new FakePool();
+		const broker = new Ssh2TerminalChannelBroker(pool);
+		const output: string[] = [];
+		const opened = broker.open({ target, launch: { kind: "sandboxed_exec", command: "launcher --terminal", confirmation: "gori-landlock: confined abi=8 token=abcd" },
+			geometry: { rows: 24, cols: 80 }, term: "xterm-256color", signal: new AbortController().signal,
+			onData: (bytes) => output.push(Buffer.from(bytes).toString()) });
+		await new Promise<void>((resolve) => setImmediate(resolve));
+		const channel = pool.client.channels[0]!;
+		expect(pool.client.commands).toEqual(["launcher --terminal"]);
+		channel.emit("data", Buffer.from("diagnostic\r\ngori-landlock: confined abi=8 tok"));
+		channel.emit("data", Buffer.from("en=abcd\r\nready\r\n"));
+		const handle = await opened;
+		expect(output).toEqual([]);
+		handle.startOutput();
+		expect(output.join("")).toBe("diagnostic\r\nready\r\n");
+		handle.dispose();
+	});
+
+	it("fails closed and frees the channel slot when confirmation is missing", async () => {
+		const pool = new FakePool();
+		const broker = new Ssh2TerminalChannelBroker(pool);
+		const opened = broker.open({ target, launch: { kind: "sandboxed_exec", command: "launcher", confirmation: "expected" },
+			geometry: { rows: 24, cols: 80 }, term: "xterm-256color", signal: new AbortController().signal,
+			onData: () => { throw new Error("Unexpected output"); } });
+		await new Promise<void>((resolve) => setImmediate(resolve));
+		pool.client.channels[0]!.emit("close");
+		await expect(opened).rejects.toThrow("confirmation");
+		await new Promise<void>((resolve) => setImmediate(resolve));
+		expect(pool.activeSlots).toBe(0);
+	});
+
+	it("cancels an unconfirmed PTY and releases its capacity", async () => {
+		const pool = new FakePool();
+		const broker = new Ssh2TerminalChannelBroker(pool);
+		const controller = new AbortController();
+		const opened = broker.open({ target, launch: { kind: "sandboxed_exec", command: "launcher", confirmation: "expected" },
+			geometry: { rows: 24, cols: 80 }, term: "xterm-256color", signal: controller.signal, onData: () => undefined });
+		await new Promise<void>((resolve) => setImmediate(resolve));
+		controller.abort();
+		await expect(opened).rejects.toMatchObject({ failure: { code: "execution_cancelled" } });
+		await new Promise<void>((resolve) => setImmediate(resolve));
+		expect(pool.activeSlots).toBe(0);
+	});
+
+	it("rejects an excessive startup prefix before it can reach the screen", async () => {
+		const pool = new FakePool();
+		const broker = new Ssh2TerminalChannelBroker(pool);
+		const output: Uint8Array[] = [];
+		const opened = broker.open({ target, launch: { kind: "sandboxed_exec", command: "launcher", confirmation: "expected" },
+			geometry: { rows: 24, cols: 80 }, term: "xterm-256color", signal: new AbortController().signal,
+			onData: (bytes) => output.push(bytes) });
+		await new Promise<void>((resolve) => setImmediate(resolve));
+		pool.client.channels[0]!.emit("data", Buffer.alloc(4097, "x"));
+		await expect(opened).rejects.toThrow("limit");
+		expect(output).toEqual([]);
 	});
 });

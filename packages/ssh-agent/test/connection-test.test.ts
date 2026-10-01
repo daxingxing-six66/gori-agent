@@ -18,10 +18,48 @@ const input: SshConnectionTestInput = {
 };
 const body = { host: input.host, credential: { displayName: "Test", remoteUser: input.remoteUser, ...input.secret } };
 function backend(tester?: { test: (input: SshConnectionTestInput, signal?: AbortSignal) => Promise<void>; close: () => void }) {
-	return createSqliteManagementBackend({ databasePath: ":memory:", credentialEncryptionKey: new Uint8Array(32).fill(1), llmModelsFactory: createTestLlmModels, connectionTester: tester });
+	return createSqliteManagementBackend({ databasePath: ":memory:", credentialEncryptionKey: new Uint8Array(32).fill(1), llmModelsFactory: createTestLlmModels, connectionTester: tester && { ...tester, listDirectory: async (_input, path) => ({ path, entries: [] }) } });
 }
 
 describe("temporary SSH authentication", () => {
+	it("lists real SFTP directories over a temporary draft connection", async () => {
+		const host = utils.generateKeyPairSync("ecdsa", { bits: 256 });
+		let channels = 0;
+		const server = new Server({ hostKeys: [host.private] }, (client) => {
+			client.on("error", () => {});
+			client.on("authentication", (auth) => auth.method === "password" && auth.password === "test-only-password" ? auth.accept() : auth.reject());
+			client.on("ready", () => client.on("session", (accept) => {
+				const session = accept();
+				session.on("sftp", (acceptSftp) => {
+					channels++;
+					const sftp = acceptSftp();
+					sftp.on("error", () => {});
+					sftp.on("REALPATH", (id, path) => sftp.name(id, [{ filename: path, longname: path, attrs: { mode: 0o040755, size: 0, uid: 0, gid: 0, atime: 0, mtime: 0 } }]));
+					sftp.on("LSTAT", (id, path) => path === "/srv" ? sftp.attrs(id, { mode: 0o040755, size: 0, uid: 0, gid: 0, atime: 0, mtime: 0 }) : sftp.status(id, utils.sftp.STATUS_CODE.NO_SUCH_FILE));
+					sftp.on("OPENDIR", (id) => sftp.handle(id, Buffer.from("dir")));
+					let sent = false;
+					sftp.on("READDIR", (id) => {
+						if (sent) sftp.status(id, utils.sftp.STATUS_CODE.EOF);
+						else { sent = true; sftp.name(id, [
+							{ filename: "app", longname: "app", attrs: { mode: 0o040755, size: 0, uid: 0, gid: 0, atime: 0, mtime: 0 } },
+							{ filename: "readme", longname: "readme", attrs: { mode: 0o100644, size: 12, uid: 0, gid: 0, atime: 0, mtime: 0 } },
+						]); }
+					});
+					sftp.on("CLOSE", (id) => sftp.status(id, utils.sftp.STATUS_CODE.OK));
+				});
+			}));
+		});
+		await new Promise<void>((resolve, reject) => { server.once("error", reject); server.listen(0, "127.0.0.1", resolve); });
+		const tester = new Ssh2ConnectionTester();
+		try {
+			const listing = await tester.listDirectory({ ...input, host: { hostname: "127.0.0.1", port: (server.address() as AddressInfo).port } }, "/srv");
+			expect(listing.path).toBe("/srv");
+			expect(listing.entries.map(({ name, path, type }) => ({ name, path, type }))).toEqual([
+				{ name: "app", path: "/srv/app", type: "directory" }, { name: "readme", path: "/srv/readme", type: "file" },
+			]);
+			expect(channels).toBe(1);
+		} finally { tester.close(); await new Promise<void>((resolve) => server.close(() => resolve())); }
+	});
 	it("loads in native Node ESM without transpiler interop", () => {
 		const modulePath = new URL("../src/infrastructure/ssh/ssh2-connection-tester.ts", import.meta.url).href;
 		expect(() => execFileSync(process.execPath, ["--input-type=module", "-e", `await import(${JSON.stringify(modulePath)})`], { cwd: fileURLToPath(new URL("..", import.meta.url)) })).not.toThrow();
@@ -109,6 +147,24 @@ describe("temporary SSH authentication", () => {
 });
 
 describe("connection test HTTP API", () => {
+	it("browses an unsaved connection draft without persisting credentials", async () => {
+		const app = backend({ test: async () => {}, close() {} });
+		try {
+			const response = await app.handleRequest(new Request("http://localhost/api/workspaces/browse-directory", { method: "POST", body: JSON.stringify({ ...body, path: "/home/tester" }) }));
+			expect(response.status).toBe(200);
+			expect(await response.json()).toEqual({ path: "/home/tester", entries: [] });
+			for (const table of ["workspaces", "credentials", "credential_secrets", "workspace_host_trusts"])
+				expect(app.database.prepare(`SELECT count(*) AS count FROM ${table}`).get()?.count).toBe(0);
+		} finally { await app.close(); }
+	});
+	it.each(["relative", "", `/${"x".repeat(4096)}`, "/tmp\0bad"])("rejects invalid browse path %s", async (path) => {
+		const app = backend({ test: async () => {}, close() {} });
+		try {
+			const response = await app.handleRequest(new Request("http://localhost/api/workspaces/browse-directory", { method: "POST", body: JSON.stringify({ ...body, path }) }));
+			expect(response.status).toBe(400);
+			expect(JSON.stringify(await response.json())).not.toContain("test-only-password");
+		} finally { await app.close(); }
+	});
 	it("tests an unsaved draft with defaults and creates no records", async () => {
 		const tester = { test: vi.fn(async () => {}), close: vi.fn() };
 		const app = backend(tester);

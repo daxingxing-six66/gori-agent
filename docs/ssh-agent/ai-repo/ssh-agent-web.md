@@ -13,10 +13,10 @@
 Chat 协议接受 runtime system 消息，状态按 `runtimeEventId` 保留同毫秒内的不同切换。时间线不把模式协议显示为 Assistant 气泡，也不因仅有模式记录而隐藏空会话提示。回归见 `tests/chat-system-messages.test.tsx`。
 
 
-工作区创建/编辑表单区分“默认本地工作目录”与“默认远端工作目录”：本地沿用 LocalDirectoryPicker，远端为绝对路径输入框，默认 `/`。概览分别显示二者；WorkspaceConsole 只将 `remoteDefaultCwd ?? "/"` 传给 SFTP 页，新会话仍继承 `defaultCwd`。
+工作区创建/编辑表单区分“默认本地工作目录”与“默认远端工作目录”：本地沿用 LocalDirectoryPicker，远端由 RemoteDirectoryPicker 通过 SFTP 选择，初始浏览路径 `/`。创建时使用尚未保存的主机/凭据临时连接，配置完整后才可打开；编辑时使用当前工作区的 SFTP API。选择器只列目录，显示面包屑、搜索、加载和失败重试；`/` 可浏览但不可选为工作区可写根，确认后回填规范化路径。远端目录同时决定 Landlock 可写范围，概览分别显示本地与远端目录；新会话仍继承本地 `defaultCwd`。
 
 
-工作区表单单独要求“远端沙箱可写目录”，不从本地/远端 cwd 推断。Overview 通过 `remote-sandbox-panel.tsx` 显示尚未验证、显式检测后的 ABI/根或失败原因和时间，初始不宣称已开启。检测响应在 Workspace model 边界验证模式、后端、完整约束、ABI 与根路径后才展示为成功；畸形响应进入错误状态。检测请求可取消，状态按 Workspace ID/revision 隔离；能力边界明确排除元数据、网络/IPC、Terminal/SFTP。见 [remote-sandbox.md](./remote-sandbox.md) 与 `tests/remote-sandbox.test.tsx`。
+工作区表单只保留一个远端目录字段。Overview 通过 `remote-sandbox-panel.tsx` 显示尚未验证、显式检测后的 ABI/规范根或失败原因和时间，初始不宣称已开启。检测响应在 Workspace model 边界验证模式、后端、完整约束、ABI 与根路径后才展示为成功；畸形响应进入错误状态。检测请求可取消，状态按 Workspace ID/revision 隔离。见 [remote-sandbox.md](./remote-sandbox.md) 与 `tests/remote-sandbox.test.tsx`。
 
 ## 使用顺序
 
@@ -42,7 +42,7 @@ Chat 协议接受 runtime system 消息，状态按 `runtimeEventId` 保留同�
 | 要修改的前端功能 | 首要文件 | 状态、协议和辅助文件 | 对应测试 |
 |---|---|---|---|
 | Workspace/Session 树加载与全局刷新 | `features/workspace/components/workspace-tree-provider.tsx` | `workspace-tree-context.ts`、`features/workspace/api/workspace-api.ts`、`features/workspace/model/workspace.ts` | `tests/api-clients.test.ts` |
-| Workspace 创建、重命名、删除 | `features/workspace/components/workspace-dialog.tsx`、`components/workspace-console.tsx` | `features/workspace/components/name-dialog.tsx`、`features/workspace/api/workspace-api.ts`；创建时复用 Credential 表单与 SFTP 绝对路径校验 | `tests/api-clients.test.ts`、`tests/sftp-state.test.ts` |
+| Workspace 创建、重命名、删除和远端目录选择 | `features/workspace/components/workspace-dialog.tsx`、`features/workspace/components/workspace-edit-dialog.tsx`、`components/workspace-console.tsx` | `features/workspace/components/remote-directory-picker.tsx`、`features/workspace/components/name-dialog.tsx`、`features/workspace/api/workspace-api.ts`；创建时复用 Credential 草稿和临时 SFTP 浏览，编辑时使用工作区 SFTP API | `tests/workspace-connection-test.test.tsx`、`tests/api-clients.test.ts` |
 | SSH Credential 创建、列表、切换、删除 | `features/credential/components/credential-manager.tsx` | `credential-dialog.tsx`、`api/credential-api.ts`、`model/credential.ts` | `tests/api-clients.test.ts` |
 | Session 创建、首次发送前选择工作目录、命名、自动审批、重命名和删除 | `features/session/components/new-session-chat.tsx`、`components/workspace-sidebar.tsx` | `session-dialog.tsx`、`session-delete-dialog.tsx`、`local-directory-picker.tsx`、`api/session-api.ts`、`model/session.ts`、`features/workspace/model/session-update.ts` | `tests/session-title.test.tsx`、`tests/session-directory-picker.test.tsx`、`tests/api-clients.test.ts` |
 | Guard 规则编辑、开关、创建和删除 | `features/guard/components/guard-editor.tsx` | `guard-rule-dialog.tsx`、`guard-rule-switch.tsx`、`model/guard.ts`、`model/guard-editor-state.ts` | `tests/guard-editor-state.test.ts` |
@@ -61,7 +61,7 @@ Chat 协议接受 runtime system 消息，状态按 `runtimeEventId` 保留同�
 | SFTP 目录浏览、筛选、下载和删除 | `features/sftp/components/sftp-files-tab.tsx` | `use-sftp-directory.ts`、`sftp-directory-entries.tsx`、`sftp-delete-dialog.tsx`、`api/sftp-api.ts` | `tests/sftp-api.test.ts`、`tests/sftp-state.test.ts` |
 | SFTP 上传、覆盖确认、取消、重试和离开页面保护 | `features/sftp/components/sftp-transfer-provider.tsx` | `sftp-transfer-queue.tsx`、`model/sftp-state.ts`、`model/sftp.ts`、`api/sftp-api.ts` | `tests/sftp-api.test.ts`、`tests/sftp-state.test.ts` |
 | Workspace SSE、服务器指标和 Connection Pool 快照 | `features/sftp/components/realtime-overview-tab.tsx` | `use-workspace-events.ts`、`model/sftp-state.ts`、`model/sftp.ts` | `tests/sftp-state.test.ts` |
-| Terminal Mode 的 Composer 工具入口、状态标识、开关、禁用原因、过渡和状态轮询 | `features/chat/components/chat-console.tsx` | `features/chat/components/chat-token-editor.tsx`、`features/chat/model/chat-composer-menu.ts`、`features/session/components/new-session-chat.tsx`、`features/terminal/runtime/use-terminal-mode.ts`、`features/terminal/api/terminal-api.ts`、`features/terminal/components/terminal-connection-state.tsx`、`features/terminal/model/terminal-ui-defaults.ts` | `tests/chat-composer-menu.test.ts`、`tests/terminal-client.test.ts` |
+| Terminal Mode 单一 Composer 入口、自动回退提醒、状态标识、开关、过渡和状态轮询 | `features/chat/components/chat-console.tsx` | `features/terminal/components/terminal-sandbox-notice.tsx`、`features/terminal/components/terminal-sandbox-label.ts`、`features/chat/components/chat-token-editor.tsx`、`features/chat/model/chat-composer-menu.ts`、`features/session/components/new-session-chat.tsx`、`features/terminal/runtime/use-terminal-mode.ts`、`features/terminal/api/terminal-api.ts`、`features/terminal/components/terminal-connection-state.tsx`、`features/terminal/model/terminal-ui-defaults.ts` | `tests/chat-composer-menu.test.ts`、`tests/terminal-client.test.ts`、`tests/terminal-sandbox-notice.test.tsx` |
 | 只读 xterm、主题动态配色、snapshot/replay/live 切换、focus ownership 和 resize | `features/terminal/components/terminal-panel.tsx` | `model/terminal-theme.ts`、`runtime/terminal-event-stream.ts`、`model/terminal.ts`、`api/terminal-api.ts` | `tests/terminal-client.test.ts`、`tests/terminal-theme.test.ts` |
 | Terminal Observation 遮罩、范围投影和恢复 | `features/terminal/components/terminal-observation-mask.tsx` | `model/terminal-observation-mask.ts`、`model/terminal-observation-range.ts`、`runtime/terminal-observation-range-tracker.ts` | `tests/terminal-observation-mask.test.ts`、`tests/terminal-observation-range.test.ts` |
 | Terminal 审计时间线 | `features/terminal/components/terminal-timeline.tsx` | `api/terminal-api.ts`、`model/terminal.ts` | `tests/terminal-client.test.ts` |
@@ -109,4 +109,4 @@ Chat 错误展示复用 `features/chat/components/chat-failure-details.tsx`，�
 
 模型选择器仅在用户切换 Provider/Model 时，将标识写入浏览器全局 `localStorage`（`gori:last-model-selection:v1`），同模型不重复写入；不缓存凭据、模型能力或思考强度。新会话挂载时读取并通过 `resolveConfiguredModel` 校验可用性后预选，存储损坏、不可用模型和目录查询失败均保留手动选择入口；手选及卸载会取消恢复，迟到响应不覆盖用户选择。已有会话继续使用自身模型记录，自动恢复和发送消息不写全局缓存。缓存跨工作区、刷新和同源标签页共享，不跨浏览器同步。
 
-工作区控制台铅笔入口使用 `workspace-edit-dialog.tsx` 编辑名称和默认目录，复用 `LocalDirectoryPicker` 浏览本机目录；保存通过 Workspace PATCH 携带 `displayName/defaultCwd/remoteDefaultCwd/remoteSandboxRoot/expectedRevision`，成功后刷新共享树。取消目录选择保留草稿，保存失败保留弹窗与路径。已有 Session 目录不随 Workspace 默认值变更。
+工作区控制台铅笔入口使用 `workspace-edit-dialog.tsx` 编辑名称和默认目录，分别使用 `LocalDirectoryPicker` 和 `RemoteDirectoryPicker` 浏览本机与远端目录；保存通过 Workspace PATCH 携带 `displayName/defaultCwd/remoteDefaultCwd/expectedRevision`，成功后刷新共享树。取消目录选择保留草稿，保存失败保留弹窗与路径。已有 Session 目录不随 Workspace 默认值变更。

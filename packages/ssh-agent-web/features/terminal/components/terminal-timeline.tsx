@@ -3,8 +3,9 @@
 import { useEffect, useState } from "react";
 import { useIntl, type IntlShape } from "react-intl";
 import { terminalApi } from "@/features/terminal/api/terminal-api";
+import { terminalSandboxLabel } from "@/features/terminal/components/terminal-sandbox-label";
 import { TERMINAL_UI_DEFAULTS } from "@/features/terminal/model/terminal-ui-defaults";
-import type { TerminalTimelineEvent } from "@/features/terminal/model/terminal";
+import { terminalSandboxFromTimelineEvent, type TerminalTimelineEvent } from "@/features/terminal/model/terminal";
 
 export function TerminalTimeline({ sessionId }: { sessionId: string }) {
 	const intl = useIntl();
@@ -31,7 +32,7 @@ export function TerminalTimeline({ sessionId }: { sessionId: string }) {
 				<div key={event.id} className="flex items-center gap-2 text-[9px] leading-4 text-[var(--terminal-muted)]">
 					<span className={`h-1.5 w-1.5 shrink-0 rounded-full ${event.type === "observation.processing" ? "animate-pulse bg-[var(--terminal-accent)]" : "bg-[var(--terminal-line-strong)]"}`} />
 					<span className="shrink-0 font-mono text-[var(--terminal-muted)]">{new Date(event.createdAt).toLocaleTimeString([], { hour12: false })}</span>
-					<span className={event.type === "observation.processing" ? "text-[var(--terminal-accent)]" : "text-[var(--terminal-ink)]"}>{timelineLabel(intl, event.type)}</span>
+					<span className={event.type === "observation.processing" ? "text-[var(--terminal-accent)]" : "text-[var(--terminal-ink)]"}>{timelineLabel(intl, event.type)}{terminalSandboxLabel(intl, terminalSandboxFromTimelineEvent(event))}</span>
 				</div>
 			))}
 		</div>

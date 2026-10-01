@@ -714,6 +714,23 @@ const MIGRATIONS = [
 			ALTER TABLE command_operations ADD COLUMN sandbox_justification TEXT;
 		`,
 	},
+	{
+		version: 20,
+		sql: `
+			ALTER TABLE terminal_sessions ADD COLUMN requested_sandbox_mode TEXT
+				CHECK (requested_sandbox_mode IN ('workspace_write', 'full_access'));
+			ALTER TABLE terminal_sessions ADD COLUMN sandbox_json TEXT;
+		`,
+	},
+	{
+		version: 21,
+		sql: `
+			-- Preserve the old write boundary when merging the two remote directories.
+			UPDATE workspaces SET remote_default_cwd = remote_sandbox_root
+			WHERE remote_sandbox_root IS NOT NULL;
+			ALTER TABLE workspaces DROP COLUMN remote_sandbox_root;
+		`,
+	},
 ] as const;
 
 export function applyMigrations(database: DatabaseSync): void {
