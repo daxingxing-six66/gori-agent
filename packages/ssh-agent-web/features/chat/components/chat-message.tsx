@@ -348,7 +348,7 @@ function toolState(execution?: ChatToolExecution, approval?: ToolApproval): "wai
 }
 
 function toolLabel(intl: IntlShape, name: string): string {
-	const id = ({ remote_server_call: "chat.tool.remote", bash: "chat.tool.bash", read: "chat.tool.read", write: "chat.tool.write" } as const)[name as "remote_server_call" | "bash" | "read" | "write"];
+	const id = ({ remote_server_call: "chat.tool.remote", bash: "chat.tool.bash", read: "chat.tool.read", write: "chat.tool.write", ask_user_decision: "chat.decision.tool" } as const)[name as "remote_server_call" | "bash" | "read" | "write" | "ask_user_decision"];
 	return id ? intl.formatMessage({ id }) : name;
 }
 
@@ -361,6 +361,11 @@ function approvalActionLabels(intl: IntlShape, toolName: string): { cancel: stri
 
 function toolTarget(intl: IntlShape, call: ToolCallContent): string {
 	const args = call.arguments;
+	if (call.name === "ask_user_decision" && Array.isArray(args.questions)) {
+		const first = args.questions[0];
+		return typeof first === "object" && first !== null && "question" in first && typeof first.question === "string"
+			? first.question : intl.formatMessage({ id: "chat.decision.tool" });
+	}
 	if (call.name === "terminal_interaction") {
 		if (typeof args.input === "string") return args.input;
 		if (args.key === "CTRL_C") return "Ctrl+C";
@@ -375,6 +380,10 @@ function toolTarget(intl: IntlShape, call: ToolCallContent): string {
 
 function toolRequestArguments(call: ToolCallContent): string {
 	const args = call.arguments;
+	if (call.name === "ask_user_decision" && Array.isArray(args.questions)) {
+		return args.questions.map((entry, index) => typeof entry === "object" && entry !== null && "question" in entry && typeof entry.question === "string"
+			? `${index + 1}. ${entry.question}` : `${index + 1}. ?`).join("\n");
+	}
 	if (call.name === "terminal_interaction") {
 		if (typeof args.input === "string") return args.input;
 		if (args.key === "CTRL_C") return "Ctrl+C";

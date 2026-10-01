@@ -9,6 +9,7 @@ import type {
 } from "@/features/chat/model/chat";
 import { apiRequest } from "@/shared/api/client";
 import type { ChatContextUsage } from "@/features/chat/model/chat-context-usage";
+import { isUserDecision, type UserDecision, type UserDecisionAnswer } from "@/features/chat/model/user-decision";
 
 const root = (sessionId: string) => `/api/sessions/${encodeURIComponent(sessionId)}/chat`;
 
@@ -49,4 +50,20 @@ export const chatApi = {
 		apiRequest<{ approvals: ToolApproval[] }>(`${root(sessionId)}/approvals?status=pending`),
 	resolveApproval: (sessionId: string, approvalId: string, approved: boolean) =>
 		apiRequest<ToolApproval>(`${root(sessionId)}/approvals/${encodeURIComponent(approvalId)}/${approved ? "approve" : "reject"}`, { method: "POST" }),
+	listPendingDecisions: async (sessionId: string) => {
+		const response: unknown = await apiRequest(`${root(sessionId)}/decisions`);
+		if (!response || typeof response !== "object" || !("decisions" in response) ||
+			!Array.isArray(response.decisions) || !response.decisions.every((decision) =>
+				isUserDecision(decision) && decision.sessionId === sessionId && decision.status === "pending")) {
+			throw new Error("Invalid pending decision response");
+		}
+		return { decisions: response.decisions as UserDecision[] };
+	},
+	answerDecision: async (sessionId: string, decisionId: string, answers: UserDecisionAnswer[]) => {
+		const response: unknown = await apiRequest(`${root(sessionId)}/decisions/${encodeURIComponent(decisionId)}/answer`, { method: "POST", body: { answers } });
+		if (!isUserDecision(response) || response.id !== decisionId || response.sessionId !== sessionId) {
+			throw new Error("Invalid decision answer response");
+		}
+		return response;
+	},
 };

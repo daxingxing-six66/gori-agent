@@ -8,8 +8,10 @@ v19 追加 nullable `workspaces.remote_sandbox_root` 及 `command_operations.age
 
 ## 当前边界
 
+- v22 新增 `chat_user_decisions`：持久化 Session/Run/Tool Call 绑定、问题 JSON、答案 JSON 和 pending/answered/cancelled/interrupted 状态。Repository 在读取边界解析问题与答案；启动恢复将遗留 pending 决策标记为 interrupted，Run 仍按现有重启逻辑失败。见 [user-decision.md](./user-decision.md)。
+
 - 使用 Node `node:sqlite`，启动时开启 foreign keys、busy timeout；文件数据库使用 WAL。
-- schema 由版本化 migration 管理，当前版本为 v21；v7 增加 Session 本地配置、Chat Run、消息、队列、审批和 Agent Session 投影表，v8 为 Tool Approval 增加持久化描述，v9 增加每个 LLM Provider 的最后一次成功模型目录快照，v10 增加 TerminalSession、Interaction、Input、Observation、Timeline 和 Chat Run 交互模式字段，v11 增加自定义 LLM Provider 聚合，v12 为 Chat 消息增加类型、Provider 和 Usage 投影并移除旧 Agent Session 投影表，v13 为 Tool Approval 描述和 Terminal failure 增加可选 message key/values 元数据，v14 增加 Session Attachment 元数据、同名唯一约束和级联删除，v15 增加有序 `chat_message_attachments` 关系，v16 增加不可变 `chat_prompt_snapshots`，通过触发器原子记录初始模式及 Terminal active 边界变化。v20 保存 Terminal 实际沙箱事实，v21 合并远端目录。见 [session-prompt.md](./session-prompt.md)。
+- schema 由版本化 migration 管理，当前版本为 v22；v7 增加 Session 本地配置、Chat Run、消息、队列、审批和 Agent Session 投影表，v8 为 Tool Approval 增加持久化描述，v9 增加每个 LLM Provider 的最后一次成功模型目录快照，v10 增加 TerminalSession、Interaction、Input、Observation、Timeline 和 Chat Run 交互模式字段，v11 增加自定义 LLM Provider 聚合，v12 为 Chat 消息增加类型、Provider 和 Usage 投影并移除旧 Agent Session 投影表，v13 为 Tool Approval 描述和 Terminal failure 增加可选 message key/values 元数据，v14 增加 Session Attachment 元数据、同名唯一约束和级联删除，v15 增加有序 `chat_message_attachments` 关系，v16 增加不可变 `chat_prompt_snapshots`，通过触发器原子记录初始模式及 Terminal active 边界变化。v20 保存 Terminal 实际沙箱事实，v21 合并远端目录。见 [session-prompt.md](./session-prompt.md)。
 - v17 兼容开发期间已执行的两种 v16 结构：在同一事务内重建快照表，去除早期 `initial_mode NOT NULL` 列，逐字保留头部文本及其版本、创建时间，重建模式触发器；仅为缺失 `runtimeEventId` 的已生成模式消息补齐原消息 ID，不改变顺序和标签。不重新生成已有快照，也不清空业务数据。失败时表、触发器、消息修补与版本记录一起回滚；重复启动跳过已完成的版本。
 - v1 到 v2 采用开发期重建策略：带业务数据的 v1 数据库会拒绝启动并提示人工备份、删除；程序不会自动删除或搬迁旧数据。
 - Credential 元数据与认证材料分表。认证材料使用 AES-256-GCM，加密 AAD 绑定 `credentialId:authVersion`；32 字节密钥必须由进程外部注入。

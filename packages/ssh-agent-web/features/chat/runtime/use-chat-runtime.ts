@@ -12,6 +12,7 @@ import {
 	type ChatRuntimeState,
 } from "@/features/chat/model/chat-runtime-state";
 import type { ChatMessage, ChatQueueBehavior, ChatRun, ManualChatCompactionResult, ToolApproval } from "@/features/chat/model/chat";
+import type { UserDecision, UserDecisionAnswer } from "@/features/chat/model/user-decision";
 import { ChatEventStream } from "@/features/chat/runtime/chat-event-stream";
 import type { LlmModel, ThinkingLevel } from "@/features/llm-provider/model/llm-provider";
 import type { SessionAttachment } from "@/features/session/api/session-attachment-api";
@@ -40,6 +41,7 @@ export function useChatRuntime(sessionId: string) {
 	const [manualCompactionResult, setManualCompactionResult] = useState<ManualChatCompactionResult | null>(null);
 	const [queueMutationId, setQueueMutationId] = useState<string | null>(null);
 	const [approvalMutationId, setApprovalMutationId] = useState<string | null>(null);
+	const [decisionMutationId, setDecisionMutationId] = useState<string | null>(null);
 	const [requestError, setRequestError] = useState<unknown>(null);
 	const stateRef = useRef<ChatRuntimeState>(state);
 	const compactionControllerRef = useRef<AbortController | null>(null);
@@ -61,19 +63,22 @@ export function useChatRuntime(sessionId: string) {
 			? await chatApi.listMessages(sessionId, { limit: 100 })
 			: { messages: await listMessagePages(sessionId, options.afterSequence), nextBeforeSequence: null };
 		const activeRun = await chatApi.getActiveRun(sessionId);
-		const [approvals, queue] = await Promise.allSettled([
+		const [approvals, decisions, queue] = await Promise.allSettled([
 			chatApi.listApprovals(sessionId),
+			chatApi.listPendingDecisions(sessionId),
 			activeRun.run ? chatApi.listQueue(sessionId, activeRun.run.id) : Promise.resolve({ items: [] }),
 		]);
 		dispatch({
 			type: options.merge ? "mergePersisted" : "hydrate",
 			messages: page.messages,
 			approvals: approvals.status === "fulfilled" ? approvals.value.approvals : [],
+			decisions: decisions.status === "fulfilled" ? decisions.value.decisions : [],
 		});
 		if (options.afterSequence === undefined) setNextBeforeSequence(page.nextBeforeSequence);
 		dispatch({ type: "setRun", run: activeRun.run });
 		if (queue.status === "fulfilled") dispatch({ type: "hydrateQueue", items: queue.value.items, replace: true });
 		if (approvals.status === "rejected") throw approvals.reason;
+		if (decisions.status === "rejected") throw decisions.reason;
 		if (queue.status === "rejected") throw queue.reason;
 	}, [sessionId]);
 
@@ -233,6 +238,22 @@ export function useChatRuntime(sessionId: string) {
 		}
 	}, [approvalMutationId, sessionId]);
 
+	const answerDecision = useCallback(async (decision: UserDecision, answers: UserDecisionAnswer[]): Promise<boolean> => {
+		if (decisionMutationId) return false;
+		setDecisionMutationId(decision.id);
+		setRequestError(null);
+		try {
+			const resolved = await chatApi.answerDecision(sessionId, decision.id, answers);
+			dispatch({ type: "event", event: { type: "decision.resolved", data: resolved } });
+			return true;
+		} catch (requestError) {
+			setRequestError(requestError);
+			return false;
+		} finally {
+			setDecisionMutationId(null);
+		}
+	}, [decisionMutationId, sessionId]);
+
 	const mutateQueued = useCallback(async (queueItemId: string, action: "cancel" | "steer"): Promise<void> => {
 		const currentRun = stateRef.current.run;
 		if (!activeChatRun(currentRun) || queueMutationRef.current) return;
@@ -307,11 +328,13 @@ export function useChatRuntime(sessionId: string) {
 		manualCompactionResult,
 		queueMutationId,
 		approvalMutationId,
+		decisionMutationId,
 		error: requestError === null ? null : localizedErrorMessage(requestError),
 		setError: setRequestError,
 		submit,
 		cancel,
 		resolveApproval,
+		answerDecision,
 		cancelQueued,
 		promoteQueued,
 		loadOlderMessages,

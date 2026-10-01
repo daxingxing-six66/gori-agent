@@ -26,6 +26,8 @@ import type { ChatRepository } from "../repositories/chat-repository.ts";
 import type { SessionRepository } from "../repositories/session-repository.ts";
 import type { ChatAgentRuntimeFactory } from "./chat-agent-runtime-factory.ts";
 import type { ChatApprovalService } from "./chat-approval-service.ts";
+import type { ChatUserDecisionService } from "./chat-user-decision-service.ts";
+import type { UserDecision } from "../../domain/user-decision.ts";
 import type { ChatAttachmentService } from "./chat-attachment-service.ts";
 import type { ChatContextService } from "./chat-context-service.ts";
 import type { ChatPromptService } from "./chat-prompt-service.ts";
@@ -68,6 +70,7 @@ export interface ChatServiceDependencies {
 	unbindTerminalRun(sessionId: string, runId: string): Promise<void>;
 	events: ChatRunEventHub;
 	approvals: ChatApprovalService;
+	decisions: ChatUserDecisionService;
 	context: ChatContextService;
 	contextCompactionSettings: ContextCompactionSettingsReader;
 	queues: ChatQueueService;
@@ -96,6 +99,7 @@ export class ChatService {
 	private readonly active = new Map<string, ActiveRun>();
 	private readonly events: ChatRunEventHub;
 	private readonly approvals: ChatApprovalService;
+	private readonly decisions: ChatUserDecisionService;
 	private readonly context: ChatContextService;
 	private readonly contextCompactionSettings: ContextCompactionSettingsReader;
 	private readonly manualCompactions = new Set<string>();
@@ -117,6 +121,7 @@ export class ChatService {
 		this.unbindTerminalRun = options.unbindTerminalRun;
 		this.events = options.events;
 		this.approvals = options.approvals;
+		this.decisions = options.decisions;
 		this.context = options.context;
 		this.contextCompactionSettings = options.contextCompactionSettings;
 		this.queues = options.queues;
@@ -397,6 +402,7 @@ export class ChatService {
 			activeRun.runtime.requestCancellation();
 			try {
 				this.approvals.cancelRun(runId, "run_cancelled");
+				this.decisions.cancelRun(runId);
 				this.queues.cancelRun(activeRun.runtime.run);
 			} catch (error) {
 				activeRun.runtime.captureFailure(error);
@@ -446,6 +452,14 @@ export class ChatService {
 		return this.approvals.resolve(sessionId, approvalId, approved);
 	}
 
+	listPendingDecisions(sessionId: string): UserDecision[] {
+		return this.decisions.listPending(sessionId);
+	}
+
+	answerDecision(sessionId: string, decisionId: string, answers: unknown): UserDecision {
+		return this.decisions.answer(sessionId, decisionId, answers);
+	}
+
 	subscribe(
 		sessionId: string,
 		runId: string,
@@ -462,6 +476,9 @@ export class ChatService {
 		await this.titles?.close();
 		for (const activeRun of this.active.values()) {
 			activeRun.runtime.requestCancellation();
+		}
+		this.decisions.close();
+		for (const activeRun of this.active.values()) {
 			activeRun.runtime.abortAgent();
 		}
 		this.approvals.close();
@@ -488,6 +505,7 @@ export class ChatService {
 			update: (status, failure) => this.updateRun(runtime.run, status, failure),
 			cleanup: [
 				() => this.approvals.cancelRun(runtime.run.id, "run_cancelled"),
+				() => this.decisions.cancelRun(runtime.run.id),
 				() => this.queues.cancelRun(runtime.run),
 				() => this.toolCalls.clearRun(runtime.run.id),
 				() => this.finalizeRun(activeRun),

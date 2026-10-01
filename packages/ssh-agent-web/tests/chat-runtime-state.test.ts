@@ -10,6 +10,7 @@ import {
 } from "../features/chat/model/chat-runtime-state.ts";
 import { chatScrollBehavior, isNearChatHistoryTop } from "../features/chat/model/chat-scroll.ts";
 import type { AssistantMessage, ChatRun, CompactionSummaryMessage, UserMessage } from "../features/chat/model/chat.ts";
+import { isUserDecision, type UserDecision } from "../features/chat/model/user-decision.ts";
 import type { SessionAttachment } from "../features/session/api/session-attachment-api.ts";
 import { ChatEventStream, parseChatStreamEvent } from "../features/chat/runtime/chat-event-stream.ts";
 import { zhCNMessages } from "../features/i18n/messages/zh-CN.ts";
@@ -38,6 +39,28 @@ function assistant(content: AssistantMessage["content"], timestamp = 20): Assist
 }
 
 describe("Chat runtime state", () => {
+	it("restores a pending decision and removes its answer entry when the Run ends", () => {
+		const decision: UserDecision = {
+			id: "decision-1", sessionId: run.sessionId, runId: run.id, toolCallId: "tool-1", status: "pending", createdAt: 3,
+			questions: [{ question: "Choose", options: [
+				{ label: "A", description: "First" }, { label: "B", description: "Second" },
+				{ label: "C", description: "Third" },
+			], recommendedIndex: 1 }],
+		};
+		expect(isUserDecision(decision)).toBe(true);
+		expect(isUserDecision({ ...decision, questions: [{ ...decision.questions[0], options: [] }] })).toBe(false);
+		let state = chatRuntimeReducer(initialChatRuntimeState, { type: "hydrate", messages: [], decisions: [decision] });
+		state = chatRuntimeReducer(state, { type: "setRun", run });
+		expect(state.decisions[decision.id]).toEqual(decision);
+		state = chatRuntimeReducer(state, { type: "event", event: { type: "decision.resolved", data: {
+			...decision, status: "answered", answers: [{ kind: "skipped" }], resolvedAt: 4,
+		} } });
+		expect(state.decisions[decision.id]).toMatchObject({ status: "answered", answers: [{ kind: "skipped" }] });
+		state = chatRuntimeReducer(state, { type: "setRun", run: { ...run, status: "completed" } });
+		expect(state.decisions[decision.id]?.status).toBe("answered");
+		const pending = chatRuntimeReducer(initialChatRuntimeState, { type: "hydrate", messages: [], decisions: [decision] });
+		expect(chatRuntimeReducer(pending, { type: "setRun", run: null }).decisions).toEqual({});
+	});
 	it("follows new content near the bottom and exposes a return action after scrolling away", () => {
 		expect(chatScrollBehavior({ scrollHeight: 1200, scrollTop: 400, clientHeight: 600 })).toEqual({
 			followNewContent: true,

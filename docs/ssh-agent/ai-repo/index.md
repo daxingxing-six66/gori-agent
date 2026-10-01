@@ -34,6 +34,7 @@
 | 新会话首条消息自动标题、模型命名和 SSE 更新 | [session-title.md](./session-title.md) | `packages/ssh-agent/src/application/services/session-title-service.ts` |
 | 首次 Run 固定头部、环境快照、模式 system 消息与缓存边界 | [session-prompt.md](./session-prompt.md) | `packages/ssh-agent/src/application/services/chat-prompt-service.ts`、`packages/ssh-agent/src/application/chat-context.ts` |
 | Session Chat、Pi Agent 事件、本地工具、审批、队列和压缩 | [chat-runtime.md](./chat-runtime.md) | `packages/ssh-agent/src/application/services/chat-service.ts`、`packages/agent/src/harness/agent-harness.ts` |
+| Agent 用户决策工具、等待持久化、恢复与输入框上方的面板 | [user-decision.md](./user-decision.md) | `packages/ssh-agent/src/application/services/chat-user-decision-service.ts`、`packages/ssh-agent-web/features/chat/components/user-decision-panel.tsx` |
 | Provider 请求前检查、上下文超限恢复、摘要消息、压缩 Setting 和手动压缩 | [context-compaction.md](./context-compaction.md) | `packages/ssh-agent/src/application/services/chat-context-service.ts`、`packages/agent/src/agent-loop.ts` |
 | Session 上下文占用查询、Turn/压缩完成快照与 SSE | [context-usage.md](./context-usage.md) | `packages/ssh-agent/src/application/chat-context.ts`、`packages/ssh-agent/src/application/services/chat-context-service.ts` |
 | 长周期 SSH PTY、Canonical Terminal State、Agent Terminal Tool、只读前端和审计时间线 | [terminal-interaction.md](./features/terminal-interaction.md) | `packages/ssh-agent/src/application/terminal/`、`packages/ssh-agent-web/features/terminal/` |

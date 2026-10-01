@@ -13,12 +13,14 @@ import {
 import type { SupportedLocale } from "@/features/i18n/model/locale";
 import { apiUrlWithLocale } from "@/shared/api/client";
 import { isChatContextUsage } from "@/features/chat/model/chat-context-usage";
+import { isUserDecision } from "@/features/chat/model/user-decision";
 
 const EVENT_TYPES = [
 	"context.updated", "run.persistence_failed", "stream.resync",
 	"agent_start", "agent_end", "turn_start", "turn_end", "message_start", "message_update", "message_end",
 	"tool_execution_start", "tool_execution_update", "tool_execution_end", "run.updated", "queue.updated",
 	"approval.requested", "approval.resolved", "compaction.started", "compaction.completed", "compaction.failed", "stream.ready",
+	"decision.requested", "decision.resolved",
 ] as const;
 
 interface EventSourceLike {
@@ -125,6 +127,7 @@ export function parseChatStreamEvent(type: string, data: unknown): ChatStreamEve
 			: null;
 	}
 	if (type === "approval.requested" || type === "approval.resolved") return isToolApproval(data) ? { type, data } : null;
+	if (type === "decision.requested" || type === "decision.resolved") return isUserDecision(data) ? { type, data } : null;
 	if (type === "queue.updated") return isQueuePatch(data) ? { type, data } : null;
 	if (type === "stream.ready") {
 		return isRecord(data) && typeof data.runId === "string" && typeof data.connectedAt === "number"

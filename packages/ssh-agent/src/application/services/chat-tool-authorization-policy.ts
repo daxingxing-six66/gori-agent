@@ -54,7 +54,7 @@ export class ChatToolAuthorizationPolicy {
 				reason: `${input.toolName} is unavailable in the current server interaction mode`,
 			};
 		}
-		if (input.toolName === "read") return { kind: "allow" };
+		if (input.toolName === "read" || input.toolName === "ask_user_decision") return { kind: "allow" };
 		if (input.toolName === "sftp_upload" || input.toolName === "sftp_download") {
 			return { kind: "defer_to_tool" };
 		}

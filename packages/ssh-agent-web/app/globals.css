@@ -657,6 +657,20 @@ input:focus-visible {
 	position: relative;
 }
 
+.user-decision-panel {
+	transform-origin: bottom center;
+	animation: user-decision-panel-in 160ms ease-out both;
+}
+
+@keyframes user-decision-panel-in {
+	from { opacity: 0; transform: translateY(10px) scale(0.99); }
+	to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.user-decision-panel { animation: none; }
+}
+
 .chat-token-editor-shell {
 	position: static;
 }

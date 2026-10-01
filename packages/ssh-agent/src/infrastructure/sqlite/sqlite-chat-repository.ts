@@ -15,6 +15,7 @@ import type {
 import { attachmentIdsFromMessage } from "../../domain/chat-attachment.ts";
 import type { StoredChatCompactionMessage } from "../../domain/context-compaction.ts";
 import type { BackendMessageKey, BackendMessageValues } from "../../i18n/message.ts";
+import { parseUserDecisionAnswers, parseUserDecisionQuestions, type UserDecision, type UserDecisionAnswer } from "../../domain/user-decision.ts";
 
 export class SqliteChatRepository implements ChatRepository {
 	private readonly database: DatabaseSync;
@@ -46,6 +47,7 @@ export class SqliteChatRepository implements ChatRepository {
 		this.database
 			.prepare("UPDATE chat_queue_items SET status = 'cancelled', resolved_at = ? WHERE status = 'pending'")
 			.run(now);
+		this.database.prepare("UPDATE chat_user_decisions SET status = 'interrupted', resolved_at = ? WHERE status = 'pending'").run(now);
 	}
 
 	findRunByRequest(sessionId: string, requestId: string): ChatRun | undefined {
@@ -151,6 +153,7 @@ export class SqliteChatRepository implements ChatRepository {
 						"UPDATE chat_queue_items SET status = 'cancelled', resolved_at = ? WHERE run_id = ? AND status = 'pending'",
 					)
 					.run(run.updatedAt, run.id);
+				this.database.prepare("UPDATE chat_user_decisions SET status = 'cancelled', resolved_at = ? WHERE run_id = ? AND status = 'pending'").run(run.updatedAt, run.id);
 				this.database.exec("COMMIT");
 			}
 		} catch (error) {
@@ -398,6 +401,36 @@ export class SqliteChatRepository implements ChatRepository {
 			: undefined;
 	}
 
+	insertDecision(decision: UserDecision): void {
+		this.database.prepare(
+			"INSERT INTO chat_user_decisions (id, session_id, run_id, tool_call_id, questions_json, answers_json, status, created_at, resolved_at) VALUES (?, ?, ?, ?, ?, NULL, 'pending', ?, NULL)",
+		).run(decision.id, decision.sessionId, decision.runId, decision.toolCallId,
+			JSON.stringify(decision.questions), decision.createdAt);
+	}
+
+	findDecision(sessionId: string, decisionId: string): UserDecision | undefined {
+		return decisionFromRow(this.database.prepare("SELECT * FROM chat_user_decisions WHERE id = ? AND session_id = ?").get(decisionId, sessionId));
+	}
+
+	listPendingDecisions(sessionId: string): UserDecision[] {
+		return this.database.prepare("SELECT * FROM chat_user_decisions WHERE session_id = ? AND status = 'pending' ORDER BY created_at, rowid")
+			.all(sessionId).map((row) => requireDecision(row));
+	}
+
+	resolveDecision(decisionId: string, answers: UserDecisionAnswer[], resolvedAt: number): UserDecision | undefined {
+		const changed = this.database.prepare(
+			"UPDATE chat_user_decisions SET status = 'answered', answers_json = ?, resolved_at = ? WHERE id = ? AND status = 'pending'",
+		).run(JSON.stringify(answers), resolvedAt, decisionId);
+		return changed.changes === 1 ? decisionFromRow(this.database.prepare("SELECT * FROM chat_user_decisions WHERE id = ?").get(decisionId)) : undefined;
+	}
+
+	cancelPendingDecision(decisionId: string, status: "cancelled" | "interrupted", resolvedAt: number): UserDecision | undefined {
+		const changed = this.database.prepare(
+			"UPDATE chat_user_decisions SET status = ?, resolved_at = ? WHERE id = ? AND status = 'pending'",
+		).run(status, resolvedAt, decisionId);
+		return changed.changes === 1 ? decisionFromRow(this.database.prepare("SELECT * FROM chat_user_decisions WHERE id = ?").get(decisionId)) : undefined;
+	}
+
 	latestSystemMessage(sessionId: string): ChatMessageProjection | undefined {
 		const row = this.database.prepare("SELECT * FROM chat_messages WHERE session_id = ? AND message_type = 'system' ORDER BY sequence DESC LIMIT 1").get(sessionId);
 		return row ? messageFromRow(row, []) : undefined;
@@ -637,6 +670,39 @@ function requireApproval(row: unknown): ToolApproval {
 	const approval = approvalFromRow(row);
 	if (!approval) throw new Error("Persisted Chat Approval was not found after update");
 	return approval;
+}
+
+function decisionFromRow(row: unknown): UserDecision | undefined {
+	if (row === undefined) return undefined;
+	if (row === null || typeof row !== "object") throw new Error("Invalid persisted Chat decision row");
+	const value = row as Record<string, unknown>;
+	const status = value.status;
+	if ((status !== "pending" && status !== "answered" && status !== "cancelled" && status !== "interrupted") ||
+		!["id", "session_id", "run_id", "tool_call_id", "questions_json"].every((key) => typeof value[key] === "string" && value[key] !== "") ||
+		!Number.isSafeInteger(value.created_at) || (value.resolved_at !== null && !Number.isSafeInteger(value.resolved_at))) {
+		throw new Error("Invalid persisted Chat decision row");
+	}
+	try {
+		const questions = parseUserDecisionQuestions(JSON.parse(value.questions_json as string));
+		const answers = value.answers_json === null ? undefined : parseUserDecisionAnswers(JSON.parse(value.answers_json as string), questions.length);
+		if ((status === "answered") !== (answers !== undefined) || (status === "pending") !== (value.resolved_at === null)) {
+			throw new Error("Inconsistent persisted Chat decision state");
+		}
+		return {
+			id: value.id as string, sessionId: value.session_id as string, runId: value.run_id as string,
+			toolCallId: value.tool_call_id as string, questions, status,
+			...(answers === undefined ? {} : { answers }), createdAt: value.created_at as number,
+			...(value.resolved_at === null ? {} : { resolvedAt: value.resolved_at as number }),
+		};
+	} catch (cause) {
+		throw new Error("Invalid persisted Chat decision data", { cause });
+	}
+}
+
+function requireDecision(row: unknown): UserDecision {
+	const decision = decisionFromRow(row);
+	if (!decision) throw new Error("Persisted Chat decision was not found after update");
+	return decision;
 }
 
 function parseRunFailure(json: string): NonNullable<ChatRun["failure"]> {

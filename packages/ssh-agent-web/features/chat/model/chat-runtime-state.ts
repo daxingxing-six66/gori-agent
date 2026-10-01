@@ -11,6 +11,7 @@ import type {
 	ToolResultMessage,
 } from "@/features/chat/model/chat";
 import type { SessionAttachment } from "@/features/session/api/session-attachment-api";
+import type { UserDecision } from "@/features/chat/model/user-decision";
 
 export interface ChatTimelineEntry {
 	key: string;
@@ -28,6 +29,7 @@ export interface ChatRuntimeState {
 	timeline: ChatTimelineEntry[];
 	tools: Record<string, ChatToolExecution>;
 	approvals: Record<string, ToolApproval>;
+	decisions: Record<string, UserDecision>;
 	queue: Record<string, ChatQueueEntry>;
 	activeAssistantKey: string | null;
 	maxSequence: number;
@@ -36,8 +38,8 @@ export interface ChatRuntimeState {
 }
 
 export type ChatRuntimeAction =
-	| { type: "hydrate"; messages: ChatMessage[]; approvals?: ToolApproval[] }
-	| { type: "mergePersisted"; messages: ChatMessage[]; approvals?: ToolApproval[] }
+	| { type: "hydrate"; messages: ChatMessage[]; approvals?: ToolApproval[]; decisions?: UserDecision[] }
+	| { type: "mergePersisted"; messages: ChatMessage[]; approvals?: ToolApproval[]; decisions?: UserDecision[] }
 	| { type: "reset" }
 	| { type: "connection"; connection: ChatConnectionState }
 	| { type: "setRun"; run: ChatRun | null }
@@ -54,6 +56,7 @@ export const initialChatRuntimeState: ChatRuntimeState = {
 	timeline: [],
 	tools: {},
 	approvals: {},
+	decisions: {},
 	queue: {},
 	activeAssistantKey: null,
 	maxSequence: 0,
@@ -63,14 +66,15 @@ export const initialChatRuntimeState: ChatRuntimeState = {
 
 export function chatRuntimeReducer(state: ChatRuntimeState, action: ChatRuntimeAction): ChatRuntimeState {
 	if (action.type === "reset") return initialChatRuntimeState;
-	if (action.type === "hydrate") return hydrate(state, action.messages, action.approvals ?? [], false);
-	if (action.type === "mergePersisted") return hydrate(state, action.messages, action.approvals ?? [], true);
+	if (action.type === "hydrate") return hydrate(state, action.messages, action.approvals ?? [], action.decisions ?? [], false);
+	if (action.type === "mergePersisted") return hydrate(state, action.messages, action.approvals ?? [], action.decisions ?? [], true);
 	if (action.type === "connection") return { ...state, connection: action.connection };
 	if (action.type === "setRun") return applyRun(state, action.run);
 	if (action.type === "clearPendingRuntime") {
 		return {
 			...state,
 			approvals: Object.fromEntries(Object.entries(state.approvals).filter(([, approval]) => approval.status !== "pending")),
+			decisions: Object.fromEntries(Object.entries(state.decisions).filter(([, decision]) => decision.status !== "pending")),
 			queue: {},
 		};
 	}
@@ -112,7 +116,7 @@ export function activeChatRun(run: ChatRun | null): run is ChatRun {
 	return run?.status === "pending" || run?.status === "running";
 }
 
-function hydrate(state: ChatRuntimeState, messages: ChatMessage[], approvals: ToolApproval[], merge: boolean): ChatRuntimeState {
+function hydrate(state: ChatRuntimeState, messages: ChatMessage[], approvals: ToolApproval[], decisions: UserDecision[], merge: boolean): ChatRuntimeState {
 	const persisted = messages.map(toTimelineEntry);
 	const persistedFingerprints = new Set(persisted.map((entry) => messageFingerprint(entry.message)));
 	const retained = merge
@@ -123,6 +127,10 @@ function hydrate(state: ChatRuntimeState, messages: ChatMessage[], approvals: To
 		? Object.fromEntries(Object.entries(state.approvals).filter(([, approval]) => approval.status !== "pending"))
 		: {};
 	for (const approval of approvals) approvalMap[approval.id] = approval;
+	const decisionMap = merge
+		? Object.fromEntries(Object.entries(state.decisions).filter(([, decision]) => decision.status !== "pending"))
+		: {};
+	for (const decision of decisions) decisionMap[decision.id] = decision;
 	let tools = merge ? state.tools : {};
 	for (const entry of timeline) {
 		if (entry.message.role === "toolResult") tools = applyToolResult(tools, entry.message);
@@ -132,6 +140,7 @@ function hydrate(state: ChatRuntimeState, messages: ChatMessage[], approvals: To
 		timeline,
 		tools,
 		approvals: approvalMap,
+		decisions: decisionMap,
 		maxSequence: Math.max(state.maxSequence, ...messages.map((message) => message.sequence), 0),
 	};
 }
@@ -204,6 +213,9 @@ function reduceEvent(state: ChatRuntimeState, event: ChatStreamEvent): ChatRunti
 	if (event.type === "approval.requested" || event.type === "approval.resolved") {
 		return { ...state, approvals: { ...state.approvals, [event.data.id]: event.data } };
 	}
+	if (event.type === "decision.requested" || event.type === "decision.resolved") {
+		return { ...state, decisions: { ...state.decisions, [event.data.id]: event.data } };
+	}
 	if (event.type === "queue.updated") {
 		return {
 			...state,
@@ -234,6 +246,7 @@ function applyRun(state: ChatRuntimeState, run: ChatRun | null): ChatRuntimeStat
 		...state,
 		run,
 		approvals: Object.fromEntries(Object.entries(state.approvals).filter(([, approval]) => approval.status !== "pending")),
+		decisions: Object.fromEntries(Object.entries(state.decisions).filter(([, decision]) => decision.status !== "pending")),
 		queue: {},
 	};
 }

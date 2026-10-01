@@ -12,6 +12,7 @@ import { ChatContextService } from "./chat-context-service.ts";
 import type { ChatPromptService } from "./chat-prompt-service.ts";
 import { ChatQueueService } from "./chat-queue-service.ts";
 import { ChatService } from "./chat-service.ts";
+import { ChatUserDecisionService } from "./chat-user-decision-service.ts";
 import { ChatToolAuthorizationPolicy } from "./chat-tool-authorization-policy.ts";
 import { ChatToolCallCoordinator } from "./chat-tool-call-coordinator.ts";
 import type { ContextCompactionSettingsService } from "./context-compaction-settings-service.ts";
@@ -56,6 +57,7 @@ export function createChatService(options: CreateChatServiceOptions): ChatServic
 		events,
 		...(options.approvalTimeoutMs === undefined ? {} : { approvalTimeoutMs: options.approvalTimeoutMs }),
 	});
+	const decisions = new ChatUserDecisionService({ repository: options.chatRepository, ids: options.ids, events });
 	const context = new ChatContextService({
 		repository: options.chatRepository,
 		models: options.models,
@@ -97,6 +99,7 @@ export function createChatService(options: CreateChatServiceOptions): ChatServic
 			agentEvents,
 			context,
 			attachments: options.chatAttachments,
+			decisions,
 			createRemoteTool: options.createRemoteTool,
 			createTerminalTool: options.createTerminalTool,
 			createSftpTool: options.createSftpTool,
@@ -115,6 +118,7 @@ export function createChatService(options: CreateChatServiceOptions): ChatServic
 		unbindTerminalRun: options.unbindTerminalRun,
 		events,
 		approvals,
+		decisions,
 		context,
 		contextCompactionSettings,
 		queues,

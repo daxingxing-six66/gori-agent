@@ -20,6 +20,8 @@ Chat 协议接受 runtime system 消息，状态按 `runtimeEventId` 保留同�
 
 ## 使用顺序
 
+Chat 的 `UserDecisionPanel` 在输入框上方向上展开，显示模型的三条建议、推荐标记、自定义输入、翻页和跳过。`use-chat-runtime.ts` 将待决 REST 恢复与 Run SSE 合并到 `ChatRuntimeState`；关闭面板仅隐藏，可从输入框上方重新打开，不向后端提交跳过。协议与状态边界见 [user-decision.md](./user-decision.md)。
+
 1. 先从“页面与总装配”确定功能出现在哪个页面。
 2. 再从“功能路由”打开该功能的组件、运行时或状态入口。
 3. API 请求改动同时检查该 feature 的 `api/`、`model/` 和对应测试。

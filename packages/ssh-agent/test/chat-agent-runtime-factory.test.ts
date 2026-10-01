@@ -64,6 +64,7 @@ function createContext(
 		queues: { cancelSteeringAfterTurn: vi.fn() },
 		agentEvents: { handle: vi.fn() },
 		attachments: { hydrateProviderContext: vi.fn(async (_sessionId, providerContext) => providerContext) },
+		decisions: { request: vi.fn(async () => [{ kind: "skipped" as const }]) },
 		createRemoteTool,
 		createTerminalTool,
 		createSftpTool: vi.fn(() => namedTool("sftp_upload")),
@@ -244,6 +245,7 @@ describe("ChatAgentRuntimeFactory", () => {
 			"terminal_interaction",
 			"sftp_upload",
 			"sftp_download",
+			"ask_user_decision",
 		]);
 		expect(options).toMatchObject({
 			steeringMode: "one-at-a-time",
@@ -289,6 +291,7 @@ describe("ChatAgentRuntimeFactory", () => {
 			"terminal_interaction",
 			"sftp_upload",
 			"sftp_download",
+			"ask_user_decision",
 		]);
 		expect(context.createRemoteTool).not.toHaveBeenCalled();
 		expect(context.createTerminalTool).toHaveBeenCalledWith({
@@ -312,6 +315,7 @@ describe("ChatAgentRuntimeFactory", () => {
 			queues: { cancelSteeringAfterTurn: vi.fn() },
 			agentEvents: { handle: vi.fn() },
 			attachments: { hydrateProviderContext: vi.fn(async (_sessionId, providerContext) => providerContext) },
+			decisions: { request: vi.fn(async () => [{ kind: "skipped" as const }]) },
 			createRemoteTool: () => namedTool("remote_server_call"),
 			createTerminalTool: () => namedTool("terminal_interaction"),
 			createSftpTool: () => namedTool("sftp_upload"),

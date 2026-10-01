@@ -5,6 +5,7 @@ export function waitingForChatResponse(state: ChatRuntimeState, loading: boolean
 	if (!activeChatRun(state.run)) return submitting;
 	const runId = state.run.id;
 	if (Object.values(state.approvals).some((approval) => approval.runId === runId && approval.status === "pending")) return false;
+	if (Object.values(state.decisions).some((decision) => decision.runId === runId && decision.status === "pending")) return false;
 	return !state.timeline.some((entry) => entry.runId === runId && (
 		entry.message.role === "toolResult" ||
 		(entry.message.role === "assistant" && entry.message.content.some((part) =>

@@ -9,7 +9,7 @@ import type { LocalFileSystemService } from "../application/services/local-file-
 import type { TerminalSessionService } from "../application/services/terminal-session-service.ts";
 import type { SshConnectionPoolControl } from "../application/ssh-channel-broker.ts";
 import type { WorkspaceEventHub, WorkspaceEventTopic } from "../application/workspace-event-hub.ts";
-import type { ChatMessageListCursor, ChatQueueItemStatus } from "../domain/chat.ts";
+import { ChatError, type ChatMessageListCursor, type ChatQueueItemStatus } from "../domain/chat.ts";
 import { ManagementError } from "../domain/errors.ts";
 import { type CreateFileTransferInput, FileTransferError } from "../domain/file-transfer.ts";
 import { type BackendLocale, formatBackendMessage, resolveBackendLocale } from "../i18n/message.ts";
@@ -141,6 +141,17 @@ async function route(
 			const action = segments[6];
 			if (action === "approve" || action === "reject")
 				return json(options.chat.resolveApproval(sessionId, segments[5], action === "approve"));
+		}
+		if (segments.length === 5 && segments[4] === "decisions" && request.method === "GET") {
+			return json({ decisions: options.chat.listPendingDecisions(sessionId) });
+		}
+		if (segments.length === 7 && segments[4] === "decisions" && segments[6] === "answer" && request.method === "POST") {
+			const body = await readJson(request);
+			if (!body || typeof body !== "object" || Array.isArray(body) ||
+				Object.keys(body).length !== 1 || !("answers" in body)) {
+				throw new ChatError("decision_answer_invalid", "Expected answers array", 400);
+			}
+			return json(options.chat.answerDecision(sessionId, segments[5], body.answers));
 		}
 		if (segments.length >= 7 && segments[4] === "runs") {
 			const runId = segments[5];

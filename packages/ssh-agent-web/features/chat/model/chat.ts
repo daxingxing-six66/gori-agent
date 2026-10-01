@@ -1,6 +1,7 @@
 import type { ThinkingLevel } from "@/features/llm-provider/model/llm-provider";
 import type { SessionAttachment } from "@/features/session/api/session-attachment-api";
 import type { ChatContextUsage } from "@/features/chat/model/chat-context-usage";
+import type { UserDecision } from "@/features/chat/model/user-decision";
 
 export type { ThinkingLevel } from "@/features/llm-provider/model/llm-provider";
 
@@ -222,6 +223,7 @@ export type ChatStreamEvent =
 	| { type: "tool_execution_update"; data: { type: "tool_execution_update"; toolCallId: string; toolName: string; update: ToolUpdate } }
 	| { type: "tool_execution_end"; data: { type: "tool_execution_end"; toolCallId: string; toolName: string; result: unknown; isError: boolean } }
 	| { type: "approval.requested" | "approval.resolved"; data: ToolApproval }
+	| { type: "decision.requested" | "decision.resolved"; data: UserDecision }
 	| { type: "queue.updated"; data: ChatQueuePatch }
 	| { type: "compaction.started"; data: { reason: "threshold" | "overflow"; attempt: 1 | 2; tokensBefore: number; thresholdTokens: number; model: ChatCompactionEventModel } }
 	| { type: "compaction.completed"; data: { reason: "threshold" | "overflow"; attempt: 1 | 2; messageId: string; sequence: number; tokensBefore: number; estimatedTokensAfter: number; reductionPercent: number; model: ChatCompactionEventModel } }

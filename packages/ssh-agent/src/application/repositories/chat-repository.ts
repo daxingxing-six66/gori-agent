@@ -9,6 +9,7 @@ import type {
 	ToolApproval,
 } from "../../domain/chat.ts";
 import type { StoredChatCompactionMessage } from "../../domain/context-compaction.ts";
+import type { UserDecision, UserDecisionAnswer } from "../../domain/user-decision.ts";
 
 export interface StoredChatCompaction {
 	id: string;
@@ -69,6 +70,11 @@ export interface ChatRepository {
 		reason: NonNullable<ToolApproval["rejectionReason"]>,
 		resolvedAt: number,
 	): ToolApproval | undefined;
+	insertDecision(decision: UserDecision): void;
+	findDecision(sessionId: string, decisionId: string): UserDecision | undefined;
+	listPendingDecisions(sessionId: string): UserDecision[];
+	resolveDecision(decisionId: string, answers: UserDecisionAnswer[], resolvedAt: number): UserDecision | undefined;
+	cancelPendingDecision(decisionId: string, status: "cancelled" | "interrupted", resolvedAt: number): UserDecision | undefined;
 	latestSystemMessage(sessionId: string): ChatMessageProjection | undefined;
 	latestCompaction(sessionId: string): StoredChatCompaction | undefined;
 }

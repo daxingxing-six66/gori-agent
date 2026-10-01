@@ -1,7 +1,7 @@
 "use client";
 
 import { CircleAlert, CornerDownLeft, ImageIcon, LoaderCircle, Send, ShieldCheck, Square, X } from "lucide-react";
-import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
+import { forwardRef, type ReactNode, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { useIntl } from "react-intl";
 import { ToggleSwitch } from "@/components/toggle-switch";
 import { ChatComposerNotices } from "@/features/chat/components/chat-composer-notices";
@@ -68,6 +68,7 @@ export const ChatComposerPanel = forwardRef<ChatComposerPanelHandle, {
 	queueMutationId: string | null;
 	onCancelQueued(id: string): void;
 	onPromoteQueued(id: string): void;
+	decisionPanel?: ReactNode;
 }>(function ChatComposerPanel({
 	sessionId,
 	contextUsage,
@@ -102,6 +103,7 @@ export const ChatComposerPanel = forwardRef<ChatComposerPanelHandle, {
 	queueMutationId,
 	onCancelQueued,
 	onPromoteQueued,
+	decisionPanel,
 }, forwardedRef) {
 	const intl = useIntl();
 	const localizedErrorMessage = useLocalizedErrorMessage();
@@ -256,6 +258,7 @@ export const ChatComposerPanel = forwardRef<ChatComposerPanelHandle, {
 					onClearManualCompactionResult={onClearManualCompactionResult}
 				/>
 				<div className="chat-composer-shell rounded-[18px] border border-[var(--line)] bg-[var(--surface-strong)] px-3 pb-3 pt-2.5 shadow-[0_16px_48px_rgb(24_26_23/7%)] transition focus-within:border-[#b4c0b8] focus-within:shadow-[0_18px_52px_rgb(24_26_23/9%)]">
+					{decisionPanel}
 					{modelSelectionError ? <div className="mb-1 flex w-full items-center justify-between gap-3 rounded-lg bg-amber-50 px-3 py-2 text-[9px] leading-4 text-amber-700"><span>{modelSelectionError}</span>{modelSelectionRetryable ? <button type="button" className="shrink-0 font-semibold underline underline-offset-2" onClick={onRetryModelSelection}>{intl.formatMessage({ id: "chat.model.reload" })}</button> : null}</div> : null}
 					{queue.length > 0 ? <QueuePreview items={queue} active={active} mutationId={queueMutationId} onCancel={onCancelQueued} onPromote={onPromoteQueued} /> : null}
 					{imageUploads.length > 0 ? <ImageAttachmentUploads uploads={imageUploads} onDismiss={dismissImageUpload} /> : null}

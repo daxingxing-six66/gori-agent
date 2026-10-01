@@ -1,12 +1,13 @@
 "use client";
 
-import { ArrowDown } from "lucide-react";
+import { ArrowDown, ChevronUp } from "lucide-react";
 import { type CSSProperties, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useIntl } from "react-intl";
 import { WorkspaceSidebar } from "@/components/workspace-sidebar";
 import { ChatComposerPanel, type ChatComposerPanelHandle } from "@/features/chat/components/chat-composer-panel";
 import type { ChatComposerTool } from "@/features/chat/components/chat-token-editor";
 import { ChatTimeline } from "@/features/chat/components/chat-timeline";
+import { UserDecisionPanel } from "@/features/chat/components/user-decision-panel";
 import { activeChatRun } from "@/features/chat/model/chat-runtime-state";
 import { waitingForChatResponse } from "@/features/chat/model/chat-activity";
 import { chatScrollBehavior, isNearChatHistoryTop } from "@/features/chat/model/chat-scroll";
@@ -37,11 +38,13 @@ export function ChatConsole({ sessionId }: { sessionId: string }) {
 	const [autoAuditOverride, setAutoAuditOverride] = useState<boolean | null>(null);
 	const [autoAuditError, setAutoAuditError] = useState<unknown>(null);
 	const composerRef = useRef<ChatComposerPanelHandle>(null);
+	const decisionReopenRef = useRef<HTMLButtonElement>(null);
 	const scrollRef = useRef<HTMLDivElement>(null);
 	const initialScrollCompleteRef = useRef(false);
 	const followNewContentRef = useRef(true);
 	const historyScrollRestoreRef = useRef<{ scrollHeight: number; scrollTop: number } | null>(null);
 	const [showReturnToBottom, setShowReturnToBottom] = useState(false);
+	const [hiddenDecisionId, setHiddenDecisionId] = useState<string | null>(null);
 	const active = activeChatRun(runtime.state.run);
 	const showActivity = waitingForChatResponse(runtime.state, runtime.loading, runtime.submitting);
 	const autoAuditChecked = autoAuditOverride ?? item?.session.autoAudit ?? false;
@@ -111,6 +114,9 @@ export function ChatConsole({ sessionId }: { sessionId: string }) {
 			.sort((left, right) => (left.createdAt ?? 0) - (right.createdAt ?? 0)),
 		[runtime.state.queue],
 	);
+	const pendingDecision = useMemo(() => Object.values(runtime.state.decisions)
+		.filter((decision) => decision.status === "pending" && decision.runId === runtime.state.run?.id)
+		.sort((left, right) => left.createdAt - right.createdAt)[0], [runtime.state.decisions, runtime.state.run?.id]);
 	const latestUserText = useMemo(() => {
 		const message = runtime.state.timeline.findLast((entry) => entry.message.role === "user")?.message;
 		if (!message || message.role !== "user") return "";
@@ -122,6 +128,7 @@ export function ChatConsole({ sessionId }: { sessionId: string }) {
 		followNewContentRef.current = true;
 		historyScrollRestoreRef.current = null;
 		setShowReturnToBottom(false);
+		setHiddenDecisionId(null);
 	}, [sessionId]);
 
 	useLayoutEffect(() => {
@@ -232,6 +239,13 @@ export function ChatConsole({ sessionId }: { sessionId: string }) {
 	const cancelQueued = useCallback((id: string) => { void runtime.cancelQueued(id); }, [runtime.cancelQueued]);
 	const promoteQueued = useCallback((id: string) => { void runtime.promoteQueued(id); }, [runtime.promoteQueued]);
 	const cancelRun = useCallback(() => { void runtime.cancel(); }, [runtime.cancel]);
+	const decisionPanel = pendingDecision ? <>
+		{hiddenDecisionId === pendingDecision.id ? <button ref={decisionReopenRef} type="button" onClick={() => setHiddenDecisionId(null)} className="absolute inset-x-0 bottom-[calc(100%+12px)] z-30 flex w-full items-center justify-between rounded-xl border border-emerald-200 bg-white px-4 py-2.5 text-left text-xs font-semibold text-emerald-800 shadow-sm transition hover:bg-emerald-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"><span>{intl.formatMessage({ id: "chat.decision.reopen" })}</span><ChevronUp size={16} aria-hidden="true" /></button> : null}
+		<UserDecisionPanel key={pendingDecision.id} decision={pendingDecision} open={hiddenDecisionId !== pendingDecision.id} busy={runtime.decisionMutationId === pendingDecision.id} error={runtime.error} onClose={() => {
+			setHiddenDecisionId(pendingDecision.id);
+			requestAnimationFrame(() => decisionReopenRef.current?.focus());
+		}} onSubmit={(answers) => runtime.answerDecision(pendingDecision, answers)} />
+	</> : null;
 
 	if (treeLoading && tree === null) return <div className="grid h-dvh place-items-center text-sm text-zinc-400">{intl.formatMessage({ id: "session.loading" })}</div>;
 	if (!item) return <div className="grid h-dvh place-items-center text-sm text-zinc-500">{intl.formatMessage({ id: "session.notFound" })}</div>;
@@ -296,6 +310,7 @@ export function ChatConsole({ sessionId }: { sessionId: string }) {
 					queueMutationId={runtime.queueMutationId}
 					onCancelQueued={cancelQueued}
 					onPromoteQueued={promoteQueued}
+					decisionPanel={decisionPanel}
 				/>
 			</main>
 		</div>

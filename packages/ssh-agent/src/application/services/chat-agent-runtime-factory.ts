@@ -33,6 +33,8 @@ import type { ChatQueueService } from "./chat-queue-service.ts";
 import type { ChatToolCallCoordinator } from "./chat-tool-call-coordinator.ts";
 import { addOpenCodeGoSessionHeaders } from "./opencode-go-session.ts";
 import { configureFileToolConcurrency } from "./file-tool-concurrency.ts";
+import { createAskUserDecisionTool } from "../tools/ask-user-decision-tool.ts";
+import type { ChatUserDecisionService } from "./chat-user-decision-service.ts";
 
 type ToolCallCoordinator = Pick<ChatToolCallCoordinator, "beforeToolCall" | "requestSftpOverwriteApproval">;
 type QueueService = Pick<ChatQueueService, "cancelSteeringAfterTurn">;
@@ -45,6 +47,7 @@ export interface ChatAgentRuntimeFactoryOptions {
 	agentEvents: AgentEventHandler;
 	context?: ChatContextService;
 	attachments: Pick<ChatAttachmentService, "hydrateProviderContext">;
+	decisions: Pick<ChatUserDecisionService, "request">;
 	createRemoteTool(sessionId: string, abortRun?: () => void, agentRunId?: string): AgentTool;
 	createTerminalTool(input: { sessionId: string; terminalSessionId: string; agentRunId: string }): AgentTool;
 	createSftpTool(input: {
@@ -68,6 +71,7 @@ export class ChatAgentRuntimeFactory {
 	readonly #agentEvents: AgentEventHandler;
 	readonly #context?: ChatContextService;
 	readonly #attachments: ChatAgentRuntimeFactoryOptions["attachments"];
+	readonly #decisions: ChatAgentRuntimeFactoryOptions["decisions"];
 	readonly #createRemoteTool: ChatAgentRuntimeFactoryOptions["createRemoteTool"];
 	readonly #createTerminalTool: ChatAgentRuntimeFactoryOptions["createTerminalTool"];
 	readonly #createSftpTool: ChatAgentRuntimeFactoryOptions["createSftpTool"];
@@ -82,6 +86,7 @@ export class ChatAgentRuntimeFactory {
 		this.#agentEvents = options.agentEvents;
 		this.#context = options.context;
 		this.#attachments = options.attachments;
+		this.#decisions = options.decisions;
 		this.#createRemoteTool = options.createRemoteTool;
 		this.#createTerminalTool = options.createTerminalTool;
 		this.#createSftpTool = options.createSftpTool;
@@ -200,7 +205,8 @@ export class ChatAgentRuntimeFactory {
 					model: input.model,
 					thinkingLevel: input.run.thinkingLevel,
 					tools: configureFileToolConcurrency(
-						[...localTools, remoteTool, terminalTool, sftpUploadTool, sftpDownloadTool], env,
+						[...localTools, remoteTool, terminalTool, sftpUploadTool, sftpDownloadTool,
+							createAskUserDecisionTool({ run: input.run, decisions: this.#decisions })], env,
 					),
 					messages: input.history,
 				},

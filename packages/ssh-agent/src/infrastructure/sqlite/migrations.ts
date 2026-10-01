@@ -731,6 +731,25 @@ const MIGRATIONS = [
 			ALTER TABLE workspaces DROP COLUMN remote_sandbox_root;
 		`,
 	},
+	{
+		version: 22,
+		sql: `
+			CREATE TABLE chat_user_decisions (
+				id TEXT PRIMARY KEY,
+				session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+				run_id TEXT NOT NULL REFERENCES chat_runs(id) ON DELETE CASCADE,
+				tool_call_id TEXT NOT NULL,
+				questions_json TEXT NOT NULL CHECK (json_valid(questions_json)),
+				answers_json TEXT CHECK (answers_json IS NULL OR json_valid(answers_json)),
+				status TEXT NOT NULL CHECK (status IN ('pending', 'answered', 'cancelled', 'interrupted')),
+				created_at INTEGER NOT NULL,
+				resolved_at INTEGER,
+				UNIQUE (run_id, tool_call_id)
+			) STRICT;
+			CREATE INDEX chat_user_decisions_pending_idx
+				ON chat_user_decisions(session_id, created_at) WHERE status = 'pending';
+		`,
+	},
 ] as const;
 
 export function applyMigrations(database: DatabaseSync): void {

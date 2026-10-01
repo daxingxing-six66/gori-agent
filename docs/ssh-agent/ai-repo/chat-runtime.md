@@ -7,6 +7,8 @@ Runtime Factory 将 Run ID 绑定到远端 Tool。Full Access grant 绑定完整
 
 ## 当前边界
 
+- `ask_user_decision` 在普通模式与 Terminal Mode 共用同一工具定义和独立的 `ChatUserDecisionService`。服务持有无超时等待，SQLite 保存题目、回答及终态；Run 取消和服务关闭中止等待。回答只表达用户选择，不授予命令权限，Guard 和原有审批规则继续生效。前端通过 Run SSE 和待决 REST 接口恢复；完整代码入口见 [user-decision.md](./user-decision.md)。
+
 - 文件工具批次仅允许 read/SFTP 上传/SFTP 下载在无路径冲突时并行；包含其他串行工具或路径读写/写写冲突则整批按模型顺序执行。详见 [文件工具并发](./file-tool-concurrency.md)。
 
 - 新会话首个 Run 可通过 `generateTitle: true` 启用同模型异步命名；标题任务独立于聊天，不进入消息历史，通过 Workspace SSE 推送。见 [session-title.md](./session-title.md)。

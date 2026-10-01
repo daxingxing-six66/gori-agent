@@ -15,6 +15,8 @@ Workspace POST/PATCH 只通过 `remoteDefaultCwd` 设置远端默认目录及 La
 
 ## 当前边界
 
+- 用户决策使用 `GET /api/sessions/:sessionId/chat/decisions` 恢复待决题，`POST /api/sessions/:sessionId/chat/decisions/:decisionId/answer` 提交按题序排列的 `{ answers }`；Session、题目数量和答案类型在服务边界验证，重复同答幂等，冲突或过期返回错误。当前 Run SSE 发送 `decision.requested` 与 `decision.resolved`。见 [user-decision.md](./user-decision.md)。
+
 - 首次 Chat Run 接受可选 `generateTitle` 布尔值；Workspace SSE 可显式订阅 `sessions` topic 接收 `session.updated`。原默认 topics 和 SSE 传输机制不变，见 [session-title.md](./session-title.md)。
 
 - `GET /api/sessions/:sessionId/chat/context-usage` 只读返回占用快照或 null，使用 `no-store`；手动压缩响应包含同结构 `contextUsage`。联调见 [context-usage-integration.md](../frontend/context-usage-integration.md)。
