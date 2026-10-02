@@ -20,6 +20,7 @@ import type { LlmModelCatalog } from "./llm-model-catalog.ts";
 import type { SessionTitleService } from "./session-title-service.ts";
 import type { SessionLifecycleCoordinator } from "./session-lifecycle-coordinator.ts";
 import type { TerminalInteractionService } from "./terminal-interaction-service.ts";
+import type { AgentDeploymentService } from "../tools/deployment-agent-tool.ts";
 
 export interface CreateChatServiceOptions {
 	prompts: ChatPromptService;
@@ -32,6 +33,8 @@ export interface CreateChatServiceOptions {
 	contextCompactionSettings?: ContextCompactionSettingsService;
 	sandboxApprovals?: RemoteSandboxApprovalStore;
 	localCwd: string;
+	deploymentSetupInstructions?: (sessionId: string) => Promise<string>;
+	deployments?: AgentDeploymentService;
 	ids: IdGenerator;
 	approvalTimeoutMs?: number;
 	createRemoteTool: ChatAgentRuntimeFactoryOptions["createRemoteTool"];
@@ -81,13 +84,14 @@ export function createChatService(options: CreateChatServiceOptions): ChatServic
 		terminalInteractions: options.terminalInteractions,
 		onAssistantMessage: (runId, message) => context.recordProviderResponse(runId, message),
 	});
+	const authorization = new ChatToolAuthorizationPolicy({
+		sessions: options.sessions,
+		terminalInteractions: options.terminalInteractions,
+		preflightRemoteGuard: options.preflightRemoteGuard,
+		sandboxApprovals: options.sandboxApprovals,
+	});
 	const toolCalls = new ChatToolCallCoordinator({
-		authorization: new ChatToolAuthorizationPolicy({
-			sessions: options.sessions,
-			terminalInteractions: options.terminalInteractions,
-			preflightRemoteGuard: options.preflightRemoteGuard,
-			sandboxApprovals: options.sandboxApprovals,
-		}),
+		authorization,
 		approvals,
 	});
 	const runtimeFactory =
@@ -100,6 +104,7 @@ export function createChatService(options: CreateChatServiceOptions): ChatServic
 			context,
 			attachments: options.chatAttachments,
 			decisions,
+			deployments: options.deployments,
 			createRemoteTool: options.createRemoteTool,
 			createTerminalTool: options.createTerminalTool,
 			createSftpTool: options.createSftpTool,
@@ -113,6 +118,9 @@ export function createChatService(options: CreateChatServiceOptions): ChatServic
 		models: options.models,
 		catalog: options.catalog,
 		localCwd: options.localCwd,
+		...(options.deploymentSetupInstructions === undefined ? {} : { deploymentSetupInstructions: options.deploymentSetupInstructions }),
+		...(options.deployments === undefined ? {} : { deployments: options.deployments }),
+		bindDeploymentRun: (runId) => authorization.bindDeploymentRun(runId),
 		ids: options.ids,
 		bindServerInteraction: options.bindServerInteraction,
 		unbindTerminalRun: options.unbindTerminalRun,

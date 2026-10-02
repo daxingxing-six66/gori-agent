@@ -5,6 +5,7 @@ import { sftpDownloadDefinition } from "./tools/sftp-download-tool.ts";
 import { sftpUploadDefinition } from "./tools/sftp-upload-tool.ts";
 import { terminalInteractionDefinition } from "./tools/terminal-interaction-tool.ts";
 import { askUserDecisionDefinition } from "./tools/ask-user-decision-tool.ts";
+import { deploymentExecuteNextDefinition, deploymentInspectDefinition } from "./tools/deployment-agent-tool.ts";
 
 export interface ChatContext {
 	systemPrompt: string;
@@ -23,6 +24,8 @@ export function createChatContext(systemPrompt: string, messages: AgentMessage[]
 		sftpUploadDefinition,
 		sftpDownloadDefinition,
 		askUserDecisionDefinition,
+		deploymentInspectDefinition,
+		deploymentExecuteNextDefinition,
 	];
 	return {
 		systemPrompt,

@@ -8,7 +8,8 @@ export type SessionUseKind =
 	| "session_update"
 	| "attachment_upload"
 	| "terminal_open"
-	| "terminal_session";
+	| "terminal_session"
+	| "deployment_run";
 
 export interface SessionUseLease {
 	release(): void;
@@ -38,6 +39,7 @@ const USE_KINDS: readonly SessionUseKind[] = [
 	"attachment_upload",
 	"terminal_open",
 	"terminal_session",
+	"deployment_run",
 ];
 
 export class SessionLifecycleCoordinator {

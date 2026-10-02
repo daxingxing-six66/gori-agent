@@ -11,7 +11,7 @@ v19 追加 nullable `workspaces.remote_sandbox_root` 及 `command_operations.age
 - v22 新增 `chat_user_decisions`：持久化 Session/Run/Tool Call 绑定、问题 JSON、答案 JSON 和 pending/answered/cancelled/interrupted 状态。Repository 在读取边界解析问题与答案；启动恢复将遗留 pending 决策标记为 interrupted，Run 仍按现有重启逻辑失败。见 [user-decision.md](./user-decision.md)。
 
 - 使用 Node `node:sqlite`，启动时开启 foreign keys、busy timeout；文件数据库使用 WAL。
-- schema 由版本化 migration 管理，当前版本为 v22；v7 增加 Session 本地配置、Chat Run、消息、队列、审批和 Agent Session 投影表，v8 为 Tool Approval 增加持久化描述，v9 增加每个 LLM Provider 的最后一次成功模型目录快照，v10 增加 TerminalSession、Interaction、Input、Observation、Timeline 和 Chat Run 交互模式字段，v11 增加自定义 LLM Provider 聚合，v12 为 Chat 消息增加类型、Provider 和 Usage 投影并移除旧 Agent Session 投影表，v13 为 Tool Approval 描述和 Terminal failure 增加可选 message key/values 元数据，v14 增加 Session Attachment 元数据、同名唯一约束和级联删除，v15 增加有序 `chat_message_attachments` 关系，v16 增加不可变 `chat_prompt_snapshots`，通过触发器原子记录初始模式及 Terminal active 边界变化。v20 保存 Terminal 实际沙箱事实，v21 合并远端目录。见 [session-prompt.md](./session-prompt.md)。
+- schema 由版本化 migration 管理，当前版本为 v23；v7 增加 Session 本地配置、Chat Run、消息、队列、审批和 Agent Session 投影表，v8 为 Tool Approval 增加持久化描述，v9 增加每个 LLM Provider 的最后一次成功模型目录快照，v10 增加 TerminalSession、Interaction、Input、Observation、Timeline 和 Chat Run 交互模式字段，v11 增加自定义 LLM Provider 聚合，v12 为 Chat 消息增加类型、Provider 和 Usage 投影并移除旧 Agent Session 投影表，v13 为 Tool Approval 描述和 Terminal failure 增加可选 message key/values 元数据，v14 增加 Session Attachment 元数据、同名唯一约束和级联删除，v15 增加有序 `chat_message_attachments` 关系，v16 增加不可变 `chat_prompt_snapshots`，通过触发器原子记录初始模式及 Terminal active 边界变化。v20 保存 Terminal 实际沙箱事实，v21 合并远端目录，v22 保存 Agent 用户决策，v23 保存 Deployment Run 计划、阶段和 Full Access 决策快照。见 [session-prompt.md](./session-prompt.md) 和 [deployment.md](./deployment.md)。
 - v17 兼容开发期间已执行的两种 v16 结构：在同一事务内重建快照表，去除早期 `initial_mode NOT NULL` 列，逐字保留头部文本及其版本、创建时间，重建模式触发器；仅为缺失 `runtimeEventId` 的已生成模式消息补齐原消息 ID，不改变顺序和标签。不重新生成已有快照，也不清空业务数据。失败时表、触发器、消息修补与版本记录一起回滚；重复启动跳过已完成的版本。
 - v1 到 v2 采用开发期重建策略：带业务数据的 v1 数据库会拒绝启动并提示人工备份、删除；程序不会自动删除或搬迁旧数据。
 - Credential 元数据与认证材料分表。认证材料使用 AES-256-GCM，加密 AAD 绑定 `credentialId:authVersion`；32 字节密钥必须由进程外部注入。
@@ -24,7 +24,7 @@ v19 追加 nullable `workspaces.remote_sandbox_root` 及 `command_operations.age
 - Workspace、首个 Credential、Secret 和 Guard 通过应用事务端口与 SQLite transaction runner 原子写入；同一数据库实例上的事务会排队执行，避免并发 HTTP 请求产生嵌套事务。
 - 文件数据库、WAL 和 SHM 权限收紧为 `0600`。
 - Connection、Channel、SFTP 内部阶段、监控快照、Chat delta、Terminal raw output/snapshot/replay 和文件内容不持久化。Terminal metadata、规范化 input/实际 bytes、Observation 和 Timeline 持久化；重启把遗留 live Terminal 收敛为 `lost`，写入中 Interaction 收敛为 `write_uncertain`，不会重放输入。
-- SQLite backend 启动装配显式执行 Chat 与 Terminal interrupted recovery；业务 Service constructor 不隐式修改持久化状态。
+- Deployment Snapshot 的 SQLite 读取边界校验 `remoteAccess` 枚举和原因、绑定的 Agent Run ID 与启动时间、阶段顺序、远端命令故障字段、逐阶段审批 ID/命令/状态/时间戳与计划一致性；旧记录缺少 `remoteAccess` 时沿用原受限模式，不追认 Full Access。`deployment_runs` 按 Session、展示时间（`startedAt ?? stages.build.startedAt ?? createdAt`）和 ID 提供稳定游标分页，历史返回完整阶段快照；同一 Workspace 的运行中部署通过原子条件更新互斥。后端启动时将尚未执行的 preparing 计划取消，把 running 部署标记 failed 并提示检查远端副作用，待决审批标记 rejected；一次性 Full Access grant 只存内存，不随快照恢复。SQLite backend 启动装配显式执行 Chat、Terminal 与 Deployment interrupted recovery；业务 Service constructor 不隐式修改持久化状态。
 - Session 最近模型选择直接查询最新 `chat_runs` 记录，不复制到 `sessions` 表，也不需要新增 migration。
 - Chat 历史使用 `UNIQUE(session_id, sequence)` 索引完成正向和反向范围分页；反向查询在 SQLite 内取最接近边界的记录，Repository 返回前恢复为升序，不需要额外索引或 migration。
 - Chat Run、File Transfer 和 Command Operation 的 JSON failure 继续保留英文 fallback，并可携带 `messageKey/messageValues`；存在元数据时公开查询可按当前 Locale 重新生成 message。旧记录没有 Key 时只使用稳定 code 的唯一映射或原 fallback，不解析历史字符串猜测参数。
@@ -51,6 +51,7 @@ v19 追加 nullable `workspaces.remote_sandbox_root` 及 `command_operations.age
 | Attachment Repository | [sqlite-attachment-repository.ts](../../../packages/ssh-agent/src/infrastructure/sqlite/sqlite-attachment-repository.ts) |
 | Chat Run、消息、Queue、Approval 和压缩 Repository | [chat-repository.ts](../../../packages/ssh-agent/src/application/repositories/chat-repository.ts)、[sqlite-chat-repository.ts](../../../packages/ssh-agent/src/infrastructure/sqlite/sqlite-chat-repository.ts) |
 | Terminal Repository | [terminal-repository.ts](../../../packages/ssh-agent/src/application/repositories/terminal-repository.ts)、[sqlite-terminal-repository.ts](../../../packages/ssh-agent/src/infrastructure/sqlite/sqlite-terminal-repository.ts) |
+| Deployment Run 与审批快照 Repository | [deployment-repository.ts](../../../packages/ssh-agent/src/application/repositories/deployment-repository.ts)、[sqlite-deployment-repository.ts](../../../packages/ssh-agent/src/infrastructure/sqlite/sqlite-deployment-repository.ts) |
 | SQLite 事务实现 | [sqlite-transaction-runner.ts](../../../packages/ssh-agent/src/infrastructure/sqlite/sqlite-transaction-runner.ts) |
 | 默认依赖装配 | [create-sqlite-management-backend.ts](../../../packages/ssh-agent/src/runtime/create-sqlite-management-backend.ts) |
 | 持久化和密文测试 | [management-api.test.ts](../../../packages/ssh-agent/test/management-api.test.ts)、[command-operation-service.test.ts](../../../packages/ssh-agent/test/command-operation-service.test.ts) |

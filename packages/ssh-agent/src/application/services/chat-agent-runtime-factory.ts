@@ -34,6 +34,12 @@ import type { ChatToolCallCoordinator } from "./chat-tool-call-coordinator.ts";
 import { addOpenCodeGoSessionHeaders } from "./opencode-go-session.ts";
 import { configureFileToolConcurrency } from "./file-tool-concurrency.ts";
 import { createAskUserDecisionTool } from "../tools/ask-user-decision-tool.ts";
+import {
+	createDeploymentAgentTools,
+	deploymentExecuteNextDefinition,
+	deploymentInspectDefinition,
+	type AgentDeploymentService,
+} from "../tools/deployment-agent-tool.ts";
 import type { ChatUserDecisionService } from "./chat-user-decision-service.ts";
 
 type ToolCallCoordinator = Pick<ChatToolCallCoordinator, "beforeToolCall" | "requestSftpOverwriteApproval">;
@@ -48,6 +54,7 @@ export interface ChatAgentRuntimeFactoryOptions {
 	context?: ChatContextService;
 	attachments: Pick<ChatAttachmentService, "hydrateProviderContext">;
 	decisions: Pick<ChatUserDecisionService, "request">;
+	deployments?: AgentDeploymentService;
 	createRemoteTool(sessionId: string, abortRun?: () => void, agentRunId?: string): AgentTool;
 	createTerminalTool(input: { sessionId: string; terminalSessionId: string; agentRunId: string }): AgentTool;
 	createSftpTool(input: {
@@ -72,6 +79,7 @@ export class ChatAgentRuntimeFactory {
 	readonly #context?: ChatContextService;
 	readonly #attachments: ChatAgentRuntimeFactoryOptions["attachments"];
 	readonly #decisions: ChatAgentRuntimeFactoryOptions["decisions"];
+	readonly #deployments?: ChatAgentRuntimeFactoryOptions["deployments"];
 	readonly #createRemoteTool: ChatAgentRuntimeFactoryOptions["createRemoteTool"];
 	readonly #createTerminalTool: ChatAgentRuntimeFactoryOptions["createTerminalTool"];
 	readonly #createSftpTool: ChatAgentRuntimeFactoryOptions["createSftpTool"];
@@ -87,6 +95,7 @@ export class ChatAgentRuntimeFactory {
 		this.#context = options.context;
 		this.#attachments = options.attachments;
 		this.#decisions = options.decisions;
+		this.#deployments = options.deployments;
 		this.#createRemoteTool = options.createRemoteTool;
 		this.#createTerminalTool = options.createTerminalTool;
 		this.#createSftpTool = options.createSftpTool;
@@ -102,6 +111,7 @@ export class ChatAgentRuntimeFactory {
 		workDir: string;
 		history: AgentMessage[];
 		compactionSettings?: ChatCompactionSettings;
+		deploymentRunId?: string;
 	}): Promise<ChatRunRuntime> {
 		const env = this.#createExecutionEnv(input.workDir);
 		const contextService = this.#context;
@@ -197,6 +207,10 @@ export class ChatAgentRuntimeFactory {
 						signal,
 					),
 			});
+			const deploymentTools = input.deploymentRunId && this.#deployments
+				? createDeploymentAgentTools({ run: input.run, deploymentRunId: input.deploymentRunId, deployments: this.#deployments })
+				: [unavailableTool(deploymentInspectDefinition, "current Chat workflow"),
+					unavailableTool(deploymentExecuteNextDefinition, "current Chat workflow")];
 			let requestAttempt = 0;
 			const agent = this.#createAgent({
 				onRunFailure: (error) => requireRuntime().captureFailure(error),
@@ -206,7 +220,7 @@ export class ChatAgentRuntimeFactory {
 					thinkingLevel: input.run.thinkingLevel,
 					tools: configureFileToolConcurrency(
 						[...localTools, remoteTool, terminalTool, sftpUploadTool, sftpDownloadTool,
-							createAskUserDecisionTool({ run: input.run, decisions: this.#decisions })], env,
+							createAskUserDecisionTool({ run: input.run, decisions: this.#decisions }), ...deploymentTools], env,
 					),
 					messages: input.history,
 				},
@@ -404,12 +418,15 @@ function requireTerminalSessionId(run: ChatRun): string {
 	return run.terminalSessionId;
 }
 
-function unavailableTool(definition: Pick<AgentTool, "name" | "description" | "parameters">): AgentTool {
+function unavailableTool(
+	definition: Pick<AgentTool, "name" | "description" | "parameters">,
+	context = "current server interaction mode",
+): AgentTool {
 	return {
 		...definition,
 		label: definition.name,
 		execute: async () => {
-			throw new Error(`${definition.name} is unavailable in the current server interaction mode`);
+			throw new Error(`${definition.name} is unavailable in the ${context}`);
 		},
 	};
 }

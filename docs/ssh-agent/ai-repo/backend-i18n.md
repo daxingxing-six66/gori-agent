@@ -2,8 +2,9 @@
 
 适用于 SSH Agent 后端生成的静态提示、公开异常、Approval 描述、Tool 展示更新，以及 REST/Chat SSE/Workspace SSE/Terminal SSE 的 Locale 协商。
 
+Deployment REST 的领域错误通过 `deployment.error` 按请求 Locale 返回原因；`deployment.updated` 工作区事件保留结构化阶段、Full Access 审批状态、命令和日志，不从自然语言推断阶段或批准事实。模型驱动阶段工具返回结构化快照和限长日志；历史 API 返回同一持久化事实。前端阶段标签、历史项和审批提示使用自身中英文消息目录；审批的固定命令和动态错误原因保留原文。详见 [deployment.md](./deployment.md)。
 
-沙箱失败 code 通过既有 `ssh.<code>` 映射到双语目录；`sandbox_confirmation_missing` 明确说明可能执行，`sandbox_denied` 仅提示疑似权限拒绝和部分副作用。Full Access 审批用 `approval.remote_full_access`，动态理由保留原文。见 [remote-sandbox.md](./remote-sandbox.md)。
+沙箱失败 code 通过既有 `ssh.<code>` 映射到双语目录；`sandbox_confirmation_missing` 明确说明可能执行，`sandbox_denied` 仅提示疑似权限拒绝和部分副作用。Chat 工具的 Full Access 审批用 `approval.remote_full_access`，动态理由保留原文；`/deploy` 使用独立的前端逐条审批文案。见 [remote-sandbox.md](./remote-sandbox.md)。
 
 ## 当前边界
 

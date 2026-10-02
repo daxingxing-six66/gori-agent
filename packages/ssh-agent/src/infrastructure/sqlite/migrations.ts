@@ -750,6 +750,21 @@ const MIGRATIONS = [
 				ON chat_user_decisions(session_id, created_at) WHERE status = 'pending';
 		`,
 	},
+	{
+		version: 23,
+		sql: `
+			CREATE TABLE deployment_runs (
+				id TEXT PRIMARY KEY,
+				session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+				workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+				status TEXT NOT NULL CHECK (status IN ('preparing', 'running', 'success', 'failed', 'cancelled')),
+				snapshot_json TEXT NOT NULL CHECK (json_valid(snapshot_json)),
+				created_at INTEGER NOT NULL,
+				updated_at INTEGER NOT NULL
+			) STRICT;
+			CREATE INDEX deployment_runs_session_idx ON deployment_runs(session_id, created_at DESC);
+		`,
+	},
 ] as const;
 
 export function applyMigrations(database: DatabaseSync): void {

@@ -20,6 +20,7 @@ export interface ChatRun {
 	thinkingLevel: ThinkingLevel;
 	serverInteractionMode: "command" | "terminal";
 	terminalSessionId: string | null;
+	deploymentRunId?: string;
 	status: ChatRunStatus;
 	failure?: { schemaVersion?: 1; upstreamStatus?: number; action?: "check_request" | "retry_later" | "contact_support"; errorId?: string; stage?: string; code: string; message: string; retryable: boolean; recovery?: { errorId: string; code: string; message: string } };
 	createdAt: number;

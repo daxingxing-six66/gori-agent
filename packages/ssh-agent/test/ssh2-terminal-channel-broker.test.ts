@@ -1,7 +1,7 @@
 import { EventEmitter } from "node:events";
 import { PassThrough } from "node:stream";
 import type { Client, ClientChannel } from "ssh2";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { SshTargetSnapshot } from "../src/domain/ssh-target.ts";
 import type { UseSsh2ChannelSlotInput } from "../src/infrastructure/ssh/ssh2-connection-pool.ts";
 import { Ssh2TerminalChannelBroker } from "../src/infrastructure/ssh/ssh2-terminal-channel-broker.ts";
@@ -100,6 +100,31 @@ describe("Ssh2TerminalChannelBroker", () => {
 		handle.dispose();
 		await new Promise<void>((resolve) => setImmediate(resolve));
 		expect(pool.activeSlots).toBe(0);
+	});
+
+	it("releases backpressure listeners after drain or channel close", async () => {
+		const pool = new FakePool();
+		const broker = new Ssh2TerminalChannelBroker(pool);
+		const handle = await broker.open({ target, launch: { kind: "login_shell" },
+			geometry: { rows: 24, cols: 80 }, term: "xterm-256color", signal: new AbortController().signal,
+			onData: () => undefined });
+		const channel = pool.client.channels[0]!;
+		vi.spyOn(channel, "write").mockReturnValue(false);
+		const baselineErrors = channel.listenerCount("error");
+
+		const drained = handle.write(new Uint8Array([1]));
+		expect(channel.listenerCount("drain")).toBe(1);
+		channel.emit("drain");
+		await expect(drained).resolves.toBeUndefined();
+		expect(channel.listenerCount("drain")).toBe(0);
+		expect(channel.listenerCount("error")).toBe(baselineErrors);
+
+		const closed = handle.write(new Uint8Array([2]));
+		channel.emit("close");
+		await expect(closed).rejects.toThrow("Terminal channel closed before the write drained");
+		expect(channel.listenerCount("drain")).toBe(0);
+		expect(channel.listenerCount("error")).toBe(baselineErrors);
+		handle.dispose();
 	});
 
 	it("rejects excess PTYs in the same connection generation without queueing", async () => {

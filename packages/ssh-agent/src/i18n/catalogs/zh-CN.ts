@@ -24,6 +24,7 @@ export const zhCNMessages = {
 	"provider.compaction_failed": "上下文压缩失败：{reason}",
 	"provider.model_removed": "当前模型已移除，请重新选择模型。厂商原因：{reason}",
 	"common.internal_error": "服务器内部错误",
+	"deployment.error": "部署请求失败：{reason}",
 	"common.api_not_found": "未找到 API 接口",
 	"common.request_body_invalid": "请求体必须包含有效的 JSON",
 	"common.payload_too_large": "请求体过大",

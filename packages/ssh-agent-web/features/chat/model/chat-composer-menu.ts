@@ -9,7 +9,7 @@ export interface ChatComposerMenuMatch {
 
 export interface ChatComposerTool {
 	id: string;
-	icon: "terminal" | "compact";
+	icon: "terminal" | "compact" | "deploy";
 	name: string;
 	description: string;
 	keywords: readonly string[];

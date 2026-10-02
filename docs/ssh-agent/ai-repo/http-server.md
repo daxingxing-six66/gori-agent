@@ -7,7 +7,7 @@
 
 Workspace POST/PATCH 接受可选 `remoteDefaultCwd`，响应携带持久化的远端默认目录；创建省略取 `/`，更新省略保留。`defaultCwd` 保留为本地会话默认目录，两个字段独立。
 
-Workspace POST/PATCH 只通过 `remoteDefaultCwd` 设置远端默认目录及 Landlock 可写根，不再接收独立根字段。`POST /api/workspaces/:id/sandbox` 通过正式目标解析显式检测远端沙箱，成功返回 mode/backend/enforcement/ABI/root；不运行用户脚本，可能创建连接及投递启动器。失败沿用安全本地化错误，不提供 Full Access 直通 HTTP 接口。见 [remote-sandbox.md](./remote-sandbox.md)。
+Workspace POST/PATCH 只通过 `remoteDefaultCwd` 设置远端默认目录及 Landlock 可写根，不再接收独立根字段。`POST /api/workspaces/:id/sandbox` 通过正式目标解析显式检测远端沙箱，成功返回 mode/backend/enforcement/ABI/root；不运行用户脚本，可能创建连接及投递启动器。失败沿用安全本地化错误；该检测接口不提供 Full Access 直通执行。见 [remote-sandbox.md](./remote-sandbox.md)。
 
 ## 请求链路
 
@@ -18,6 +18,7 @@ Workspace POST/PATCH 只通过 `remoteDefaultCwd` 设置远端默认目录及 La
 - 用户决策使用 `GET /api/sessions/:sessionId/chat/decisions` 恢复待决题，`POST /api/sessions/:sessionId/chat/decisions/:decisionId/answer` 提交按题序排列的 `{ answers }`；Session、题目数量和答案类型在服务边界验证，重复同答幂等，冲突或过期返回错误。当前 Run SSE 发送 `decision.requested` 与 `decision.resolved`。见 [user-decision.md](./user-decision.md)。
 
 - 首次 Chat Run 接受可选 `generateTitle` 布尔值；Workspace SSE 可显式订阅 `sessions` topic 接收 `session.updated`。原默认 topics 和 SSE 传输机制不变，见 [session-title.md](./session-title.md)。
+- Deployment REST 位于 `/api/sessions/:id/deployments`：GET 发现当前主机 Profile 与最近 Run，`/history` 按不透明游标分页返回持久化记录，POST 创建待确认 Plan，`/:runId` 查询快照，`/:runId/approvals/:stage/:approvalId/approve|reject` 为准确的 RESTART/VERIFY 命令作人工决定，`/:runId/cancel` 取消。只有明确的沙箱能力缺失才生成待审批的 Full Access 计划；批准和普通计划确认分开，审批缺失或过期时服务端也拒绝认领。用户确认会通过 Chat Run 请求的 `workflow=deployment_execution` 与 `deploymentRunId` 启动模型编排；旧 `/:runId/confirm` 返回冲突，不能直通执行。请求体严格校验，`deployments` Workspace SSE topic 推送阶段和审批快照；详见 [deployment.md](./deployment.md)。
 
 - `GET /api/sessions/:sessionId/chat/context-usage` 只读返回占用快照或 null，使用 `no-store`；手动压缩响应包含同结构 `contextUsage`。联调见 [context-usage-integration.md](../frontend/context-usage-integration.md)。
 
@@ -33,7 +34,7 @@ Workspace POST/PATCH 只通过 `remoteDefaultCwd` 设置远端默认目录及 La
 - CLI 从环境变量读取数据库路径、32 字节加密密钥、监听地址、端口、CORS allowlist、请求体上限、进程命令并发上限和 `SSH_AGENT_LOCAL_CWD`，并处理 SIGINT/SIGTERM。默认数据目录为 `SSH_AGENT_DATA_DIR` 或 `~/.gori-agent`；未显式配置时数据库为其中的 `ssh-agent.sqlite`，本地目录为 `workspace/`，附件与日志也使用该数据目录。未提供环境密钥时创建或复用 `credential-key`，已有数据库缺失密钥则拒绝启动。
 - CLI 通过 `builtinModels()` 注入真实 `pi-ai` 目录；测试通过相同工厂端口注入 faux Provider，不复制内置模型清单。
 - 服务本身不提供 TLS、登录认证或公网访问控制；非 loopback 部署必须由外层安全边界补齐。
-- Workspace SSE 按 monitoring、connection、transfers topic 广播并定时 heartbeat；SSH Command Operation 事件仍不走该 SSE。
+- Workspace SSE 按 monitoring、connection、transfers、sessions、deployments topic 广播并定时 heartbeat；SSH Command Operation 事件仍不走该 SSE。
 - Chat 使用独立 Run SSE；断线不取消 Run，高频 delta 不写 SQLite。
 - 单 Session GET 组合最近 Chat Run 模型选择；Chat Run 请求支持继承最近模型，并验证 Provider/Model 成对提交和模型支持的 thinking level。
 - Chat Run 和 Queue JSON 可携带 `attachmentIds`。请求校验数量、非空和重复 ID；Session 所有权、真实图片格式和模型图片输入能力由 Chat Attachment Service 校验。

@@ -11,6 +11,7 @@
 - 审批 timeout/abort/HTTP 写入失败必须 reject 等待者；SFTP 覆盖审批也适用。新队列注入失败只补偿当前项；补偿失败中止 Run。现有 follow_up 转 steer 时若数据库更新或内存队列同步抛错，沿用持久化失败路径中止 Run，避免继续消费不一致的队列。
 - executor 只选择一次业务结果，终态提交失败不将它改成另一业务错误。SQLite updateRun 终态事务关闭 pending Queue/Approval，提交后更新内存和 SSE。
 - PendingRunCommits 按 Session 保存待提交快照；活动 Run 查询、创建 Run 和手动压缩入口重试一次，仍失败返回 chat_persistence_failed/503 并阻止新操作。仅重试提交，不重新执行模型或工具；进程重启沿用 interrupted recovery。
+- 部署 Agent Run 在 Chat 写入终态之前必须先结算 DeploymentRun。结算失败时保留按 Session 绑定的待结算任务，发布 run.persistence_failed；上述入口重试原部署结算和原 Chat 终态提交，不重跑 Agent。Runtime 初始化后已认领部署却启动失败时也遵守此顺序，避免 Chat 已结束而部署仍为 running。
 - schemaVersion=1 failure_json 保存安全摘要，公开投影使用白名单；无版本历史保留原快照，不从文案猜原因。日志使用现有 Console sink 和共享 errorId，原始 cause 不公开。
 - delivery 故障不改变 Run 业务结果，通过 stream.resync 要求客户端读取 REST；正常客户端断开只移除订阅。服务关闭取消并等待在途 Run 任务，10 秒未结束则抛错，不继续关闭数据库；独立手动压缩尚未纳入该等待集合。
 

@@ -1,0 +1,3 @@
+interface:
+  display_name: "Gori Deployment Spec"
+  short_description: "Create a deployment profile for the current Workspace host"

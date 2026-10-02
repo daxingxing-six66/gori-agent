@@ -24,6 +24,8 @@ interface SubmitInput {
 	thinkingLevel: ThinkingLevel;
 	behavior: ChatQueueBehavior;
 	serverInteractionMode: "command" | "terminal";
+	workflow?: "deployment_setup" | "deployment_execution";
+	deploymentRunId?: string;
 }
 
 export function useChatRuntime(sessionId: string) {
@@ -168,7 +170,7 @@ export function useChatRuntime(sessionId: string) {
 		};
 	}, [contextUsageStore, locale, runId, sessionId, synchronize]);
 
-	const submit = useCallback(async ({ message, attachments, model, thinkingLevel, behavior, serverInteractionMode }: SubmitInput): Promise<ChatRun | null> => {
+	const submit = useCallback(async ({ message, attachments, model, thinkingLevel, behavior, serverInteractionMode, workflow, deploymentRunId }: SubmitInput): Promise<ChatRun | null> => {
 		const normalized = message.trim();
 		const attachmentIds = attachments.map((attachment) => attachment.id);
 		if ((!normalized && attachmentIds.length === 0) || submitting) return null;
@@ -195,6 +197,8 @@ export function useChatRuntime(sessionId: string) {
 					message: normalized,
 					attachmentIds,
 					serverInteractionMode,
+					...(workflow === undefined ? {} : { workflow }),
+					...(deploymentRunId === undefined ? {} : { deploymentRunId }),
 				});
 				dispatch({ type: "setRun", run });
 				return run;

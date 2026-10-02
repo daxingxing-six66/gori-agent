@@ -258,6 +258,14 @@ describe("SqliteTerminalRepository", () => {
 			database.prepare("UPDATE terminal_sessions SET sandbox_json = ? WHERE id = 'terminal-1'")
 				.run(JSON.stringify({ mode: "full_access", backend: "none", enforcement: "none", source: "sandbox_unavailable", detectedAt: 10 }));
 			expect(repository.findSession("terminal-1")?.sandbox).toMatchObject({ mode: "full_access", source: "sandbox_unavailable" });
+			database.prepare("UPDATE terminal_sessions SET requested_sandbox_mode = 'full_access', sandbox_json = ? WHERE id = 'terminal-1'")
+				.run(JSON.stringify({ mode: "full_access", backend: "none", enforcement: "none", approvedAt: 10 }));
+			expect(repository.findSession("terminal-1")?.sandbox).toEqual({ mode: "full_access", backend: "none", enforcement: "none", approvedAt: 10 });
+			database.prepare("UPDATE terminal_sessions SET requested_sandbox_mode = 'workspace_write', sandbox_json = ? WHERE id = 'terminal-1'")
+				.run(JSON.stringify({ mode: "workspace_write", backend: "landlock", enforcement: "full", abi: 5,
+					launcherVersion: "3", sandboxRoot: "/opt/app" }));
+			expect(repository.findSession("terminal-1")?.sandbox).toEqual({ mode: "workspace_write", backend: "landlock", enforcement: "full",
+				abi: 5, launcherVersion: "3", sandboxRoot: "/opt/app" });
 			database.prepare("UPDATE terminal_sessions SET sandbox_json = ? WHERE id = 'terminal-1'")
 				.run(JSON.stringify({ mode: "workspace_write", backend: "landlock", enforcement: "full", abi: 5,
 					launcherVersion: "3", sandboxRoot: "/opt/app/" }));

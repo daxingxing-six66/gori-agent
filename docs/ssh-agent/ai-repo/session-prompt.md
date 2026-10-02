@@ -2,6 +2,8 @@
 
 适用于系统提示词组装、环境来源、Terminal Mode 切换、模型适配及压缩后模式恢复。
 
+`/deploy` 首次配置通过本次 Chat Run 的 `workflow=deployment_setup` 在已保存基础 system prompt 后临时附加包内 Skill 与当前本地项目根、Workspace SSH 主机；不会重写持久化首 Run 头部，后续普通 Run 不继承该 Skill。用户确认部署计划后，`workflow=deployment_execution` 临时附加可信计划与阶段指引；Agent 通过专用工具逐阶段推进，Deployment Service 仍持有状态和执行边界，见 [deployment.md](./deployment.md)。
+
 ## 不变量与职责
 
 - `ChatPromptService` 仅在 `ChatService` 首次成功通过运行前校验、写入 Run 后初始化头部。内容由纯函数 `systemPromptFor` 组装，通过 `ChatPromptRepository.createOnce` 保存到 `chat_prompt_snapshots`。后续 Run、切换模型、修改 Session 设置、服务重启都读取原文本；数据库触发器拒绝 UPDATE。删除 Session 时才级联删除。

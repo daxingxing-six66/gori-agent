@@ -452,16 +452,17 @@ function readSandboxFacts(value: unknown): TerminalSandboxFacts | null {
 	const fact = parsed as Record<string, unknown>;
 	if (fact.mode === "full_access" && fact.backend === "none" && fact.enforcement === "none" &&
 		Number.isSafeInteger(fact.approvedAt) && Number(fact.approvedAt) > 0 && Object.keys(fact).length === 4)
-		return fact as unknown as TerminalSandboxFacts;
+		return { mode: "full_access", backend: "none", enforcement: "none", approvedAt: Number(fact.approvedAt) };
 	if (fact.mode === "full_access" && fact.backend === "none" && fact.enforcement === "none" &&
 		(fact.source === "sandbox_unavailable" || fact.source === "landlock_unavailable") && Number.isSafeInteger(fact.detectedAt) &&
 		Number(fact.detectedAt) > 0 && Object.keys(fact).length === 5)
-		return fact as unknown as TerminalSandboxFacts;
+		return { mode: "full_access", backend: "none", enforcement: "none", source: fact.source, detectedAt: Number(fact.detectedAt) };
 	if (fact.mode === "workspace_write" && fact.backend === "landlock" && fact.enforcement === "full" &&
 		Number.isSafeInteger(fact.abi) && Number(fact.abi) >= 5 && typeof fact.launcherVersion === "string" &&
 		/^[1-9]\d*$/.test(fact.launcherVersion) && typeof fact.sandboxRoot === "string" &&
 		canonicalRemoteSandboxRoot(fact.sandboxRoot) && Object.keys(fact).length === 6)
-		return fact as unknown as TerminalSandboxFacts;
+		return { mode: "workspace_write", backend: "landlock", enforcement: "full", abi: Number(fact.abi),
+			launcherVersion: fact.launcherVersion, sandboxRoot: fact.sandboxRoot };
 	throw new Error("Invalid persisted Terminal sandbox facts");
 }
 

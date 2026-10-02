@@ -35,6 +35,7 @@
 | 首次 Run 固定头部、环境快照、模式 system 消息与缓存边界 | [session-prompt.md](./session-prompt.md) | `packages/ssh-agent/src/application/services/chat-prompt-service.ts`、`packages/ssh-agent/src/application/chat-context.ts` |
 | Session Chat、Pi Agent 事件、本地工具、审批、队列和压缩 | [chat-runtime.md](./chat-runtime.md) | `packages/ssh-agent/src/application/services/chat-service.ts`、`packages/agent/src/harness/agent-harness.ts` |
 | Agent 用户决策工具、等待持久化、恢复与输入框上方的面板 | [user-decision.md](./user-decision.md) | `packages/ssh-agent/src/application/services/chat-user-decision-service.ts`、`packages/ssh-agent-web/features/chat/components/user-decision-panel.tsx` |
+| `/deploy` 模型驱动阶段、Profile、首次配置 Skill、部署历史与阶段 UI | [deployment.md](./deployment.md) | `packages/ssh-agent/src/application/services/deployment-service.ts`、`packages/ssh-agent/src/application/tools/deployment-agent-tool.ts`、`packages/ssh-agent-web/features/deploy/` |
 | Provider 请求前检查、上下文超限恢复、摘要消息、压缩 Setting 和手动压缩 | [context-compaction.md](./context-compaction.md) | `packages/ssh-agent/src/application/services/chat-context-service.ts`、`packages/agent/src/agent-loop.ts` |
 | Session 上下文占用查询、Turn/压缩完成快照与 SSE | [context-usage.md](./context-usage.md) | `packages/ssh-agent/src/application/chat-context.ts`、`packages/ssh-agent/src/application/services/chat-context-service.ts` |
 | 长周期 SSH PTY、Canonical Terminal State、Agent Terminal Tool、只读前端和审计时间线 | [terminal-interaction.md](./features/terminal-interaction.md) | `packages/ssh-agent/src/application/terminal/`、`packages/ssh-agent-web/features/terminal/` |
@@ -54,6 +55,8 @@ Workspace/Credential 前端契约见 [workspace-credential-integration.md](../fr
 已经实现：Workspace 管理、Credential/Host Trust、Guard、LLM Provider、SSH exec Connection Pool、命令 Operation、Session 附件上传和受控图片回显、图片附件 Chat 输入，以及 Workspace 级 SFTP 文件管理、六状态 Transfer、流式上传下载、Workspace SSE 和 Linux 实时监控。
 
 已经实现的 Terminal Interaction MVP：用户手动开启独立模式，后端维持长周期 PTY 和 Canonical State，Agent 使用专用 Tool，浏览器通过 snapshot + SSE 只读投影并同步 owner resize，Interaction/Input/Observation/Timeline 持久化到 SQLite。
+
+已经实现的 `/deploy`：当前 Workspace 主机的 Deployment Profile、计划确认、模型逐阶段推进、阶段事实持久化和会话时间线历史回显；远端命令继续受 Guard、沙箱和必要的 Full Access 审批约束。详见 [deployment.md](./deployment.md)。
 
 尚未实现：附件删除、非图片附件的通用内容下载和 LLM 输入、图片生成、断点续传、Transfer 历史自动清理、主机密钥重新信任/预置信任/SSH CA、Chat 多 Lane/Fork 和跨进程 delta 重放。Terminal MVP 不允许用户输入、不自动开启模式，使用 REST + SSE 而不引入 WebSocket。
 

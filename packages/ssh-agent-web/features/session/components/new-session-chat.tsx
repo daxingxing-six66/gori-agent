@@ -59,6 +59,15 @@ export function NewSessionChat({ workspaceId }: { workspaceId: string }) {
 	const sessionSettingsLocked = submitting || createdSession !== null;
 	const workDirLabel = workDir.split("/").filter(Boolean).pop() ?? workDir;
 	const composerTools = useMemo<readonly ChatComposerTool[]>(() => [{
+		id: "deploy",
+		icon: "deploy",
+		name: "/deploy",
+		description: intl.formatMessage({ id: "deploy.tool.description" }),
+		keywords: ["deploy", "部署", "发布", "流水线"],
+		status: { label: intl.formatMessage({ id: "session.tool.notStarted" }), tone: "inactive" },
+		disabled: true,
+		disabledReason: intl.formatMessage({ id: "session.tool.availableAfterCreate" }),
+	}, {
 		id: "terminal",
 		icon: "terminal",
 		name: "Terminal Mode",

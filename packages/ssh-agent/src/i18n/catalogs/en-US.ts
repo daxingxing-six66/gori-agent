@@ -22,6 +22,7 @@ export const enUSMessages = {
 	"provider.compaction_failed": "Context compaction failed: {reason}",
 	"provider.model_removed": "The selected model was removed. Select another model. Provider reason: {reason}",
 	"common.internal_error": "Internal server error",
+	"deployment.error": "Deployment request failed: {reason}",
 	"common.api_not_found": "API endpoint not found",
 	"common.request_body_invalid": "Request body must contain valid JSON",
 	"common.payload_too_large": "Request body is too large",

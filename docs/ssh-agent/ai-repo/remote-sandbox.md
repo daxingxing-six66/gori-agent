@@ -1,6 +1,8 @@
 # 远端 Linux 命令沙箱代码路由
 
-适用于 `remote_server_call` 与 Terminal Mode 的远端文件访问约束、后端选择、启动器分发、能力探测、Full Access 与执行事实审计。当前 `RemoteSandboxCoordinator` 仅配置 Landlock 后端；Bubblewrap 还未实现，扩展边界见[多后端设计](../design/remote-sandbox-backends.md)。本地工作目录、SFTP 与监控不经过命令沙箱。Agent 可用的 `sftp_upload` 仍按 SSH 账号权限写入，新增文件不因 Landlock 受限；沙箱事实只针对命令或 PTY 进程。
+适用于 `remote_server_call`、`/deploy` 与 Terminal Mode 的远端文件访问约束、后端选择、启动器分发、能力探测、Full Access 与执行事实审计。当前 `RemoteSandboxCoordinator` 仅配置 Landlock 后端；Bubblewrap 还未实现，扩展边界见[多后端设计](../design/remote-sandbox-backends.md)。本地工作目录、SFTP 与监控不经过命令沙箱。Agent 可用的 `sftp_upload` 仍按 SSH 账号权限写入，新增文件不因 Landlock 受限；沙箱事实只针对命令或 PTY 进程。
+
+`/deploy` 的 RESTART/VERIFY 由绑定的 Agent 逐阶段请求，仍通过 `CommandOperationService` 执行。准备计划时优先探测 `workspace_write`；仅明确返回 `sandbox_unavailable` 或 `sandbox_partial_enforcement` 才生成待逐条人工批准的 Full Access 计划，其他探测/配置故障仍失败关闭。批准前不开始构建或上传，确认普通部署计划不等于批准 Full Access；受限命令失败后也不自动升级。UPLOAD 仍走 SFTP，不受 Landlock 约束；部署服务额外以 SFTP realpath 检查上传目录处于远端 Workspace 根内，不能把该检查等同于内核沙箱。详见 [deployment.md](./deployment.md)。
 
 ## 策略与边界
 
@@ -14,7 +16,7 @@
 
 Chat Guard 预检查 → 审批 → Session FIFO/进程许可 → 最新 Guard → Full Access grant 消费 → Target/cwd → 沙箱准备 → Guard 再检查 → Broker exec。
 
-`full_access` 必须提交非空 `justification`，始终等待人工审批，即使 Session 已开启 `autoAudit`。Chat 审批链验证决策 `source=user`，Command Service 消费一次性授权后才调用 Coordinator 包装无沙箱命令。内存 grant 绑定 Run、Tool Call、Session、原命令、cwd、timeout 和理由；一次消费即删除，参数不匹配也删除，Run 结束清理，重启不会恢复。它仍服从 Guard，也不提升 SSH 用户权限。原尝试失败后不能自动升级或重放。
+单次命令的 `full_access` 必须提交非空 `justification` 并等待人工审批，即使 Session 已开启 `autoAudit`；Terminal 打开时能力不足的会话级自动回退另见 Terminal 文档。Chat 工具审批链验证决策 `source=user`；独立的 `/deploy` 页面为计划中的 RESTART/VERIFY 各提供一次准确命令的批准/拒绝入口，五分钟有效期在部署 Agent 认领时复核，拒绝取消该部署。部署虽由真实 Chat Run 推进，却使用独立的 `deployment:<runId>` 内存授权范围；Chat Tool 审批不能代替部署逐命令批准。两条命令流程最终都由 Command Service 消费一次性 grant，才调用 Coordinator 包装无沙箱命令。grant 绑定授权范围、Tool Call、Session、原命令、cwd、timeout 和理由；一次消费即删除，参数不匹配也删除，工作流结束清理，重启不会恢复。部署另外在派发前及命令队列出队后检查固定 SSH 目标身份。Full Access 仍服从 Guard，也不提升 SSH 用户权限；原尝试失败后不能自动升级或重放。
 
 所有路径和完整脚本通过单一 POSIX 参数引用 helper 组装。`cd` 成功后才启动独立 `bash --noprofile --norc -c`，因此脚本中的分号或换行不能越过失败的 cwd 检查。普通命令与 Terminal 各自生成本次随机 nonce；Native launcher 安装规则、设置 no_new_privs、关闭额外继承 FD 后才发出含 nonce 的 stderr 确认并 exec；后代进程继承限制。
 

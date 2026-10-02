@@ -1,12 +1,15 @@
 "use client";
 
 import { LoaderCircle } from "lucide-react";
-import { memo } from "react";
+import { memo, type ReactNode } from "react";
 import { useIntl } from "react-intl";
 import { ChatFailureDetails } from "@/features/chat/components/chat-failure-details";
 import { ChatMessageRow } from "@/features/chat/components/chat-message";
 import type { ChatTimelineEntry } from "@/features/chat/model/chat-runtime-state";
 import type { ChatRun, ChatToolExecution, ToolApproval } from "@/features/chat/model/chat";
+import { DeploymentHistoryCard } from "@/features/deploy/components/deployment-history-card";
+import { conversationHistory } from "@/features/deploy/model/deployment-history";
+import type { DeploymentRun } from "@/features/deploy/model/deployment";
 
 export const ChatTimeline = memo(function ChatTimeline({
 	showActivity,
@@ -20,6 +23,13 @@ export const ChatTimeline = memo(function ChatTimeline({
 	latestUserText,
 	onResolveApproval,
 	onRestoreDraft,
+	deployments,
+	expandedDeploymentId,
+	expandedDeployment,
+	onOpenDeployment,
+	hasOlderDeployments,
+	loadingOlderDeployments,
+	onLoadOlderDeployments,
 }: {
 	showActivity: boolean;
 	loading: boolean;
@@ -32,15 +42,27 @@ export const ChatTimeline = memo(function ChatTimeline({
 	latestUserText: string;
 	onResolveApproval(approval: ToolApproval, approved: boolean): void;
 	onRestoreDraft(message: string): void;
+	deployments?: DeploymentRun[];
+	expandedDeploymentId?: string | null;
+	expandedDeployment?: ReactNode;
+	onOpenDeployment?(id: string): void;
+	hasOlderDeployments?: boolean;
+	loadingOlderDeployments?: boolean;
+	onLoadOlderDeployments?(): void;
 }) {
 	const intl = useIntl();
-	const visibleTimeline = timeline.filter((entry) => entry.message.role !== "system");
+	const entries = conversationHistory(timeline, deployments ?? []);
 	return (
 		<div className="mx-auto min-h-full max-w-[820px] space-y-8 px-5 pb-10 pt-10 lg:px-8">
 			{loading ? <div className="flex justify-center py-16 text-zinc-400"><LoaderCircle size={18} className="animate-spin" /></div> : null}
+			{hasOlderDeployments ? <button type="button" disabled={loadingOlderDeployments} onClick={onLoadOlderDeployments} className="mx-auto block rounded-lg border border-line px-3 py-1.5 text-xs text-secondary hover:bg-surface-hover disabled:opacity-50">{intl.formatMessage({ id: loadingOlderDeployments ? "deploy.history.loadingOlder" : "deploy.history.loadOlder" })}</button> : null}
 			{loadingOlderMessages ? <div className="flex justify-center py-1.5 text-zinc-400" role="status" aria-label={intl.formatMessage({ id: "chat.history.loadingOlder" })}><LoaderCircle size={14} className="animate-spin" /></div> : null}
-			{!loading && !showActivity && visibleTimeline.length === 0 ? <div className="grid min-h-[320px] place-items-center text-center"><div><p className="text-[13px] font-semibold text-zinc-700">{intl.formatMessage({ id: "chat.empty.title" })}</p><p className="mt-2 text-[10px] leading-5 text-zinc-400">{intl.formatMessage({ id: "chat.empty.description" })}</p></div></div> : null}
-			{visibleTimeline.map((entry) => <ChatMessageRow key={entry.key} entry={entry} tools={tools} approvals={approvals} approvalMutationId={approvalMutationId} hideFailure={Boolean(run?.status === "failed" && run.failure?.errorId && entry.message.role === "assistant" && entry.message.failure?.errorId === run.failure.errorId)} onResolveApproval={onResolveApproval} />)}
+			{!loading && !showActivity && entries.length === 0 ? <div className="grid min-h-[320px] place-items-center text-center"><div><p className="text-[13px] font-semibold text-zinc-700">{intl.formatMessage({ id: "chat.empty.title" })}</p><p className="mt-2 text-[10px] leading-5 text-zinc-400">{intl.formatMessage({ id: "chat.empty.description" })}</p></div></div> : null}
+			{entries.map((item) => item.kind === "deployment"
+				? <div key={`deployment:${item.run.id}`} data-deployment-id={item.run.id}>
+					{expandedDeploymentId === item.run.id ? expandedDeployment : <DeploymentHistoryCard run={item.run} onOpen={() => onOpenDeployment?.(item.run.id)} />}
+				</div>
+				: <ChatMessageRow key={item.entry.key} entry={item.entry} tools={tools} approvals={approvals} approvalMutationId={approvalMutationId} hideFailure={Boolean(run?.status === "failed" && run.failure?.errorId && item.entry.message.role === "assistant" && item.entry.message.failure?.errorId === run.failure.errorId)} onResolveApproval={onResolveApproval} />)}
 			{showActivity ? <div role="status" aria-label={intl.formatMessage({ id: "chat.status.running" })} className="flex h-9 w-full items-center justify-center gap-1 text-[var(--text-secondary)]">
 				{[0, 160, 320].map((delay) => <span key={delay} aria-hidden="true" className="h-1 w-1 rounded-full bg-current motion-safe:animate-pulse" style={{ animationDelay: `${delay}ms`, animationDuration: "1.2s" }} />)}
 			</div> : null}

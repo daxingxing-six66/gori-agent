@@ -9,6 +9,7 @@ export async function executeChatRun(input: {
 	runtime: ChatRunRuntime;
 	message: ChatUserMessage;
 	update(status: ChatRun["status"], failure?: ChatRun["failure"]): void;
+	beforeFinalStatusCommit?(status: ChatRun["status"], failure?: ChatRun["failure"]): Promise<void>;
 	cleanup: readonly (() => void | Promise<void>)[];
 }): Promise<void> {
 	const { runtime } = input;
@@ -30,6 +31,7 @@ export async function executeChatRun(input: {
 				});
 			status = "failed";
 		}
+		await input.beforeFinalStatusCommit?.(status, failure);
 		input.update(status, failure);
 	} finally {
 		for (const cleanup of input.cleanup) {
@@ -43,6 +45,57 @@ export async function executeChatRun(input: {
 					rootErrorId: failure?.errorId,
 				});
 			}
+		}
+	}
+}
+
+/** A deployment must settle before its Chat Run may enter a terminal state. */
+export class PendingDeploymentSettlements {
+	readonly #pending = new Map<string, {
+		settle(): Promise<void>;
+		commit(): void;
+		run: ChatRun;
+		task?: Promise<void>;
+	}>();
+
+	retain(run: ChatRun, cause: unknown, settle: () => Promise<void>, commit: () => void): ChatError {
+		const error = new ChatError("chat_persistence_failed", "Deployment final status could not be saved", 503, { cause });
+		this.#pending.set(run.sessionId, { settle, commit, run });
+		reportFailure(error, {
+			stage: "run_commit",
+			runId: run.id,
+			sessionId: run.sessionId,
+			rootErrorId: run.failure?.errorId,
+		});
+		return error;
+	}
+
+	async reconcile(sessionId: string): Promise<void> {
+		const pending = this.#pending.get(sessionId);
+		if (!pending) return;
+		if (!pending.task) {
+			pending.task = (async () => {
+				try {
+					await pending.settle();
+				} catch (cause) {
+					const error = new ChatError("chat_persistence_failed", "Deployment final status could not be saved", 503, { cause });
+					reportFailure(error, {
+						stage: "run_commit",
+						runId: pending.run.id,
+						sessionId,
+						rootErrorId: pending.run.failure?.errorId,
+					});
+					throw error;
+				}
+				if (this.#pending.get(sessionId) === pending) this.#pending.delete(sessionId);
+				pending.commit();
+			})();
+		}
+		const task = pending.task;
+		try {
+			await task;
+		} finally {
+			if (pending.task === task) pending.task = undefined;
 		}
 	}
 }

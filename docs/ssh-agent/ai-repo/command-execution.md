@@ -6,13 +6,15 @@
 未传 `cwd` 的命令使用 Workspace `remoteDefaultCwd`，默认 `/`；显式 `cwd` 仍优先。Workspace 本地 `defaultCwd` 不参与远端命令目录解析。
 
 
-默认 `workspace_write` 在远端 Linux 启动器中执行，缺根或准备失败不回退；`full_access` 每次人工审批，`autoAudit` 不能放行。准备后派发前再次复检 Guard。独立的 `SandboxConfirmationCapture` 按 waiting/confirmed/missing 状态处理 stderr 前缀，收到远端确认后才写入实际强制约束事实；确认缺失保守视为可能执行。权限拒绝可能留下部分副作用，不自动重试。完整边界见 [remote-sandbox.md](./remote-sandbox.md)。
+默认 `workspace_write` 在远端 Linux 启动器中执行，缺根或准备失败不回退；`full_access` 每次人工审批，`autoAudit` 不能放行。`/deploy` 只有在受限沙箱能力明确不可用或 ABI 不足时，才允许用户在独立页面逐条批准 RESTART/VERIFY；此审批与 Chat 工具审批互不通用。准备后派发前再次复检 Guard。独立的 `SandboxConfirmationCapture` 按 waiting/confirmed/missing 状态处理 stderr 前缀，收到远端确认后才写入实际强制约束事实；确认缺失保守视为可能执行。权限拒绝可能留下部分副作用，不自动重试。完整边界见 [remote-sandbox.md](./remote-sandbox.md)。
 
 ## 当前边界
 
 - Agent 批次保留一个串行工具使整批串行的规则；remote_server_call 与 Terminal 工具均保持串行，文件工具的路径并发不会使同批部署命令提前执行。见 [文件工具并发](./file-tool-concurrency.md)。
 
 Chat 的 `remote_server_call` 在创建人工审批前调用 `CommandOperationService.preflightGuard()`；批准后正式 `submit()` 仍会再次执行 Guard 校验，避免审批等待期间规则变化。
+
+部署服务在 Prepare 做同样的 Guard 预检，用户确认后由绑定的 Agent 逐阶段调用部署工具；RESTART/VERIFY 通过 `submit()` 进入相同的 Session FIFO 和审计链。部署专属的 Full Access grant 使用 `fullAccessApprovalScopeId`，不冒用 Chat Tool Call 的 `agentRunId`；`expectedTarget` 保存计划的 SSH 身份，出队后解析的目标若变化就拒绝执行。Command Service 仍先复核 Guard、消费精确的一次性授权，再检查目标并派发；普通计划确认或 Chat Tool 审批不会自行产生部署授权。见 [deployment.md](./deployment.md)。
 
 该 Tool 仅在普通交互模式可执行；两种模式保持相同 Tool schema，通过 Chat 授权策略和 Runtime 执行实现拒绝错误模式入口。模式切换只追加 system 记录，见 [session-prompt.md](./session-prompt.md)。
 

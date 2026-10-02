@@ -25,6 +25,8 @@ import { TERMINAL_UI_DEFAULTS } from "@/features/terminal/model/terminal-ui-defa
 import { useTerminalMode } from "@/features/terminal/runtime/use-terminal-mode";
 import { useWorkspaceTree } from "@/features/workspace/components/workspace-tree-context";
 import { ApiError } from "@/shared/errors/api-error";
+import { DeploymentPanel } from "@/features/deploy/components/deployment-panel";
+import { useDeployment } from "@/features/deploy/runtime/use-deployment";
 
 export function ChatConsole({ sessionId }: { sessionId: string }) {
 	const intl = useIntl();
@@ -32,6 +34,7 @@ export function ChatConsole({ sessionId }: { sessionId: string }) {
 	const item = tree?.workspaces.flatMap(({ workspace, sessions }) => sessions.map((session) => ({ session, workspace }))).find(({ session }) => session.id === sessionId);
 	const runtime = useChatRuntime(sessionId);
 	const terminalMode = useTerminalMode(sessionId);
+	const deployment = useDeployment(sessionId, item?.workspace.id);
 	const modelSelection = useChatModelSelection(sessionId, runtime.loading, runtime.state.run);
 	const { model, thinkingLevel, loading: modelSelectionLoading, error: modelSelectionError } = modelSelection;
 	const [autoAuditPending, setAutoAuditPending] = useState(false);
@@ -43,6 +46,7 @@ export function ChatConsole({ sessionId }: { sessionId: string }) {
 	const initialScrollCompleteRef = useRef(false);
 	const followNewContentRef = useRef(true);
 	const historyScrollRestoreRef = useRef<{ scrollHeight: number; scrollTop: number } | null>(null);
+	const scrolledDeploymentRef = useRef<string | null>(null);
 	const [showReturnToBottom, setShowReturnToBottom] = useState(false);
 	const [hiddenDecisionId, setHiddenDecisionId] = useState<string | null>(null);
 	const active = activeChatRun(runtime.state.run);
@@ -88,6 +92,14 @@ export function ChatConsole({ sessionId }: { sessionId: string }) {
 				: undefined;
 	const composerTools: readonly ChatComposerTool[] = [
 		{
+			id: "deploy",
+			icon: "deploy",
+			name: "/deploy",
+			description: intl.formatMessage({ id: "deploy.tool.description" }),
+			keywords: ["deploy", "部署", "发布", "流水线"],
+			disabled: active || deployment.busy,
+		},
+		{
 			id: "terminal",
 			icon: "terminal",
 			name: "Terminal Mode",
@@ -129,6 +141,7 @@ export function ChatConsole({ sessionId }: { sessionId: string }) {
 		historyScrollRestoreRef.current = null;
 		setShowReturnToBottom(false);
 		setHiddenDecisionId(null);
+		scrolledDeploymentRef.current = null;
 	}, [sessionId]);
 
 	useLayoutEffect(() => {
@@ -136,11 +149,11 @@ export function ChatConsole({ sessionId }: { sessionId: string }) {
 		const container = scrollRef.current;
 		if (!restore || !container) return;
 		container.scrollTop = restore.scrollTop + container.scrollHeight - restore.scrollHeight;
-	}, [runtime.state.timeline]);
+	}, [deployment.history.length, runtime.state.timeline]);
 
 	useEffect(() => {
-		if (!runtime.loadingOlderMessages) historyScrollRestoreRef.current = null;
-	}, [runtime.loadingOlderMessages]);
+		if (!runtime.loadingOlderMessages && !deployment.loadingOlderHistory) historyScrollRestoreRef.current = null;
+	}, [deployment.loadingOlderHistory, runtime.loadingOlderMessages]);
 
 	useEffect(() => {
 		const container = scrollRef.current;
@@ -154,6 +167,28 @@ export function ChatConsole({ sessionId }: { sessionId: string }) {
 		}
 		if (followNewContentRef.current) container.scrollTo({ top: container.scrollHeight, behavior: "smooth" });
 	}, [runtime.loading, runtime.state.timeline, showActivity]);
+
+	useLayoutEffect(() => {
+		if (!deployment.open) { scrolledDeploymentRef.current = null; return; }
+		const selectedId = deployment.run?.id;
+		const selectionKey = selectedId ?? "new-plan";
+		if (scrolledDeploymentRef.current === selectionKey) return;
+		const frame = requestAnimationFrame(() => {
+			const container = scrollRef.current;
+			if (!container) return;
+			const selected = selectedId
+				? [...container.querySelectorAll<HTMLElement>("[data-deployment-id]")].find((node) => node.dataset.deploymentId === selectedId)
+				: null;
+			if (selected) {
+				selected.scrollIntoView({ block: "nearest" });
+				scrolledDeploymentRef.current = selectionKey;
+			} else {
+				container.scrollTo({ top: container.scrollHeight, behavior: "smooth" });
+				if (!selectedId) scrolledDeploymentRef.current = selectionKey;
+			}
+		});
+		return () => cancelAnimationFrame(frame);
+	}, [deployment.history.length, deployment.open, deployment.run?.id]);
 
 	const handleChatScroll = useCallback(() => {
 		const container = scrollRef.current;
@@ -175,6 +210,13 @@ export function ChatConsole({ sessionId }: { sessionId: string }) {
 		followNewContentRef.current = true;
 		setShowReturnToBottom(false);
 		container.scrollTo({ top: container.scrollHeight, behavior: "smooth" });
+	};
+	const loadOlderDeployments = () => {
+		const container = scrollRef.current;
+		if (container) historyScrollRestoreRef.current = { scrollHeight: container.scrollHeight, scrollTop: container.scrollTop };
+		void deployment.loadOlderHistory().then((loaded) => {
+			if (!loaded) historyScrollRestoreRef.current = null;
+		});
 	};
 
 	const submit = useCallback(async (message: string, attachments: SessionAttachment[]): Promise<boolean> => {
@@ -225,12 +267,39 @@ export function ChatConsole({ sessionId }: { sessionId: string }) {
 	};
 
 	const selectComposerTool = useCallback((toolId: string) => {
+		if (toolId === "deploy" && !active && !deployment.busy) { void deployment.show(); return; }
 		if (toolId === "terminal" && terminalDisabledReason === undefined) {
 			void (terminalActive ? terminalMode.close() : terminalMode.open());
 			return;
 		}
 		if (toolId === "compact" && compactionDisabledReason === undefined) void runtime.compact();
-	}, [compactionDisabledReason, runtime.compact, terminalActive, terminalDisabledReason, terminalMode.close, terminalMode.open]);
+	}, [active, compactionDisabledReason, deployment, runtime.compact, terminalActive, terminalDisabledReason, terminalMode.close, terminalMode.open]);
+
+	const startDeploymentSetup = useCallback(async () => {
+		if (!model || active) return;
+		const run = await runtime.submit({
+			message: "请根据当前项目为这个 Workspace 的 SSH 主机创建 Gori deployment profile。使用 ask_user_decision 确认所有无法可靠推断的信息；只保存配置，不执行部署。",
+			attachments: [], model, thinkingLevel, behavior: "follow_up",
+			serverInteractionMode: terminalMode.status?.effectiveServerInteractionMode ?? "command",
+			workflow: "deployment_setup",
+		});
+		if (run) deployment.hide();
+	}, [active, deployment, model, runtime.submit, terminalMode.status?.effectiveServerInteractionMode, thinkingLevel]);
+
+	const startDeploymentExecution = useCallback(async () => {
+		const plan = deployment.run;
+		if (!plan || plan.status !== "preparing" || !model || active || runtime.submitting) return;
+		deployment.setError(null);
+		try {
+			const run = await runtime.submit({
+				message: "请执行我刚确认的部署计划。每一阶段后检查结果并决定下一步；出现异常时先分析，不要擅自重试或修改目标。",
+				attachments: [], model, thinkingLevel, behavior: "follow_up",
+				serverInteractionMode: terminalMode.status?.effectiveServerInteractionMode ?? "command",
+				workflow: "deployment_execution", deploymentRunId: plan.id,
+			});
+			if (run) await deployment.refresh();
+		} catch (error) { deployment.setError(error instanceof Error ? error.message : String(error)); }
+	}, [active, deployment, model, runtime.submit, runtime.submitting, terminalMode.status?.effectiveServerInteractionMode, thinkingLevel]);
 
 	const resolveApproval = useCallback((approval: ToolApproval, approved: boolean) => {
 		void runtime.resolveApproval(approval, approved);
@@ -246,6 +315,17 @@ export function ChatConsole({ sessionId }: { sessionId: string }) {
 			requestAnimationFrame(() => decisionReopenRef.current?.focus());
 		}} onSubmit={(answers) => runtime.answerDecision(pendingDecision, answers)} />
 	</> : null;
+	const deploymentPanel = deployment.open ? <DeploymentPanel
+		discovery={deployment.discovery} run={deployment.run} loading={deployment.loading} busy={deployment.busy}
+		canSetup={model !== null && !active && !runtime.submitting}
+		canConfirm={model !== null && !active && !runtime.submitting}
+		readOnly={deployment.readOnly}
+		error={deployment.error} onClose={deployment.hide} onPrepare={(file, moduleId) => { void deployment.prepare(file, moduleId); }}
+		onConfirm={() => { void startDeploymentExecution(); }} onDecideFullAccess={(stage, approvalId, approved) => { void deployment.decideFullAccess(stage, approvalId, approved); }} onCancel={() => { void deployment.cancel(); }}
+		onNewPlan={deployment.clearRun} onSetup={() => { void startDeploymentSetup(); }}
+	/> : null;
+	const expandedDeploymentId = deployment.open && deployment.run && deployment.history.some((run) => run.id === deployment.run?.id)
+		? deployment.run.id : null;
 
 	if (treeLoading && tree === null) return <div className="grid h-dvh place-items-center text-sm text-zinc-400">{intl.formatMessage({ id: "session.loading" })}</div>;
 	if (!item) return <div className="grid h-dvh place-items-center text-sm text-zinc-500">{intl.formatMessage({ id: "session.notFound" })}</div>;
@@ -270,7 +350,10 @@ export function ChatConsole({ sessionId }: { sessionId: string }) {
 
 				<div className="session-console-chat relative min-h-0">
 					<div ref={scrollRef} className="app-scrollbar h-full overflow-y-auto" onScroll={handleChatScroll}>
-						<ChatTimeline showActivity={showActivity} loading={runtime.loading} loadingOlderMessages={runtime.loadingOlderMessages} timeline={runtime.state.timeline} tools={runtime.state.tools} approvals={runtime.state.approvals} approvalMutationId={runtime.approvalMutationId} run={runtime.state.run} latestUserText={latestUserText} onResolveApproval={resolveApproval} onRestoreDraft={restoreDraft} />
+						<ChatTimeline showActivity={showActivity} loading={runtime.loading} loadingOlderMessages={runtime.loadingOlderMessages} timeline={runtime.state.timeline} tools={runtime.state.tools} approvals={runtime.state.approvals} approvalMutationId={runtime.approvalMutationId} run={runtime.state.run} latestUserText={latestUserText} onResolveApproval={resolveApproval} onRestoreDraft={restoreDraft}
+							deployments={deployment.history} expandedDeploymentId={expandedDeploymentId} expandedDeployment={deploymentPanel} onOpenDeployment={(id) => { void deployment.openHistory(id); }}
+							hasOlderDeployments={deployment.hasOlderHistory} loadingOlderDeployments={deployment.loadingOlderHistory} onLoadOlderDeployments={loadOlderDeployments} />
+						{deploymentPanel && !expandedDeploymentId ? <div className="mx-auto max-w-[820px] px-5 pb-10 lg:px-8">{deploymentPanel}</div> : null}
 					</div>
 					{showReturnToBottom ? <button type="button" className="absolute bottom-3 left-1/2 z-10 grid h-9 w-9 -translate-x-1/2 place-items-center rounded-full border border-zinc-200 bg-white text-zinc-700 shadow-[0_6px_20px_rgb(24_24_27/12%)] transition hover:border-zinc-300 hover:bg-zinc-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#7aa48e]/40" aria-label={intl.formatMessage({ id: "chat.scroll.latest" })} title={intl.formatMessage({ id: "chat.scroll.latest" })} onClick={scrollToBottom}><ArrowDown size={16} /></button> : null}
 				</div>

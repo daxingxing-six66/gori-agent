@@ -19,6 +19,7 @@ export type PreparedToolAuthorization =
 	  };
 
 export class ChatToolAuthorizationPolicy {
+	readonly #deploymentRuns = new Set<string>();
 	readonly #sandboxApprovals?: RemoteSandboxApprovalStore;
 	readonly #sessions: Pick<SessionRepository, "findById">;
 	readonly #terminalInteractions: Pick<TerminalInteractionService, "preflightSubmit" | "approve" | "reject">;
@@ -45,6 +46,7 @@ export class ChatToolAuthorizationPolicy {
 		toolName: string;
 		args: unknown;
 	}): Promise<PreparedToolAuthorization> {
+		const deploymentRun = this.#deploymentRuns.has(input.run.id);
 		if (
 			(input.toolName === "remote_server_call" && input.run.serverInteractionMode !== "command") ||
 			(input.toolName === "terminal_interaction" && input.run.serverInteractionMode !== "terminal")
@@ -54,8 +56,13 @@ export class ChatToolAuthorizationPolicy {
 				reason: `${input.toolName} is unavailable in the current server interaction mode`,
 			};
 		}
-		if (input.toolName === "read" || input.toolName === "ask_user_decision") return { kind: "allow" };
+		if (input.toolName === "read" || input.toolName === "ask_user_decision" ||
+			input.toolName === "deployment_inspect" || input.toolName === "deployment_execute_next") return { kind: "allow" };
 		if (input.toolName === "sftp_upload" || input.toolName === "sftp_download") {
+			if (deploymentRun) return {
+				kind: "block", block: true, terminate: true,
+				reason: "SFTP tools are unavailable during deployment execution; use the confirmed deployment stage",
+			};
 			return { kind: "defer_to_tool" };
 		}
 		if (input.toolName === "remote_server_call") {
@@ -84,10 +91,17 @@ export class ChatToolAuthorizationPolicy {
 		let terminalInteraction: TerminalInteractionRequest | undefined;
 		if (input.toolName === "terminal_interaction") {
 			terminalInteraction = terminalRequest(input.run, input.toolCallId, terminalParametersFrom(input.args));
-			if (terminalInteraction.action.type !== "submit") return { kind: "allow" };
+			if (terminalInteraction.action.type !== "submit") {
+				if (deploymentRun && terminalInteraction.action.type === "key") return {
+					kind: "block", block: true, terminate: true,
+					reason: "Terminal control keys are unavailable during deployment execution",
+				};
+				return { kind: "allow" };
+			}
 		}
 		const session = await this.#sessions.findById(input.run.sessionId);
 		const autoApprove =
+			!deploymentRun &&
 			session?.autoAudit === true &&
 			(input.toolName === "write" ||
 				input.toolName === "bash" ||
@@ -113,7 +127,12 @@ export class ChatToolAuthorizationPolicy {
 		};
 	}
 
-	clearRun(runId: string): void { this.#sandboxApprovals?.clearRun(runId); }
+	bindDeploymentRun(runId: string): void { this.#deploymentRuns.add(runId); }
+
+	clearRun(runId: string): void {
+		this.#deploymentRuns.delete(runId);
+		this.#sandboxApprovals?.clearRun(runId);
+	}
 
 	async shouldAutoApproveSftpOverwrite(sessionId: string): Promise<boolean> {
 		return (await this.#sessions.findById(sessionId))?.autoAudit === true;

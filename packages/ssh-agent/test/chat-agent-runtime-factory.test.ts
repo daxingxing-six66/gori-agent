@@ -246,6 +246,8 @@ describe("ChatAgentRuntimeFactory", () => {
 			"sftp_upload",
 			"sftp_download",
 			"ask_user_decision",
+			"deployment_inspect",
+			"deployment_execute_next",
 		]);
 		expect(options).toMatchObject({
 			steeringMode: "one-at-a-time",
@@ -257,6 +259,8 @@ describe("ChatAgentRuntimeFactory", () => {
 			expect(tool.executionMode).toBe(parallel ? "parallel" : "sequential");
 			if (parallel) expect(tool.requiresSequentialExecution).toBeTypeOf("function");
 		}
+		const deployTool = options?.initialState?.tools?.find((tool) => tool.name === "deployment_execute_next");
+		await expect(deployTool?.execute("deploy-call", { stage: "build" }, undefined)).rejects.toThrow("current Chat workflow");
 		expect(context.createRemoteTool).toHaveBeenCalledWith("session-1", expect.any(Function), "run-1");
 		expect(context.createTerminalTool).not.toHaveBeenCalled();
 
@@ -292,6 +296,8 @@ describe("ChatAgentRuntimeFactory", () => {
 			"sftp_upload",
 			"sftp_download",
 			"ask_user_decision",
+			"deployment_inspect",
+			"deployment_execute_next",
 		]);
 		expect(context.createRemoteTool).not.toHaveBeenCalled();
 		expect(context.createTerminalTool).toHaveBeenCalledWith({

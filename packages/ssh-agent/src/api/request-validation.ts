@@ -314,6 +314,8 @@ export function parseCreateChatRun(value: unknown): {
 	message: string;
 	attachmentIds?: string[];
 	serverInteractionMode: "command" | "terminal";
+	workflow?: "deployment_setup" | "deployment_execution";
+	deploymentRunId?: string;
 } {
 	const body = object(value, "body");
 	exactKeys(body, [
@@ -325,6 +327,8 @@ export function parseCreateChatRun(value: unknown): {
 		"message",
 		"attachmentIds",
 		"serverInteractionMode",
+		"workflow",
+		"deploymentRunId",
 	]);
 	if (body.generateTitle !== undefined && typeof body.generateTitle !== "boolean")
 		invalid("generateTitle must be a boolean", "generateTitle");
@@ -339,6 +343,16 @@ export function parseCreateChatRun(value: unknown): {
 	if (serverInteractionMode !== "command" && serverInteractionMode !== "terminal") {
 		invalid("serverInteractionMode must be command or terminal", "serverInteractionMode");
 	}
+	const workflow = body.workflow;
+	if (workflow !== undefined && workflow !== "deployment_setup" && workflow !== "deployment_execution")
+		invalid("workflow is invalid", "workflow");
+	const deploymentRunId = optionalString(body, "deploymentRunId");
+	if (workflow === "deployment_execution") {
+		if (deploymentRunId === undefined || !/^[a-zA-Z0-9_-]{1,128}$/u.test(deploymentRunId))
+			invalid("deploymentRunId is required for deployment_execution", "deploymentRunId");
+	} else if (deploymentRunId !== undefined) {
+		invalid("deploymentRunId requires deployment_execution", "deploymentRunId");
+	}
 	return {
 		requestId: string(body, "requestId"),
 		...(body.generateTitle === undefined ? {} : { generateTitle: body.generateTitle as boolean }),
@@ -348,6 +362,8 @@ export function parseCreateChatRun(value: unknown): {
 		message: string(body, "message"),
 		...parseAttachmentIds(body),
 		serverInteractionMode,
+		...(workflow === undefined ? {} : { workflow }),
+		...(deploymentRunId === undefined ? {} : { deploymentRunId }),
 	};
 }
 

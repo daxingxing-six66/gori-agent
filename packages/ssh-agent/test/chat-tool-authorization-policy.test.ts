@@ -68,8 +68,8 @@ describe("ChatToolAuthorizationPolicy", () => {
 		expect(context.findById).toHaveBeenCalledWith(run.sessionId);
 	});
 
-	it("allows read and defers SFTP overwrite approval without loading Session policy", async () => {
-		const context = createPolicy();
+	it("allows read-only and deployment-bound tools without treating autoAudit as deployment consent", async () => {
+		const context = createPolicy({ autoAudit: true });
 
 		await expect(context.policy.prepare({ run, toolCallId: "read-1", toolName: "read", args: {} })).resolves.toEqual({
 			kind: "allow",
@@ -77,7 +77,42 @@ describe("ChatToolAuthorizationPolicy", () => {
 		await expect(
 			context.policy.prepare({ run, toolCallId: "sftp-1", toolName: "sftp_upload", args: {} }),
 		).resolves.toEqual({ kind: "defer_to_tool" });
+		for (const toolName of ["deployment_inspect", "deployment_execute_next"]) {
+			await expect(context.policy.prepare({ run, toolCallId: toolName, toolName, args: {} })).resolves.toEqual({
+				kind: "allow",
+			});
+		}
 		expect(context.findById).not.toHaveBeenCalled();
+	});
+
+	it("forces manual approval for mutable diagnostics and blocks SFTP and terminal keys during deployment", async () => {
+		const context = createPolicy({ autoAudit: true });
+		context.policy.bindDeploymentRun(run.id);
+		await expect(context.policy.prepare({ run, toolCallId: "bash-1", toolName: "bash", args: {} }))
+			.resolves.toEqual({ kind: "approval", autoApprove: false });
+		await expect(context.policy.prepare({
+			run: { ...run, serverInteractionMode: "command", terminalSessionId: null },
+			toolCallId: "remote-1", toolName: "remote_server_call", args: { command: "cat /etc/os-release" },
+		})).resolves.toEqual({ kind: "approval", autoApprove: false });
+		await expect(context.policy.prepare({
+			run, toolCallId: "terminal-1", toolName: "terminal_interaction",
+			args: { action: "submit", input: "pwd", expectation: "finite" },
+		})).resolves.toMatchObject({ kind: "approval", autoApprove: false });
+		await expect(context.policy.prepare({
+			run, toolCallId: "observe-1", toolName: "terminal_interaction",
+			args: { action: "observe", expectation: "finite" },
+		})).resolves.toEqual({ kind: "allow" });
+		await expect(context.policy.prepare({
+			run, toolCallId: "key-1", toolName: "terminal_interaction",
+			args: { action: "key", key: "CTRL_C", expectation: "finite" },
+		})).resolves.toMatchObject({ kind: "block" });
+		for (const toolName of ["sftp_upload", "sftp_download"]) {
+			await expect(context.policy.prepare({ run, toolCallId: toolName, toolName, args: {} }))
+				.resolves.toMatchObject({ kind: "block" });
+		}
+		context.policy.clearRun(run.id);
+		await expect(context.policy.prepare({ run, toolCallId: "bash-2", toolName: "bash", args: {} }))
+			.resolves.toEqual({ kind: "approval", autoApprove: true });
 	});
 
 	it("blocks a remote command before Approval when Workspace Guard rejects it", async () => {

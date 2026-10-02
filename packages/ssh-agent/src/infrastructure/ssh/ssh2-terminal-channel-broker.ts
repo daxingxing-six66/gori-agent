@@ -167,6 +167,7 @@ function createHandle(
 	let outputStarted = false;
 	let bufferedBytes = 0;
 	const buffered: Buffer[] = [];
+	const writesClosed = new AbortController();
 	const capture = input.launch.kind === "sandboxed_exec" ? new TerminalStartupCapture(input.launch.confirmation) : undefined;
 	let resolveReady: () => void = () => undefined;
 	let rejectReady: (error: Error) => void = () => undefined;
@@ -186,6 +187,7 @@ function createHandle(
 			readySettled = true;
 			rejectReady(new Error("Terminal confinement confirmation was not received before channel close"));
 		}
+		writesClosed.abort(new Error(exit.message ?? "Terminal channel closed before the write drained"));
 		resolveClosed(exit);
 	};
 	const onClientClose = () => finishClosed({ kind: "connection_lost", ...terminalExit });
@@ -230,7 +232,7 @@ function createHandle(
 			buffered.length = 0;
 			bufferedBytes = 0;
 		},
-		write: (data) => writeChannel(channel, data, closed),
+		write: (data) => writeChannel(channel, data, writesClosed.signal),
 		resize: async (geometry: TerminalGeometry) => {
 			if (closedSettled) throw new Error("Terminal channel is closed");
 			channel.setWindow(geometry.rows, geometry.cols, 0, 0);
@@ -267,31 +269,33 @@ function createHandle(
 async function writeChannel(
 	channel: ClientChannel,
 	data: Uint8Array,
-	closed: Promise<TerminalChannelExit>,
+	closed: AbortSignal,
 ): Promise<void> {
 	const writable = channel.write(data);
 	if (writable) return;
-	await Promise.race([
-		new Promise<void>((resolve, reject) => {
-			const onDrain = () => {
-				cleanup();
-				resolve();
-			};
-			const onError = (error: Error) => {
-				cleanup();
-				reject(error);
-			};
-			const cleanup = () => {
-				channel.removeListener("drain", onDrain);
-				channel.removeListener("error", onError);
-			};
-			channel.once("drain", onDrain);
-			channel.once("error", onError);
-		}),
-		closed.then((exit) => {
-			throw new Error(exit.message ?? "Terminal channel closed before the write drained");
-		}),
-	]);
+	await new Promise<void>((resolve, reject) => {
+		const cleanup = () => {
+			channel.removeListener("drain", onDrain);
+			channel.removeListener("error", onError);
+			closed.removeEventListener("abort", onClosed);
+		};
+		const onDrain = () => {
+			cleanup();
+			resolve();
+		};
+		const onError = (error: Error) => {
+			cleanup();
+			reject(error);
+		};
+		const onClosed = () => {
+			cleanup();
+			reject(closed.reason instanceof Error ? closed.reason : new Error("Terminal channel closed before the write drained"));
+		};
+		channel.once("drain", onDrain);
+		channel.once("error", onError);
+		closed.addEventListener("abort", onClosed, { once: true });
+		if (closed.aborted) onClosed();
+	});
 }
 
 function wait(milliseconds: number): Promise<void> {

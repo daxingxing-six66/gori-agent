@@ -430,6 +430,12 @@ describe("Command execution and one-shot authorization", () => {
   const grants = new RemoteSandboxApprovalStore(); grants.approve(request);
   expect(grants.consume({ ...request, sessionId: "other" })).toBe(false);
  });
+ it("rejects a queued Full Access command when its approved SSH target changes", async () => {
+  const f = operationFixture(); f.approvals.approve(request);
+  const result = await f.service.submit({ ...fullInput, expectedTarget: { ...target, workspaceRevision: target.workspaceRevision + 1 } });
+  expect(result.operation.failure?.code).toBe("invalid_request");
+  expect(f.broker.execute).not.toHaveBeenCalled();
+ });
  it("clears unused grants when the run ends", async () => {
   const f = operationFixture(); f.approvals.approve(request); f.policy.clearRun("run");
   expect((await f.service.submit(fullInput)).operation.failure?.code).toBe("sandbox_approval_required");

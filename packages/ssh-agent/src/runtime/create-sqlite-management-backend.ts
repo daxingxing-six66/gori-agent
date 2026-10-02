@@ -20,6 +20,7 @@ import { CommandOperationService } from "../application/services/command-operati
 import { ContextCompactionSettingsService } from "../application/services/context-compaction-settings-service.ts";
 import { createChatService } from "../application/services/create-chat-service.ts";
 import { DefaultCredentialService } from "../application/services/credential-service.ts";
+import { DeploymentService } from "../application/services/deployment-service.ts";
 import { PiCustomLlmProviderRuntime } from "../application/services/custom-llm-provider-runtime.ts";
 import { DefaultCustomLlmProviderService } from "../application/services/custom-llm-provider-service.ts";
 import { FileTransferService } from "../application/services/file-transfer-service.ts";
@@ -56,6 +57,7 @@ import {
 	SqliteCredentialSecretStore,
 } from "../infrastructure/sqlite/sqlite-credential-repository.ts";
 import { SqliteCustomLlmProviderRepository } from "../infrastructure/sqlite/sqlite-custom-llm-provider-repository.ts";
+import { SqliteDeploymentRepository } from "../infrastructure/sqlite/sqlite-deployment-repository.ts";
 import { SqliteFileTransferRepository } from "../infrastructure/sqlite/sqlite-file-transfer-repository.ts";
 import { SqliteGuardRepository } from "../infrastructure/sqlite/sqlite-guard-repository.ts";
 import { SqliteLlmModelCatalogRepository } from "../infrastructure/sqlite/sqlite-llm-model-catalog-repository.ts";
@@ -94,6 +96,7 @@ export interface SqliteManagementBackend {
 	llmModelCatalog: LlmModelCatalog;
 	commandOperations: CommandOperationService;
 	fileTransfers: FileTransferService;
+	deployments: DeploymentService;
 	attachments: AttachmentService;
 	terminalSessions: TerminalSessionService;
 	terminalInteractions: TerminalInteractionService;
@@ -108,6 +111,7 @@ const uuidGenerator: IdGenerator = { next: () => randomUUID() };
 export function createSqliteManagementBackend(options: CreateSqliteManagementBackendOptions): SqliteManagementBackend {
 	const database = openSshAgentDatabase(options.databasePath);
 	try {
+		const localCwd = options.localCwd ?? join(resolveDataDirectory(), "workspace");
 		const sshCredentials = new SqliteCredentialRepository(database);
 		const workspaces = new SqliteWorkspaceRepository(database);
 		const hostTrusts = new SqliteWorkspaceHostTrustRepository(database);
@@ -116,10 +120,12 @@ export function createSqliteManagementBackend(options: CreateSqliteManagementBac
 		const guards = new SqliteGuardRepository(database);
 		const transactions = new SqliteTransactionRunner(database);
 		const commandOperationRepository = new SqliteCommandOperationRepository(database);
+		const deploymentRepository = new SqliteDeploymentRepository(database);
 		const fileTransferRepository = new SqliteFileTransferRepository(database);
 		const chatRepository = new SqliteChatRepository(database);
 		const contextCompactionSettingsRepository = new SqliteContextCompactionSettingsRepository(database);
 		const clock = options.clock ?? systemClock;
+		deploymentRepository.recoverInterrupted(Date.now());
 		const ids = options.ids ?? uuidGenerator;
 		chatRepository.recoverInterrupted(clock.now());
 		const terminalRepository = new SqliteTerminalRepository(database);
@@ -178,6 +184,24 @@ export function createSqliteManagementBackend(options: CreateSqliteManagementBac
 				? {}
 				: { maxConcurrentOperations: options.maxConcurrentOperations }),
 		});
+		let chat: ChatService | undefined;
+		const deployments = new DeploymentService({
+			sessions,
+			workspaces,
+			targets,
+			commands: commandOperations,
+			sandbox,
+			sandboxApprovals,
+			transfers: fileTransfers,
+			repository: deploymentRepository,
+			events,
+			localCwd,
+			lifecycle: sessionLifecycle,
+			cancelAgentRun: async (sessionId, agentRunId) => {
+				if (!chat) throw new Error("Chat service is unavailable during deployment cancellation");
+				await chat.cancelRun(sessionId, agentRunId);
+			},
+		});
 		const llmCredentials = new SqliteLlmProviderCredentialStore({
 			database,
 			cipher: new LlmProviderCredentialCipher(options.credentialEncryptionKey),
@@ -216,7 +240,6 @@ export function createSqliteManagementBackend(options: CreateSqliteManagementBac
 				? {}
 				: { intervalMs: options.llmCatalogRefreshIntervalMs }),
 		});
-		let chat: ChatService | undefined;
 		const terminalSessions = new TerminalSessionService({
 			sessions,
 			terminals: terminalRepository,
@@ -246,7 +269,9 @@ export function createSqliteManagementBackend(options: CreateSqliteManagementBac
 			models: llmModels,
 			catalog: llmModelCatalog,
 			contextCompactionSettings,
-			localCwd: options.localCwd ?? join(resolveDataDirectory(), "workspace"),
+			localCwd,
+			deploymentSetupInstructions: (sessionId) => deployments.setupInstructions(sessionId),
+			deployments,
 			ids,
 			lifecycle: sessionLifecycle,
 			...(options.chatApprovalTimeoutMs === undefined ? {} : { approvalTimeoutMs: options.chatApprovalTimeoutMs }),
@@ -297,7 +322,7 @@ export function createSqliteManagementBackend(options: CreateSqliteManagementBac
 		});
 		const localFiles = new DefaultLocalFileSystemService({
 			sessions,
-			localCwd: options.localCwd ?? join(resolveDataDirectory(), "workspace"),
+			localCwd,
 		});
 		const credentialService = new DefaultCredentialService({
 			credentials: sshCredentials,
@@ -355,6 +380,7 @@ export function createSqliteManagementBackend(options: CreateSqliteManagementBac
 				events,
 				broker: connectionPool,
 				chat,
+				deployments,
 				localFiles,
 				terminals: terminalSessions,
 				attachments,
@@ -364,6 +390,7 @@ export function createSqliteManagementBackend(options: CreateSqliteManagementBac
 			llmModelCatalog,
 			commandOperations,
 			fileTransfers,
+			deployments,
 			attachments,
 			terminalSessions,
 			terminalInteractions,
@@ -379,6 +406,7 @@ export function createSqliteManagementBackend(options: CreateSqliteManagementBac
 				clearInterval(heartbeat);
 				llmModelRefresh.close();
 				await chat.close();
+				await deployments.close();
 				metrics.close();
 				events.close();
 				commandOperations.close();

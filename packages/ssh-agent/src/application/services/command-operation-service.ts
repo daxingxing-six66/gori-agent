@@ -20,6 +20,7 @@ import type { CommandGuardDecision, CommandGuardEvaluator } from "./command-guar
 import { SessionCommandScheduler } from "./session-command-scheduler.ts";
 import type { SessionLifecycleCoordinator } from "./session-lifecycle-coordinator.ts";
 import type { SshTargetResolver } from "./ssh-target-resolver.ts";
+import type { SshTargetSnapshot } from "../../domain/ssh-target.ts";
 
 export const COMMAND_EXECUTION_DEFAULTS = {
 	queueTimeoutMs: 60_000,
@@ -35,6 +36,8 @@ export interface SubmitCommandInput {
 	sessionId: SessionId;
 	command: string;
 	agentRunId?: string;
+	/** In-process approval scope for non-Chat workflows; it is not persisted as a Chat Run ID. */
+	fullAccessApprovalScopeId?: string;
 	sandboxPermissions?: RemoteSandboxMode;
 	justification?: string;
 	cwd?: string;
@@ -42,6 +45,8 @@ export interface SubmitCommandInput {
 	signal?: AbortSignal;
 	onEvent?: (event: OperationEvent, operation: CommandOperation) => void;
 	abortRun?: () => void;
+	/** Reject queued execution if the approved Workspace SSH identity changes before dispatch. */
+	expectedTarget?: SshTargetSnapshot;
 }
 
 export interface CommandOperationResult {
@@ -55,6 +60,7 @@ interface PendingCommand {
 	signal?: AbortSignal;
 	onEvent?: (event: OperationEvent, operation: CommandOperation) => void;
 	abortRun?: () => void;
+	expectedTarget?: SshTargetSnapshot;
 }
 
 export class CommandOperationService {
@@ -158,12 +164,13 @@ export class CommandOperationService {
 			const pending: PendingCommand = {
 				operationId: operation.id,
 				...(mode !== "full_access" ? {} : { fullAccessRequest: {
-					agentRunId: input.agentRunId ?? "", toolCallId: input.toolCallId, sessionId: input.sessionId,
+					agentRunId: input.fullAccessApprovalScopeId ?? input.agentRunId ?? "", toolCallId: input.toolCallId, sessionId: input.sessionId,
 					command: input.command, cwd: input.cwd, timeoutMs: input.timeoutMs, justification: input.justification ?? "",
 				} }),
 				...(input.signal ? { signal: input.signal } : {}),
 				...(input.onEvent ? { onEvent: input.onEvent } : {}),
 				...(input.abortRun ? { abortRun: input.abortRun } : {}),
+				...(input.expectedTarget ? { expectedTarget: input.expectedTarget } : {}),
 			};
 			const scheduled = await this.scheduler.schedule({
 				sessionId: operation.sessionId,
@@ -281,6 +288,9 @@ export class CommandOperationService {
 				throw sandboxFailure("sandbox_approval_required", "full_access requires a new human approval for this exact tool call. The command was not executed.");
 			}
 			const target = await this.targets.resolve(operation.sessionId);
+			if (pending.expectedTarget && !sameExecutionTarget(target, pending.expectedTarget))
+				throw new SshAgentError({ code: "invalid_request", category: "request", phase: "validate",
+					message: "Workspace SSH identity changed after deployment approval. The command was not executed.", retryable: false });
 			operation.executionContext = target;
 			operation.resolvedCwd = requireCwd(operation.requestedCwd ?? target.defaultCwd);
 			const controller = new AbortController();
@@ -537,6 +547,14 @@ export class CommandOperationService {
 			await this.emit(operation, "status", { status: operation.status });
 		}
 	}
+}
+
+function sameExecutionTarget(actual: SshTargetSnapshot, expected: SshTargetSnapshot): boolean {
+	return actual.workspaceId === expected.workspaceId && actual.workspaceRevision === expected.workspaceRevision &&
+		actual.hostname === expected.hostname && actual.port === expected.port &&
+		actual.hostKeyAlgorithm === expected.hostKeyAlgorithm && actual.hostKeyFingerprint === expected.hostKeyFingerprint &&
+		actual.credentialId === expected.credentialId && actual.credentialAuthVersion === expected.credentialAuthVersion &&
+		actual.remoteUser === expected.remoteUser && actual.defaultCwd === expected.defaultCwd;
 }
 
 function requireCommand(value: string): string {
