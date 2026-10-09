@@ -21,6 +21,9 @@ import type { SessionTitleService } from "./session-title-service.ts";
 import type { SessionLifecycleCoordinator } from "./session-lifecycle-coordinator.ts";
 import type { TerminalInteractionService } from "./terminal-interaction-service.ts";
 import type { AgentDeploymentService } from "../tools/deployment-agent-tool.ts";
+import type { BubblewrapInstallationService } from "./bubblewrap-installation-service.ts";
+import type { SshTargetSnapshot } from "../../domain/ssh-target.ts";
+import type { RemoteSandboxRoute } from "./remote-sandbox-routing.ts";
 
 export interface CreateChatServiceOptions {
 	prompts: ChatPromptService;
@@ -35,6 +38,12 @@ export interface CreateChatServiceOptions {
 	localCwd: string;
 	deploymentSetupInstructions?: (sessionId: string) => Promise<string>;
 	deployments?: AgentDeploymentService;
+	previewDeploymentRemoteStage?: (sessionId: string, deploymentRunId: string,
+		stage: "restart" | "verify") => { readonly command: string; readonly mode: "workspace_write" | "full_access" } | undefined;
+	resolveRemoteTarget?: (sessionId: string) => Promise<SshTargetSnapshot>;
+	bubblewrapInstallations?: BubblewrapInstallationService;
+	assessRemoteSandbox?: (sessionId: string, declaredWritePaths: readonly string[], signal: AbortSignal) =>
+		Promise<{ readonly target: SshTargetSnapshot; readonly route: RemoteSandboxRoute }>;
 	ids: IdGenerator;
 	approvalTimeoutMs?: number;
 	createRemoteTool: ChatAgentRuntimeFactoryOptions["createRemoteTool"];
@@ -88,7 +97,12 @@ export function createChatService(options: CreateChatServiceOptions): ChatServic
 		sessions: options.sessions,
 		terminalInteractions: options.terminalInteractions,
 		preflightRemoteGuard: options.preflightRemoteGuard,
+		requireBubblewrapInstallation: options.bubblewrapInstallations === undefined ? undefined
+			: (sessionId, signal) => options.bubblewrapInstallations!.requireInstallation(sessionId, signal),
 		sandboxApprovals: options.sandboxApprovals,
+		assessRemoteSandbox: options.assessRemoteSandbox,
+		previewDeploymentRemoteStage: options.previewDeploymentRemoteStage,
+		resolveRemoteTarget: options.resolveRemoteTarget,
 	});
 	const toolCalls = new ChatToolCallCoordinator({
 		authorization,
@@ -105,6 +119,7 @@ export function createChatService(options: CreateChatServiceOptions): ChatServic
 			attachments: options.chatAttachments,
 			decisions,
 			deployments: options.deployments,
+			bubblewrapInstallations: options.bubblewrapInstallations,
 			createRemoteTool: options.createRemoteTool,
 			createTerminalTool: options.createTerminalTool,
 			createSftpTool: options.createSftpTool,
@@ -120,7 +135,7 @@ export function createChatService(options: CreateChatServiceOptions): ChatServic
 		localCwd: options.localCwd,
 		...(options.deploymentSetupInstructions === undefined ? {} : { deploymentSetupInstructions: options.deploymentSetupInstructions }),
 		...(options.deployments === undefined ? {} : { deployments: options.deployments }),
-		bindDeploymentRun: (runId) => authorization.bindDeploymentRun(runId),
+		bindDeploymentRun: (runId, deploymentRunId) => authorization.bindDeploymentRun(runId, deploymentRunId),
 		ids: options.ids,
 		bindServerInteraction: options.bindServerInteraction,
 		unbindTerminalRun: options.unbindTerminalRun,

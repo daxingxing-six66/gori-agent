@@ -10,7 +10,9 @@ import {
 import { Type } from "typebox";
 import { describe, expect, it, vi } from "vitest";
 import { ChatAgentRuntimeFactory } from "../src/application/services/chat-agent-runtime-factory.ts";
+import type { AgentDeploymentService } from "../src/application/tools/deployment-agent-tool.ts";
 import type { ChatRun } from "../src/domain/chat.ts";
+import type { DeploymentRun } from "../src/domain/deployment.ts";
 import { ChatCompactionError } from "../src/domain/context-compaction.ts";
 
 const commandRun: ChatRun = {
@@ -39,7 +41,7 @@ function namedTool(name: string): AgentTool {
 }
 
 function createContext(
-	options: { createExecutionEnv?: (workDir: string) => NodeExecutionEnv; provider?: string } = {},
+	options: { createExecutionEnv?: (workDir: string) => NodeExecutionEnv; provider?: string; deployments?: AgentDeploymentService } = {},
 ) {
 	const faux = fauxProvider({
 		provider: options.provider ?? "factory-provider",
@@ -65,6 +67,7 @@ function createContext(
 		agentEvents: { handle: vi.fn() },
 		attachments: { hydrateProviderContext: vi.fn(async (_sessionId, providerContext) => providerContext) },
 		decisions: { request: vi.fn(async () => [{ kind: "skipped" as const }]) },
+		...(options.deployments === undefined ? {} : { deployments: options.deployments }),
 		createRemoteTool,
 		createTerminalTool,
 		createSftpTool: vi.fn(() => namedTool("sftp_upload")),
@@ -245,9 +248,13 @@ describe("ChatAgentRuntimeFactory", () => {
 			"terminal_interaction",
 			"sftp_upload",
 			"sftp_download",
+			"bubblewrap_inspect",
+			"bubblewrap_install",
 			"ask_user_decision",
 			"deployment_inspect",
 			"deployment_execute_next",
+			"deployment_propose_recovery",
+			"deployment_propose_plan",
 		]);
 		expect(options).toMatchObject({
 			steeringMode: "one-at-a-time",
@@ -261,6 +268,8 @@ describe("ChatAgentRuntimeFactory", () => {
 		}
 		const deployTool = options?.initialState?.tools?.find((tool) => tool.name === "deployment_execute_next");
 		await expect(deployTool?.execute("deploy-call", { stage: "build" }, undefined)).rejects.toThrow("current Chat workflow");
+		const planningTool = options?.initialState?.tools?.find((tool) => tool.name === "deployment_propose_plan");
+		await expect(planningTool?.execute("proposal-call", {}, undefined)).rejects.toThrow("current Chat workflow");
 		expect(context.createRemoteTool).toHaveBeenCalledWith("session-1", expect.any(Function), "run-1");
 		expect(context.createTerminalTool).not.toHaveBeenCalled();
 
@@ -268,6 +277,58 @@ describe("ChatAgentRuntimeFactory", () => {
 		context.getRemoteAbort()?.();
 		expect(abort).toHaveBeenCalledOnce();
 		await runtime.dispose();
+	});
+
+	it("exposes the proposal tool only to a discussion-bound planning Run", async () => {
+		const proposed: DeploymentRun = {
+			id: "deploy-1", sessionId: "session-1", workspaceId: "workspace-1", createdAt: 1, updatedAt: 1, status: "preparing",
+			plan: {
+				profilePath: "/project/.gori/deploy-host.md", profileHash: "hash", project: "project",
+				remoteAccess: { mode: "workspace_write" }, target: { host: "host" },
+				targetBinding: { port: 22, hostKeyFingerprint: "fingerprint", credentialId: "credential", credentialAuthVersion: 1, remoteUser: "user", writableRoot: "/srv/project" },
+				module: { id: "api", name: "API" }, build: { cwd: "/project", command: "build", artifact: "/project/api.jar" },
+				upload: { remotePath: "/srv/project/api.jar" }, restart: { command: "restart" },
+			},
+			stages: {
+				prepare: { status: "success", log: "" }, build: { status: "pending", log: "" },
+				upload: { status: "pending", log: "" }, restart: { status: "pending", log: "" }, verify: { status: "pending", log: "" },
+			},
+		};
+		const proposeForDiscussion = vi.fn(async () => proposed);
+		const deployments: AgentDeploymentService = {
+			activeDiscussion: vi.fn(() => null), getDiscussion: vi.fn(() => { throw new Error("unused"); }),
+			bindPlanningRun: vi.fn(async () => { throw new Error("unused"); }),
+			discussionInstructions: vi.fn(async () => "instructions"), proposeForDiscussion,
+			get: vi.fn(() => proposed), claimForAgent: vi.fn(async () => proposed),
+			bindRecoveryAgent: vi.fn(async () => proposed), proposeRecoveryForAgent: vi.fn(async () => proposed),
+			executeStageForAgent: vi.fn(async () => proposed), finishAgent: vi.fn(async () => undefined),
+			finishPlanningAgent: vi.fn(async () => undefined),
+		};
+		const context = createContext({ deployments });
+		const runtime = await context.factory.create({
+			run: commandRun, model: context.model, workDir: process.cwd(), history: [], systemPrompt: "planning",
+			deploymentPlanning: { discussionId: "discussion-1", revision: 2 },
+		});
+		try {
+			const proposalTool = context.getAgentOptions()?.initialState?.tools?.find((tool) => tool.name === "deployment_propose_plan");
+			const proposal = { buildSteps: [{ workdir: ".", command: "build" }], artifacts: [{ source: "api.jar", target: "/srv/project/api.jar" }], restart: { command: "restart" } };
+			const signal = new AbortController().signal;
+			await proposalTool?.execute("call-1", proposal, signal);
+			expect(proposeForDiscussion).toHaveBeenCalledWith("session-1", "discussion-1", 2, "run-1", proposal, signal);
+			const executeTool = context.getAgentOptions()?.initialState?.tools?.find((tool) => tool.name === "deployment_execute_next");
+			await expect(executeTool?.execute("call-2", { stage: "build" }, undefined)).rejects.toThrow("current Chat workflow");
+		} finally {
+			await runtime.dispose();
+		}
+	});
+
+	it("rejects a Runtime that is bound to planning and execution at the same time", async () => {
+		const context = createContext();
+		await expect(context.factory.create({
+			run: commandRun, model: context.model, workDir: process.cwd(), history: [], systemPrompt: "invalid",
+			deploymentRunId: "deploy-1", deploymentPlanning: { discussionId: "discussion-1", revision: 2 },
+		})).rejects.toMatchObject({ code: "chat_workflow_invalid" });
+		expect(context.getAgentOptions()).toBeUndefined();
 	});
 
 	it("keeps both definitions and the supplied snapshot in Terminal Mode", async () => {
@@ -295,9 +356,13 @@ describe("ChatAgentRuntimeFactory", () => {
 			"terminal_interaction",
 			"sftp_upload",
 			"sftp_download",
+			"bubblewrap_inspect",
+			"bubblewrap_install",
 			"ask_user_decision",
 			"deployment_inspect",
 			"deployment_execute_next",
+			"deployment_propose_recovery",
+			"deployment_propose_plan",
 		]);
 		expect(context.createRemoteTool).not.toHaveBeenCalled();
 		expect(context.createTerminalTool).toHaveBeenCalledWith({

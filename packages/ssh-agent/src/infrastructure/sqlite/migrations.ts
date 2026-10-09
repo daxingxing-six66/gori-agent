@@ -765,6 +765,60 @@ const MIGRATIONS = [
 			CREATE INDEX deployment_runs_session_idx ON deployment_runs(session_id, created_at DESC);
 		`,
 	},
+	{
+		version: 24,
+		sql: `
+			CREATE UNIQUE INDEX deployment_runs_planning_agent_idx
+				ON deployment_runs(session_id, json_extract(snapshot_json, '$.planningAgentRunId'))
+				WHERE json_extract(snapshot_json, '$.planningAgentRunId') IS NOT NULL;
+		`,
+	},
+	{
+		version: 25,
+		sql: `
+			CREATE TABLE deployment_discussions (
+				id TEXT PRIMARY KEY,
+				session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+				workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+				status TEXT NOT NULL CHECK (status IN ('discussing', 'proposed', 'cancelled')),
+				revision INTEGER NOT NULL CHECK (revision > 0),
+				snapshot_json TEXT NOT NULL CHECK (json_valid(snapshot_json)),
+				created_at INTEGER NOT NULL,
+				updated_at INTEGER NOT NULL
+			) STRICT;
+			CREATE UNIQUE INDEX deployment_discussions_active_session_idx
+				ON deployment_discussions(session_id) WHERE status = 'discussing';
+			CREATE TABLE deployment_discussion_runs (
+				discussion_id TEXT NOT NULL REFERENCES deployment_discussions(id) ON DELETE CASCADE,
+				session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+				agent_run_id TEXT NOT NULL,
+				revision INTEGER NOT NULL CHECK (revision > 0),
+				PRIMARY KEY (session_id, agent_run_id)
+			) STRICT;
+			CREATE INDEX deployment_discussion_runs_discussion_idx ON deployment_discussion_runs(discussion_id, revision);
+		`,
+	},
+	{
+		version: 26,
+		sql: `
+			CREATE TABLE deployment_runs_v26 (
+				id TEXT PRIMARY KEY,
+				session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+				workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+				status TEXT NOT NULL CHECK (status IN ('preparing', 'running', 'recovering', 'success', 'failed', 'cancelled')),
+				snapshot_json TEXT NOT NULL CHECK (json_valid(snapshot_json)),
+				created_at INTEGER NOT NULL,
+				updated_at INTEGER NOT NULL
+			) STRICT;
+			INSERT INTO deployment_runs_v26 SELECT * FROM deployment_runs;
+			DROP TABLE deployment_runs;
+			ALTER TABLE deployment_runs_v26 RENAME TO deployment_runs;
+			CREATE INDEX deployment_runs_session_idx ON deployment_runs(session_id, created_at DESC);
+			CREATE UNIQUE INDEX deployment_runs_planning_agent_idx
+				ON deployment_runs(session_id, json_extract(snapshot_json, '$.planningAgentRunId'))
+				WHERE json_extract(snapshot_json, '$.planningAgentRunId') IS NOT NULL;
+		`,
+	},
 ] as const;
 
 export function applyMigrations(database: DatabaseSync): void {

@@ -1,7 +1,19 @@
 import { describe, expect, it, vi } from "vitest";
 import { parseCreateChatRun } from "../src/api/request-validation.ts";
-import { createDeploymentAgentTools, type AgentDeploymentService } from "../src/application/tools/deployment-agent-tool.ts";
-import type { DeploymentRun } from "../src/domain/deployment.ts";
+import { createDeploymentAgentTools, createDeploymentPlanningTool, createDeploymentRecoveryTools, type AgentDeploymentService, type DeploymentPlanProposal } from "../src/application/tools/deployment-agent-tool.ts";
+import type { DeploymentDiscussion, DeploymentRun } from "../src/domain/deployment.ts";
+
+function discussion(): DeploymentDiscussion {
+	return {
+		id: "discussion-1", sessionId: "session-1", workspaceId: "workspace-1", status: "discussing", revision: 2,
+		profileFile: "deploy-host.md", profileHash: "hash", projectRoot: "/project", project: "project",
+		module: { id: "api", name: "API" },
+		targetBinding: { hostname: "host", port: 22, workspaceRevision: 1, hostKeyAlgorithm: "ssh-ed25519",
+			hostKeyFingerprint: "fingerprint", credentialId: "credential-1", credentialAuthVersion: 1,
+			remoteUser: "user", writableRoot: "/srv/project" },
+		createdAt: 1, updatedAt: 1,
+	};
+}
 
 function deployment(): DeploymentRun {
 	return {
@@ -26,13 +38,21 @@ function deployment(): DeploymentRun {
 function service(run: DeploymentRun) {
 	const get = vi.fn(() => run);
 	const executeStageForAgent = vi.fn(async () => run);
+	const proposeForDiscussion = vi.fn(async () => run);
 	const deployments: AgentDeploymentService = {
+		activeDiscussion: vi.fn(() => discussion()),
+		getDiscussion: vi.fn(() => discussion()),
+		bindPlanningRun: vi.fn(async () => discussion()),
+		discussionInstructions: vi.fn(async () => "Discussion instructions"),
+		proposeForDiscussion,
 		get,
+		bindRecoveryAgent: vi.fn(async () => run), proposeRecoveryForAgent: vi.fn(async () => run),
 		claimForAgent: vi.fn(async () => run),
 		executeStageForAgent,
 		finishAgent: vi.fn(async () => undefined),
+		finishPlanningAgent: vi.fn(async () => undefined),
 	};
-	return { deployments, get, executeStageForAgent };
+	return { deployments, get, executeStageForAgent, proposeForDiscussion };
 }
 
 describe("deployment Agent boundary", () => {
@@ -45,6 +65,40 @@ describe("deployment Agent boundary", () => {
 		expect(() => parseCreateChatRun({ ...base, deploymentRunId: "deploy-1" })).toThrow();
 		expect(() => parseCreateChatRun({ ...base, workflow: "deployment_setup", deploymentRunId: "deploy-1" })).toThrow();
 		expect(() => parseCreateChatRun({ ...base, workflow: "deployment_execution", deploymentRunId: "../other" })).toThrow();
+	});
+
+	it("accepts only a persisted discussion ID for planning", () => {
+		const base = { requestId: "request-1", message: "Plan release", serverInteractionMode: "command" };
+		const planning = { workflow: "deployment_planning", deploymentDiscussionId: "discussion-1" };
+		expect(parseCreateChatRun({ ...base, ...planning })).toMatchObject(planning);
+		for (const invalid of [
+			{ workflow: "deployment_planning" },
+			{ ...planning, deploymentDiscussionId: "  " },
+			{ ...planning, deploymentDiscussionId: "../other" },
+			{ ...planning, deploymentRunId: "deploy-1" },
+			{ deploymentDiscussionId: "discussion-1" },
+			{ workflow: "deployment_planning", deploymentProfileFile: "deploy-host.md", deploymentModuleId: "api" },
+		]) expect(() => parseCreateChatRun({ ...base, ...invalid })).toThrow();
+	});
+
+	it("binds a planning proposal to the persisted Discussion revision, Session and Agent Run", async () => {
+		const run = deployment();
+		run.status = "preparing";
+		const { deployments, proposeForDiscussion } = service(run);
+		const tool = createDeploymentPlanningTool({
+			run: { id: "agent-1", sessionId: "session-1" }, discussionId: "discussion-1", revision: 2, deployments,
+		});
+		const proposal: DeploymentPlanProposal = {
+			buildSteps: [{ workdir: "app", command: "mvn package" }],
+			artifacts: [{ source: "app/target/api.jar", target: "/srv/project/api.jar" }],
+			restart: { command: "systemctl restart api" },
+		};
+		const signal = new AbortController().signal;
+		const result = await tool.execute("call-1", proposal, signal);
+		expect(proposeForDiscussion).toHaveBeenCalledWith("session-1", "discussion-1", 2, "agent-1", proposal, signal);
+		expect(JSON.parse((result.content[0] as { text: string }).text)).toMatchObject({
+			deploymentRunId: "deploy-1", status: "preparing", plan: { module: { id: "api" } },
+		});
 	});
 
 	it("binds inspection and one stage execution to the server-owned Session and Agent Run", async () => {
@@ -81,5 +135,22 @@ describe("deployment Agent boundary", () => {
 		expect(output.stages.restart).toMatchObject({ status: "failed", error: "Exit 1", logTruncated: true,
 			exitCode: 1, failureCode: "remote_exit_non_zero", operationId: "operation-1", safeDetails: { commandMayHaveRun: true } });
 		expect(output.stages.restart.logTail).toHaveLength(8_192);
+	});
+
+	it("exposes inspection and proposal, but no execution, during recovery", async () => {
+		const run = deployment();
+		run.status = "recovering";
+		run.stages.build = { status: "failed", log: "compiler error", error: "Build exited with status 1" };
+		const { deployments, executeStageForAgent } = service(run);
+		const tools = createDeploymentRecoveryTools({
+			run: { id: "agent-repair", sessionId: "session-1" }, deploymentRunId: run.id, deployments,
+		});
+		expect(tools.map((tool) => tool.name)).toEqual(["deployment_inspect", "deployment_propose_recovery"]);
+		const input = { expectedRevision: 1, stage: "build", reason: "Use the correct build goal",
+			buildSteps: [{ workdir: ".", command: "mvn package" }] };
+		await tools[1]!.execute("call-repair", input, undefined);
+		expect(deployments.proposeRecoveryForAgent).toHaveBeenCalledWith("session-1", "deploy-1", "agent-repair", 1,
+			{ stage: "build", reason: input.reason, buildSteps: input.buildSteps }, expect.any(AbortSignal));
+		expect(executeStageForAgent).not.toHaveBeenCalled();
 	});
 });

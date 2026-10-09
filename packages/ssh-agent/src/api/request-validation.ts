@@ -314,8 +314,9 @@ export function parseCreateChatRun(value: unknown): {
 	message: string;
 	attachmentIds?: string[];
 	serverInteractionMode: "command" | "terminal";
-	workflow?: "deployment_setup" | "deployment_execution";
+	workflow?: "deployment_setup" | "deployment_planning" | "deployment_execution" | "deployment_recovery";
 	deploymentRunId?: string;
+	deploymentDiscussionId?: string;
 } {
 	const body = object(value, "body");
 	exactKeys(body, [
@@ -329,6 +330,7 @@ export function parseCreateChatRun(value: unknown): {
 		"serverInteractionMode",
 		"workflow",
 		"deploymentRunId",
+		"deploymentDiscussionId",
 	]);
 	if (body.generateTitle !== undefined && typeof body.generateTitle !== "boolean")
 		invalid("generateTitle must be a boolean", "generateTitle");
@@ -344,14 +346,21 @@ export function parseCreateChatRun(value: unknown): {
 		invalid("serverInteractionMode must be command or terminal", "serverInteractionMode");
 	}
 	const workflow = body.workflow;
-	if (workflow !== undefined && workflow !== "deployment_setup" && workflow !== "deployment_execution")
+	if (workflow !== undefined && workflow !== "deployment_setup" && workflow !== "deployment_planning" && workflow !== "deployment_execution" && workflow !== "deployment_recovery")
 		invalid("workflow is invalid", "workflow");
 	const deploymentRunId = optionalString(body, "deploymentRunId");
-	if (workflow === "deployment_execution") {
+	const deploymentDiscussionId = optionalString(body, "deploymentDiscussionId");
+	if (workflow === "deployment_execution" || workflow === "deployment_recovery") {
 		if (deploymentRunId === undefined || !/^[a-zA-Z0-9_-]{1,128}$/u.test(deploymentRunId))
-			invalid("deploymentRunId is required for deployment_execution", "deploymentRunId");
+			invalid("deploymentRunId is required for deployment workflow", "deploymentRunId");
 	} else if (deploymentRunId !== undefined) {
-		invalid("deploymentRunId requires deployment_execution", "deploymentRunId");
+		invalid("deploymentRunId requires deployment execution or recovery", "deploymentRunId");
+	}
+	if (workflow === "deployment_planning") {
+		if (deploymentDiscussionId === undefined || !/^[a-zA-Z0-9_-]{1,128}$/u.test(deploymentDiscussionId))
+			invalid("deploymentDiscussionId is required for deployment_planning", "deploymentDiscussionId");
+	} else if (deploymentDiscussionId !== undefined) {
+		invalid("deploymentDiscussionId requires deployment_planning", "deploymentDiscussionId");
 	}
 	return {
 		requestId: string(body, "requestId"),
@@ -364,6 +373,7 @@ export function parseCreateChatRun(value: unknown): {
 		serverInteractionMode,
 		...(workflow === undefined ? {} : { workflow }),
 		...(deploymentRunId === undefined ? {} : { deploymentRunId }),
+		...(deploymentDiscussionId === undefined ? {} : { deploymentDiscussionId }),
 	};
 }
 

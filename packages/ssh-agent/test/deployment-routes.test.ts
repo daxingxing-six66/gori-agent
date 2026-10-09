@@ -33,6 +33,23 @@ describe("deployment HTTP route", () => {
 		expect(decideFullAccess).toHaveBeenCalledWith("session-1", "run-1", "restart", "approval-1", true);
 	});
 
+	it("routes recovery approval and rejection to the exact Session, run and proposal", async () => {
+		const decideRecovery = vi.fn(async (_sessionId: string, _runId: string, _proposalId: string, approved: boolean) =>
+			({ id: "run-1", decision: approved }));
+		const service = { decideRecovery } as unknown as DeploymentService;
+		for (const [action, approved] of [["approve", true], ["reject", false]] as const) {
+			const response = await handleDeploymentRoute(service,
+				new Request(`http://local/api/sessions/session-1/deployments/run-1/recovery/proposal-1/${action}`, { method: "POST" }),
+				[...segments, "run-1", "recovery", "proposal-1", action]);
+			expect(response?.status).toBe(200);
+			expect(await response?.json()).toEqual({ id: "run-1", decision: approved });
+			expect(decideRecovery).toHaveBeenLastCalledWith("session-1", "run-1", "proposal-1", approved);
+		}
+		expect(await handleDeploymentRoute(service,
+			new Request("http://local/api/sessions/session-1/deployments/run-1/recovery/proposal-1/execute", { method: "POST" }),
+			[...segments, "run-1", "recovery", "proposal-1", "execute"])).toBeNull();
+	});
+
 	it("returns bounded deployment history scoped to the Session", async () => {
 		const listHistory = vi.fn(() => ({ runs: [{ id: "run-2", stages: { build: { status: "success", log: "built" } } }], hasMore: true, nextCursor: "next-page" }));
 		const service = { listHistory } as unknown as DeploymentService;

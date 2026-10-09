@@ -1,6 +1,6 @@
 import type { Session } from "../domain/session.ts";
 import type { FileTransfer } from "../domain/file-transfer.ts";
-import type { DeploymentRun } from "../domain/deployment.ts";
+import type { DeploymentDiscussion, DeploymentRun } from "../domain/deployment.ts";
 import type { BackendLocale, BackendMessageKey } from "../i18n/message.ts";
 import { localizePublicValue } from "../i18n/projection.ts";
 import type { ConnectionPoolSnapshot } from "./ssh-channel-broker.ts";
@@ -41,7 +41,8 @@ export type WorkspaceEvent =
 	| { type: "connection.snapshot"; data: ConnectionPoolSnapshot }
 	| { type: "session.updated"; data: Pick<Session, "id" | "workspaceId" | "displayName" | "revision" | "updatedAt"> }
 	| { type: "transfer.updated"; data: FileTransfer }
-	| { type: "deployment.updated"; data: DeploymentRun };
+	| { type: "deployment.updated"; data: DeploymentRun }
+	| { type: "deployment.discussion.updated"; data: DeploymentDiscussion };
 
 export type WorkspaceEventTopic = "monitoring" | "connection" | "transfers" | "sessions" | "deployments";
 
@@ -152,7 +153,7 @@ export class WorkspaceEventHub {
 
 function topicFor(type: WorkspaceEvent["type"]): WorkspaceEventTopic {
 	if (type === "session.updated") return "sessions";
-	if (type === "deployment.updated") return "deployments";
+	if (type === "deployment.updated" || type === "deployment.discussion.updated") return "deployments";
 	if (type.startsWith("monitor.")) return "monitoring";
 	if (type === "connection.snapshot") return "connection";
 	return "transfers";

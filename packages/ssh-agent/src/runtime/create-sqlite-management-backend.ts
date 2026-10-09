@@ -1,6 +1,9 @@
 import { LandlockRemoteSandboxProvider } from "../infrastructure/sandbox/landlock-remote-sandbox-provider.ts";
+import { BubblewrapRemoteSandboxProvider } from "../infrastructure/sandbox/bubblewrap-remote-sandbox-provider.ts";
 import { RemoteSandboxCoordinator } from "../infrastructure/sandbox/remote-sandbox-coordinator.ts";
 import { RemoteSandboxApprovalStore } from "../application/services/remote-sandbox-approval-store.ts";
+import { evaluateRemoteSandboxRoute } from "../application/services/remote-sandbox-routing.ts";
+import { BubblewrapInstallationService } from "../application/services/bubblewrap-installation-service.ts";
 import { join } from "node:path";
 import { resolveDataDirectory } from "../data-directory.ts";
 import { ChatPromptService } from "../application/services/chat-prompt-service.ts";
@@ -58,6 +61,7 @@ import {
 } from "../infrastructure/sqlite/sqlite-credential-repository.ts";
 import { SqliteCustomLlmProviderRepository } from "../infrastructure/sqlite/sqlite-custom-llm-provider-repository.ts";
 import { SqliteDeploymentRepository } from "../infrastructure/sqlite/sqlite-deployment-repository.ts";
+import { SqliteDeploymentDiscussionRepository } from "../infrastructure/sqlite/sqlite-deployment-discussion-repository.ts";
 import { SqliteFileTransferRepository } from "../infrastructure/sqlite/sqlite-file-transfer-repository.ts";
 import { SqliteGuardRepository } from "../infrastructure/sqlite/sqlite-guard-repository.ts";
 import { SqliteLlmModelCatalogRepository } from "../infrastructure/sqlite/sqlite-llm-model-catalog-repository.ts";
@@ -112,15 +116,17 @@ export function createSqliteManagementBackend(options: CreateSqliteManagementBac
 	const database = openSshAgentDatabase(options.databasePath);
 	try {
 		const localCwd = options.localCwd ?? join(resolveDataDirectory(), "workspace");
+		// Install the connection guard before any repository can compile a statement.
+		const transactions = new SqliteTransactionRunner(database);
 		const sshCredentials = new SqliteCredentialRepository(database);
 		const workspaces = new SqliteWorkspaceRepository(database);
 		const hostTrusts = new SqliteWorkspaceHostTrustRepository(database);
 		const sessions = new SqliteSessionRepository(database);
 		const attachmentRepository = new SqliteAttachmentRepository(database);
 		const guards = new SqliteGuardRepository(database);
-		const transactions = new SqliteTransactionRunner(database);
 		const commandOperationRepository = new SqliteCommandOperationRepository(database);
 		const deploymentRepository = new SqliteDeploymentRepository(database);
+		const deploymentDiscussions = new SqliteDeploymentDiscussionRepository(database);
 		const fileTransferRepository = new SqliteFileTransferRepository(database);
 		const chatRepository = new SqliteChatRepository(database);
 		const contextCompactionSettingsRepository = new SqliteContextCompactionSettingsRepository(database);
@@ -168,6 +174,7 @@ export function createSqliteManagementBackend(options: CreateSqliteManagementBac
 		const sandboxApprovals = new RemoteSandboxApprovalStore();
 		const sandbox = new RemoteSandboxCoordinator([
 			new LandlockRemoteSandboxProvider({ broker: connectionPool }),
+			new BubblewrapRemoteSandboxProvider({ broker: connectionPool }),
 		]);
 		const commandOperations = new CommandOperationService({
 			operations: commandOperationRepository,
@@ -184,22 +191,28 @@ export function createSqliteManagementBackend(options: CreateSqliteManagementBac
 				? {}
 				: { maxConcurrentOperations: options.maxConcurrentOperations }),
 		});
+		const bubblewrapInstallations = new BubblewrapInstallationService({
+			targets, sandbox, broker: connectionPool, operations: commandOperations,
+		});
 		let chat: ChatService | undefined;
 		const deployments = new DeploymentService({
 			sessions,
 			workspaces,
 			targets,
 			commands: commandOperations,
-			sandbox,
+			assessRemoteSandbox: (target, declaredWritePaths, signal) =>
+				evaluateRemoteSandboxRoute({ sandbox, target, declaredWritePaths, signal }),
 			sandboxApprovals,
 			transfers: fileTransfers,
 			repository: deploymentRepository,
+			discussions: deploymentDiscussions,
+			transactions,
 			events,
 			localCwd,
 			lifecycle: sessionLifecycle,
 			cancelAgentRun: async (sessionId, agentRunId) => {
 				if (!chat) throw new Error("Chat service is unavailable during deployment cancellation");
-				await chat.cancelRun(sessionId, agentRunId);
+				await chat.cancelRunAndWait(sessionId, agentRunId);
 			},
 		});
 		const llmCredentials = new SqliteLlmProviderCredentialStore({
@@ -261,6 +274,11 @@ export function createSqliteManagementBackend(options: CreateSqliteManagementBac
 		});
 		chat = createChatService({
 			sandboxApprovals,
+			assessRemoteSandbox: async (sessionId, declaredWritePaths, signal) => {
+				const target = await targets.resolve(sessionId);
+				return { target, route: await evaluateRemoteSandboxRoute({ sandbox, target, declaredWritePaths, signal }) };
+			},
+			bubblewrapInstallations,
 			prompts: new ChatPromptService(new SqliteChatPromptRepository(database), workspaces),
 			titles: new SessionTitleService({ models: llmModels, sessions, events }),
 			chatRepository,
@@ -272,6 +290,9 @@ export function createSqliteManagementBackend(options: CreateSqliteManagementBac
 			localCwd,
 			deploymentSetupInstructions: (sessionId) => deployments.setupInstructions(sessionId),
 			deployments,
+			previewDeploymentRemoteStage: (sessionId, deploymentRunId, stage) =>
+				deployments.previewRemoteStage(sessionId, deploymentRunId, stage),
+			resolveRemoteTarget: (sessionId) => targets.resolve(sessionId),
 			ids,
 			lifecycle: sessionLifecycle,
 			...(options.chatApprovalTimeoutMs === undefined ? {} : { approvalTimeoutMs: options.chatApprovalTimeoutMs }),
@@ -280,6 +301,7 @@ export function createSqliteManagementBackend(options: CreateSqliteManagementBac
 					sessionId,
 					operations: commandOperations,
 					agentRunId,
+					sandboxApprovals,
 					...(abortRun === undefined ? {} : { abortRun }),
 				}),
 			createTerminalTool: ({ sessionId, terminalSessionId, agentRunId }) => {

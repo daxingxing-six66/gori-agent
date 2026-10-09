@@ -148,7 +148,8 @@ describe("session prompt snapshots and terminal mode history", () => {
 			expect(new SqliteChatPromptRepository(fixture.backend.database).find(fixture.sessionId)?.systemPrompt).toBe(snapshot);
 			await run(fixture, "after-terminal");
 			expect(fixture.captured[0]!.messages.filter((message) => message.role === "system")).toHaveLength(4);
-			expect(fixture.captured[0]!.systemPrompt).toBe(snapshot);
+			expect(fixture.captured[0]!.systemPrompt).toContain(snapshot);
+			expect(fixture.captured[0]!.systemPrompt).toContain("<deployment-mode-off>");
 		} finally { await fixture.dispose(); }
 	});
 

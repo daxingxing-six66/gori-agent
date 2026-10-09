@@ -5,13 +5,14 @@ description: Create a Gori deployment profile for the current project and Worksp
 
 # Create a Gori deployment profile
 
-Use this skill only to prepare a profile. Do not build, upload, restart, or deploy while creating it.
+Use this skill only to prepare reusable deployment knowledge. Do not build, upload, restart, verify, or start a deployment while creating the profile.
 
-1. Inspect the current local project for modules, build scripts, and file artifacts. Read existing deployment notes if present. Never infer a remote restart command or upload destination from a package name alone.
-2. The profile must target the **current Workspace SSH host** shown in the Run context. Do not choose another host or copy credentials into the profile. If the host is unavailable, stop and explain what is missing.
-3. Use `ask_user_decision` for choices that cannot be established from project files: deployable module, exact local build command or artifact, remote absolute file destination, restart command, and optional verification command. Each question must have exactly three mutually exclusive suggestions and a recommended index; the user can enter their own answer or skip. Treat skip as unresolved, never as consent.
-4. Show the proposed profile with all commands and paths. Ask for an explicit final decision to save it. Do not write the file unless the user chooses the save option. A decision to save does not authorize deployment.
-5. Save `.gori/deploy-<host>.md` under the current project root. If that name already exists, ask before replacing it. Keep other profiles. Use the YAML front matter in [profile-schema.md](references/profile-schema.md), followed by optional human notes. Never store passwords, keys, tokens, or SSH options in the file.
-6. Validate the written file against the schema and report the path. Explain that the user should invoke `/deploy` again to review and start the pipeline.
+1. Inspect the local project, build scripts, module dependencies, and existing deployment notes. Identify the service the user intends to deploy and the directories where its artifacts may be uploaded. Do not infer a remote location or restart procedure from a package name alone.
+2. Bind the profile to the **current Workspace SSH host** shown in the Run context. Do not choose another host or include credentials, secrets, or SSH connection options. If the host is unavailable, explain what is missing.
+3. Use `ask_user_decision` for unresolved choices: deployable service, reusable build procedure, allowed remote upload directories, restart procedure, and optional verification procedure. Each question has exactly three mutually exclusive suggestions and a recommended index; free input and skip remain available. A skip leaves the item unresolved, never approved.
+4. Prefer the v2 schema in [profile-schema.md](references/profile-schema.md). Record procedures as `instructions` and upload boundaries as `allowedDirectories`. These describe what the model should inspect and propose **for each release**; do not freeze the jars, exact build commands, or exact remote commands for every future deployment. Keep an existing valid v1 profile compatible unless the user wants to migrate it.
+5. Show the complete proposed profile and ask for an explicit final decision to save it. Saving a profile does not authorize a deployment or Full Access command.
+6. Save `.gori/deploy-<host>.md` under the current project root. If the file already exists, ask before replacing it and preserve other profiles. Use YAML front matter followed by optional human notes; never put passwords, keys, or tokens in either section.
+7. Validate the saved file against the schema and report its path. Explain that `/deploy` will inspect the current changes, propose this release's exact build steps, artifact list, destinations, and remote commands, then wait for the user's review before execution.
 
-The first version of the deployment runtime uploads **one regular file** per module. If the build produces a directory, ask the user for an existing command that packages it into a file and record that file as `build.artifact`. Do not silently pick an archive format or run extra packaging commands.
+Only regular files can be uploaded. If a service produces a directory, record the packaging procedure in `build.instructions` so the future planning Run can propose a specific command and output file for the user to review. Do not silently choose an archive format or execute packaging while creating the profile.

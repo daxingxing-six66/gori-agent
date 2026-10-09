@@ -19,6 +19,21 @@ export async function handleDeploymentRoute(
 		if (Object.keys(body).length !== 2 || typeof body.file !== "string" || typeof body.moduleId !== "string") throw invalid();
 		return Response.json(await deployments.prepare(sessionId, body.file, body.moduleId), { status: 201 });
 	}
+	if (segments.length === 5 && segments[4] === "discussions" && request.method === "POST") {
+		let value: unknown;
+		try { value = await request.json(); } catch { throw invalid(); }
+		if (!value || typeof value !== "object" || Array.isArray(value)) throw invalid();
+		const body = value as Record<string, unknown>;
+		if (Object.keys(body).length !== 2 || typeof body.file !== "string" || typeof body.moduleId !== "string" ||
+			body.file.length > 200 || body.moduleId.length > 80) throw invalid();
+		return Response.json(await deployments.beginDiscussion(sessionId, body.file, body.moduleId), { status: 201 });
+	}
+	if (segments.length === 6 && segments[4] === "discussions" && segments[5] === "active" && request.method === "GET")
+		return Response.json(deployments.activeDiscussion(sessionId));
+	if (segments.length === 6 && segments[4] === "discussions" && segments[5] && request.method === "GET")
+		return Response.json(deployments.getDiscussion(sessionId, segments[5]));
+	if (segments.length === 7 && segments[4] === "discussions" && segments[5] && segments[6] === "cancel" && request.method === "POST")
+		return Response.json(await deployments.cancelDiscussion(sessionId, segments[5]));
 	if (segments.length === 5 && segments[4] === "history" && request.method === "GET") {
 		const params = new URL(request.url).searchParams;
 		const rawLimit = params.get("limit");
@@ -37,6 +52,9 @@ export async function handleDeploymentRoute(
 			throw new DeploymentError("deployment_agent_required", "A deployment must be started by its Agent Run", 409);
 		if (segments[5] === "cancel") return Response.json(await deployments.cancel(sessionId, segments[4]));
 	}
+	if (segments.length === 8 && request.method === "POST" && segments[4] && segments[5] === "recovery" && segments[6] &&
+		(segments[7] === "approve" || segments[7] === "reject"))
+		return Response.json(await deployments.decideRecovery(sessionId, segments[4], segments[6], segments[7] === "approve"));
 	if (segments.length === 9 && request.method === "POST" && segments[4] && segments[5] === "approvals" &&
 		(segments[6] === "restart" || segments[6] === "verify") && segments[7] &&
 		(segments[8] === "approve" || segments[8] === "reject"))

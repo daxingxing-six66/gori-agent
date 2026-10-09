@@ -5,10 +5,18 @@ import type { SshFailureCode, SshSafeDetail } from "./ssh-failure.ts";
 export const DEPLOY_STAGES = ["prepare", "build", "upload", "restart", "verify"] as const;
 export type DeployStage = typeof DEPLOY_STAGES[number];
 export type DeployStageStatus = "pending" | "running" | "success" | "failed" | "skipped";
-export type DeployStatus = "preparing" | "running" | "success" | "failed" | "cancelled";
-export type DeploymentFullAccessReason = "sandbox_unavailable" | "sandbox_partial_enforcement";
+export type DeployStatus = "preparing" | "running" | "recovering" | "success" | "failed" | "cancelled";
+export type DeploymentFullAccessReason = "deployment_policy" | "sandbox_unavailable" | "sandbox_partial_enforcement" | "sandbox_scope_exceeded";
 export type DeploymentRemoteAccess = { mode: "workspace_write" } | { mode: "full_access"; reason: DeploymentFullAccessReason };
 export type DeploymentRemoteStage = "restart" | "verify";
+
+export interface DeploymentRemoteCommand {
+	command: string;
+	/** Declared destinations; an opaque script may still write elsewhere and remains sandboxed at execution. */
+	writePaths?: string[];
+	/** New plans bind each command separately. Historical plans fall back to plan.remoteAccess. */
+	access?: DeploymentRemoteAccess;
+}
 
 export interface DeploymentFullAccessApproval {
 	id: string;
@@ -18,9 +26,12 @@ export interface DeploymentFullAccessApproval {
 	requestedAt: number;
 	resolvedAt?: number;
 	expiresAt?: number;
+	/** Identifies why this exceptional approval exists, including in deployment API snapshots. */
+	toolName?: "remote_sandbox_exception";
+	reason?: DeploymentFullAccessReason;
 }
 
-export interface DeployModule {
+export interface DeployModuleV1 {
 	id: string;
 	name: string;
 	workdir: string;
@@ -30,15 +41,35 @@ export interface DeployModule {
 	verify?: { command: string };
 }
 
-export interface DeploymentProfile {
-	version: 1;
+export interface DeployModuleV2 {
+	id: string;
+	name: string;
+	workdir: string;
+	build: { instructions: string };
+	upload: { allowedDirectories: string[] };
+	restart: { instructions: string };
+	verify?: { instructions: string };
+}
+
+interface DeploymentProfileBase {
 	project: string;
 	target: { host: string; name?: string };
 	connection: { profile: string };
-	modules: DeployModule[];
 }
 
-export interface DeploymentPlan {
+export interface DeploymentProfileV1 extends DeploymentProfileBase {
+	version: 1;
+	modules: DeployModuleV1[];
+}
+
+export interface DeploymentProfileV2 extends DeploymentProfileBase {
+	version: 2;
+	modules: DeployModuleV2[];
+}
+
+export type DeploymentProfile = DeploymentProfileV1 | DeploymentProfileV2;
+
+interface DeploymentPlanBase {
 	profilePath: string;
 	profileHash: string;
 	remoteAccess: DeploymentRemoteAccess;
@@ -46,11 +77,24 @@ export interface DeploymentPlan {
 	target: { host: string; name?: string };
 	targetBinding: { workspaceRevision?: number; port: number; hostKeyAlgorithm?: string; hostKeyFingerprint: string; credentialId: string; credentialAuthVersion: number; remoteUser: string; writableRoot: string };
 	module: { id: string; name: string };
+	restart: DeploymentRemoteCommand;
+	verify?: DeploymentRemoteCommand;
+}
+
+/** Historical plans have no version field and contain one build and upload. */
+export interface DeploymentPlanV1 extends DeploymentPlanBase {
+	version?: undefined;
 	build: { cwd: string; command: string; artifact: string };
 	upload: { remotePath: string };
-	restart: { command: string };
-	verify?: { command: string };
 }
+
+export interface DeploymentPlanV2 extends DeploymentPlanBase {
+	version: 2;
+	buildSteps: { cwd: string; command: string }[];
+	artifacts: { source: string; remotePath: string }[];
+}
+
+export type DeploymentPlan = DeploymentPlanV1 | DeploymentPlanV2;
 
 export interface DeploymentStageView {
 	status: DeployStageStatus;
@@ -65,14 +109,47 @@ export interface DeploymentStageView {
 	operationId?: string;
 }
 
+export type DeploymentExecutableStage = Exclude<DeployStage, "prepare">;
+
+export interface DeploymentStageAttempt {
+	planRevision: number;
+	agentRunId: string;
+	result: DeploymentStageView;
+}
+
+export interface DeploymentRecoveryProposal {
+	id: string;
+	stage: DeploymentExecutableStage;
+	reason: string;
+	plan: DeploymentPlanV2;
+	baseRevision: number;
+	status: "pending" | "approved" | "rejected";
+	agentRunId: string;
+	proposedAt: number;
+	resolvedAt?: number;
+}
+
 export interface DeploymentRun {
 	id: string;
 	sessionId: string;
 	workspaceId: string;
+	/** The durable discussion that led to this plan, when one exists. */
+	discussionId?: string;
 	/** The Chat Run allowed to advance this deployment after the plan was claimed. */
 	agentRunId?: string;
+	/** All execution and recovery Chat Runs associated with this deployment card. */
+	agentRunHistory?: string[];
+	/** The Chat Run that proposed this exact plan before user confirmation. */
+	planningAgentRunId?: string;
+	/** Stable digest of the model's structured proposal for idempotent retries. */
+	planningProposalHash?: string;
 	status: DeployStatus;
 	plan: DeploymentPlan;
+	/** Revision 1 is the original user-confirmed plan. Older snapshots omit it. */
+	planRevision?: number;
+	initialPlan?: DeploymentPlanV2;
+	stageAttempts?: Partial<Record<DeploymentExecutableStage, DeploymentStageAttempt[]>>;
+	recoveries?: DeploymentRecoveryProposal[];
 	stages: Record<DeployStage, DeploymentStageView>;
 	fullAccessApprovals?: Partial<Record<DeploymentRemoteStage, DeploymentFullAccessApproval>>;
 	createdAt: number;
@@ -81,6 +158,36 @@ export interface DeploymentRun {
 	updatedAt: number;
 	finishedAt?: number;
 	error?: string;
+}
+
+export type DeploymentDiscussionStatus = "discussing" | "proposed" | "cancelled";
+
+/** Durable task context across multiple Chat Runs. No deployment stages exist yet. */
+export interface DeploymentDiscussion {
+	id: string;
+	sessionId: string;
+	workspaceId: string;
+	status: DeploymentDiscussionStatus;
+	revision: number;
+	profileFile: string;
+	profileHash: string;
+	projectRoot: string;
+	project: string;
+	module: { id: string; name: string };
+	targetBinding: {
+		hostname: string;
+		port: number;
+		workspaceRevision: number;
+		hostKeyAlgorithm: string;
+		hostKeyFingerprint: string;
+		credentialId: string;
+		credentialAuthVersion: number;
+		remoteUser: string;
+		writableRoot: string;
+	};
+	createdAt: number;
+	updatedAt: number;
+	deploymentRunId?: string;
 }
 
 export class DeploymentError extends Error {
@@ -106,7 +213,7 @@ export function parseDeploymentProfile(source: string): DeploymentProfile {
 		throw new DeploymentError("deployment_profile_invalid", `Invalid deployment YAML: ${document.errors[0]?.message}`);
 	const root = record(document.toJS({ maxAliasCount: 0 }), "profile");
 	keys(root, ["version", "project", "target", "connection", "modules"], "profile");
-	if (root.version !== 1) throw new DeploymentError("deployment_profile_invalid", "Unsupported deployment profile version");
+	if (root.version !== 1 && root.version !== 2) throw new DeploymentError("deployment_profile_invalid", "Unsupported deployment profile version");
 	const target = record(root.target, "target");
 	keys(target, ["host", "name"], "target");
 	const connection = record(root.connection, "connection");
@@ -114,7 +221,7 @@ export function parseDeploymentProfile(source: string): DeploymentProfile {
 	if (!Array.isArray(root.modules) || root.modules.length === 0 || root.modules.length > 50)
 		throw new DeploymentError("deployment_profile_invalid", "modules must contain 1 to 50 entries");
 	const ids = new Set<string>();
-	const modules = root.modules.map((value, index): DeployModule => {
+	const modules = root.modules.map((value, index): DeployModuleV1 | DeployModuleV2 => {
 		const label = `modules[${index}]`;
 		const module = record(value, label);
 		keys(module, ["id", "name", "workdir", "build", "upload", "restart", "verify"], label);
@@ -123,33 +230,61 @@ export function parseDeploymentProfile(source: string): DeploymentProfile {
 			throw new DeploymentError("deployment_profile_invalid", `Invalid or duplicate ${label}.id`);
 		ids.add(id);
 		const build = record(module.build, `${label}.build`);
-		keys(build, ["command", "artifact"], `${label}.build`);
 		const upload = record(module.upload, `${label}.upload`);
-		keys(upload, ["target"], `${label}.upload`);
 		const restart = record(module.restart, `${label}.restart`);
-		keys(restart, ["command"], `${label}.restart`);
 		const verify = module.verify === undefined ? undefined : record(module.verify, `${label}.verify`);
-		if (verify) keys(verify, ["command"], `${label}.verify`);
-		const remotePath = field(upload.target, `${label}.upload.target`, 2048);
-		if (!remotePath.startsWith("/") || remotePath === "/" || remotePath.endsWith("/") || posix.normalize(remotePath) !== remotePath)
-			throw new DeploymentError("deployment_profile_invalid", `${label}.upload.target must be a normalized absolute file path`);
-		return {
+		const common = {
 			id,
 			name: field(module.name, `${label}.name`, 200),
 			workdir: relativePath(module.workdir, `${label}.workdir`),
+		};
+		if (root.version === 2) {
+			keys(build, ["instructions"], `${label}.build`);
+			keys(upload, ["allowedDirectories"], `${label}.upload`);
+			keys(restart, ["instructions"], `${label}.restart`);
+			if (verify) keys(verify, ["instructions"], `${label}.verify`);
+			const directories = upload.allowedDirectories;
+			if (!Array.isArray(directories) || directories.length === 0 || directories.length > 16)
+				throw new DeploymentError("deployment_profile_invalid", `${label}.upload.allowedDirectories must contain 1 to 16 directories`);
+			const allowedDirectories = directories.map((directory, directoryIndex) => absoluteRemotePath(directory, `${label}.upload.allowedDirectories[${directoryIndex}]`, true));
+			if (new Set(allowedDirectories).size !== allowedDirectories.length)
+				throw new DeploymentError("deployment_profile_invalid", `${label}.upload.allowedDirectories contains duplicates`);
+			return {
+				...common,
+				build: { instructions: field(build.instructions, `${label}.build.instructions`, 4000) },
+				upload: { allowedDirectories },
+				restart: { instructions: field(restart.instructions, `${label}.restart.instructions`, 4000) },
+				...(verify === undefined ? {} : { verify: { instructions: field(verify.instructions, `${label}.verify.instructions`, 4000) } }),
+			};
+		}
+		keys(build, ["command", "artifact"], `${label}.build`);
+		keys(upload, ["target"], `${label}.upload`);
+		keys(restart, ["command"], `${label}.restart`);
+		if (verify) keys(verify, ["command"], `${label}.verify`);
+		return {
+			...common,
 			build: { command: field(build.command, `${label}.build.command`, 4000), artifact: relativePath(build.artifact, `${label}.build.artifact`) },
-			upload: { target: remotePath },
+			upload: { target: absoluteRemotePath(upload.target, `${label}.upload.target`, false) },
 			restart: { command: field(restart.command, `${label}.restart.command`, 4000) },
 			...(verify === undefined ? {} : { verify: { command: field(verify.command, `${label}.verify.command`, 4000) } }),
 		};
 	});
-	return {
-		version: 1,
+	const common = {
 		project: field(root.project, "project", 200),
 		target: { host: field(target.host, "target.host", 255), ...(target.name === undefined ? {} : { name: field(target.name, "target.name", 200) }) },
 		connection: { profile: field(connection.profile, "connection.profile", 200) },
-		modules,
 	};
+	return root.version === 2
+		? { ...common, version: 2, modules: modules as DeployModuleV2[] }
+		: { ...common, version: 1, modules: modules as DeployModuleV1[] };
+}
+
+function absoluteRemotePath(value: unknown, name: string, directory: boolean): string {
+	const path = field(value, name, 2048);
+	if (!path.startsWith("/") || (!directory && path === "/") ||
+		(path !== "/" && path.endsWith("/")) || posix.normalize(path) !== path)
+		throw new DeploymentError("deployment_profile_invalid", `${name} must be a normalized absolute ${directory ? "directory" : "file"} path`);
+	return path;
 }
 
 function record(value: unknown, name: string): Record<string, unknown> {
