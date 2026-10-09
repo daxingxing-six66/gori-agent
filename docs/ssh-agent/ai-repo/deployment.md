@@ -30,6 +30,7 @@
 | 持久化 | DeploymentDiscussionRepository 单独保存讨论及每轮 Run 绑定；DeploymentRepository 保存计划、修订和阶段。v26 扩充运行状态约束；SQLite 用条件更新时间实现待修复提案与确认的并发控制，校验完整修订链、历史分页与重启恢复。 | application/repositories/deployment-discussion-repository.ts、application/repositories/deployment-repository.ts、infrastructure/sqlite/sqlite-deployment-repository.ts、migrations.ts |
 | 前端投影 | useDeployment 独立处理 REST、`deployment.updated` SSE、讨论、历史与当前选择。DeploymentPanel 默认只显示服务、进度、阶段状态与故障，命令、产物路径、日志、尝试历史及主机指纹按需展开；各级展开入口使用统一的文字、向下箭头与键盘焦点样式。前端按 RESTART/VERIFY 各自的沙箱模式投影例外审批并校验计划，允许两阶段混合 `workspace_write`/`full_access`；修订先展示差异再提供人工确认。绑定的规划、执行和诊断过程归入原部署卡片；仅成功部署的最新执行 Run 的最终文字回复留在主时间线。展开的模型记录最高 34rem，超出后内部滚动。Chat SSE 仍按原链路解析，前端只投影已持久化消息，不复制或改写消息。 | features/deploy/api、model、runtime、components、features/chat/components/chat-timeline.tsx |
 | 运行时装配 | create-sqlite-management-backend 将部署服务连接到当前 Session、Workspace、SSH 目标、命令审批和 SFTP 服务，并在关闭时中止运行中的部署。 | runtime/create-sqlite-management-backend.ts |
+| 远端命令执行 | CommandOperationService 保留 FIFO 后的执行顺序与结果分类；CommandExecutionPolicy 复核 Guard、消费部署专属 grant 并检查目标/cwd；CommandOperationRecorder 保存命令状态、输出和沙箱事实。submit 契约与部署阶段结算保持兼容，不把部署 grant 改为普通 Chat 授权。 | application/services/command-operation-service.ts、application/services/command-execution-policy.ts、application/services/command-operation-recorder.ts |
 
 部署 HTTP 接口集中在同一 Session 路径下；前端 deployment-api.ts 会在接收时校验响应结构和 Session ID。
 

@@ -14,7 +14,9 @@
 
 ## 执行与审批
 
-Chat Guard 预检查 → 审批 → Session FIFO/进程许可 → 最新 Guard → Full Access grant 消费 → Target/cwd → 沙箱准备 → Guard 再检查 → Broker exec。
+Chat Guard 预检查 → 审批 → Session FIFO/进程许可 → 最新 Guard → 解析 Target → Full Access grant 消费/授权目标签名验证 → expectedTarget/cwd 校验 → 沙箱准备 → Guard 再检查 → Broker exec。
+
+Command Service 按上述顺序编排，`CommandExecutionPolicy` 集中执行期检查并消费授权，`CommandOperationRecorder` 集中 Operation 状态、输出、事件和沙箱审计。策略不修改 Operation，也不决定新的执行模式；状态记录器不批准权限或执行命令。两次 Guard 复检共用失败组装，但保留各自的时间边界。
 
 普通 Chat 命令在授权阶段生成不可变 `RemoteCommandExecutionPlan`，显式记录原请求、调用身份、`workspace_write` 或 `full_access`、例外理由和已解析目标。Coordinator 只在审批通过并完成 grant 记录后返回内部执行上下文，Agent 将同一计划交给对应远端 Tool。Tool 先校验调用身份和参数，再直接提交计划的权限与 `expectedTarget`。`RemoteSandboxApprovalStore` 只保存 grant 签名和目标签名，负责一次性验证/消费及清理；审批理由不再用作“是否获准 Full Access”的查询接口。计划本身不能替代 grant，已消费或被清理的 Full Access 计划仍会在派发时失败，不能隐式降回沙箱执行。受限命令与 Full Access 命令均检查审批阶段确定的目标，Workspace 身份或默认目录变化时拒绝执行。
 
@@ -56,7 +58,8 @@ Terminal 打开后异步探测失败时，前端保留失败卡片，展示后�
 | Bubblewrap 探测、执行与安装 | `packages/ssh-agent/src/infrastructure/sandbox/bubblewrap-remote-sandbox-provider.ts`、`packages/ssh-agent/src/application/services/bubblewrap-installation-service.ts`、`packages/ssh-agent/src/application/tools/bubblewrap-installation-tool.ts` |
 | Native 规则、继承与 exec | `native/landlock-run/main.c`、[构建与内核测试说明](../../../native/landlock-run/README.md) |
 | 构建和资源完整性 | `native/landlock-run/build.mjs`、`check-resources.mjs`、`packages/ssh-agent/resources/sandbox/` |
-| 状态机、确认前缀与审计 | `packages/ssh-agent/src/application/services/command-operation-service.ts`、`sandbox-confirmation-capture.ts`、`packages/ssh-agent/src/infrastructure/sqlite/sqlite-command-operation-repository.ts` |
+| 命令编排与执行期策略 | `packages/ssh-agent/src/application/services/command-operation-service.ts`、`command-execution-policy.ts` |
+| 状态、确认前缀与审计 | `packages/ssh-agent/src/application/services/command-operation-recorder.ts`、`sandbox-confirmation-capture.ts`、`packages/ssh-agent/src/infrastructure/sqlite/sqlite-command-operation-repository.ts` |
 | Chat 审批及 Tool 参数 | `packages/ssh-agent/src/application/services/chat-tool-authorization-policy.ts`、`chat-tool-call-coordinator.ts`、`packages/ssh-agent/src/application/tools/remote-server-call-tool.ts`、`tool-authorization.ts` |
 | 命令计划、参数/目标快照与内部交接 | `packages/ssh-agent/src/application/tools/remote-command-execution-plan.ts`、`packages/agent/src/types.ts`、`packages/agent/src/agent-loop.ts`；测试见 `packages/ssh-agent/test/remote-command-execution-plan.test.ts`、`packages/agent/test/tool-execution-context.test.ts` |
 | 前端配置和检测 | `packages/ssh-agent-web/features/workspace/components/remote-sandbox-panel.tsx`、`workspace-dialog.tsx`、`workspace-edit-dialog.tsx` |

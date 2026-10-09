@@ -4,7 +4,8 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { wrapRemoteCommand } from "../src/infrastructure/sandbox/shell-command.ts";
 import { DefaultCommandGuardEvaluator } from "../src/application/services/command-guard-evaluator.ts";
-import { CommandOperationService } from "../src/application/services/command-operation-service.ts";
+import { COMMAND_EXECUTION_DEFAULTS, CommandOperationService } from "../src/application/services/command-operation-service.ts";
+import type { RemoteSandboxProvider } from "../src/application/services/remote-sandbox-provider.ts";
 import { DefaultSshTargetResolver } from "../src/application/services/ssh-target-resolver.ts";
 import type {
 	ExecuteRemoteCommandInput,
@@ -302,6 +303,156 @@ describe("SSH command Operation execution", () => {
 		}
 	});
 
+	it("keeps checks, persisted dispatch state and execution in order", async () => {
+		const fixture = await createFixture();
+		try {
+			const steps: string[] = [];
+			vi.spyOn(fixture.guards, "evaluate").mockImplementation(async () => {
+				steps.push("guard");
+				return { allowed: true, guardRevision: 9 };
+			});
+			const prepare = fixture.sandbox.prepare.bind(fixture.sandbox);
+			vi.spyOn(fixture.sandbox, "prepare").mockImplementation(async (input) => {
+				steps.push("prepare");
+				return prepare(input);
+			});
+			vi.spyOn(fixture.broker, "execute").mockImplementationOnce(async () => {
+				steps.push("execute");
+				const row = fixture.backend.database.prepare("SELECT id FROM command_operations WHERE tool_call_id = ?")
+					.get("ordered");
+				expect(await fixture.operations.findById(String(row?.id))).toMatchObject({
+					status: "running", guardRevision: 9, resolvedCwd: "/srv/app",
+					sandbox: { enforcement: "none", commandMayHaveRun: true },
+				});
+				return { exitCode: 0 };
+			});
+			const result = await fixture.service.submit({ toolCallId: "ordered", sessionId: "id-4", command: "echo x",
+				onEvent: (event) => { if (event.type === "status" && "status" in event.data) steps.push(event.data.status); } });
+			expect(steps).toEqual(["created", "queued", "dispatching", "guard", "prepare", "guard", "running", "execute", "completed"]);
+			expect(await fixture.operations.findById(result.operation.id)).toMatchObject({ status: "completed", exitCode: 0 });
+		} finally { await fixture.close(); }
+	});
+
+	it.each([1, 2])("persists the same Guard failure at check %s even if abortRun throws", async (blockedCheck) => {
+		const fixture = await createFixture();
+		try {
+			let checks = 0;
+			const rule = { id: "blocked-rule", displayName: "Blocked", pattern: "echo", match: "contains" as const,
+				reason: "Rule changed", enabled: true, source: "user" as const, level: "strict" as const };
+			vi.spyOn(fixture.guards, "evaluate").mockImplementation(async () => {
+				checks += 1;
+				return { allowed: checks !== blockedCheck, guardRevision: checks, matchedRule: checks === blockedCheck ? rule : undefined };
+			});
+			const prepare = vi.spyOn(fixture.sandbox, "prepare");
+			const execute = vi.spyOn(fixture.broker, "execute");
+			const abortRun = vi.fn(() => { throw new Error("Callback failed"); });
+			const result = await fixture.service.submit({ toolCallId: "blocked", sessionId: "id-4", command: "echo x", abortRun });
+			expect(result.operation).toMatchObject({ status: "blocked", guardRevision: blockedCheck,
+				matchedGuardRuleId: rule.id, failure: { code: "guard_blocked", message: rule.reason, safeDetails: { ruleId: rule.id } },
+				sandbox: { commandMayHaveRun: false } });
+			expect(await fixture.operations.findById(result.operation.id)).toMatchObject(result.operation);
+			expect(abortRun).toHaveBeenCalledOnce();
+			expect(prepare).toHaveBeenCalledTimes(blockedCheck - 1);
+			expect(execute).not.toHaveBeenCalled();
+		} finally { await fixture.close(); }
+	});
+
+	it.each(["cancel", "deadline"] as const)("rejects %s occurring while the queued Operation is being loaded", async (change) => {
+		vi.useFakeTimers();
+		const fixture = await createFixture();
+		try {
+			const controller = new AbortController();
+			const find = fixture.operations.findById.bind(fixture.operations);
+			vi.spyOn(fixture.operations, "findById").mockImplementationOnce(async (id) => {
+				const operation = await find(id);
+				if (!operation) throw new Error("Queued Operation is missing");
+				if (change === "cancel") controller.abort();
+				else vi.setSystemTime(operation.queueDeadlineAt);
+				return operation;
+			});
+			const guard = vi.spyOn(fixture.guards, "evaluate");
+			const result = await fixture.service.submit({ toolCallId: "load-race", sessionId: "id-4", command: "echo x", signal: controller.signal });
+			expect(result.operation).toMatchObject({ status: "cancelled",
+				failure: { code: change === "cancel" ? "cancelled_before_dispatch" : "queue_timeout" },
+				sandbox: { commandMayHaveRun: false } });
+			expect(await fixture.operations.findById(result.operation.id)).toMatchObject(result.operation);
+			expect(guard).not.toHaveBeenCalled();
+			expect(fixture.broker.commands).toEqual([]);
+		} finally { await fixture.close(); }
+	});
+
+	it("does not dispatch after a failed running-state write and releases the scheduler permit", async () => {
+		const fixture = await createFixture({ maxConcurrentOperations: 1 });
+		try {
+			const update = fixture.operations.update.bind(fixture.operations);
+			const persistence = vi.spyOn(fixture.operations, "update").mockImplementation((operation, expected) =>
+				operation.status === "running" ? Promise.resolve(false) : update(operation, expected));
+			await expect(fixture.service.submit({ toolCallId: "persist-failure", sessionId: "id-4", command: "echo x" }))
+				.rejects.toMatchObject({ failure: { code: "operation_persistence_failed" } });
+			expect(fixture.broker.commands).toEqual([]);
+			const row = fixture.backend.database.prepare("SELECT status FROM command_operations WHERE tool_call_id = ?")
+				.get("persist-failure");
+			expect(row?.status).toBe("dispatching");
+			persistence.mockRestore();
+			await expect(fixture.service.submit({ toolCallId: "after-failure", sessionId: "id-4", command: "echo next" }))
+				.resolves.toMatchObject({ operation: { status: "completed" } });
+		} finally { await fixture.close(); }
+	});
+
+	it.each([
+		[{ exitSignal: "SIGTERM" }, "failed", "exit_signal_received"],
+		[{}, "uncertain", "execution_result_uncertain"],
+	] as const)("persists terminal status for remote result %j", async (remoteResult, status, code) => {
+		const fixture = await createFixture();
+		try {
+			vi.spyOn(fixture.broker, "execute").mockResolvedValueOnce(remoteResult);
+			const result = await fixture.service.submit({ toolCallId: "exit-result", sessionId: "id-4", command: "echo x" });
+			expect(result.operation).toMatchObject({ status, failure: { code }, sandbox: { commandMayHaveRun: true } });
+			expect(await fixture.operations.findById(result.operation.id)).toMatchObject({
+				status, failure: result.operation.failure, sandbox: result.operation.sandbox, ...remoteResult,
+			});
+		} finally { await fixture.close(); }
+	});
+
+	it("limits persisted output, emits truncation once and retains the final model tail", async () => {
+		const fixture = await createFixture();
+		try {
+			const limit = COMMAND_EXECUTION_DEFAULTS.persistedOutputLimitBytes;
+			vi.spyOn(fixture.broker, "execute").mockImplementationOnce(async (input) => {
+				await input.onStdout(Buffer.alloc(limit - 3, "a"));
+				await input.onStdout(Buffer.alloc(80_000, "b"));
+				await input.onStderr(Buffer.from("END"));
+				return { exitCode: 0 };
+			});
+			const result = await fixture.service.submit({ toolCallId: "output-limit", sessionId: "id-4", command: "echo x" });
+			expect(result.operation).toMatchObject({ status: "completed", outputBytes: limit + 80_000, outputTruncated: true });
+			expect(result.outputTail).toBe("b".repeat(COMMAND_EXECUTION_DEFAULTS.llmOutputTailBytes - 3) + "END");
+			const events = await fixture.operations.listEvents(result.operation.id);
+			expect(events.filter((event) => event.type === "output_truncated")).toHaveLength(1);
+			const persistedOutput = events.reduce((length, event) => length + ("chunk" in event.data ? Buffer.byteLength(event.data.chunk) : 0), 0);
+			expect(persistedOutput).toBe(limit);
+		} finally { await fixture.close(); }
+	});
+
+	it("times out sandbox preparation before dispatch and clears execution resources", async () => {
+		vi.useFakeTimers();
+		const fixture = await createFixture();
+		try {
+			const timersBefore = vi.getTimerCount();
+			let started = false;
+			vi.spyOn(fixture.sandbox, "prepare").mockImplementation(({ signal }) => {
+				started = true;
+				return new Promise((_resolve, reject) => signal.addEventListener("abort", () => reject(signal.reason), { once: true }));
+			});
+			const pending = fixture.service.submit({ toolCallId: "prepare-timeout", sessionId: "id-4", command: "echo x", timeoutMs: 25 });
+			await flushMicrotasksUntil(() => started);
+			await vi.advanceTimersByTimeAsync(25);
+			expect((await pending).operation).toMatchObject({ status: "failed", failure: { code: "execution_timeout" }, sandbox: { commandMayHaveRun: false } });
+			expect(fixture.broker.commands).toEqual([]);
+			expect(vi.getTimerCount()).toBe(timersBefore);
+		} finally { await fixture.close(); }
+	});
+
 	it("prevents deleting a Session while its command is active", async () => {
 		const fixture = await createFixture();
 		fixture.broker.blockFirst = true;
@@ -375,6 +526,9 @@ async function createFixture(options: { maxConcurrentOperations?: number } = {})
 	backend: ReturnType<typeof createSqliteManagementBackend>;
 	broker: FakeBroker;
 	service: CommandOperationService;
+	operations: SqliteCommandOperationRepository;
+	guards: DefaultCommandGuardEvaluator;
+	sandbox: RemoteSandboxProvider;
 	workDir: string;
 	close(): Promise<void>;
 }> {
@@ -405,6 +559,13 @@ async function createFixture(options: { maxConcurrentOperations?: number } = {})
 	const broker = new FakeBroker();
 	const operations = new SqliteCommandOperationRepository(backend.database);
 	const sessions = new SqliteSessionRepository(backend.database);
+	const guards = new DefaultCommandGuardEvaluator(new SqliteGuardRepository(backend.database));
+	const sandbox: RemoteSandboxProvider = {
+		prepareTerminal: async () => { throw new Error("Unexpected Terminal preparation"); },
+		prepare: async ({ cwd, command, target }) => ({ command: wrapRemoteCommand(cwd, command),
+			sandbox: { mode: "workspace_write", backend: "landlock", enforcement: "full", abi: 5,
+				launcherVersion: "3", sandboxRoot: target.defaultCwd } }),
+	};
 	const service = new CommandOperationService({
 		operations,
 		sessions,
@@ -414,10 +575,9 @@ async function createFixture(options: { maxConcurrentOperations?: number } = {})
 			credentials: new SqliteCredentialRepository(backend.database),
 			hostTrust: staticHostTrust,
 		}),
-		guards: new DefaultCommandGuardEvaluator(new SqliteGuardRepository(backend.database)),
+		guards,
 		broker,
-		sandbox: { prepareTerminal: async () => { throw new Error("Unexpected Terminal preparation"); }, prepare: async ({ cwd, command }) => ({ command: wrapRemoteCommand(cwd, command),
-			sandbox: { mode: "workspace_write", backend: "landlock", enforcement: "full", abi: 5 } }) },
+		sandbox,
 		clock: { now: () => Date.now() },
 		ids,
 		...(options.maxConcurrentOperations === undefined
@@ -428,6 +588,9 @@ async function createFixture(options: { maxConcurrentOperations?: number } = {})
 		backend,
 		broker,
 		service,
+		operations,
+		guards,
+		sandbox,
 		workDir,
 		close: async () => {
 			service.close();

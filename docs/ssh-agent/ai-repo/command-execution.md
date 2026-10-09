@@ -24,6 +24,10 @@ Chat 的 `remote_server_call` 在创建人工审批前调用 `CommandOperationSe
 
 授权与执行通过 `RemoteCommandExecutionPlan` 交接。请求在第一个异步检查前复制并冻结；计划显式保存 `access.mode` 和对应理由，同时绑定调用身份与 SSH 目标快照。审批通过后 Coordinator 将它放入内部 `executionContext`，Agent 直接交给本次 Tool `execute()`，不会修改模型参数或向事件/消息追加此上下文。Chat 远端 Tool 缺少计划、计划属于其他调用或原参数改变时，在 `submit()` 前返回非终止错误；它不查询 Store 重新决定权限，也不因 grant 缺失而降回沙箱。`expectedTarget` 随计划进入 Command Service，派发前目标变化会拒绝执行。没有 Chat Run ID 的独立 Tool 保留默认沙箱执行兼容路径，Full Access 不能仅由参数获得。
 
+`executePending()` 按固定步骤编排：读取 Operation → 排队复检 → 记录 dispatching → Guard → 解析并授权目标/cwd → 在执行时限内准备沙箱 → Guard 复检 → 记录 running → Broker → 确认与结果结算。`CommandExecutionPolicy` 集中执行期检查、一次性 grant 消费和统一的 Guard/排队失败构造，不修改 Operation 或派发命令；每次调用自己的 `CommandOperationRecorder` 负责状态、时间、Guard/目标审计、输出限额、事件和终态，Service 保留执行顺序、超时/取消资源管理及远端结果分类。新组件由 Command Service 内部装配，`submit()` 的外部契约保持兼容。
+
+两次执行期 Guard 使用同一拒绝契约：出队时避免被禁止的命令进入准备，准备后覆盖远端探测期间的规则变化。调度器检查后读取持久化记录仍会异步等待，因此保留读取后的取消/排队超时复检，且超时边界同调度器统一为 `now >= deadline`。Full Access grant 的目标签名与调用方 `expectedTarget` 分别验证授权绑定和计划绑定，不能互相替代。派发前统一记录 `commandMayHaveRun=true/enforcement=none`，确认缺失时不重复赋值；只有远端确认后记录实际约束。
+
 - Tool 接受 command、可选绝对 cwd（也支持 `~`/`~/...`）、timeoutMs、sandbox_permissions、justification 和已知绝对 write_paths；Session 由后端创建 Tool 时绑定，Workspace/主机/Credential 不进入模型参数。
 - 命令先持久化，再进入按 `sessionId` 隔离的内存 FIFO；同一 Session 严格串行，不同 Session 可以并发。Command Operation 从创建记录前到终态持有 Session lifecycle lease；删除屏障先建立时，新命令不会进入持久化或队列。
 - 进程级公平许可器默认最多允许 16 个 Operation 处于 dispatching/running，可由 `SSH_AGENT_MAX_CONCURRENT_OPERATIONS` 配置；每个 Session 同时最多有一个队首等待许可。
@@ -44,7 +48,9 @@ Chat 的 `remote_server_call` 在创建人工审批前调用 `CommandOperationSe
 | SSH Failure 分类 | [ssh-failure.ts](../../../packages/ssh-agent/src/domain/ssh-failure.ts) |
 | Operation Repository | [command-operation-repository.ts](../../../packages/ssh-agent/src/application/repositories/command-operation-repository.ts)、[sqlite-command-operation-repository.ts](../../../packages/ssh-agent/src/infrastructure/sqlite/sqlite-command-operation-repository.ts) |
 | Session FIFO、进程许可和主动排队超时 | [session-command-scheduler.ts](../../../packages/ssh-agent/src/application/services/session-command-scheduler.ts) |
-| Operation 状态机、执行超时和输出策略 | [command-operation-service.ts](../../../packages/ssh-agent/src/application/services/command-operation-service.ts) |
+| 执行流程、超时/取消与结果分类 | [command-operation-service.ts](../../../packages/ssh-agent/src/application/services/command-operation-service.ts) |
+| 执行期 Guard、排队检查、grant 消费与 SSH 目标/cwd 校验 | [command-execution-policy.ts](../../../packages/ssh-agent/src/application/services/command-execution-policy.ts) |
+| 单次 Operation 状态、输出、事件与重启恢复 | [command-operation-recorder.ts](../../../packages/ssh-agent/src/application/services/command-operation-recorder.ts) |
 | 启动器确认行及 stderr 前缀解析 | [sandbox-confirmation-capture.ts](../../../packages/ssh-agent/src/application/services/sandbox-confirmation-capture.ts) |
 | Guard 执行期策略 | [command-guard-evaluator.ts](../../../packages/ssh-agent/src/application/services/command-guard-evaluator.ts) |
 | Agent Tool 与远端审批准备 | [remote-server-call-tool.ts](../../../packages/ssh-agent/src/application/tools/remote-server-call-tool.ts) |

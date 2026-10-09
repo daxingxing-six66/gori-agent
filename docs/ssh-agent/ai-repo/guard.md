@@ -21,6 +21,7 @@
 - Session 调度器取得进程许可后、获取 SSH Channel 前读取最新 Guard；命中启用规则时 Operation 进入 blocked，Tool 产生终止 Agent Run 的结构化错误。
 - Chat 在创建远端 Tool 审批前预检查 Guard，批准后正式执行仍会再次检查；硬阻止命令不会创建审批记录。
 - 持久化正则若无法编译会产生 `guard_configuration_invalid`，不会放行命令。
+- 命令的两次执行期 Guard 检查由 `CommandExecutionPolicy.checkGuard()` 统一组装失败，`CommandOperationRecorder` 保存最新 revision、命中规则与 blocked 终态。Service 只协调检查、审计和停止 Run；`abortRun` 回调抛错不能绕过拒绝。准备前后检查的时间边界不同，不能合并成一次。
 - Guard HTTP 错误和后端固定阻断提示在统一出口按 Locale 投影；规则包文本、用户规则文案、命令和匹配数据属于业务动态内容，不进入后端词典。
 
 ## 代码位置
@@ -39,6 +40,7 @@
 | 契约回归测试 | [management-api.test.ts](../../../packages/ssh-agent/test/management-api.test.ts) |
 | 规则包接口与兼容测试 | [guard-rule-pack-api.test.ts](../../../packages/ssh-agent/test/guard-rule-pack-api.test.ts) |
 | 执行期 Guard 策略 | [command-guard-evaluator.ts](../../../packages/ssh-agent/src/application/services/command-guard-evaluator.ts) |
+| 命令执行期拒绝契约与状态记录 | [command-execution-policy.ts](../../../packages/ssh-agent/src/application/services/command-execution-policy.ts)、[command-operation-recorder.ts](../../../packages/ssh-agent/src/application/services/command-operation-recorder.ts) |
 | 调度调用和阻断测试 | [command-operation-service.ts](../../../packages/ssh-agent/src/application/services/command-operation-service.ts)、[command-operation-service.test.ts](../../../packages/ssh-agent/test/command-operation-service.test.ts) |
 
 Guard 配置 Service 只维护配置；执行匹配必须留在独立策略组件中，不能塞回配置 Service 或 HTTP handler。
