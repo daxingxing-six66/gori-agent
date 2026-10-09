@@ -33,12 +33,15 @@ export interface RemoteSandboxProvider {
 }
 
 /** Capability check only; it is not proof that a user command has run confined. */
-export interface RemoteSandboxProber {
-	probe(target: SshTargetSnapshot, signal: AbortSignal): Promise<PreparedSandboxedExecution["sandbox"]>;
+export interface RemoteSandboxCapabilityProvider {
+	/** Reuse backend metadata while rechecking the current filesystem policy. */
+	getCapabilities(target: SshTargetSnapshot, signal: AbortSignal): Promise<PreparedSandboxedExecution["sandbox"]>;
+	/** Rediscover backend metadata and recheck the policy after an explicit retry or installation. */
+	refreshCapabilities(target: SshTargetSnapshot, signal: AbortSignal): Promise<PreparedSandboxedExecution["sandbox"]>;
 }
 
 /** One constrained implementation. Full Access and backend selection belong to the provider. */
-export interface RemoteSandboxBackend extends RemoteSandboxProber {
+export interface RemoteSandboxBackend extends RemoteSandboxCapabilityProvider {
 	prepare(input: { target: SshTargetSnapshot; cwd: string; command: string; signal: AbortSignal }): Promise<PreparedSandboxedExecution>;
 	prepareTerminal(input: { target: SshTargetSnapshot; signal: AbortSignal }): Promise<PreparedRemoteTerminal>;
 }

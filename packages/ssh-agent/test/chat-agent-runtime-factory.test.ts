@@ -199,7 +199,7 @@ describe("ChatAgentRuntimeFactory", () => {
 			terminalInteractions: { preflightSubmit: vi.fn(async () => ({ allowed: true })), approve: vi.fn(), reject: vi.fn() },
 			preflightRemoteGuard: vi.fn(async () => ({ allowed: true })),
 			assessRemoteSandbox: async (_sessionId, declaredWritePaths, signal) => ({ target,
-				route: await evaluateRemoteSandboxRoute({ sandbox: { probe }, target, signal, declaredWritePaths }) }),
+				route: await evaluateRemoteSandboxRoute({ sandbox: { getCapabilities: probe }, target, signal, declaredWritePaths }) }),
 		});
 		const approvals = { request: vi.fn(async () => ({ approved: true as const, source: "user" as const })) };
 		const context = createContext({ toolCalls: new ChatToolCallCoordinator({ authorization, approvals }) });

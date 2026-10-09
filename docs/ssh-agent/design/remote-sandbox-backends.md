@@ -4,9 +4,9 @@
 
 `RemoteSandboxCoordinator` 按 `LandlockRemoteSandboxProvider`、`BubblewrapRemoteSandboxProvider` 的顺序尝试。Landlock 明确报告内核或 ABI 能力不足时，自动探测已安装的 Bubblewrap；任何可用后端都无需沙箱能力审批。根无效、投递或探测异常直接失败，不切换到无沙箱命令。普通 `remote_server_call` 永远不会因沙箱失败自动变为 Full Access。显式 Full Access 仍由人工批准准确命令并消费一次性 grant。
 
-`probe` 只准备和验证能力，不运行用户命令。首次受限命令、Terminal 打开和 Overview 的手动检查都会触发探测；创建 Session 本身不发 SSH 探测。成功的后端身份及连接 generation 用于缓存，但命令执行前仍会检查根和 Bubblewrap 的功能探针。命令和 Terminal 的真正生效事实，必须在后端启动后收到本次随机 nonce 确认才记为 `enforcement: full`。
+`getCapabilities()` 查询能力并复检当前策略，复用仍有效的后端元数据；`refreshCapabilities()` 用于主动重试或安装后的重新发现。两者都不运行用户命令，也不再构造虚拟 `true` 命令。首次受限命令、Terminal 打开和 Overview 的手动检查都会触发探测；创建 Session 本身不发 SSH 探测。成功的后端身份及连接 generation 用于缓存，但命令执行前仍会检查根和 Bubblewrap 的功能探针。命令和 Terminal 的真正生效事实，必须在后端启动后收到本次随机 nonce 确认才记为 `enforcement: full`。
 
-Terminal 沿用既有自动 Full Access 回退条件：所有已尝试后端都明确不可用或保护级别不足时才可回退；Bubblewrap **未安装**时返回独立的 `sandbox_bubblewrap_not_installed`，不触发该自动回退。其他准备错误不回退。
+新 Terminal 要求可用的受限后端。全部后端不可用或保护不足、Bubblewrap 缺失及其他准备错误都使打开失败；无沙箱 PTY 的人工授权入口尚未实现。旧版显式 Full Access 与自动回退记录仅在持久化读取边界兼容，不授予新 Terminal 权限。
 
 ## Bubblewrap 文件视图
 

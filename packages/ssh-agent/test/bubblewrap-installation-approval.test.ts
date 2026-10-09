@@ -28,7 +28,7 @@ describe("Bubblewrap installation approval", () => {
 				launcherVersion: "3", sandboxRoot: "/srv/app" });
 		const service = new BubblewrapInstallationService({
 			targets: { resolve: async () => target },
-			sandbox: { probe },
+			sandbox: { getCapabilities: probe, refreshCapabilities: probe },
 			broker: { execute: vi.fn() } as RemoteCommandBroker,
 			operations: {} as CommandOperationService,
 		});
@@ -70,12 +70,12 @@ describe("Bubblewrap installation approval", () => {
 	});
 
 	it("executes only the generated installation command and probes the sandbox again", async () => {
-		const probe = vi.fn().mockRejectedValueOnce(sandboxFailure("sandbox_bubblewrap_not_installed", "missing"))
-			.mockResolvedValueOnce({ mode: "workspace_write", backend: "bubblewrap", enforcement: "full",
+		const getCapabilities = vi.fn().mockRejectedValueOnce(sandboxFailure("sandbox_bubblewrap_not_installed", "missing"));
+		const refreshCapabilities = vi.fn().mockResolvedValueOnce({ mode: "workspace_write", backend: "bubblewrap", enforcement: "full",
 				bubblewrapVersion: "0.12.0", sandboxRoot: "/srv/app" });
 		const submit = vi.fn(async () => ({ operation: { failure: undefined }, outputTail: "installed" }));
 		const service = new BubblewrapInstallationService({ targets: { resolve: async () => target },
-			sandbox: { probe }, broker: { execute: vi.fn() } as RemoteCommandBroker,
+			sandbox: { getCapabilities, refreshCapabilities }, broker: { execute: vi.fn() } as RemoteCommandBroker,
 			operations: { submit } as unknown as CommandOperationService });
 		await expect(service.install({ sessionId: run.sessionId, agentRunId: run.id, toolCallId: "install",
 			plan, signal: new AbortController().signal })).resolves.toContain("Active sandbox: bubblewrap");
@@ -83,7 +83,8 @@ describe("Bubblewrap installation approval", () => {
 			command: bubblewrapInstallCommand(plan), cwd: "/", sandboxPermissions: "full_access",
 			expectedTarget: target, agentRunId: run.id, toolCallId: "install",
 		}));
-		expect(probe).toHaveBeenCalledTimes(2);
+		expect(getCapabilities).toHaveBeenCalledOnce();
+		expect(refreshCapabilities).toHaveBeenCalledOnce();
 	});
 
 	it("returns package output to the model after an installation failure", async () => {
@@ -91,7 +92,7 @@ describe("Bubblewrap installation approval", () => {
 		const submit = vi.fn(async () => ({ operation: { failure: { message: "package manager failed" } },
 			outputTail: "repository unavailable" }));
 		const service = new BubblewrapInstallationService({ targets: { resolve: async () => target },
-			sandbox: { probe }, broker: { execute: vi.fn() } as RemoteCommandBroker,
+			sandbox: { getCapabilities: probe, refreshCapabilities: probe }, broker: { execute: vi.fn() } as RemoteCommandBroker,
 			operations: { submit } as unknown as CommandOperationService });
 		await expect(service.install({ sessionId: run.sessionId, agentRunId: run.id, toolCallId: "install",
 			plan, signal: new AbortController().signal })).rejects.toThrow("repository unavailable");

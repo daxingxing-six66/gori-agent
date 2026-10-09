@@ -395,7 +395,7 @@ export function createSqliteManagementBackend(options: CreateSqliteManagementBac
 			api,
 			handleRequest: createSshAgentHttpHandler({
 				connectionTests,
-				probeRemoteSandbox: async (workspaceId, signal) => sandbox.probe(await targets.resolveWorkspace(workspaceId), signal),
+				probeRemoteSandbox: async (workspaceId, signal) => sandbox.refreshCapabilities(await targets.resolveWorkspace(workspaceId), signal),
 				api,
 				transfers: fileTransfers,
 				events,

@@ -16,15 +16,13 @@ import type {
 	TerminalObservationExpectation,
 	TerminalObservationKind,
 	TerminalSession,
-	TerminalSandboxFacts,
-	TerminalSandboxMode,
 	TerminalSessionStatus,
 	TerminalTimelineEvent,
 	TerminalTimelineEventType,
 } from "../../domain/terminal.ts";
 import type { BackendMessageKey, BackendMessageValues } from "../../i18n/message.ts";
 import { descriptorForPublicCode } from "../../i18n/public-error.ts";
-import { canonicalRemoteSandboxRoot } from "../../domain/remote-sandbox.ts";
+import { readStoredTerminalSandbox } from "./stored-terminal-sandbox.ts";
 
 export class SqliteTerminalRepository implements TerminalRepository {
 	readonly #database: DatabaseSync;
@@ -392,14 +390,7 @@ function optionalSession(row: unknown): TerminalSession | undefined {
 
 function sessionFromRow(row: unknown): TerminalSession {
 	const value = row as Record<string, unknown>;
-	const requestedSandboxMode = readSandboxMode(value.requested_sandbox_mode);
-	const sandbox = readSandboxFacts(value.sandbox_json);
-	if (sandbox !== null && requestedSandboxMode !== sandbox.mode &&
-		!(requestedSandboxMode === "workspace_write" && sandbox.mode === "full_access" && "source" in sandbox))
-		throw new Error("Invalid persisted Terminal sandbox mode");
-	if (value.status === "opening" && sandbox !== null) throw new Error("Opening Terminal cannot claim an active sandbox");
-	if (value.status === "active" && requestedSandboxMode !== null && sandbox === null)
-		throw new Error("Active Terminal sandbox facts are missing");
+	const { requestedSandboxMode, sandbox } = readStoredTerminalSandbox(value);
 	return {
 		id: String(value.id),
 		sessionId: String(value.session_id),
@@ -434,41 +425,6 @@ function sessionFromRow(row: unknown): TerminalSession {
 		createdAt: Number(value.created_at),
 		updatedAt: Number(value.updated_at),
 	};
-}
-
-function readSandboxMode(value: unknown): TerminalSandboxMode | null {
-	if (value === null) return null;
-	if (value === "workspace_write" || value === "full_access") return value;
-	throw new Error("Invalid persisted Terminal sandbox mode");
-}
-
-function readSandboxFacts(value: unknown): TerminalSandboxFacts | null {
-	if (value === null) return null;
-	if (typeof value !== "string") throw new Error("Invalid persisted Terminal sandbox facts");
-	let parsed: unknown;
-	try { parsed = JSON.parse(value) as unknown; }
-	catch { throw new Error("Invalid persisted Terminal sandbox JSON"); }
-	if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("Invalid persisted Terminal sandbox facts");
-	const fact = parsed as Record<string, unknown>;
-	if (fact.mode === "full_access" && fact.backend === "none" && fact.enforcement === "none" &&
-		Number.isSafeInteger(fact.approvedAt) && Number(fact.approvedAt) > 0 && Object.keys(fact).length === 4)
-		return { mode: "full_access", backend: "none", enforcement: "none", approvedAt: Number(fact.approvedAt) };
-	if (fact.mode === "full_access" && fact.backend === "none" && fact.enforcement === "none" &&
-		(fact.source === "sandbox_unavailable" || fact.source === "landlock_unavailable") && Number.isSafeInteger(fact.detectedAt) &&
-		Number(fact.detectedAt) > 0 && Object.keys(fact).length === 5)
-		return { mode: "full_access", backend: "none", enforcement: "none", source: fact.source, detectedAt: Number(fact.detectedAt) };
-	if (fact.mode === "workspace_write" && fact.backend === "landlock" && fact.enforcement === "full" &&
-		Number.isSafeInteger(fact.abi) && Number(fact.abi) >= 5 && typeof fact.launcherVersion === "string" &&
-		/^[1-9]\d*$/.test(fact.launcherVersion) && typeof fact.sandboxRoot === "string" &&
-		canonicalRemoteSandboxRoot(fact.sandboxRoot) && Object.keys(fact).length === 6)
-		return { mode: "workspace_write", backend: "landlock", enforcement: "full", abi: Number(fact.abi),
-			launcherVersion: fact.launcherVersion, sandboxRoot: fact.sandboxRoot };
-	if (fact.mode === "workspace_write" && fact.backend === "bubblewrap" && fact.enforcement === "full" &&
-		typeof fact.bubblewrapVersion === "string" && /^[0-9]+\.[0-9]+\.[0-9]+$/.test(fact.bubblewrapVersion) &&
-		typeof fact.sandboxRoot === "string" && canonicalRemoteSandboxRoot(fact.sandboxRoot) && Object.keys(fact).length === 5)
-		return { mode: "workspace_write", backend: "bubblewrap", enforcement: "full",
-			bubblewrapVersion: fact.bubblewrapVersion, sandboxRoot: fact.sandboxRoot };
-	throw new Error("Invalid persisted Terminal sandbox facts");
 }
 
 function terminalFailureDescriptor(session: TerminalSession) {

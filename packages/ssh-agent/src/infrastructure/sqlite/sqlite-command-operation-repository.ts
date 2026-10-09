@@ -8,7 +8,7 @@ import type {
 	OperationEventType,
 } from "../../domain/command-operation.ts";
 import type { OperationId, SessionId } from "../../domain/ids.ts";
-import { canonicalRemoteSandboxRoot, GORI_MIN_LANDLOCK_ABI, type RemoteSandboxFacts } from "../../domain/remote-sandbox.ts";
+import { readStoredCommandSandbox } from "./stored-command-sandbox.ts";
 import type { SshFailure } from "../../domain/ssh-failure.ts";
 import type { SshTargetSnapshot } from "../../domain/ssh-target.ts";
 import { descriptorForPublicFailure } from "../../i18n/public-error.ts";
@@ -189,7 +189,7 @@ function operationFromRow(row: CommandOperationRow): CommandOperation {
 		workspaceId: row.workspace_id,
 		command: row.command_text,
 		...(row.agent_run_id === null ? {} : { agentRunId: row.agent_run_id }),
-		...(row.sandbox_json === null ? {} : { sandbox: parseSandboxFacts(row.sandbox_json) }),
+		...(row.sandbox_json === null ? {} : { sandbox: readStoredCommandSandbox(row.sandbox_json) }),
 		...(row.sandbox_justification === null ? {} : { sandboxJustification: row.sandbox_justification }),
 		...(row.requested_cwd === null ? {} : { requestedCwd: row.requested_cwd }),
 		...(row.resolved_cwd === null ? {} : { resolvedCwd: row.resolved_cwd }),
@@ -212,51 +212,6 @@ function operationFromRow(row: CommandOperationRow): CommandOperation {
 		...(row.started_at === null ? {} : { startedAt: row.started_at }),
 		...(row.finished_at === null ? {} : { finishedAt: row.finished_at }),
 	};
-}
-
-function parseSandboxFacts(json: string): RemoteSandboxFacts {
-	const value: unknown = JSON.parse(json);
-	if (value === null || typeof value !== "object" || Array.isArray(value)) throw new Error("Invalid stored command sandbox facts");
-	const facts = value as Record<string, unknown>;
-	const { mode, backend, enforcement, abi, launcherVersion, bubblewrapVersion, sandboxRoot, denialSuspected, commandMayHaveRun } = facts;
-	const invalid = () => new Error("Invalid stored command sandbox facts");
-	if ((mode !== "workspace_write" && mode !== "full_access") ||
-		(backend !== "landlock" && backend !== "bubblewrap" && backend !== "none") ||
-		(enforcement !== "full" && enforcement !== "none") ||
-		typeof commandMayHaveRun !== "boolean" ||
-		(denialSuspected !== undefined && typeof denialSuspected !== "boolean")) throw invalid();
-
-	if (backend === "none") {
-		// Older queued and pre-dispatch failures have no backend facts. Full Access also uses none.
-		if (enforcement !== "none" || abi !== undefined || launcherVersion !== undefined || bubblewrapVersion !== undefined || sandboxRoot !== undefined ||
-			(mode === "workspace_write" && (commandMayHaveRun || denialSuspected !== undefined)) ||
-			(mode === "full_access" && denialSuspected === true) ||
-			!onlyKeys(facts, ["mode", "backend", "enforcement", "commandMayHaveRun", "denialSuspected"])) throw invalid();
-		return { mode, backend, enforcement, commandMayHaveRun,
-			...(denialSuspected === undefined ? {} : { denialSuspected }) };
-	}
-
-	// The launcher has been prepared even when the command ended before confirmation.
-	if (mode !== "workspace_write" ||
-		(backend === "landlock"
-			? (typeof abi !== "number" || !Number.isSafeInteger(abi) || abi < GORI_MIN_LANDLOCK_ABI ||
-				typeof launcherVersion !== "string" || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(launcherVersion) ||
-				bubblewrapVersion !== undefined)
-			: (abi !== undefined || launcherVersion !== undefined || typeof bubblewrapVersion !== "string" ||
-				!/^[0-9]+\.[0-9]+\.[0-9]+$/.test(bubblewrapVersion))) ||
-		(typeof sandboxRoot !== "string" || !canonicalRemoteSandboxRoot(sandboxRoot)) ||
-		(enforcement === "full" && !commandMayHaveRun) ||
-		(enforcement === "none" && denialSuspected !== undefined) ||
-		!onlyKeys(facts, ["mode", "backend", "enforcement", "abi", "launcherVersion", "bubblewrapVersion", "sandboxRoot", "commandMayHaveRun", "denialSuspected"])) throw invalid();
-	return { mode, backend, enforcement,
-		...(backend === "landlock" ? { abi: Number(abi), launcherVersion: String(launcherVersion) }
-			: { bubblewrapVersion: String(bubblewrapVersion) }),
-		sandboxRoot: String(sandboxRoot), commandMayHaveRun,
-		...(denialSuspected === undefined ? {} : { denialSuspected }) };
-}
-
-function onlyKeys(value: Record<string, unknown>, allowed: readonly string[]): boolean {
-	return Object.keys(value).every((key) => allowed.includes(key));
 }
 
 function eventFromRow(row: OperationEventRow): OperationEvent {

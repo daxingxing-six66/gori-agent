@@ -6,7 +6,7 @@
 
 - Terminal Mode 只有一个前端入口。启动时由沙箱协调层依次探测 Landlock 和已安装的 Bubblewrap。全部后端不可用或保护不足时，Terminal 打开失败并保存具体错误，不会自动启动无沙箱的 SSH Shell；Bubblewrap 未安装返回独立错误，会话仍可在命令模式下由模型发起安装审批。失败的终端状态会在原 Terminal 区域持续展示原因和重试入口；缺少 Bubblewrap 时还可点击“交给模型处理安装”，创建普通命令模式的 Chat Run，由模型检查安装条件并提交准确安装命令供用户审批。这个按钮只发起模型工作，不代表批准安装；用户仍需在随后出现的审批卡片中批准。请求模式仍记录为 `workspace_write`。无沙箱 PTY 的人工审批入口尚未实现，不能通过批准一次 `terminal_interaction` 输入来改变已经打开的 PTY 的沙箱模式。
 - 能力可用时，后端校验并规范化工作区默认远端目录作为可写根；Landlock 使用 Native launcher 和账号登录 Shell，Bubblewrap 使用挂载命名空间和 `bash --login -i`。Broker 只在带随机 nonce 的确认行到达后交出 Channel，确认行不会进入屏幕或 Observation；启动输出先限量缓冲，Actor 持久化 `active` 后才释放。目录为 `/`、目录或启动器准备失败、确认超时、取消及通道提前关闭均失败关闭，不自动回退。两种实际模式下每次 Agent `submit` 仍执行 Guard 和现有审批。Bubblewrap `--new-session` 可能影响依赖控制终端的程序，尚需 Linux PTY 实机验证。
-- TerminalSession 保存请求模式和实际沙箱事实。v20 迁移让历史记录维持未知状态；SQLite 和浏览器入口校验实际事实。新打开的 Terminal 在状态、时间线、Agent Tool 描述及结果中展示 Landlock ABI 或 Bubblewrap 版本与规范化根；历史上由旧入口创建的 Full Access 或自动回退记录仍可读取。共同策略不保证网络、IPC 和文件元数据。
+- TerminalSession 保存请求模式和实际沙箱事实。v20 迁移让历史记录维持未知状态；SQLite 和浏览器入口校验实际事实。新打开的 Terminal 在状态、时间线、Agent Tool 描述及结果中展示 Landlock ABI 或 Bubblewrap 版本与规范化根；历史上由旧入口创建的 Full Access 或自动回退记录仍可读取；`stored-terminal-sandbox.ts` 在 SQLite 读取边界统一解释 `approvedAt`、旧 `source/detectedAt` 和沙箱前 null 记录，并严格检查新旧字段、请求模式与状态约束。历史事实不参与新 PTY 的权限选择。共同策略不保证网络、IPC 和文件元数据。
 - Terminal Interaction MVP 已完成后端、Agent 和前端链路。一个业务 Session 最多存在一个 live TerminalSession，用户通过 Chat 输入框开头的 `/` 或合法位置的 `@` 唤起工具菜单并手动开启或关闭；页面顶部不再提供独立开关。活动 Chat Run 期间禁止切换，取消 Run 只停止 Agent，不关闭 TerminalSession。
 - Chat Run 冻结 `serverInteractionMode`，一个 TerminalSession 同时只绑定一个活动 Run。两种模式都提供相同 Tool 定义，后端门禁只允许当前模式入口。头部在首次 Run 保存不可变快照；开启、关闭、断开与重启恢复通过原子状态提交追加真实 system on/off 消息，不改写头部。见 [会话头部与模式消息](../session-prompt.md)。
 - `terminal_interaction` 支持 `submit`、`CTRL_C` 和 `observe`。Tool 参数使用供应商兼容的顶层 object schema，再由运行时校验 action 对应字段。每次调用仍是标准 Agent Tool Call，Interaction、规范化显示文本、实际派发 bytes、Guard 结果、Approval、Observation 和交付/处理时间线均持久化。`autoAudit` 沿用原审批逻辑；Guard 在审批前和实际写入前各检查一次。
@@ -42,7 +42,7 @@
 | 前端 xterm 直接依赖 | `packages/ssh-agent-web/package.json` |
 | ANSI snapshot 兼容性与语义等价测试 | `packages/ssh-agent/test/terminal-snapshot-spike.test.ts` |
 | 领域类型和服务端权威默认值 | `packages/ssh-agent/src/domain/terminal.ts`、`packages/ssh-agent/src/application/terminal/terminal-defaults.ts` |
-| SQLite schema、Repository 和重启收敛 | `packages/ssh-agent/src/infrastructure/sqlite/migrations.ts`、`packages/ssh-agent/src/infrastructure/sqlite/sqlite-terminal-repository.ts` |
+| SQLite schema、Repository 和重启收敛 | `packages/ssh-agent/src/infrastructure/sqlite/migrations.ts`、`packages/ssh-agent/src/infrastructure/sqlite/sqlite-terminal-repository.ts`、`stored-terminal-sandbox.ts` |
 | Session 生命周期屏障、Terminal 生命周期和沙箱能力不足时的失败关闭 | `packages/ssh-agent/src/application/services/session-lifecycle-coordinator.ts`、`packages/ssh-agent/src/application/services/terminal-session-service.ts` |
 | Terminal 通道准备、整体 deadline、取消与迟到资源清理 | `packages/ssh-agent/src/application/terminal/terminal-channel-opener.ts` |
 | Agent Tool、Guard/Approval、输入和 Observation | `packages/ssh-agent/src/application/services/terminal-interaction-service.ts`、`packages/ssh-agent/src/application/services/chat-tool-authorization-policy.ts`、`packages/ssh-agent/src/application/services/chat-tool-call-coordinator.ts`、`packages/ssh-agent/src/application/services/chat-approval-service.ts`、`packages/ssh-agent/src/application/terminal/terminal-observation-capture.ts`、`packages/ssh-agent/src/application/tools/terminal-interaction-tool.ts` |

@@ -33,6 +33,60 @@ function broker(options: { installed?: boolean; version?: string; probeSucceeds?
 }
 
 describe("Bubblewrap remote sandbox", () => {
+	it.each([
+		["non-root owner", "stat=1000:755"],
+		["setuid runner", "stat=0:4755"],
+		["group-writable parent", "stat=0:775"],
+	])("rejects unsafe executable metadata before testing confinement: %s", async (_name, stat) => {
+		const remote = broker();
+		const sandbox = new BubblewrapRemoteSandboxProvider({ broker: { execute: async (input) => {
+			if (input.command.startsWith("p=$(command -v bwrap)")) {
+				await input.onStdout(Buffer.from(`path=/usr/bin/bwrap\n${stat}\nstat=0:755\nbubblewrap 0.12.0\n`));
+				return { exitCode: 0 };
+			}
+			return remote.execute(input);
+		} } });
+		await expect(sandbox.getCapabilities(target, new AbortController().signal)).rejects.toMatchObject({ failure: { code: "sandbox_probe_failed" } });
+		expect(remote.commands.some((command) => command.startsWith("GORI_HOST_PROBE_PID=$$"))).toBe(false);
+	});
+
+	it.each(["/", "/usr"])("rejects a canonical root that widens writes or includes the runner: %s", async (root) => {
+		const remote = broker({ root });
+		const sandbox = new BubblewrapRemoteSandboxProvider({ broker: remote });
+		await expect(sandbox.getCapabilities(target, new AbortController().signal)).rejects.toMatchObject({ failure: { code: "sandbox_root_invalid" } });
+		expect(remote.commands.some((command) => command.startsWith("GORI_HOST_PROBE_PID=$$"))).toBe(false);
+	});
+
+	it("reuses executable metadata but verifies confinement on every query and explicitly refreshes version", async () => {
+		const options = { version: "0.12.0" };
+		const remote = broker(options);
+		const sandbox = new BubblewrapRemoteSandboxProvider({ broker: remote });
+		const signal = new AbortController().signal;
+		await sandbox.getCapabilities(target, signal);
+		options.version = "0.13.0";
+		expect((await sandbox.getCapabilities(target, signal)).bubblewrapVersion).toBe("0.12.0");
+		expect((await sandbox.refreshCapabilities(target, signal)).bubblewrapVersion).toBe("0.13.0");
+		expect(remote.commands.filter((command) => command.startsWith("p=$(command -v bwrap)"))).toHaveLength(2);
+		expect(remote.commands.filter((command) => command.startsWith("GORI_HOST_PROBE_PID=$$"))).toHaveLength(3);
+	});
+
+	it("retains confinement failure diagnostics and cleans up probe files", async () => {
+		const remote = broker();
+		const execute = remote.execute;
+		const sandbox = new BubblewrapRemoteSandboxProvider({ broker: { execute: async (input) => {
+			if (input.command.startsWith("GORI_HOST_PROBE_PID=$$")) {
+				await input.onStderr(Buffer.from("bwrap: Creating new namespace failed: Operation not permitted\n"));
+				return { exitCode: 1 };
+			}
+			return execute(input);
+		} } });
+		await expect(sandbox.getCapabilities(target, new AbortController().signal)).rejects.toMatchObject({ failure: {
+			code: "sandbox_unavailable", message: expect.stringContaining("Creating new namespace failed"),
+			safeDetails: { exitCode: 1, commandMayHaveRun: false },
+		} });
+		expect(remote.commands.some((command) => command.startsWith("rm -f --") && command.includes(".gori-bwrap-probe-"))).toBe(true);
+	});
+
 	it("probes an installed runner without approval and prepares a confined command and Terminal", async () => {
 		const remote = broker();
 		const sandbox = new BubblewrapRemoteSandboxProvider({ broker: remote });
@@ -64,19 +118,19 @@ describe("Bubblewrap remote sandbox", () => {
 
 	it("distinguishes missing installation from an installed but unusable runner", async () => {
 		const missing = new BubblewrapRemoteSandboxProvider({ broker: broker({ installed: false }) });
-		await expect(missing.probe(target, new AbortController().signal))
+		await expect(missing.getCapabilities(target, new AbortController().signal))
 			.rejects.toMatchObject({ failure: { code: "sandbox_bubblewrap_not_installed" } });
 		const unusable = new BubblewrapRemoteSandboxProvider({ broker: broker({ probeSucceeds: false }) });
-		await expect(unusable.probe(target, new AbortController().signal))
+		await expect(unusable.getCapabilities(target, new AbortController().signal))
 			.rejects.toMatchObject({ failure: { code: "sandbox_unavailable" } });
 		const old = new BubblewrapRemoteSandboxProvider({ broker: broker({ version: "0.11.0" }) });
-		await expect(old.probe(target, new AbortController().signal))
+		await expect(old.getCapabilities(target, new AbortController().signal))
 			.rejects.toMatchObject({ failure: { code: "sandbox_partial_enforcement" } });
 		const noPidView = new BubblewrapRemoteSandboxProvider({ broker: broker({ hostPidNamespace: "unavailable" }) });
-		await expect(noPidView.probe(target, new AbortController().signal))
+		await expect(noPidView.getCapabilities(target, new AbortController().signal))
 			.rejects.toMatchObject({ failure: { code: "sandbox_probe_failed" } });
 		const noNetworkView = new BubblewrapRemoteSandboxProvider({ broker: broker({ hostNetworkNamespace: "unavailable" }) });
-		await expect(noNetworkView.probe(target, new AbortController().signal))
+		await expect(noNetworkView.getCapabilities(target, new AbortController().signal))
 			.rejects.toMatchObject({ failure: { code: "sandbox_probe_failed" } });
 	});
 

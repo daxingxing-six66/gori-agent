@@ -12,10 +12,22 @@ const execution = { command: "confined command", sandbox: facts, confirmation: "
 const terminal = { command: "confined terminal", sandbox: facts, confirmation: "confirmed" };
 
 function backend(prepare: RemoteSandboxBackend["prepare"]): RemoteSandboxBackend {
-	return { probe: vi.fn(async () => facts), prepare: vi.fn(prepare), prepareTerminal: vi.fn(async () => terminal) };
+	return { getCapabilities: vi.fn(async () => facts), refreshCapabilities: vi.fn(async () => facts), prepare: vi.fn(prepare), prepareTerminal: vi.fn(async () => terminal) };
 }
 
 describe("remote sandbox backend selection", () => {
+	it("keeps ordinary queries and explicit refreshes on their respective backend entry points", async () => {
+		const constrained = backend(async () => execution);
+		const sandbox = new RemoteSandboxCoordinator([constrained]);
+		const signal = new AbortController().signal;
+		await sandbox.getCapabilities(target, signal);
+		expect(constrained.getCapabilities).toHaveBeenCalledOnce();
+		expect(constrained.refreshCapabilities).not.toHaveBeenCalled();
+		await sandbox.refreshCapabilities(target, signal);
+		expect(constrained.getCapabilities).toHaveBeenCalledOnce();
+		expect(constrained.refreshCapabilities).toHaveBeenCalledOnce();
+	});
+
 	it("uses the next backend only after an explicit capability verdict", async () => {
 		const first = backend(async () => { throw sandboxFailure("sandbox_partial_enforcement", "ABI too old"); });
 		const second = backend(async () => execution);
@@ -45,11 +57,11 @@ describe("remote sandbox backend selection", () => {
 
 	it("reports a missing Bubblewrap installation only after Landlock is unavailable", async () => {
 		const first = backend(async () => { throw sandboxFailure("sandbox_unavailable", "No Landlock"); });
-		first.probe = vi.fn(async () => { throw sandboxFailure("sandbox_unavailable", "No Landlock"); });
+		first.getCapabilities = vi.fn(async () => { throw sandboxFailure("sandbox_unavailable", "No Landlock"); });
 		const second = backend(async () => { throw sandboxFailure("sandbox_bubblewrap_not_installed", "Missing Bubblewrap"); });
-		second.probe = vi.fn(async () => { throw sandboxFailure("sandbox_bubblewrap_not_installed", "Missing Bubblewrap"); });
+		second.getCapabilities = vi.fn(async () => { throw sandboxFailure("sandbox_bubblewrap_not_installed", "Missing Bubblewrap"); });
 		const sandbox = new RemoteSandboxCoordinator([first, second]);
-		await expect(sandbox.probe(target, new AbortController().signal))
+		await expect(sandbox.getCapabilities(target, new AbortController().signal))
 			.rejects.toMatchObject({ failure: { code: "sandbox_bubblewrap_not_installed" } });
 		await expect(sandbox.prepare({ target, cwd: "/srv/app", command: "true",
 			policy: { mode: "workspace_write" }, signal: new AbortController().signal }))

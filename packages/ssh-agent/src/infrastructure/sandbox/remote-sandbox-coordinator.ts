@@ -18,8 +18,12 @@ export class RemoteSandboxCoordinator implements RemoteSandboxProvider {
 		this.#backends = [...backends];
 	}
 
-	probe(target: SshTargetSnapshot, signal: AbortSignal): Promise<PreparedSandboxedExecution["sandbox"]> {
-		return this.#firstAvailable((backend) => backend.probe(target, signal), signal);
+	getCapabilities(target: SshTargetSnapshot, signal: AbortSignal): Promise<PreparedSandboxedExecution["sandbox"]> {
+		return this.#firstAvailable((backend) => backend.getCapabilities(target, signal), signal);
+	}
+
+	refreshCapabilities(target: SshTargetSnapshot, signal: AbortSignal): Promise<PreparedSandboxedExecution["sandbox"]> {
+		return this.#firstAvailable((backend) => backend.refreshCapabilities(target, signal), signal);
 	}
 
 	prepare(input: Parameters<RemoteSandboxProvider["prepare"]>[0]): Promise<PreparedRemoteExecution> {

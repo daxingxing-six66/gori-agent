@@ -6,7 +6,7 @@ v18 为 Workspace 增加非空 `remote_default_cwd`，默认 `/`。原 `default_
 
 v19 追加 nullable `workspaces.remote_sandbox_root` 及 `command_operations.agent_run_id/sandbox_json/sandbox_justification`。v21 将已有独立可写根优先迁入 `remote_default_cwd`，再删除 `remote_sandbox_root`；旧根不存在时保留原远端目录。历史命令的约束事实不改写。Operation 保存实际 mode/backend/enforcement/ABI/规范根及可能副作用事实；Repository 按模式、后端和确认状态校验 `sandbox_json`，同时保留旧记录的未知及确认前事实。一次性 Full Access grant 只存内存。旧 v4/v15 回归使用冻结 schema fixture，避免从最新结构反向删表。见 [remote-sandbox.md](./remote-sandbox.md)。
 
-Bubblewrap 事实沿用现有 JSON 列，无 schema migration：保存 `backend=bubblewrap`、版本和规范根，不写 Landlock ABI。Command/Terminal Repository 分别严格读取新旧后端事实；安装仍按单条 Full Access Command Operation 留下审计，grant 不持久化。
+Bubblewrap 事实沿用现有 JSON 列，无 schema migration：保存 `backend=bubblewrap`、版本和规范根，不写 Landlock ABI。`stored-command-sandbox.ts` 与 `stored-terminal-sandbox.ts` 分别在 Command/Terminal Repository 读取边界严格解析新旧事实，按后端与记录类型分成小方法；Terminal 的旧 `approvedAt`、`source/detectedAt` 与 null 只用于历史读取，不恢复授权或放宽 opening/active 约束；安装仍按单条 Full Access Command Operation 留下审计，grant 不持久化。
 
 ## 当前边界
 
@@ -50,6 +50,7 @@ Bubblewrap 事实沿用现有 JSON 列，无 schema migration：保存 `backend=
 | Credential 元数据和 Secret Store | [sqlite-credential-repository.ts](../../../packages/ssh-agent/src/infrastructure/sqlite/sqlite-credential-repository.ts) |
 | Workspace、Host Trust、Session、Guard Repository | [sqlite-workspace-repository.ts](../../../packages/ssh-agent/src/infrastructure/sqlite/sqlite-workspace-repository.ts)、[sqlite-workspace-host-trust-repository.ts](../../../packages/ssh-agent/src/infrastructure/sqlite/sqlite-workspace-host-trust-repository.ts)、[sqlite-session-repository.ts](../../../packages/ssh-agent/src/infrastructure/sqlite/sqlite-session-repository.ts)、[sqlite-guard-repository.ts](../../../packages/ssh-agent/src/infrastructure/sqlite/sqlite-guard-repository.ts) |
 | Command Operation 和事件 Repository | [sqlite-command-operation-repository.ts](../../../packages/ssh-agent/src/infrastructure/sqlite/sqlite-command-operation-repository.ts) |
+| Command/Terminal 沙箱事实解码与历史兼容 | [stored-command-sandbox.ts](../../../packages/ssh-agent/src/infrastructure/sqlite/stored-command-sandbox.ts)、[stored-terminal-sandbox.ts](../../../packages/ssh-agent/src/infrastructure/sqlite/stored-terminal-sandbox.ts) |
 | File Transfer Repository | [sqlite-file-transfer-repository.ts](../../../packages/ssh-agent/src/infrastructure/sqlite/sqlite-file-transfer-repository.ts) |
 | Attachment Repository | [sqlite-attachment-repository.ts](../../../packages/ssh-agent/src/infrastructure/sqlite/sqlite-attachment-repository.ts) |
 | Chat Run、消息、Queue、Approval 和压缩 Repository | [chat-repository.ts](../../../packages/ssh-agent/src/application/repositories/chat-repository.ts)、[sqlite-chat-repository.ts](../../../packages/ssh-agent/src/infrastructure/sqlite/sqlite-chat-repository.ts) |

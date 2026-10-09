@@ -91,6 +91,34 @@ const terminalInteraction = (overrides: Partial<TerminalInteraction> = {}): Term
 });
 
 describe("SqliteTerminalRepository", () => {
+	it.each([
+		{ mode: "full_access", backend: "none", enforcement: "none", approvedAt: 10, extra: true },
+		{ mode: "full_access", backend: "none", enforcement: "none", source: "landlock_unavailable", detectedAt: 10, approvedAt: 10 },
+		{ mode: "full_access", backend: "landlock", enforcement: "full", approvedAt: 10 },
+		{ mode: "workspace_write", backend: "bubblewrap", enforcement: "full", bubblewrapVersion: "0.12.0", sandboxRoot: "/opt/app", approvedAt: 10 },
+	])("rejects mixed historical and current sandbox facts: %j", (facts) => {
+		const database = createDatabase();
+		try {
+			const repository = new SqliteTerminalRepository(database);
+			repository.insertSession(terminalSession({ status: "closed" }));
+			database.prepare("UPDATE terminal_sessions SET sandbox_json = ? WHERE id = 'terminal-1'").run(JSON.stringify(facts));
+			expect(() => repository.findSession("terminal-1")).toThrow("Invalid persisted Terminal sandbox facts");
+		} finally { database.close(); }
+	});
+
+	it("does not let historical compatibility bypass opening and active session invariants", () => {
+		const database = createDatabase();
+		try {
+			const repository = new SqliteTerminalRepository(database);
+			repository.insertSession(terminalSession());
+			database.prepare("UPDATE terminal_sessions SET requested_sandbox_mode = 'workspace_write', sandbox_json = ? WHERE id = 'terminal-1'")
+				.run(JSON.stringify({ mode: "full_access", backend: "none", enforcement: "none", source: "landlock_unavailable", detectedAt: 10 }));
+			expect(() => repository.findSession("terminal-1")).toThrow("Opening Terminal cannot claim an active sandbox");
+			database.prepare("UPDATE terminal_sessions SET status = 'active', sandbox_json = NULL WHERE id = 'terminal-1'").run();
+			expect(() => repository.findSession("terminal-1")).toThrow("Active Terminal sandbox facts are missing");
+		} finally { database.close(); }
+	});
+
 	it("enforces one live TerminalSession per business Session and performs status/revision CAS", () => {
 		const database = createDatabase();
 		try {

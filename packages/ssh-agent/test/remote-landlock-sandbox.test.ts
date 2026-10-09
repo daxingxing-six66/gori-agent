@@ -84,6 +84,43 @@ function providerFixture() {
  return { host, provider, loadBinary, prepare };
 }
 describe("Remote launcher distribution and capability", () => {
+	it("reuses backend discovery for ordinary queries but checks the current root and devices each time", async () => {
+		const f = providerFixture();
+		const signal = new AbortController().signal;
+		await f.provider.getCapabilities(target, signal);
+		await f.provider.getCapabilities(target, signal);
+		expect(f.host.commands.filter((command) => command.includes("'--probe'"))).toHaveLength(1);
+		expect(f.host.commands.filter((command) => command.startsWith("test -d '/opt/app'"))).toHaveLength(2);
+		f.host.nullFailure = true;
+		await expect(f.provider.getCapabilities(target, signal)).rejects.toMatchObject({ failure: {
+			code: "sandbox_prepare_failed", safeDetails: { sandboxStage: "null device", commandMayHaveRun: false },
+		} });
+		expect(f.host.commands.filter((command) => command.includes("'--probe'"))).toHaveLength(1);
+	});
+
+	it("merges explicit refreshes while retaining per-request policy validation", async () => {
+		const f = providerFixture();
+		await f.prepare();
+		const signal = new AbortController().signal;
+		await Promise.all([f.provider.refreshCapabilities(target, signal), f.provider.refreshCapabilities(target, signal)]);
+		expect(f.host.commands.filter((command) => command.includes("'--probe'"))).toHaveLength(2);
+		expect(f.loadBinary).toHaveBeenCalledTimes(2);
+		expect(f.host.commands.filter((command) => command.startsWith("test -d '/opt/app'"))).toHaveLength(3);
+	});
+
+	it("reports root validation stderr and the remote exit status", async () => {
+		const f = providerFixture();
+		vi.spyOn(f.host, "execute").mockImplementationOnce(async (input) => {
+			await input.onStderr(Buffer.from("realpath: /opt/app: Permission denied\n"));
+			return { exitCode: 1 };
+		});
+		await expect(f.prepare()).rejects.toMatchObject({ failure: { code: "sandbox_root_unavailable",
+			message: expect.stringContaining("realpath: /opt/app: Permission denied"),
+			safeDetails: { sandboxStage: "writable root", exitCode: 1, commandMayHaveRun: false },
+		} });
+		expect(f.host.uploads).toEqual([]);
+	});
+
 	it("prepares a nonce-bound interactive shell using the canonical root and no Bash override", async () => {
 		const f = providerFixture();
 		const prepared = await f.provider.prepareTerminal({ target, signal: new AbortController().signal });
@@ -143,7 +180,7 @@ describe("Remote launcher distribution and capability", () => {
   const f = providerFixture(); await f.prepare();
   await f.provider.prepare({ target: { ...target, credentialAuthVersion: 2 }, cwd: "/", command: "true", signal: new AbortController().signal });
   expect(f.host.commands.filter((c) => c.includes("'--probe'"))).toHaveLength(2);
-  await f.provider.probe(target, new AbortController().signal);
+  await f.provider.refreshCapabilities(target, new AbortController().signal);
   expect(f.host.commands.filter((c) => c.includes("'--probe'"))).toHaveLength(3);
   expect(f.host.commands.some((c) => c.includes("'--ro'"))).toBe(false);
  });
@@ -165,7 +202,7 @@ describe("Remote launcher distribution and capability", () => {
 		});
 		const preparation = f.prepare();
 		await started;
-		const refresh = f.provider.probe(target, new AbortController().signal);
+		const refresh = f.provider.refreshCapabilities(target, new AbortController().signal);
 		releaseProbe();
 		await Promise.all([preparation, refresh]);
 		expect(f.host.commands.filter((command) => command.includes("'--probe'"))).toHaveLength(2);
@@ -185,7 +222,7 @@ describe("Remote launcher distribution and capability", () => {
 			.rejects.toMatchObject({ failure: { code: "sandbox_unavailable" } });
 		expect(f.host.commands.some((command) => command.includes("realpath -e"))).toBe(false);
 	});
- it.each(["/", "/opt/..", "relative", "~", "/opt/\0app"])("rejects invalid root %s before SSH", async (root) => {
+ it.each(["", "/", "/opt/..", "relative", "~", "/opt/\0app"])("rejects invalid root %s before SSH", async (root) => {
   const f = providerFixture();
   await expect(f.prepare(root)).rejects.toMatchObject({ failure: { code: "sandbox_root_invalid", safeDetails: { commandMayHaveRun: false } } });
   expect(f.host.commands).toEqual([]);

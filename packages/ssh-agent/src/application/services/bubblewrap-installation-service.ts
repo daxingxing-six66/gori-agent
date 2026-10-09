@@ -1,5 +1,5 @@
 import { StringDecoder } from "node:string_decoder";
-import type { RemoteSandboxCoordinator } from "../../infrastructure/sandbox/remote-sandbox-coordinator.ts";
+import type { RemoteSandboxCapabilityProvider } from "./remote-sandbox-provider.ts";
 import { SshAgentError } from "../../domain/ssh-failure.ts";
 import { sandboxFailure } from "../../domain/remote-sandbox.ts";
 import type { SshTargetSnapshot } from "../../domain/ssh-target.ts";
@@ -45,13 +45,13 @@ export function parseBubblewrapInstallPlan(value: unknown): BubblewrapInstallPla
 
 export class BubblewrapInstallationService {
 	readonly #targets: SshTargetResolver;
-	readonly #sandbox: Pick<RemoteSandboxCoordinator, "probe">;
+	readonly #sandbox: RemoteSandboxCapabilityProvider;
 	readonly #broker: RemoteCommandBroker;
 	readonly #operations: CommandOperationService;
 
 	constructor(options: {
 		targets: SshTargetResolver;
-		sandbox: Pick<RemoteSandboxCoordinator, "probe">;
+		sandbox: RemoteSandboxCapabilityProvider;
 		broker: RemoteCommandBroker;
 		operations: CommandOperationService;
 	}) {
@@ -64,7 +64,7 @@ export class BubblewrapInstallationService {
 	async requireInstallation(sessionId: string, signal: AbortSignal): Promise<SshTargetSnapshot> {
 		const target = await this.#targets.resolve(sessionId);
 		try {
-			await this.#sandbox.probe(target, signal);
+			await this.#sandbox.getCapabilities(target, signal);
 		} catch (error) {
 			if (error instanceof SshAgentError && error.failure.code === "sandbox_bubblewrap_not_installed") return target;
 			throw error;
@@ -107,7 +107,7 @@ export class BubblewrapInstallationService {
 			signal: input.signal,
 		});
 		if (result.operation.failure) throw new Error(`Bubblewrap installation failed: ${result.operation.failure.message}\n${result.outputTail}`);
-		const facts = await this.#sandbox.probe(target, input.signal);
+		const facts = await this.#sandbox.refreshCapabilities(target, input.signal);
 		return `Bubblewrap installation completed. Active sandbox: ${facts.backend}. ${result.outputTail}`;
 	}
 }

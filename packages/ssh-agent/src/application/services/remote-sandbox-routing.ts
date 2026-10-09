@@ -2,7 +2,7 @@ import { posix } from "node:path";
 import { canonicalRemoteSandboxRoot, sandboxFailure } from "../../domain/remote-sandbox.ts";
 import { SshAgentError } from "../../domain/ssh-failure.ts";
 import type { SshTargetSnapshot } from "../../domain/ssh-target.ts";
-import type { PreparedSandboxedExecution, RemoteSandboxProber } from "./remote-sandbox-provider.ts";
+import type { PreparedSandboxedExecution, RemoteSandboxCapabilityProvider } from "./remote-sandbox-provider.ts";
 
 export type RemoteSandboxRoute =
 	| { readonly mode: "workspace_write"; readonly facts: PreparedSandboxedExecution["sandbox"] }
@@ -14,7 +14,7 @@ export type RemoteSandboxRoute =
  * arbitrary shell scripts may write elsewhere and must first run confined.
  */
 export async function evaluateRemoteSandboxRoute(input: {
-	readonly sandbox?: Pick<RemoteSandboxProber, "probe">;
+	readonly sandbox?: Pick<RemoteSandboxCapabilityProvider, "getCapabilities">;
 	readonly target: SshTargetSnapshot;
 	readonly signal: AbortSignal;
 	readonly declaredWritePaths?: readonly string[];
@@ -32,7 +32,7 @@ export async function evaluateRemoteSandboxRoute(input: {
 
 	let facts: PreparedSandboxedExecution["sandbox"];
 	try {
-		facts = await input.sandbox.probe(input.target, input.signal);
+		facts = await input.sandbox.getCapabilities(input.target, input.signal);
 	} catch (error) {
 		input.signal.throwIfAborted();
 		if (!(error instanceof SshAgentError)) throw error;

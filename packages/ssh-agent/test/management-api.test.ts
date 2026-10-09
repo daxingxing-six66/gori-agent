@@ -25,7 +25,7 @@ describe("SQLite management HTTP API", () => {
 	it("exposes an explicit sandbox probe and safe localized failures without dispatching a command", async () => {
 		const backend = createBackend();
 		const facts = { mode: "workspace_write", backend: "landlock", enforcement: "full", abi: 8, launcherVersion: "1", sandboxRoot: "/opt/app" } as const;
-		const probe = vi.spyOn(LandlockRemoteSandboxProvider.prototype, "probe").mockResolvedValue(facts);
+		const probe = vi.spyOn(LandlockRemoteSandboxProvider.prototype, "refreshCapabilities").mockResolvedValue(facts);
 		try {
 			await createWorkspace(backend.handleRequest, { remoteDefaultCwd: "/opt/app" });
 			backend.database.exec("INSERT INTO workspace_host_trusts VALUES ('id-1','ssh-ed25519','SHA256:test',1)");
@@ -35,7 +35,7 @@ describe("SQLite management HTTP API", () => {
 			probe.mockRejectedValueOnce(sandboxFailure("sandbox_probe_failed", "private host details"));
 			const failed = await request(backend.handleRequest, "POST", "/api/workspaces/id-1/sandbox");
 			expect(failed.status).toBeGreaterThanOrEqual(400);
-			expect(failed.body).toMatchObject({ error: { code: "sandbox_probe_failed", retryable: false, message: "远端 Landlock 强制约束探测失败，命令未执行。" } });
+			expect(failed.body).toMatchObject({ error: { code: "sandbox_probe_failed", retryable: false, message: "远端沙箱强制约束探测失败，命令未执行。" } });
 			expect(JSON.stringify(failed.body)).not.toContain("private host details");
 		} finally { probe.mockRestore(); backend.close(); }
 	});

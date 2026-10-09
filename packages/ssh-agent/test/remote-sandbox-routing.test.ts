@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import type { RemoteSandboxProber } from "../src/application/services/remote-sandbox-provider.ts";
+import type { RemoteSandboxCapabilityProvider } from "../src/application/services/remote-sandbox-provider.ts";
 import { evaluateRemoteSandboxRoute } from "../src/application/services/remote-sandbox-routing.ts";
 import { sandboxFailure } from "../src/domain/remote-sandbox.ts";
 import type { SshTargetSnapshot } from "../src/domain/ssh-target.ts";
@@ -9,8 +9,8 @@ const signal = new AbortController().signal;
 const facts = { mode: "workspace_write", backend: "landlock", enforcement: "full", abi: 5,
 	launcherVersion: "3", sandboxRoot: "/srv/app" } as const;
 
-function prober(probe: RemoteSandboxProber["probe"]): RemoteSandboxProber {
-	return { probe: vi.fn(probe) };
+function prober(probe: RemoteSandboxCapabilityProvider["getCapabilities"]): RemoteSandboxCapabilityProvider {
+	return { getCapabilities: vi.fn(probe), refreshCapabilities: vi.fn() };
 }
 
 describe("remote sandbox route preflight", () => {
@@ -19,7 +19,7 @@ describe("remote sandbox route preflight", () => {
 		await expect(evaluateRemoteSandboxRoute({ sandbox, target, signal,
 			declaredWritePaths: ["/srv/app/releases/api", "/tmp/staging", "/dev/null"] }))
 			.resolves.toEqual({ mode: "workspace_write", facts });
-		expect(sandbox.probe).toHaveBeenCalledWith(target, signal);
+		expect(sandbox.getCapabilities).toHaveBeenCalledWith(target, signal);
 	});
 
 	it("requires a marked exception for a known path outside the writable roots", async () => {
@@ -59,7 +59,7 @@ describe("remote sandbox route preflight", () => {
 		const sandbox = prober(async () => facts);
 		await expect(evaluateRemoteSandboxRoute({ sandbox, target, signal, declaredWritePaths: ["../etc"] }))
 			.rejects.toMatchObject({ failure: { code: "invalid_request" } });
-		expect(sandbox.probe).not.toHaveBeenCalled();
+		expect(sandbox.getCapabilities).not.toHaveBeenCalled();
 		await expect(evaluateRemoteSandboxRoute({ target, signal, declaredWritePaths: ["../etc"] }))
 			.rejects.toMatchObject({ failure: { code: "invalid_request" } });
 	});
