@@ -12,21 +12,13 @@ export interface FullAccessRequest {
 
 /** Only the human approval path grants access. A grant authorizes one exact request. */
 export class RemoteSandboxApprovalStore {
-	readonly #grants = new Map<string, Map<string, { signature: string; justification: string; target?: string }>>();
+	readonly #grants = new Map<string, Map<string, { signature: string; target?: string }>>();
 
 	approve(request: FullAccessRequest, target?: SshTargetSnapshot): void {
-		const runGrants = this.#grants.get(request.agentRunId) ?? new Map<string, { signature: string; justification: string; target?: string }>();
-		runGrants.set(request.toolCallId, { signature: this.signature(request), justification: request.justification,
+		const runGrants = this.#grants.get(request.agentRunId) ?? new Map<string, { signature: string; target?: string }>();
+		runGrants.set(request.toolCallId, { signature: this.signature(request),
 			...(target === undefined ? {} : { target: targetSignature(target) }) });
 		this.#grants.set(request.agentRunId, runGrants);
-	}
-
-	/** Lets the Tool select Full Access after approval; dispatch still consumes and verifies the grant. */
-	approvedJustification(request: Omit<FullAccessRequest, "justification">): string | undefined {
-		const grant = this.#grants.get(request.agentRunId)?.get(request.toolCallId);
-		if (!grant) return undefined;
-		return grant.signature === this.signature({ ...request, justification: grant.justification })
-			? grant.justification : undefined;
 	}
 
 	consume(request: FullAccessRequest, actualTarget?: SshTargetSnapshot): boolean {

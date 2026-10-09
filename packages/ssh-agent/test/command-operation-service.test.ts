@@ -277,6 +277,31 @@ describe("SSH command Operation execution", () => {
 		}
 	});
 
+	it("returns remote command failures with output and terminate=false for model recovery", async () => {
+		const fixture = await createFixture();
+		try {
+			vi.spyOn(fixture.broker, "execute").mockImplementationOnce(async (input) => {
+				await input.onStdout(new TextEncoder().encode("partial output\n"));
+				await input.onStderr(new TextEncoder().encode("command not found\n"));
+				return { exitCode: 127 };
+			});
+			const abortRun = vi.fn();
+			const tool = createRemoteServerCallTool({ sessionId: "id-4", operations: fixture.service, abortRun });
+			await expect(tool.execute("tool-failed", { command: "missing-command" })).rejects.toMatchObject({
+				name: "AgentToolError", terminate: false,
+				content: [{ type: "text", text: expect.stringContaining("partial output\ncommand not found") }],
+				details: { status: "failed", exitCode: 127, failure: { code: "remote_exit_non_zero" } },
+			});
+			expect(abortRun).not.toHaveBeenCalled();
+			const row = fixture.backend.database.prepare("SELECT status, failure_json FROM command_operations WHERE tool_call_id = ?")
+				.get("tool-failed");
+			expect(row?.status).toBe("failed");
+			expect(row?.failure_json).toContain('"code":"remote_exit_non_zero"');
+		} finally {
+			await fixture.close();
+		}
+	});
+
 	it("prevents deleting a Session while its command is active", async () => {
 		const fixture = await createFixture();
 		fixture.broker.blockFirst = true;

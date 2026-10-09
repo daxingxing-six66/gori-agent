@@ -708,6 +708,7 @@ type PreparedToolCall = {
 	toolCall: AgentToolCall;
 	tool: AgentTool<any>;
 	args: unknown;
+	executionContext?: unknown;
 };
 
 type ImmediateToolCallOutcome = {
@@ -766,6 +767,7 @@ async function prepareToolCall(
 	try {
 		const preparedToolCall = prepareToolCallArguments(tool, toolCall);
 		const validatedArgs = validateToolArguments(tool, preparedToolCall);
+		let executionContext: unknown;
 		if (config.beforeToolCall) {
 			const beforeResult = await config.beforeToolCall(
 				{
@@ -794,6 +796,7 @@ async function prepareToolCall(
 					isError: true,
 				};
 			}
+			executionContext = beforeResult?.executionContext;
 		}
 		if (signal?.aborted) {
 			return {
@@ -807,6 +810,7 @@ async function prepareToolCall(
 			toolCall,
 			tool,
 			args: validatedArgs,
+			executionContext,
 		};
 	} catch (error) {
 		if (error instanceof AgentRunError) throw error;
@@ -845,6 +849,7 @@ async function executePreparedToolCall(
 					),
 				);
 			},
+			...(prepared.executionContext === undefined ? [] : [prepared.executionContext]),
 		);
 		acceptingUpdates = false;
 		await Promise.all(updateEvents);

@@ -30,6 +30,8 @@ coverage/
 !docs/site/dist/**
 
 # Keep backend tests and their fixtures visible even with local test-directory excludes.
+!packages/agent/test/
+!packages/agent/test/tool-execution-context.test.ts
 !packages/ssh-agent/test/
 !packages/ssh-agent/test/*.test.ts
 !packages/ssh-agent-web/tests/

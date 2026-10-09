@@ -16,9 +16,15 @@ Chat 的 `remote_server_call` 在创建人工审批前调用 `CommandOperationSe
 
 部署讨论和普通文字问答不执行远端命令。模型提案时，部署服务对重启和验证命令做同样的 Guard 预检，并冻结写入路径与沙箱路由。用户核对提案后，绑定的执行 Agent 才逐阶段调用部署工具；RESTART/VERIFY 通过 `submit()` 进入相同的 Session FIFO 和审计链。仅 Full Access 例外创建部署专属 grant，使用 `fullAccessApprovalScopeId`，不冒用 Chat Tool Call 的 `agentRunId`；`expectedTarget` 保存计划的 SSH 身份，出队后解析的目标若变化就拒绝执行。Command Service 仍先复核 Guard、消费精确的一次性授权，再检查目标并派发；普通计划确认或 Chat Tool 审批不会自行产生部署 Full Access 授权。见 [deployment.md](./deployment.md)。
 
-该 Tool 仅在普通交互模式可执行；两种模式保持相同 Tool schema，通过 Chat 授权策略和 Runtime 执行实现拒绝错误模式入口。模式切换只追加 system 记录，见 [session-prompt.md](./session-prompt.md)。
+该 Tool 仅在普通交互模式可执行；两种模式保持相同 Tool schema，由 Runtime Factory 装配 Tool 可用性入口，在审批前的参数准备和直接执行入口拒绝错误模式调用。模式切换只追加 system 记录，见 [session-prompt.md](./session-prompt.md)。
 
-- Tool 接受 command、可选绝对 cwd（也支持 `~`/`~/...`）、timeoutMs、sandbox_permissions 和 justification；Session 由后端创建 Tool 时绑定，Workspace/主机/Credential 不进入模型参数。
+错误模式调用、沙箱预检中的相对/非法 `write_paths` 以及普通远端命令执行失败返回可修正的 Tool 错误，`terminate: false` 使错误结果进入下一次模型请求；失败输出与结构化 SSH Failure 仍保留，模型可据此调整后续调用。Guard 阻断仍以 `terminate: true` 停止，用户拒绝审批和主动取消仍按 Run 生命周期处理。模型继续处理错误不代表自动重放命令或自动授予 Full Access。
+
+`remote-server-call-tool.ts` 持有远端审批准备逻辑：Guard 预检、显式 Full Access 参数、沙箱路由与审批描述。`ChatToolAuthorizationPolicy.prepare()` 分发该函数，并通过共用 `authorizationFailure` 把已知请求错误转换为非终止结果；Runtime 的审批边界使用同一转换函数，探针/持久化/未知错误仍终止 Run。
+
+授权与执行通过 `RemoteCommandExecutionPlan` 交接。请求在第一个异步检查前复制并冻结；计划显式保存 `access.mode` 和对应理由，同时绑定调用身份与 SSH 目标快照。审批通过后 Coordinator 将它放入内部 `executionContext`，Agent 直接交给本次 Tool `execute()`，不会修改模型参数或向事件/消息追加此上下文。Chat 远端 Tool 缺少计划、计划属于其他调用或原参数改变时，在 `submit()` 前返回非终止错误；它不查询 Store 重新决定权限，也不因 grant 缺失而降回沙箱。`expectedTarget` 随计划进入 Command Service，派发前目标变化会拒绝执行。没有 Chat Run ID 的独立 Tool 保留默认沙箱执行兼容路径，Full Access 不能仅由参数获得。
+
+- Tool 接受 command、可选绝对 cwd（也支持 `~`/`~/...`）、timeoutMs、sandbox_permissions、justification 和已知绝对 write_paths；Session 由后端创建 Tool 时绑定，Workspace/主机/Credential 不进入模型参数。
 - 命令先持久化，再进入按 `sessionId` 隔离的内存 FIFO；同一 Session 严格串行，不同 Session 可以并发。Command Operation 从创建记录前到终态持有 Session lifecycle lease；删除屏障先建立时，新命令不会进入持久化或队列。
 - 进程级公平许可器默认最多允许 16 个 Operation 处于 dispatching/running，可由 `SSH_AGENT_MAX_CONCURRENT_OPERATIONS` 配置；每个 Session 同时最多有一个队首等待许可。
 - `queued` 同时表示等待同 Session 前序命令或等待进程许可。排队达到 60 秒或派发前取消时会主动结束，过期项不会进入 Broker。
@@ -41,7 +47,8 @@ Chat 的 `remote_server_call` 在创建人工审批前调用 `CommandOperationSe
 | Operation 状态机、执行超时和输出策略 | [command-operation-service.ts](../../../packages/ssh-agent/src/application/services/command-operation-service.ts) |
 | 启动器确认行及 stderr 前缀解析 | [sandbox-confirmation-capture.ts](../../../packages/ssh-agent/src/application/services/sandbox-confirmation-capture.ts) |
 | Guard 执行期策略 | [command-guard-evaluator.ts](../../../packages/ssh-agent/src/application/services/command-guard-evaluator.ts) |
-| Agent Tool | [remote-server-call-tool.ts](../../../packages/ssh-agent/src/application/tools/remote-server-call-tool.ts) |
+| Agent Tool 与远端审批准备 | [remote-server-call-tool.ts](../../../packages/ssh-agent/src/application/tools/remote-server-call-tool.ts) |
+| 不可变命令执行计划与调用绑定 | [remote-command-execution-plan.ts](../../../packages/ssh-agent/src/application/tools/remote-command-execution-plan.ts)、[remote-command-execution-plan.test.ts](../../../packages/ssh-agent/test/remote-command-execution-plan.test.ts) |
 | Exec adapter、组合 Broker 和 Connection Pool | [ssh2-exec-command-broker.ts](../../../packages/ssh-agent/src/infrastructure/ssh/ssh2-exec-command-broker.ts)、[ssh2-channel-broker.ts](../../../packages/ssh-agent/src/infrastructure/ssh/ssh2-channel-broker.ts)、[ssh2-connection-pool.ts](../../../packages/ssh-agent/src/infrastructure/ssh/ssh2-connection-pool.ts) |
 | agent-core 通用 Tool Error | [types.ts](../../../packages/agent/src/types.ts)、[agent-loop.ts](../../../packages/agent/src/agent-loop.ts) |
 | 默认运行时装配 | [create-sqlite-management-backend.ts](../../../packages/ssh-agent/src/runtime/create-sqlite-management-backend.ts) |

@@ -14,6 +14,8 @@ import type {
 	TerminalInteractionService,
 } from "../services/terminal-interaction-service.ts";
 import type { ToolUpdateDetails } from "../tool-update-protocol.ts";
+import { isToolArguments, toolRequestError, withToolAvailability,
+	type PreparedToolAuthorization, type ToolAuthorizationInput } from "./tool-authorization.ts";
 
 const expectation = Type.Union([Type.Literal("finite"), Type.Literal("interactive"), Type.Literal("streaming")]);
 
@@ -52,6 +54,38 @@ export const terminalInteractionDefinition = {
 		"Interact with the current long-lived remote PTY. Submit complete input, send CTRL_C, or observe output. Observation boundaries do not prove remote process completion.",
 	parameters: terminalInteractionParameters,
 };
+
+export function restrictTerminalWorkflow(tool: AgentTool, deploymentRun: boolean): AgentTool {
+	return withToolAvailability(tool, (args) => {
+		if (deploymentRun && isToolArguments(args) && args.action === "key")
+			throw toolRequestError("Terminal control keys are unavailable during deployment");
+	});
+}
+
+export async function prepareTerminalAuthorization(input: ToolAuthorizationInput, options: {
+	autoApprove(): Promise<boolean>;
+	interactions: Pick<TerminalInteractionService, "preflightSubmit" | "approve" | "reject">;
+}): Promise<PreparedToolAuthorization> {
+	if (!isToolArguments(input.args) ||
+		(input.args.expectation !== "finite" && input.args.expectation !== "interactive" && input.args.expectation !== "streaming"))
+		throw toolRequestError("terminal_interaction parameters are invalid");
+	if (input.run.terminalSessionId === null)
+		throw new Error("Terminal-mode Chat Run is missing its TerminalSession binding");
+	const params = input.args as TerminalInteractionParameters;
+	const action = terminalInteractionAction(params);
+	if (action.type !== "submit") return { kind: "allow" };
+	const autoApprove = await options.autoApprove();
+	const decision = await options.interactions.preflightSubmit({
+		sessionId: input.run.sessionId, terminalSessionId: input.run.terminalSessionId,
+		agentRunId: input.run.id, toolCallId: input.toolCallId, action, expectation: params.expectation,
+	}, !autoApprove);
+	if (!decision.allowed) return { kind: "block", block: true, terminate: true,
+		reason: decision.matchedRule?.reason ?? "Command blocked by Workspace Guard" };
+	return { kind: "approval", autoApprove, onDecision: (approved) => {
+		if (approved) options.interactions.approve(input.run.id, input.toolCallId);
+		else options.interactions.reject(input.run.id, input.toolCallId);
+	} };
+}
 
 export function createTerminalInteractionTool(options: {
 	readonly sessionId: string;
@@ -111,16 +145,17 @@ export function createTerminalInteractionTool(options: {
 
 export function terminalInteractionAction(params: TerminalInteractionParameters): TerminalInteractionRequestAction {
 	if (params.action === "submit") {
-		if (params.input === undefined || params.input.length === 0) {
-			throw new Error("Terminal submit requires a non-empty input");
+		if (typeof params.input !== "string" || params.input.length === 0) {
+			throw toolRequestError("Terminal submit requires a non-empty input");
 		}
 		return { type: "submit", input: params.input };
 	}
 	if (params.action === "key") {
-		if (params.key !== "CTRL_C") throw new Error("Terminal key action requires key CTRL_C");
+		if (params.key !== "CTRL_C") throw toolRequestError("Terminal key action requires key CTRL_C");
 		return { type: "key", key: params.key };
 	}
-	return { type: "observe" };
+	if (params.action === "observe") return { type: "observe" };
+	throw toolRequestError("terminal_interaction parameters are invalid");
 }
 
 function toolResult(result: TerminalInteractionResult, sandbox: TerminalSandboxFacts): {

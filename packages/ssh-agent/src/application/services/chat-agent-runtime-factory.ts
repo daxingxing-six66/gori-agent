@@ -23,7 +23,8 @@ import { runFailure } from "../failure-policy.ts";
 import { reportFailure } from "../failure-reporter.ts";
 import { type ProviderFailureMessage, providerFailureStream } from "../provider-failure.ts";
 import { remoteServerCallDefinition } from "../tools/remote-server-call-tool.ts";
-import { terminalInteractionDefinition } from "../tools/terminal-interaction-tool.ts";
+import { restrictTerminalWorkflow, terminalInteractionDefinition } from "../tools/terminal-interaction-tool.ts";
+import { authorizationFailure, unavailableTool } from "../tools/tool-authorization.ts";
 import type { RequestSftpDownloadOverwriteApproval } from "../tools/sftp-download-tool.ts";
 import type { RequestSftpOverwriteApproval } from "../tools/sftp-upload-tool.ts";
 import type { ChatAgentEventHandler } from "./chat-agent-event-handler.ts";
@@ -142,6 +143,7 @@ export class ChatAgentRuntimeFactory {
 				return runtime;
 			};
 			const read = createReadTool();
+			const deploymentWorkflow = Boolean(input.deploymentRunId || input.deploymentPlanning);
 			const write = createWriteTool();
 			const bash = createBashTool();
 			const localTools = [
@@ -165,14 +167,14 @@ export class ChatAgentRuntimeFactory {
 				input.run.serverInteractionMode === "command"
 					? this.#createRemoteTool(input.run.sessionId, () => requireRuntime().abortAgent(), input.run.id)
 					: unavailableTool(remoteServerCallDefinition);
-			const terminalTool =
+			const terminalTool = restrictTerminalWorkflow(
 				input.run.serverInteractionMode === "terminal"
 					? this.#createTerminalTool({
 							sessionId: input.run.sessionId,
 							terminalSessionId: requireTerminalSessionId(input.run),
 							agentRunId: input.run.id,
 						})
-					: unavailableTool(terminalInteractionDefinition);
+					: unavailableTool(terminalInteractionDefinition), deploymentWorkflow);
 			const requestSftpOverwriteApproval = async (
 				toolName: "sftp_upload" | "sftp_download",
 				toolCallId: string,
@@ -232,13 +234,16 @@ export class ChatAgentRuntimeFactory {
 			const deploymentPlanningTool = input.deploymentPlanning && this.#deployments
 				? createDeploymentPlanningTool({ run: input.run, ...input.deploymentPlanning, deployments: this.#deployments })
 				: unavailableTool(deploymentProposePlanDefinition, "current Chat workflow");
-			const bubblewrapInspectTool = input.run.serverInteractionMode === "command" && this.#bubblewrapInstallations
+			const bubblewrapInspectTool = input.run.serverInteractionMode === "command" && !deploymentWorkflow && this.#bubblewrapInstallations
 				? createBubblewrapInspectionTool({ sessionId: input.run.sessionId, installations: this.#bubblewrapInstallations })
-				: unavailableTool(bubblewrapInspectDefinition);
-			const bubblewrapInstallTool = input.run.serverInteractionMode === "command" && this.#bubblewrapInstallations
+				: unavailableTool(bubblewrapInspectDefinition, deploymentWorkflow ? "current deployment workflow" : undefined);
+			const bubblewrapInstallTool = input.run.serverInteractionMode === "command" && !deploymentWorkflow && this.#bubblewrapInstallations
 				? createBubblewrapInstallTool({ sessionId: input.run.sessionId, agentRunId: input.run.id,
 					installations: this.#bubblewrapInstallations })
-				: unavailableTool(bubblewrapInstallDefinition);
+				: unavailableTool(bubblewrapInstallDefinition, deploymentWorkflow ? "current deployment workflow" : undefined);
+			const fileTools = deploymentWorkflow
+				? [unavailableTool(sftpUploadTool, "current deployment workflow"), unavailableTool(sftpDownloadTool, "current deployment workflow")]
+				: [sftpUploadTool, sftpDownloadTool];
 			let requestAttempt = 0;
 			const agent = this.#createAgent({
 				onRunFailure: (error) => requireRuntime().captureFailure(error),
@@ -247,7 +252,7 @@ export class ChatAgentRuntimeFactory {
 					model: input.model,
 					thinkingLevel: input.run.thinkingLevel,
 					tools: configureFileToolConcurrency(
-						[...localTools, remoteTool, terminalTool, sftpUploadTool, sftpDownloadTool,
+						[...localTools, remoteTool, terminalTool, ...fileTools,
 							bubblewrapInspectTool, bubblewrapInstallTool,
 							createAskUserDecisionTool({ run: input.run, decisions: this.#decisions }), ...deploymentTools, deploymentPlanningTool], env,
 					),
@@ -354,6 +359,8 @@ export class ChatAgentRuntimeFactory {
 							signal,
 						);
 					} catch (error) {
+						const failure = authorizationFailure(error);
+						if (failure) return failure;
 						requireRuntime().captureFailure(error);
 						throw new AgentRunError(undefined, "Tool authorization failed", { cause: error });
 					}
@@ -445,17 +452,4 @@ function attachmentFailureStream(model: Model<Api>, error: unknown) {
 function requireTerminalSessionId(run: ChatRun): string {
 	if (run.terminalSessionId === null) throw new Error("Terminal-mode Chat Run is missing its TerminalSession binding");
 	return run.terminalSessionId;
-}
-
-function unavailableTool(
-	definition: Pick<AgentTool, "name" | "description" | "parameters">,
-	context = "current server interaction mode",
-): AgentTool {
-	return {
-		...definition,
-		label: definition.name,
-		execute: async () => {
-			throw new Error(`${definition.name} is unavailable in the ${context}`);
-		},
-	};
 }

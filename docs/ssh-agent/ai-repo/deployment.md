@@ -79,6 +79,8 @@
 - 同一 Workspace 的部署认领互斥，即使由不同 Session 发起也不会并行执行。若用户将同一 SSH 主机保存为不同 Workspace，当前互斥不会跨 Workspace 生效；此类共享目标需要单独的主机/路径冲突策略。
 - 本次最多 8 个构建步骤、16 个普通文件产物；没有目录递归上传、自动打包、回滚、版本切换或跨后端重启续跑。新增能力要同步调整 Profile/Plan、DeploymentService 阶段协议、SQLite 与前端响应校验。
 
+部署 Run 的工具冲突由 Runtime Factory 装配到各工具入口：SFTP、Bubblewrap 安装/检查和 Terminal 控制键在审批前拒绝，也保护直接执行调用。`deployment-agent-tool.ts` 的 `prepareDeploymentStageAuthorization` 负责受限 RESTART/VERIFY 的普通审批方案；授权策略只分发并提供当前 `autoAudit` 与 Deployment Run ID。已知请求错误交回模型，阶段顺序、目标、确认版本与专属 Full Access 授权仍由 DeploymentService 校验。
+
 ### 常见改动从哪里开始
 
 | 要改的行为 | 首先检查 |
@@ -87,7 +89,7 @@
 | 改变讨论与提案衔接 | DeploymentDiscussion 的状态、bindPlanningRun 与 proposeForDiscussion 的 CAS、ChatService 的 Run 级模式指引、HTTP/SQLite 边界及刷新恢复；不能只调整模型提示词或前端卡片。 |
 | 更改步骤或加入回滚 | DEPLOY_STAGES、DeploymentService.executeStageForAgent/stage、deployment-agent-tool、DeploymentRun 快照校验、前端 DEPLOY_STAGES 与阶段卡片、重启恢复策略。 |
 | 支持另一台已保存主机 | Workspace/Session 目标绑定和凭据选择规则、Profile target 校验、计划确认、传输固定目标校验；不能仅放宽前端 Profile 过滤。 |
-| 更改沙箱或审批规则 | DeploymentService 的逐阶段 `access`、共享 remote-sandbox-routing 探测、ChatToolAuthorizationPolicy 的普通审批、例外状态/有效期与 CommandOperationService.submit，RemoteSandboxApprovalStore 的一次性 grant；SFTP 需单独设计边界。 |
+| 更改沙箱或审批规则 | DeploymentService 的逐阶段 `access`、共享 remote-sandbox-routing 探测、deployment-agent-tool 的阶段审批准备与 ChatToolAuthorizationPolicy 分发、例外状态/有效期与 CommandOperationService.submit，RemoteSandboxApprovalStore 的一次性 grant；SFTP 需单独设计边界。 |
 | 更改页面呈现或恢复 | useDeployment、DeploymentPanel、DeploymentHistoryCard、conversationHistory、ChatTimeline、ChatConsole；服务端 Run 快照仍应保持唯一可信状态。 |
 
 ## 入口与所有者

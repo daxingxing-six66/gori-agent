@@ -3,6 +3,8 @@ import { Type } from "typebox";
 import { DEPLOY_STAGES, type DeploymentDiscussion, type DeploymentRun, type DeployStage } from "../../domain/deployment.ts";
 import type { DeploymentPlanProposal } from "../deployment-plan-proposal.ts";
 import type { DeploymentRecoveryInput } from "../deployment-recovery-proposal.ts";
+import { backendMessage } from "../../i18n/message.ts";
+import { isToolArguments, type PreparedToolAuthorization, type ToolAuthorizationInput } from "./tool-authorization.ts";
 
 export type { DeploymentPlanProposal } from "../deployment-plan-proposal.ts";
 
@@ -40,6 +42,20 @@ const commandParameters = Type.Object({
 	command: Type.String({ minLength: 1, maxLength: 4_000 }),
 	writePaths: Type.Optional(Type.Array(Type.String({ minLength: 1, maxLength: 2_048 }), { minItems: 1, maxItems: 16 })),
 }, { additionalProperties: false });
+
+export async function prepareDeploymentStageAuthorization(input: ToolAuthorizationInput, options: {
+	deploymentRunId?: string;
+	autoApprove(): Promise<boolean>;
+	previewRemoteStage?: (sessionId: string, deploymentRunId: string, stage: "restart" | "verify") =>
+		{ readonly command: string; readonly mode: "workspace_write" | "full_access" } | undefined;
+}): Promise<PreparedToolAuthorization> {
+	const stage = isToolArguments(input.args) ? input.args.stage : undefined;
+	if ((stage !== "restart" && stage !== "verify") || !options.deploymentRunId) return { kind: "allow" };
+	const preview = options.previewRemoteStage?.(input.run.sessionId, options.deploymentRunId, stage);
+	if (!preview || preview.mode === "full_access") return { kind: "allow" };
+	return { kind: "approval", autoApprove: await options.autoApprove(),
+		descriptionMessage: backendMessage("approval.deployment_sandboxed_command", { stage, command: preview.command }) };
+}
 
 export const deploymentProposePlanDefinition = {
 	name: "deployment_propose_plan",

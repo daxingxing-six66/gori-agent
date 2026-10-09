@@ -11,7 +11,10 @@ import {
 	type CommandOperationService,
 } from "../services/command-operation-service.ts";
 import type { ToolUpdateDetails } from "../tool-update-protocol.ts";
-import type { RemoteSandboxApprovalStore } from "../services/remote-sandbox-approval-store.ts";
+import { RemoteCommandExecutionPlan, snapshotRemoteCommandRequest } from "./remote-command-execution-plan.ts";
+import type { SshTargetSnapshot } from "../../domain/ssh-target.ts";
+import type { RemoteSandboxRoute } from "../services/remote-sandbox-routing.ts";
+import { isToolArguments, toolRequestError, type PreparedToolAuthorization, type ToolAuthorizationInput } from "./tool-authorization.ts";
 
 const remoteServerCallParameters = Type.Object({
 	sandbox_permissions: Type.Optional(Type.Union([Type.Literal("workspace_write"), Type.Literal("full_access")], {
@@ -54,35 +57,89 @@ export const remoteServerCallDefinition = {
 	parameters: remoteServerCallParameters,
 };
 
+export interface RemoteCommandAuthorization {
+	autoApprove(): Promise<boolean>;
+	preflightGuard(sessionId: string, command: string): Promise<{ allowed: boolean; reason?: string }>;
+	assessSandbox?: (sessionId: string, declaredWritePaths: readonly string[], signal: AbortSignal) =>
+		Promise<{ readonly target: SshTargetSnapshot; readonly route: RemoteSandboxRoute }>;
+	resolveTarget?: (sessionId: string) => Promise<SshTargetSnapshot>;
+}
+
+export async function prepareRemoteCommandAuthorization(
+	input: ToolAuthorizationInput, authorization: RemoteCommandAuthorization,
+): Promise<PreparedToolAuthorization> {
+	if (!isToolArguments(input.args) || typeof input.args.command !== "string")
+		throw toolRequestError("remote_server_call requires a command");
+	// Snapshot before awaiting Guard/probes/approval; execution must use the request we assessed.
+	const request = snapshotRemoteCommandRequest(input.args as RemoteServerCallParameters);
+	const callInput = { ...input, run: { ...input.run } };
+	const command = request.command;
+	const decision = await authorization.preflightGuard(callInput.run.sessionId, command);
+	if (!decision.allowed) return { kind: "block", block: true, terminate: true,
+		reason: decision.reason ?? "Command blocked by Workspace Guard" };
+	if (request.sandbox_permissions === "full_access") {
+		if (typeof request.justification !== "string" || !request.justification.trim())
+			throw toolRequestError("full_access requires a non-empty justification");
+		const target = await authorization.resolveTarget?.(callInput.run.sessionId);
+		return fullAccessAuthorization(callInput, request, request.justification, target,
+			backendMessage("approval.remote_full_access", { justification: request.justification }));
+	}
+	if (request.justification !== undefined) throw toolRequestError(
+		"justification alone does not disable the sandbox. To request one human-approved unconfined command, set sandbox_permissions to full_access and provide justification; otherwise omit justification.",
+	);
+	const declaredWritePaths = request.write_paths ?? [];
+	const assessed = await authorization.assessSandbox?.(
+		callInput.run.sessionId, declaredWritePaths, input.signal ?? AbortSignal.timeout(30_000),
+	);
+	if (assessed?.route.mode === "full_access") return fullAccessAuthorization(
+		callInput, request, assessed.route.details, assessed.target,
+		backendMessage("approval.remote_sandbox_exception", { reason: assessed.route.details }),
+	);
+	const plan = new RemoteCommandExecutionPlan({ agentRunId: callInput.run.id,
+			sessionId: callInput.run.sessionId, toolCallId: callInput.toolCallId, request,
+			access: { mode: "workspace_write" }, expectedTarget: assessed?.target });
+	return { kind: "approval", autoApprove: await authorization.autoApprove(), executionContext: plan,
+		descriptionMessage: backendMessage("approval.remote_sandboxed_command") };
+}
+
+function fullAccessAuthorization(input: ToolAuthorizationInput, request: RemoteCommandExecutionPlan["request"], justification: string,
+	target: SshTargetSnapshot | undefined, descriptionMessage: ReturnType<typeof backendMessage>): PreparedToolAuthorization {
+	const plan = new RemoteCommandExecutionPlan({ agentRunId: input.run.id,
+		sessionId: input.run.sessionId, toolCallId: input.toolCallId, request,
+		access: { mode: "full_access", justification }, expectedTarget: target });
+	return { kind: "approval", autoApprove: false, approvalToolName: "remote_sandbox_exception",
+		executionContext: plan, remoteFullAccess: plan.fullAccessRequest(),
+		...(plan.expectedTarget === undefined ? {} : { remoteFullAccessTarget: plan.expectedTarget }), descriptionMessage };
+}
+
 export function createRemoteServerCallTool(options: {
 	sessionId: SessionId;
 	agentRunId?: string;
-	sandboxApprovals?: Pick<RemoteSandboxApprovalStore, "approvedJustification">;
-	operations: CommandOperationService;
+	operations: Pick<CommandOperationService, "submit">;
 	abortRun?: () => void;
 }): AgentTool<typeof remoteServerCallParameters, RemoteServerCallDetails> {
 	return {
 		...remoteServerCallDefinition,
 		executionMode: "sequential",
-		execute: async (toolCallId, params, signal) => {
-			const approvedJustification = options.agentRunId === undefined ? undefined
-				: options.sandboxApprovals?.approvedJustification({
-					agentRunId: options.agentRunId,
-					toolCallId,
-					sessionId: options.sessionId,
-					command: params.command,
-					cwd: params.cwd,
-					timeoutMs: params.timeoutMs,
-				});
+		execute: async (toolCallId, params, signal, _onUpdate, executionContext) => {
+			// Standalone callers have no Chat authorization hook and retain sandboxed execution.
+			const plan = executionContext ?? (options.agentRunId === undefined && params.sandbox_permissions !== "full_access"
+				? new RemoteCommandExecutionPlan({ sessionId: options.sessionId, toolCallId,
+					request: params, access: { mode: "workspace_write" } }) : undefined);
+			if (!(plan instanceof RemoteCommandExecutionPlan) ||
+				!plan.matches(options.agentRunId, options.sessionId, toolCallId, params))
+				throw toolRequestError("Remote command execution plan is missing or does not match this tool call. The command was not executed.");
+			const request = plan.request;
 			const result = await options.operations.submit({
 				toolCallId,
 				sessionId: options.sessionId,
-				command: params.command,
-				agentRunId: options.agentRunId,
-				sandboxPermissions: approvedJustification === undefined ? params.sandbox_permissions : "full_access",
-				justification: approvedJustification ?? params.justification,
-				...(params.cwd === undefined ? {} : { cwd: params.cwd }),
-				...(params.timeoutMs === undefined ? {} : { timeoutMs: params.timeoutMs }),
+				command: request.command,
+				agentRunId: plan.agentRunId,
+				sandboxPermissions: plan.access.mode,
+				...(plan.access.mode === "full_access" ? { justification: plan.access.justification } : {}),
+				...(request.cwd === undefined ? {} : { cwd: request.cwd }),
+				...(request.timeoutMs === undefined ? {} : { timeoutMs: request.timeoutMs }),
+				...(plan.expectedTarget === undefined ? {} : { expectedTarget: plan.expectedTarget }),
 				...(signal === undefined ? {} : { signal }),
 				...(options.abortRun === undefined ? {} : { abortRun: options.abortRun }),
 			});

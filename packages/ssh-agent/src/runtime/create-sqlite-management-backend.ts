@@ -301,7 +301,6 @@ export function createSqliteManagementBackend(options: CreateSqliteManagementBac
 					sessionId,
 					operations: commandOperations,
 					agentRunId,
-					sandboxApprovals,
 					...(abortRun === undefined ? {} : { abortRun }),
 				}),
 			createTerminalTool: ({ sessionId, terminalSessionId, agentRunId }) => {

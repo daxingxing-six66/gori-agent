@@ -5,6 +5,7 @@ import type { ChatRun } from "../src/domain/chat.ts";
 import type { Session } from "../src/domain/session.ts";
 import type { SshTargetSnapshot } from "../src/domain/ssh-target.ts";
 import type { RemoteSandboxRoute } from "../src/application/services/remote-sandbox-routing.ts";
+import { TerminalError } from "../src/domain/terminal.ts";
 
 const run: ChatRun = {
 	id: "run-1",
@@ -75,6 +76,54 @@ function createPolicy(options: { autoAudit?: boolean; remoteAllowed?: boolean; t
 }
 
 describe("ChatToolAuthorizationPolicy", () => {
+	it("returns a recoverable error when the installation service is unavailable", async () => {
+		const context = createPolicy();
+		await expect(context.policy.prepare({ run, toolCallId: "install", toolName: "bubblewrap_install", args: {} }))
+			.resolves.toMatchObject({ kind: "block", block: true, terminate: false });
+		expect(context.preflightRemoteGuard).not.toHaveBeenCalled();
+	});
+
+	it.each([
+		{ action: "submit", expectation: "finite" },
+		{ action: "key", expectation: "finite" },
+		{ action: "unknown", expectation: "finite" },
+		{ action: "observe", expectation: "unknown" },
+	])("returns malformed Terminal arguments to the model before creating an interaction: %j", async (args) => {
+		const context = createPolicy();
+		await expect(context.policy.prepare({ run, toolCallId: "invalid", toolName: "terminal_interaction", args }))
+			.resolves.toMatchObject({ kind: "block", block: true, terminate: false });
+		expect(context.preflightSubmit).not.toHaveBeenCalled();
+		expect(context.findById).not.toHaveBeenCalled();
+	});
+
+	it("lets the model correct a missing Full Access reason while still requiring human approval", async () => {
+		const context = createPolicy({ autoAudit: true });
+		const commandRun = { ...run, serverInteractionMode: "command" as const, terminalSessionId: null };
+		for (const justification of [undefined, "", "   "]) {
+			await expect(context.policy.prepare({ run: commandRun, toolCallId: "missing-reason",
+				toolName: "remote_server_call", args: { command: "pwd", sandbox_permissions: "full_access", justification } }))
+				.resolves.toEqual({ kind: "block", block: true, terminate: false,
+					reason: "full_access requires a non-empty justification" });
+		}
+		expect(context.resolveRemoteTarget).not.toHaveBeenCalled();
+		await expect(context.policy.prepare({ run: commandRun, toolCallId: "corrected-reason",
+			toolName: "remote_server_call", args: { command: "pwd", sandbox_permissions: "full_access", justification: "Inspect unconfined state" } }))
+			.resolves.toMatchObject({ kind: "approval", autoApprove: false, approvalToolName: "remote_sandbox_exception" });
+	});
+
+	it.each(["terminal_input_invalid", "terminal_input_too_large"])(
+		"returns %s from Terminal preflight as a recoverable tool error",
+		async (code) => {
+			const context = createPolicy();
+			context.preflightSubmit.mockRejectedValue(new TerminalError(code, "Revise the terminal input"));
+			await expect(context.policy.prepare({ run, toolCallId: "invalid-input", toolName: "terminal_interaction",
+				args: { action: "submit", input: "input", expectation: "finite" } }))
+				.resolves.toEqual({ kind: "block", block: true, reason: "Revise the terminal input", terminate: false });
+			expect(context.approve).not.toHaveBeenCalled();
+			expect(context.reject).not.toHaveBeenCalled();
+		},
+	);
+
 	it("reads the current Session setting when an SFTP overwrite needs authorization", async () => {
 		const context = createPolicy({ autoAudit: true });
 		await expect(context.policy.shouldAutoApproveSftpOverwrite(run.sessionId)).resolves.toBe(true);
@@ -101,7 +150,7 @@ describe("ChatToolAuthorizationPolicy", () => {
 		expect(context.findById).not.toHaveBeenCalled();
 	});
 
-	it("uses autoAudit for ordinary tools in deployment planning and execution while keeping restricted actions blocked", async () => {
+	it("uses autoAudit for ordinary tools in deployment planning and execution", async () => {
 		for (const deploymentRunId of [undefined, "deploy-1"]) {
 			for (const autoAudit of [false, true]) {
 				const context = createPolicy({ autoAudit });
@@ -114,7 +163,7 @@ describe("ChatToolAuthorizationPolicy", () => {
 				await expect(context.policy.prepare({
 					run: { ...run, serverInteractionMode: "command", terminalSessionId: null },
 					toolCallId: "remote-1", toolName: "remote_server_call", args: { command: "cat /etc/os-release" },
-				})).resolves.toEqual({ kind: "approval", autoApprove: autoAudit,
+				})).resolves.toMatchObject({ kind: "approval", autoApprove: autoAudit,
 					descriptionMessage: { key: "approval.remote_sandboxed_command" } });
 				await expect(context.policy.prepare({
 					run, toolCallId: "terminal-1", toolName: "terminal_interaction",
@@ -125,14 +174,6 @@ describe("ChatToolAuthorizationPolicy", () => {
 					run, toolCallId: "observe-1", toolName: "terminal_interaction",
 					args: { action: "observe", expectation: "finite" },
 				})).resolves.toEqual({ kind: "allow" });
-				await expect(context.policy.prepare({
-					run, toolCallId: "key-1", toolName: "terminal_interaction",
-					args: { action: "key", key: "CTRL_C", expectation: "finite" },
-				})).resolves.toMatchObject({ kind: "block" });
-				for (const toolName of ["sftp_upload", "sftp_download"]) {
-					await expect(context.policy.prepare({ run, toolCallId: toolName, toolName, args: {} }))
-						.resolves.toMatchObject({ kind: "block" });
-				}
 				context.policy.clearRun(run.id);
 				await expect(context.policy.prepare({ run, toolCallId: "bash-after-run", toolName: "bash", args: {} }))
 					.resolves.toEqual({ kind: "approval", autoApprove: autoAudit });
@@ -153,6 +194,32 @@ describe("ChatToolAuthorizationPolicy", () => {
 		).resolves.toEqual({ kind: "block", block: true, reason: "remote blocked", terminate: true });
 		expect(context.preflightRemoteGuard).toHaveBeenCalledWith("session-1", "rm -rf /");
 		expect(context.findById).not.toHaveBeenCalled();
+	});
+
+	it("rejects a justification without full_access in automatic approval mode and lets the model correct its arguments", async () => {
+		const context = createPolicy({ autoAudit: true });
+		const commandRun = { ...run, serverInteractionMode: "command" as const, terminalSessionId: null };
+		const args = { command: "cat /etc/os-release", justification: "User approved this one unconfined check" };
+
+		await expect(context.policy.prepare({
+			run: commandRun, toolCallId: "remote-missing-mode", toolName: "remote_server_call", args,
+		})).resolves.toMatchObject({
+			kind: "block", block: true, terminate: false,
+			reason: expect.stringContaining("sandbox_permissions"),
+		});
+		expect(context.preflightRemoteGuard).toHaveBeenCalledWith(run.sessionId, args.command);
+		expect(context.findById).not.toHaveBeenCalled();
+
+		await expect(context.policy.prepare({
+			run: commandRun, toolCallId: "remote-full-access", toolName: "remote_server_call",
+			args: { ...args, sandbox_permissions: "full_access" },
+		})).resolves.toMatchObject({
+			kind: "approval", autoApprove: false,
+			approvalToolName: "remote_sandbox_exception",
+			remoteFullAccess: { command: args.command, justification: args.justification },
+			remoteFullAccessTarget: { defaultCwd: "/srv/app" },
+		});
+		expect(context.resolveRemoteTarget).toHaveBeenCalledWith("session-1");
 	});
 
 	it("keeps an ordinary manually approved remote call in the sandbox", async () => {
@@ -223,7 +290,7 @@ describe("ChatToolAuthorizationPolicy", () => {
 		expect(prepared).toEqual({
 			kind: "approval",
 			autoApprove: false,
-			terminalInteraction: { agentRunId: "run-1", toolCallId: "terminal-1" },
+			onDecision: expect.any(Function),
 		});
 		expect(context.preflightSubmit).toHaveBeenCalledWith(
 			expect.objectContaining({
@@ -236,6 +303,8 @@ describe("ChatToolAuthorizationPolicy", () => {
 		context.policy.recordDecision(prepared, false);
 		expect(context.reject).toHaveBeenCalledWith("run-1", "terminal-1");
 		expect(context.approve).not.toHaveBeenCalled();
+		context.policy.recordDecision(prepared, true);
+		expect(context.approve).toHaveBeenCalledWith("run-1", "terminal-1");
 	});
 
 	it("blocks Terminal submit before Approval when Workspace Guard rejects it", async () => {

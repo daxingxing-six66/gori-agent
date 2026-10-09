@@ -62,6 +62,8 @@ export type AgentToolCall = Extract<AssistantMessage["content"][number], { type:
 export interface BeforeToolCallResult {
 	block?: boolean;
 	reason?: string;
+	/** App-owned context for this call's execute(). Never included in model arguments, messages or events. */
+	executionContext?: unknown;
 	/**
 	 * Hint that the agent should stop after the current tool batch when this call is blocked.
 	 * Early termination only happens when every finalized tool result in the batch sets this to true.
@@ -462,6 +464,8 @@ export interface AgentTool<TParameters extends TSchema = TSchema, TDetails = any
 		params: Static<TParameters>,
 		signal?: AbortSignal,
 		onUpdate?: AgentToolUpdateCallback<TDetails>,
+		/** Internal context returned by beforeToolCall for this exact invocation. */
+		executionContext?: unknown,
 	) => Promise<AgentToolResult<TDetails>>;
 	/**
 	 * Per-tool execution mode override.

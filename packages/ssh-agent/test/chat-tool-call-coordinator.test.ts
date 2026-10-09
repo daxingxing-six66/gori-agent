@@ -53,6 +53,32 @@ function beforeInput(onApprovalRejection = vi.fn()) {
 }
 
 describe("ChatToolCallCoordinator", () => {
+	it("hands off the same per-call context only after the approval decision is recorded", async () => {
+		const executionContext = { mode: "workspace_write" };
+		const prepared = { kind: "approval", autoApprove: false, executionContext } as const;
+		const context = createContext(prepared);
+		let resolveDecision!: (decision: ApprovalDecision) => void;
+		context.approvals.request.mockImplementation(() => new Promise((resolve) => { resolveDecision = resolve; }));
+		const pending = context.coordinator.beforeToolCall(beforeInput());
+		await vi.waitFor(() => expect(context.approvals.request).toHaveBeenCalledOnce());
+		expect(context.authorization.recordDecision).not.toHaveBeenCalled();
+		resolveDecision({ approved: true, source: "user" });
+		const result = await pending;
+		expect(context.authorization.recordDecision).toHaveBeenCalledWith(prepared, true);
+		expect(result?.executionContext).toBe(executionContext);
+	});
+
+	it.each(["user_rejected", "timeout", "run_cancelled", "server_restarted"] as const)(
+		"withholds the execution context after %s", async (reason) => {
+			const context = createContext({ kind: "approval", autoApprove: false, executionContext: { mode: "full_access" } },
+				{ approved: false, reason });
+			const result = await context.coordinator.beforeToolCall(beforeInput());
+			expect(result?.block).toBe(true);
+			expect(result).not.toHaveProperty("executionContext");
+			expect(context.authorization.recordDecision).toHaveBeenCalledWith(expect.any(Object), false);
+		},
+	);
+
 	it.each(["sftp_upload", "sftp_download"] as const)(
 		"auto-approves %s only while the Run is active",
 		async (toolName) => {
@@ -95,11 +121,11 @@ describe("ChatToolCallCoordinator", () => {
 		expect(blocked.approvals.request).not.toHaveBeenCalled();
 	});
 
-	it("creates an Approval and records its Terminal decision", async () => {
+	it("creates an Approval and records its tool decision", async () => {
 		const prepared = {
 			kind: "approval",
 			autoApprove: false,
-			terminalInteraction: { agentRunId: "run-1", toolCallId: "tool-1" },
+			onDecision: vi.fn(),
 		} as const;
 		const context = createContext(prepared);
 

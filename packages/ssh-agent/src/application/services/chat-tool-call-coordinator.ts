@@ -63,7 +63,8 @@ export class ChatToolCallCoordinator {
 			return { block: true, terminate: true, reason: "full_access requires a human approval for this exact call" };
 		}
 		this.#authorization.recordDecision(prepared, decision.approved);
-		if (decision.approved) return undefined;
+		if (decision.approved) return prepared.executionContext === undefined
+			? undefined : { executionContext: prepared.executionContext };
 		if (decision.reason === "user_rejected" || decision.reason === "timeout") input.onApprovalRejection();
 		return rejectionResult(decision);
 	}

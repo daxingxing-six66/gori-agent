@@ -253,7 +253,8 @@ function operationFixture(options: { sandbox?: RemoteSandboxProvider; noProvider
   confirmation: policy.mode === "full_access" ? undefined : "gori-landlock: confined abi=5\n",
  })) };
  let id = 0;
- const service = new CommandOperationService({ operations: repository, sessions, targets: { resolve: async () => target },
+ let executionTarget = target;
+ const service = new CommandOperationService({ operations: repository, sessions, targets: { resolve: async () => executionTarget },
   guards, broker, sandbox: options.noProvider ? undefined : sandbox, sandboxApprovals: approvals, clock: { now: Date.now }, ids: { next: () => `o-${++id}` } });
  let closed = false;
  const dispose = () => { if (!closed) { closed = true; service.close(); db.close(); } };
@@ -266,11 +267,35 @@ function operationFixture(options: { sandbox?: RemoteSandboxProvider; noProvider
     reason: options.remoteRoute === "outside" ? "write_path_outside_sandbox" as const : "sandbox_unavailable" as const,
     details: options.remoteRoute === "outside" ? "Declared path /etc/app is outside the writable roots" : "No backend" } }) }),
   preflightRemoteGuard: async () => ({ allowed: !blocked }) });
- return { db, broker, guards, service, sandbox, approvals, repository, policy, run, dispose, block: () => { blocked = true; } };
+ return { db, broker, guards, service, sandbox, approvals, repository, policy, run, dispose, block: () => { blocked = true; },
+  changeTarget: (changed: SshTargetSnapshot) => { executionTarget = changed; } };
 }
 const request = { agentRunId: "run", toolCallId: "tool", sessionId: "s", command: "write outside", justification: "Update nginx config" };
 const fullInput = { ...request, sandboxPermissions: "full_access" as const };
 describe("Command execution and one-shot authorization", () => {
+	it.each([undefined, "outside"] as const)("checks the plan's target again before dispatch (route=%s)", async (remoteRoute) => {
+		const f = operationFixture({ remoteRoute });
+		const authorization = new ChatToolAuthorizationPolicy({
+			sessions: new SqliteSessionRepository(f.db), sandboxApprovals: f.approvals,
+			terminalInteractions: { preflightSubmit: vi.fn(), approve: vi.fn(), reject: vi.fn() },
+			preflightRemoteGuard: async () => ({ allowed: true }),
+			assessRemoteSandbox: async () => ({ target, route: remoteRoute === "outside"
+				? { mode: "full_access", reason: "write_path_outside_sandbox", details: "Outside writable roots" }
+				: { mode: "workspace_write", facts: { mode: "workspace_write", backend: "landlock", enforcement: "full", abi: 5, sandboxRoot: target.defaultCwd } } }),
+		});
+		const coordinator = new ChatToolCallCoordinator({ authorization,
+			approvals: { request: async () => ({ approved: true, source: "user" }) } });
+		const args = { command: "write config" };
+		const approved = await coordinator.beforeToolCall({ run: f.run, toolCallId: "tool", toolName: "remote_server_call",
+			assistantMessageId: "message", args, onApprovalRejection: vi.fn() });
+		f.changeTarget({ ...target, defaultCwd: "/other/app", workspaceRevision: 2 });
+		const tool = createRemoteServerCallTool({ sessionId: "s", agentRunId: "run", operations: f.service });
+		await expect(tool.execute("tool", args, undefined, undefined, approved?.executionContext)).rejects.toMatchObject({
+			details: { failure: { code: remoteRoute === "outside" ? "sandbox_approval_required" : "invalid_request" } },
+		});
+		expect(f.broker.execute).not.toHaveBeenCalled();
+	});
+
  it("restores actual sandbox facts and full-access justification after reopening a file database", async () => {
   const directory = mkdtempSync(join(tmpdir(), "gori-sandbox-audit-"));
   try {
@@ -422,46 +447,51 @@ describe("Command execution and one-shot authorization", () => {
 			approved: true as const, source: input.autoApprove ? "auto" as const : "user" as const,
 		}));
 		const coordinator = new ChatToolCallCoordinator({ authorization: f.policy, approvals: { request: approval } });
-		const tool = createRemoteServerCallTool({ sessionId: "s", agentRunId: "run", operations: f.service,
-			sandboxApprovals: f.approvals });
+		const tool = createRemoteServerCallTool({ sessionId: "s", agentRunId: "run", operations: f.service });
 		const command = "cat /etc/os-release";
 
-		await coordinator.beforeToolCall({ run: f.run, toolCallId: "automatic", toolName: "remote_server_call",
+		const automatic = await coordinator.beforeToolCall({ run: f.run, toolCallId: "automatic", toolName: "remote_server_call",
 			assistantMessageId: "message-1", args: { command }, onApprovalRejection: vi.fn() });
-		await expect(tool.execute("automatic", { command })).resolves.toMatchObject({
+		await expect(tool.execute("automatic", { command }, undefined, undefined, automatic?.executionContext)).resolves.toMatchObject({
 			details: { status: "completed", sandbox: { mode: "workspace_write", backend: "landlock", enforcement: "full" } },
 		});
 		expect(f.broker.execute).toHaveBeenCalledOnce();
 
 		f.db.prepare("UPDATE sessions SET auto_audit = 0 WHERE id = 's'").run();
-		await coordinator.beforeToolCall({ run: f.run, toolCallId: "manual", toolName: "remote_server_call",
+		const manual = await coordinator.beforeToolCall({ run: f.run, toolCallId: "manual", toolName: "remote_server_call",
 			assistantMessageId: "message-2", args: { command }, onApprovalRejection: vi.fn() });
 		expect(approval).toHaveBeenLastCalledWith(expect.objectContaining({ autoApprove: false,
 			descriptionMessage: { key: "approval.remote_sandboxed_command" } }), undefined);
-		await expect(tool.execute("manual", { command })).resolves.toMatchObject({
+		await expect(tool.execute("manual", { command }, undefined, undefined, manual?.executionContext)).resolves.toMatchObject({
 			details: { status: "completed", sandbox: { mode: "workspace_write", backend: "landlock", enforcement: "full" } },
 		});
 		expect(f.sandbox.prepare).toHaveBeenCalledTimes(2);
 		expect(f.broker.execute).toHaveBeenCalledTimes(2);
-		expect(f.approvals.approvedJustification({ agentRunId: "run", toolCallId: "manual", sessionId: "s", command }))
-			.toBeUndefined();
+		expect(f.approvals.consume({ agentRunId: "run", toolCallId: "manual", sessionId: "s", command,
+			justification: "No Full Access approval was issued" })).toBe(false);
 	});
 	it("runs a marked sandbox exception only after human approval even when autoAudit is enabled", async () => {
 		const f = operationFixture({ remoteRoute: "outside" });
 		const approval = vi.fn(async () => ({ approved: true as const, source: "user" as const }));
 		const coordinator = new ChatToolCallCoordinator({ authorization: f.policy, approvals: { request: approval } });
-		const tool = createRemoteServerCallTool({ sessionId: "s", agentRunId: "run", operations: f.service,
-			sandboxApprovals: f.approvals });
+		const tool = createRemoteServerCallTool({ sessionId: "s", agentRunId: "run", operations: f.service });
 		const command = "write /etc/app";
-		await coordinator.beforeToolCall({ run: f.run, toolCallId: "exception", toolName: "remote_server_call",
+		const approved = await coordinator.beforeToolCall({ run: f.run, toolCallId: "exception", toolName: "remote_server_call",
 			assistantMessageId: "message", args: { command, write_paths: ["/etc/app"] }, onApprovalRejection: vi.fn() });
 		expect(approval).toHaveBeenCalledWith(expect.objectContaining({
 			toolName: "remote_sandbox_exception", autoApprove: false,
 			descriptionMessage: { key: "approval.remote_sandbox_exception",
 				values: { reason: "Declared path /etc/app is outside the writable roots" } },
 		}), undefined);
-		await expect(tool.execute("exception", { command, write_paths: ["/etc/app"] })).resolves.toMatchObject({
+		await expect(tool.execute("exception", { command, write_paths: ["/etc/app"] },
+			undefined, undefined, approved?.executionContext)).resolves.toMatchObject({
 			details: { sandbox: { mode: "full_access", backend: "none", enforcement: "none" } },
+		});
+		expect(f.broker.execute).toHaveBeenCalledOnce();
+		// The same plan cannot replace the consumed grant, nor silently fall back to the sandbox.
+		await expect(tool.execute("exception", { command, write_paths: ["/etc/app"] },
+			undefined, undefined, approved?.executionContext)).rejects.toMatchObject({
+			details: { failure: { code: "sandbox_approval_required" }, sandbox: { mode: "full_access" } },
 		});
 		expect(f.broker.execute).toHaveBeenCalledOnce();
 	});

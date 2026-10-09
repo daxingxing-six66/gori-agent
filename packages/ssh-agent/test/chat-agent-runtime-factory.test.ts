@@ -5,11 +5,22 @@ import {
 	createModels,
 	fauxAssistantMessage,
 	fauxProvider,
+	fauxToolCall,
 	type SimpleStreamOptions,
 } from "@earendil-works/pi-ai";
 import { Type } from "typebox";
 import { describe, expect, it, vi } from "vitest";
-import { ChatAgentRuntimeFactory } from "../src/application/services/chat-agent-runtime-factory.ts";
+import { ChatAgentRuntimeFactory, type ChatAgentRuntimeFactoryOptions } from "../src/application/services/chat-agent-runtime-factory.ts";
+import { ChatToolAuthorizationPolicy } from "../src/application/services/chat-tool-authorization-policy.ts";
+import { ChatToolCallCoordinator } from "../src/application/services/chat-tool-call-coordinator.ts";
+import { evaluateRemoteSandboxRoute } from "../src/application/services/remote-sandbox-routing.ts";
+import { createRemoteServerCallTool, remoteServerCallDefinition } from "../src/application/tools/remote-server-call-tool.ts";
+import { RemoteCommandExecutionPlan } from "../src/application/tools/remote-command-execution-plan.ts";
+import { RemoteSandboxApprovalStore } from "../src/application/services/remote-sandbox-approval-store.ts";
+import type { CommandOperationResult, SubmitCommandInput } from "../src/application/services/command-operation-service.ts";
+import { sandboxFailure } from "../src/domain/remote-sandbox.ts";
+import type { SshTargetSnapshot } from "../src/domain/ssh-target.ts";
+import { terminalInteractionDefinition } from "../src/application/tools/terminal-interaction-tool.ts";
 import type { AgentDeploymentService } from "../src/application/tools/deployment-agent-tool.ts";
 import type { ChatRun } from "../src/domain/chat.ts";
 import type { DeploymentRun } from "../src/domain/deployment.ts";
@@ -41,7 +52,8 @@ function namedTool(name: string): AgentTool {
 }
 
 function createContext(
-	options: { createExecutionEnv?: (workDir: string) => NodeExecutionEnv; provider?: string; deployments?: AgentDeploymentService } = {},
+	options: { createExecutionEnv?: (workDir: string) => NodeExecutionEnv; provider?: string; deployments?: AgentDeploymentService;
+		toolCalls?: ChatAgentRuntimeFactoryOptions["toolCalls"] } = {},
 ) {
 	const faux = fauxProvider({
 		provider: options.provider ?? "factory-provider",
@@ -59,7 +71,7 @@ function createContext(
 	const createTerminalTool = vi.fn(() => namedTool("terminal_interaction"));
 	const factory = new ChatAgentRuntimeFactory({
 		models,
-		toolCalls: {
+		toolCalls: options.toolCalls ?? {
 			beforeToolCall: vi.fn(async () => undefined),
 			requestSftpOverwriteApproval: vi.fn(async () => ({ approved: true as const, source: "user" as const })),
 		},
@@ -93,6 +105,245 @@ function createContext(
 }
 
 describe("ChatAgentRuntimeFactory", () => {
+	it("carries the selected Full Access plan from human approval through Agent into the remote tool", async () => {
+		const target = { defaultCwd: "/srv/app" } as SshTargetSnapshot;
+		const sandboxApprovals = new RemoteSandboxApprovalStore();
+		const authorization = new ChatToolAuthorizationPolicy({ sandboxApprovals,
+			sessions: { findById: vi.fn(async () => undefined) },
+			terminalInteractions: { preflightSubmit: vi.fn(), approve: vi.fn(), reject: vi.fn() },
+			preflightRemoteGuard: async () => ({ allowed: true }),
+			assessRemoteSandbox: async () => ({ target, route: { mode: "full_access", reason: "write_path_outside_sandbox",
+				details: "Declared path /etc/config is outside the writable roots" } }),
+		});
+		const approvals = { request: vi.fn(async () => ({ approved: true as const, source: "user" as const })) };
+		const context = createContext({ toolCalls: new ChatToolCallCoordinator({ authorization, approvals }) });
+		const submit = vi.fn(async (input: SubmitCommandInput): Promise<CommandOperationResult> => {
+			expect(input).toMatchObject({ command: "write config", sandboxPermissions: "full_access",
+				justification: "Declared path /etc/config is outside the writable roots", expectedTarget: target });
+			expect(sandboxApprovals.consume({ agentRunId: input.agentRunId!, sessionId: input.sessionId,
+				toolCallId: input.toolCallId, command: input.command, justification: input.justification! }, target)).toBe(true);
+			return { operation: { id: "operation", toolCallId: input.toolCallId, sessionId: input.sessionId,
+				workspaceId: "workspace-1", command: input.command, status: "completed", timeoutMs: 1000,
+				queueDeadlineAt: 1000, createdAt: 1, outputBytes: 0, outputTruncated: false }, outputTail: "written" };
+		});
+		context.createRemoteTool.mockReturnValue(createRemoteServerCallTool({ sessionId: commandRun.sessionId,
+			agentRunId: commandRun.id, operations: { submit } }));
+		const runtime = await context.factory.create({ run: commandRun, model: context.model,
+			workDir: process.cwd(), history: [], systemPrompt: "command mode" });
+		context.faux.setResponses([
+			fauxAssistantMessage(fauxToolCall("remote_server_call", { command: "write config", write_paths: ["/etc/config"] },
+				{ id: "exception" }), { stopReason: "toolUse" }),
+			(providerContext) => {
+				expect(providerContext.messages.at(-1)).toMatchObject({ role: "toolResult", isError: false });
+				expect(JSON.stringify(providerContext.messages)).not.toContain("executionContext");
+				return fauxAssistantMessage("Updated config.");
+			},
+		]);
+		try {
+			await runtime.prompt({ role: "user", content: "Update config", timestamp: 1 });
+			expect(approvals.request).toHaveBeenCalledWith(expect.objectContaining({ autoApprove: false,
+				toolName: "remote_sandbox_exception" }), expect.any(AbortSignal));
+			expect(submit).toHaveBeenCalledOnce();
+			expect(runtime.publicFailure).toBeUndefined();
+		} finally { await runtime.dispose(); }
+	});
+
+	it("sends a wrong-mode tool error to the model and executes its corrected call", async () => {
+		const authorization = new ChatToolAuthorizationPolicy({
+			sessions: { findById: vi.fn(async () => undefined) },
+			terminalInteractions: { preflightSubmit: vi.fn(async () => ({ allowed: true })), approve: vi.fn(), reject: vi.fn() },
+			preflightRemoteGuard: vi.fn(async () => ({ allowed: true })),
+		});
+		const approvals = { request: vi.fn(async () => ({ approved: true as const, source: "user" as const })) };
+		const toolCalls = new ChatToolCallCoordinator({ authorization, approvals });
+		const context = createContext({ toolCalls });
+		const observe = vi.fn(async () => ({ content: [{ type: "text" as const, text: "terminal output" }], details: {} }));
+		context.createTerminalTool.mockReturnValue({ ...terminalInteractionDefinition, execute: observe });
+		const runtime = await context.factory.create({
+			run: { ...commandRun, serverInteractionMode: "terminal", terminalSessionId: "terminal-1" },
+			model: context.model, workDir: process.cwd(), history: [], systemPrompt: "terminal mode",
+		});
+		context.faux.setResponses([
+			fauxAssistantMessage(fauxToolCall("remote_server_call", { command: "uname -a", timeoutMs: 30 }, { id: "wrong-mode" }), { stopReason: "toolUse" }),
+			(providerContext) => {
+				expect(providerContext.messages.at(-1)).toMatchObject({ role: "toolResult", toolCallId: "wrong-mode", isError: true,
+					content: [{ type: "text", text: "remote_server_call is unavailable in the current server interaction mode" }] });
+				return fauxAssistantMessage(fauxToolCall("terminal_interaction", { action: "observe", expectation: "finite" }, { id: "corrected" }), { stopReason: "toolUse" });
+			},
+			(providerContext) => {
+				expect(providerContext.messages.at(-1)).toMatchObject({ role: "toolResult", toolCallId: "corrected", isError: false,
+					content: [{ type: "text", text: "terminal output" }] });
+				return fauxAssistantMessage("Recovered using the current terminal.");
+			},
+		]);
+		try {
+			await runtime.prompt({ role: "user", content: "Trigger a remote tool error", timestamp: 1 });
+			expect(context.faux.state.callCount).toBe(3);
+			expect(observe).toHaveBeenCalledOnce();
+			expect(context.createRemoteTool).not.toHaveBeenCalled();
+			expect(approvals.request).not.toHaveBeenCalled();
+			expect(runtime.publicFailure).toBeUndefined();
+			expect(context.getAgent()?.state.messages.at(-1)).toMatchObject({ role: "assistant", stopReason: "stop",
+				content: [{ type: "text", text: "Recovered using the current terminal." }] });
+		} finally {
+			await runtime.dispose();
+		}
+	});
+
+	it("returns invalid sandbox paths to the model and approves only its corrected call", async () => {
+		const target = { defaultCwd: "/srv/app" } as SshTargetSnapshot;
+		const probe = vi.fn(async () => ({ mode: "workspace_write" as const, backend: "landlock" as const,
+			enforcement: "full" as const, sandboxRoot: "/srv/app", abi: 5, launcherVersion: "3" }));
+		const authorization = new ChatToolAuthorizationPolicy({
+			sessions: { findById: vi.fn(async () => undefined) },
+			terminalInteractions: { preflightSubmit: vi.fn(async () => ({ allowed: true })), approve: vi.fn(), reject: vi.fn() },
+			preflightRemoteGuard: vi.fn(async () => ({ allowed: true })),
+			assessRemoteSandbox: async (_sessionId, declaredWritePaths, signal) => ({ target,
+				route: await evaluateRemoteSandboxRoute({ sandbox: { probe }, target, signal, declaredWritePaths }) }),
+		});
+		const approvals = { request: vi.fn(async () => ({ approved: true as const, source: "user" as const })) };
+		const context = createContext({ toolCalls: new ChatToolCallCoordinator({ authorization, approvals }) });
+		const execute = vi.fn(async () => ({ content: [{ type: "text" as const, text: "written" }], details: {} }));
+		context.createRemoteTool.mockReturnValue({ ...remoteServerCallDefinition, execute });
+		const runtime = await context.factory.create({ run: commandRun, model: context.model,
+			workDir: process.cwd(), history: [], systemPrompt: "command mode" });
+		context.faux.setResponses([
+			fauxAssistantMessage(fauxToolCall("remote_server_call", { command: "touch /srv/app/output",
+				write_paths: ["output"] }, { id: "relative-path" }), { stopReason: "toolUse" }),
+			(providerContext) => {
+				expect(providerContext.messages.at(-1)).toMatchObject({ role: "toolResult", toolCallId: "relative-path", isError: true,
+					content: [{ type: "text", text: "Declared remote write paths must be absolute Linux paths without NUL or newline" }] });
+				expect(execute).not.toHaveBeenCalled();
+				expect(approvals.request).not.toHaveBeenCalled();
+				expect(probe).not.toHaveBeenCalled();
+				return fauxAssistantMessage(fauxToolCall("remote_server_call", { command: "touch /srv/app/output",
+					write_paths: ["/srv/app/output"] }, { id: "absolute-path" }), { stopReason: "toolUse" });
+			},
+			(providerContext) => {
+				expect(providerContext.messages.at(-1)).toMatchObject({ role: "toolResult", toolCallId: "absolute-path", isError: false });
+				return fauxAssistantMessage("Recovered with an absolute path.");
+			},
+		]);
+		try {
+			await runtime.prompt({ role: "user", content: "Write output", timestamp: 1 });
+			expect(context.faux.state.callCount).toBe(3);
+			expect(execute).toHaveBeenCalledOnce();
+			expect(execute).toHaveBeenCalledWith("absolute-path", expect.objectContaining({ write_paths: ["/srv/app/output"] }),
+				expect.any(AbortSignal), expect.any(Function), expect.any(RemoteCommandExecutionPlan));
+			expect(approvals.request).toHaveBeenCalledOnce();
+			expect(probe).toHaveBeenCalledOnce();
+			expect(runtime.publicFailure).toBeUndefined();
+		} finally {
+			await runtime.dispose();
+		}
+	});
+
+	it("uses the same recoverable contract for request errors escaping the authorization coordinator", async () => {
+		const beforeToolCall = vi.fn(async () => { throw sandboxFailure("invalid_request", "Correct the request"); });
+		const context = createContext({ toolCalls: { beforeToolCall,
+			requestSftpOverwriteApproval: vi.fn(async () => ({ approved: true as const, source: "user" as const })) } });
+		const execute = vi.fn(async () => ({ content: [], details: {} }));
+		context.createRemoteTool.mockReturnValue({ ...remoteServerCallDefinition, execute });
+		const runtime = await context.factory.create({ run: commandRun, model: context.model,
+			workDir: process.cwd(), history: [], systemPrompt: "command mode" });
+		context.faux.setResponses([
+			fauxAssistantMessage(fauxToolCall("remote_server_call", { command: "pwd" }), { stopReason: "toolUse" }),
+			(providerContext) => {
+				expect(providerContext.messages.at(-1)).toMatchObject({ role: "toolResult", isError: true,
+					content: [{ type: "text", text: "Correct the request" }] });
+				return fauxAssistantMessage("Request rejected; I can adjust it.");
+			},
+		]);
+		try {
+			await runtime.prompt({ role: "user", content: "Inspect", timestamp: 1 });
+			expect(context.faux.state.callCount).toBe(2);
+			expect(execute).not.toHaveBeenCalled();
+			expect(runtime.publicFailure).toBeUndefined();
+		} finally {
+			await runtime.dispose();
+		}
+	});
+
+	it.each([
+		sandboxFailure("sandbox_probe_failed", "Remote state is uncertain"),
+		new Error("Approval storage failed"),
+	])("keeps infrastructure authorization errors fatal: %s", async (failure) => {
+		const approvals = { request: vi.fn(async () => ({ approved: true as const, source: "user" as const })) };
+		const authorization = new ChatToolAuthorizationPolicy({
+			sessions: { findById: vi.fn(async () => undefined) },
+			terminalInteractions: { preflightSubmit: vi.fn(async () => ({ allowed: true })), approve: vi.fn(), reject: vi.fn() },
+			preflightRemoteGuard: vi.fn(async () => ({ allowed: true })),
+			assessRemoteSandbox: vi.fn(async () => { throw failure; }),
+		});
+		const context = createContext({ toolCalls: new ChatToolCallCoordinator({ authorization, approvals }) });
+		const execute = vi.fn(async () => ({ content: [], details: {} }));
+		context.createRemoteTool.mockReturnValue({ ...remoteServerCallDefinition, execute });
+		const runtime = await context.factory.create({ run: commandRun, model: context.model,
+			workDir: process.cwd(), history: [], systemPrompt: "command mode" });
+		context.faux.setResponses([fauxAssistantMessage(fauxToolCall("remote_server_call", { command: "pwd" }), { stopReason: "toolUse" })]);
+		try {
+			await runtime.prompt({ role: "user", content: "Inspect", timestamp: 1 });
+			expect(context.faux.state.callCount).toBe(1);
+			expect(execute).not.toHaveBeenCalled();
+			expect(approvals.request).not.toHaveBeenCalled();
+			expect(runtime.publicFailure).toBeDefined();
+			expect(context.getAgent()?.state.messages.at(-1)).toMatchObject({ role: "assistant", stopReason: "error" });
+		} finally {
+			await runtime.dispose();
+		}
+	});
+
+	it.each([
+		["remote_server_call", "terminal"], ["bubblewrap_inspect", "terminal"],
+		["bubblewrap_install", "terminal"], ["terminal_interaction", "command"],
+	] as const)("checks %s availability before authorization and direct execution in %s mode", async (toolName, mode) => {
+		const beforeToolCall = vi.fn(async () => undefined);
+		const context = createContext({ toolCalls: { beforeToolCall,
+			requestSftpOverwriteApproval: vi.fn(async () => ({ approved: true as const, source: "user" as const })) } });
+		const runtime = await context.factory.create({ run: { ...commandRun, serverInteractionMode: mode,
+			terminalSessionId: mode === "terminal" ? "terminal-1" : null }, model: context.model,
+			workDir: process.cwd(), history: [], systemPrompt: "mode" });
+		try {
+			const tool = context.getAgentOptions()!.initialState!.tools!.find((tool) => tool.name === toolName)!;
+			expect(() => tool.prepareArguments?.({})).toThrowError(expect.objectContaining({ terminate: false,
+				message: `${toolName} is unavailable in the current server interaction mode` }));
+			await expect(tool.execute("call", {}, undefined)).rejects.toMatchObject({ terminate: false });
+			expect(beforeToolCall).not.toHaveBeenCalled();
+		} finally {
+			await runtime.dispose();
+		}
+	});
+
+	it.each([
+		{ deploymentPlanning: { discussionId: "discussion-1", revision: 1 } },
+		{ deploymentRunId: "deploy-1" },
+		{ deploymentRunId: "deploy-1", deploymentRecovery: true },
+	])("enforces deployment tool conflicts at the tool boundary: %j", async (binding) => {
+		const beforeToolCall = vi.fn(async () => undefined);
+		const context = createContext({ toolCalls: { beforeToolCall,
+			requestSftpOverwriteApproval: vi.fn(async () => ({ approved: true as const, source: "user" as const })) } });
+		const runtime = await context.factory.create({ run: { ...commandRun, serverInteractionMode: "terminal", terminalSessionId: "terminal-1" },
+			model: context.model, workDir: process.cwd(), history: [], systemPrompt: "deployment", ...binding });
+		try {
+			const tools = context.getAgentOptions()!.initialState!.tools!;
+			for (const name of ["sftp_upload", "sftp_download", "bubblewrap_inspect", "bubblewrap_install"]) {
+				const tool = tools.find((tool) => tool.name === name)!;
+				expect(() => tool.prepareArguments?.({})).toThrowError(expect.objectContaining({ terminate: false }));
+				await expect(tool.execute("call", {}, undefined)).rejects.toMatchObject({ terminate: false });
+			}
+			const terminal = tools.find((tool) => tool.name === "terminal_interaction")!;
+			const key = { action: "key", key: "CTRL_C", expectation: "finite" };
+			expect(() => terminal.prepareArguments?.(key)).toThrowError(expect.objectContaining({ terminate: false }));
+			await expect(terminal.execute("key", key, undefined)).rejects.toMatchObject({ terminate: false });
+			for (const action of ["observe", "submit"]) {
+				expect(() => terminal.prepareArguments?.({ action, input: "pwd", expectation: "finite" })).not.toThrow();
+			}
+			expect(beforeToolCall).not.toHaveBeenCalled();
+		} finally {
+			await runtime.dispose();
+		}
+	});
+
 	it("keeps internal compaction failures non-retryable and clears request-local state", async () => {
 		const context = createContext();
 		const runtime = await context.factory.create({

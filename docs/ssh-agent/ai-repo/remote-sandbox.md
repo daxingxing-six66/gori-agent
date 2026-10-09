@@ -16,9 +16,15 @@
 
 Chat Guard 预检查 → 审批 → Session FIFO/进程许可 → 最新 Guard → Full Access grant 消费 → Target/cwd → 沙箱准备 → Guard 再检查 → Broker exec。
 
-普通 Chat Run 先通过 `evaluateRemoteSandboxRoute` 探测后端与规范根，并检查模型声明的已知绝对 `write_paths`。后端可用且路径在可写范围内时，默认 `remote_server_call` 按 `workspace_write` 执行：`autoAudit=true` 自动批准，`autoAudit=false` 逐条人工批准，批准本身不会取消沙箱。未声明的脚本副作用无法可靠预判，先在沙箱内尝试。明确无可用后端或已知路径越界时，审批记录使用 `remote_sandbox_exception` 标识并要求人工批准；准确命令获得一次性 Full Access grant。模型显式请求 `sandbox_permissions: "full_access"` 仍需非空理由和人工批准。Chat 审批链验证 Full Access 决策 `source=user`。部署沙箱例外使用部署专属逐命令审批；受限的重启/验证步骤由 `autoAudit` 决定是否逐条弹出 Chat 审批。两条命令流程最终都由 Command Service 检查受限模式或消费一次性 grant。grant 绑定授权范围、Tool Call、Session、原命令、cwd、timeout 和理由；一次消费即删除，参数不匹配也删除，工作流结束清理，重启不会恢复。部署另外在派发前及命令队列出队后检查固定 SSH 目标身份。Full Access 仍服从 Guard，也不提升 SSH 用户权限；失败的受限命令不会自动升级或重放，新的 Full Access 重试须重新人工批准。
+普通 Chat 命令在授权阶段生成不可变 `RemoteCommandExecutionPlan`，显式记录原请求、调用身份、`workspace_write` 或 `full_access`、例外理由和已解析目标。Coordinator 只在审批通过并完成 grant 记录后返回内部执行上下文，Agent 将同一计划交给对应远端 Tool。Tool 先校验调用身份和参数，再直接提交计划的权限与 `expectedTarget`。`RemoteSandboxApprovalStore` 只保存 grant 签名和目标签名，负责一次性验证/消费及清理；审批理由不再用作“是否获准 Full Access”的查询接口。计划本身不能替代 grant，已消费或被清理的 Full Access 计划仍会在派发时失败，不能隐式降回沙箱执行。受限命令与 Full Access 命令均检查审批阶段确定的目标，Workspace 身份或默认目录变化时拒绝执行。
+
+普通 Chat Run 先通过 `evaluateRemoteSandboxRoute` 探测后端与规范根，并检查模型声明的已知绝对 `write_paths`。后端可用且路径在可写范围内时，默认 `remote_server_call` 按 `workspace_write` 执行：`autoAudit=true` 自动批准，`autoAudit=false` 逐条人工批准，批准本身不会取消沙箱。未声明的脚本副作用无法可靠预判，先在沙箱内尝试。明确无可用后端或已知路径越界时，审批记录使用 `remote_sandbox_exception` 标识并要求人工批准；准确命令获得一次性 Full Access grant。模型显式请求 `sandbox_permissions: "full_access"` 仍需非空理由和人工批准；只传理由会在审批前返回可修正错误。Chat 审批链验证 Full Access 决策 `source=user`。部署沙箱例外使用部署专属逐命令审批；受限的重启/验证步骤由 `autoAudit` 决定是否逐条弹出 Chat 审批。两条命令流程最终都由 Command Service 检查受限模式或消费一次性 grant。grant 绑定授权范围、Tool Call、Session、原命令、cwd、timeout 和理由；一次消费即删除，参数不匹配也删除，工作流结束清理，重启不会恢复。部署另外在派发前及命令队列出队后检查固定 SSH 目标身份。Full Access 仍服从 Guard，也不提升 SSH 用户权限；失败的受限命令不会自动升级或重放，新的 Full Access 重试须重新人工批准。
 
 所有路径和完整脚本通过单一 POSIX 参数引用 helper 组装。`cd` 成功后才启动独立 `bash --noprofile --norc -c`，因此脚本中的分号或换行不能越过失败的 cwd 检查。普通命令与 Terminal 各自生成本次随机 nonce；Native launcher 安装规则、设置 no_new_privs、关闭额外继承 FD 后才发出含 nonce 的 stderr 确认并 exec；后代进程继承限制。
+
+显式 Full Access 请求缺少非空理由、仅传理由却未声明 Full Access，以及 `write_paths` 使用相对路径或包含非法字符，均在审批前以 `terminate: false` 返回 Tool 错误，让模型修正参数。路径格式错误在探测前拒绝，不创建审批或执行命令。纠正后仍需逐次人工审批；错误反馈本身不生成 grant，也不放宽 Guard。模式或部署工作流不允许的沙箱检查、安装工具同样只拒绝本次调用，并将错误交回模型。
+
+各工具模块持有自己的审批准备逻辑；`ChatToolAuthorizationPolicy.prepare()` 只分发并按 `tool-authorization.ts` 的契约转换已知请求错误。工具自身的可用性检查在审批前和直接执行入口生效。探针故障、持久化故障与未知异常不当作可修正参数错误，继续失败关闭。
 
 Operation 初始审计保存 `enforcement=none/commandMayHaveRun=false`。独立的确认捕获器用 waiting/confirmed/missing 三种状态处理 stderr，只有含本次 nonce 的远端确认行匹配后才保存实际后端、Landlock ABI/launcherVersion 或 Bubblewrap 版本、规范根与 `enforcement=full`，协议行不进入用户输出。SQLite 读取 `sandbox_json` 时按后端验证必要字段、根路径及可选布尔字段，损坏的审计事实不会直接进入领域对象。远端 shell 的前置诊断保留；有限长度内没有确认则返回 `sandbox_confirmation_missing`，保守记录命令可能已执行。超时、断线或运行中重启同样不能断言无副作用。
 
@@ -51,7 +57,8 @@ Terminal 打开后异步探测失败时，前端保留失败卡片，展示后�
 | Native 规则、继承与 exec | `native/landlock-run/main.c`、[构建与内核测试说明](../../../native/landlock-run/README.md) |
 | 构建和资源完整性 | `native/landlock-run/build.mjs`、`check-resources.mjs`、`packages/ssh-agent/resources/sandbox/` |
 | 状态机、确认前缀与审计 | `packages/ssh-agent/src/application/services/command-operation-service.ts`、`sandbox-confirmation-capture.ts`、`packages/ssh-agent/src/infrastructure/sqlite/sqlite-command-operation-repository.ts` |
-| Chat 审批及 Tool 参数 | `packages/ssh-agent/src/application/services/chat-tool-authorization-policy.ts`、`chat-tool-call-coordinator.ts`、`packages/ssh-agent/src/application/tools/remote-server-call-tool.ts` |
+| Chat 审批及 Tool 参数 | `packages/ssh-agent/src/application/services/chat-tool-authorization-policy.ts`、`chat-tool-call-coordinator.ts`、`packages/ssh-agent/src/application/tools/remote-server-call-tool.ts`、`tool-authorization.ts` |
+| 命令计划、参数/目标快照与内部交接 | `packages/ssh-agent/src/application/tools/remote-command-execution-plan.ts`、`packages/agent/src/types.ts`、`packages/agent/src/agent-loop.ts`；测试见 `packages/ssh-agent/test/remote-command-execution-plan.test.ts`、`packages/agent/test/tool-execution-context.test.ts` |
 | 前端配置和检测 | `packages/ssh-agent-web/features/workspace/components/remote-sandbox-panel.tsx`、`workspace-dialog.tsx`、`workspace-edit-dialog.tsx` |
 | 定向测试 | `packages/ssh-agent/test/remote-sandbox-coordinator.test.ts`、`remote-sandbox-routing.test.ts`、`remote-landlock-sandbox.test.ts`、`bubblewrap-remote-sandbox.test.ts`、`bubblewrap-installation-approval.test.ts`、`packages/ssh-agent-web/tests/remote-sandbox.test.tsx`、`native/landlock-run/security-test.py`、`native/landlock-run/ssh-smoke-test.mjs` |
 

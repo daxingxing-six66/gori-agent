@@ -1,6 +1,7 @@
 import { StringDecoder } from "node:string_decoder";
 import type { RemoteSandboxCoordinator } from "../../infrastructure/sandbox/remote-sandbox-coordinator.ts";
 import { SshAgentError } from "../../domain/ssh-failure.ts";
+import { sandboxFailure } from "../../domain/remote-sandbox.ts";
 import type { SshTargetSnapshot } from "../../domain/ssh-target.ts";
 import type { RemoteCommandBroker } from "../ssh-channel-broker.ts";
 import type { CommandOperationService } from "./command-operation-service.ts";
@@ -34,11 +35,11 @@ export function bubblewrapInstallCommand(plan: BubblewrapInstallPlan): string {
 }
 
 export function parseBubblewrapInstallPlan(value: unknown): BubblewrapInstallPlan {
-	if (value === null || typeof value !== "object" || Array.isArray(value)) throw new Error("Invalid Bubblewrap installation plan");
+	if (value === null || typeof value !== "object" || Array.isArray(value)) throw sandboxFailure("invalid_request", "Invalid Bubblewrap installation plan");
 	const plan = value as Record<string, unknown>;
 	if (plan.packageManager !== "apt-get" && plan.packageManager !== "dnf" && plan.packageManager !== "yum" &&
-		plan.packageManager !== "zypper" && plan.packageManager !== "apk") throw new Error("Unsupported Bubblewrap package manager");
-	if (typeof plan.useSudo !== "boolean" || typeof plan.refreshIndex !== "boolean") throw new Error("Invalid Bubblewrap installation options");
+		plan.packageManager !== "zypper" && plan.packageManager !== "apk") throw sandboxFailure("invalid_request", "Unsupported Bubblewrap package manager");
+	if (typeof plan.useSudo !== "boolean" || typeof plan.refreshIndex !== "boolean") throw sandboxFailure("invalid_request", "Invalid Bubblewrap installation options");
 	return { packageManager: plan.packageManager, useSudo: plan.useSudo, refreshIndex: plan.refreshIndex };
 }
 
@@ -68,7 +69,7 @@ export class BubblewrapInstallationService {
 			if (error instanceof SshAgentError && error.failure.code === "sandbox_bubblewrap_not_installed") return target;
 			throw error;
 		}
-		throw new Error("A remote sandbox is already available; Bubblewrap installation is unnecessary");
+		throw sandboxFailure("invalid_request", "A remote sandbox is already available; Bubblewrap installation is unnecessary");
 	}
 
 	async inspect(sessionId: string, signal: AbortSignal): Promise<string> {
