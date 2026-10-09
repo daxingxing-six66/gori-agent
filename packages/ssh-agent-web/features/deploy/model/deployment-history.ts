@@ -1,9 +1,10 @@
 import type { ChatTimelineEntry } from "@/features/chat/model/chat-runtime-state";
-import type { DeploymentRun } from "./deployment";
+import type { DeploymentDiscussion, DeploymentRun } from "./deployment";
 
 export type ConversationHistoryEntry =
 	| { kind: "message"; entry: ChatTimelineEntry }
-	| { kind: "deployment"; run: DeploymentRun };
+	| { kind: "discussion"; discussion: DeploymentDiscussion }
+	| { kind: "deployment"; run: DeploymentRun; messages: ChatTimelineEntry[] };
 
 export interface DeploymentHistoryState {
 	runs: DeploymentRun[];
@@ -14,7 +15,7 @@ export interface DeploymentHistoryState {
 export const emptyDeploymentHistory = (): DeploymentHistoryState => ({ runs: [], nextCursor: undefined });
 
 export function deploymentHistoryTime(run: DeploymentRun): number {
-	return run.startedAt ?? run.stages.build.startedAt ?? run.createdAt;
+	return run.createdAt;
 }
 
 export function mergeDeploymentHistory(preferred: DeploymentRun[], other: DeploymentRun[]): DeploymentRun[] {
@@ -44,9 +45,45 @@ export function applyDeploymentHistoryPage(
 }
 
 /** Deployment snapshots are projected into the conversation, without changing Agent messages. */
-export function conversationHistory(messages: ChatTimelineEntry[], deployments: DeploymentRun[]): ConversationHistoryEntry[] {
+export function conversationHistory(messages: ChatTimelineEntry[], deployments: DeploymentRun[], discussion?: DeploymentDiscussion | null): ConversationHistoryEntry[] {
+	const deploymentByAgentRun = new Map<string, string | null>();
+	const completionMessages = new Set<ChatTimelineEntry>();
+	for (const run of deployments) {
+		for (const agentRunId of [run.planningAgentRunId, ...(run.agentRunHistory ?? []), run.agentRunId]) {
+			if (!agentRunId) continue;
+			// Keep ambiguous/corrupt links visible as ordinary Chat messages.
+			const existing = deploymentByAgentRun.get(agentRunId);
+			deploymentByAgentRun.set(agentRunId, existing === undefined || existing === run.id ? run.id : null);
+		}
+		if (run.status !== "success" || !run.agentRunId) continue;
+		// The execution Run's final answer belongs to the conversation. Earlier
+		// tool calls and progress messages remain with the deployment record.
+		const summary = messages.find((entry) => entry.runId === run.agentRunId && entry.final &&
+			entry.message.role === "assistant" && entry.message.stopReason === "stop" &&
+			entry.message.content.some((part) => part.type === "text" && part.text.trim().length > 0) &&
+			!entry.message.content.some((part) => part.type === "toolCall"));
+		if (summary) completionMessages.add(summary);
+	}
+	const grouped = new Map<string, ChatTimelineEntry[]>();
+	const ungrouped: ChatTimelineEntry[] = [];
+	for (const entry of messages) {
+		if (entry.message.role === "system") continue;
+		const deploymentId = entry.runId ? deploymentByAgentRun.get(entry.runId) : undefined;
+		if (!deploymentId || completionMessages.has(entry)) {
+			ungrouped.push(entry);
+			continue;
+		}
+		const entries = grouped.get(deploymentId) ?? [];
+		entries.push(entry);
+		grouped.set(deploymentId, entries);
+	}
 	const entries = [
-		...messages.filter((entry) => entry.message.role !== "system").map((entry, order) => ({
+		...(discussion ? [{
+			at: discussion.createdAt,
+			order: -1,
+			value: { kind: "discussion", discussion } as const,
+		}] : []),
+		...ungrouped.map((entry, order) => ({
 			at: entry.message.timestamp,
 			order,
 			value: { kind: "message", entry } as const,
@@ -54,7 +91,7 @@ export function conversationHistory(messages: ChatTimelineEntry[], deployments: 
 		...deployments.map((run, index) => ({
 			at: deploymentHistoryTime(run),
 			order: messages.length + index,
-			value: { kind: "deployment", run } as const,
+			value: { kind: "deployment", run, messages: grouped.get(run.id) ?? [] } as const,
 		})),
 	];
 	return entries.sort((left, right) => left.at - right.at || left.order - right.order).map(({ value }) => value);

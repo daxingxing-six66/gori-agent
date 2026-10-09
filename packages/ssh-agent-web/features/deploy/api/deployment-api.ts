@@ -1,11 +1,18 @@
 import { apiRequest } from "@/shared/api/client";
-import { isDeploymentDiscovery, isDeploymentRun, type DeploymentDiscovery, type DeploymentRun } from "../model/deployment";
+import { isDeploymentDiscussion, isDeploymentDiscovery, isDeploymentRun, type DeploymentDiscussion, type DeploymentDiscovery, type DeploymentRun } from "../model/deployment";
 
 const root = (sessionId: string) => `/api/sessions/${encodeURIComponent(sessionId)}/deployments`;
 
 function requireRun(value: unknown, sessionId: string, runId?: string): DeploymentRun {
 	if (!isDeploymentRun(value) || value.sessionId !== sessionId || (runId && value.id !== runId))
 		throw new Error("Invalid deployment response");
+	return value;
+}
+
+function requireDiscussion(value: unknown, sessionId: string, discussionId?: string): DeploymentDiscussion {
+	if (!isDeploymentDiscussion(value) || value.sessionId !== sessionId ||
+		(discussionId !== undefined && value.id !== discussionId))
+		throw new Error("Invalid deployment discussion response");
 	return value;
 }
 
@@ -28,9 +35,29 @@ export const deploymentApi = {
 	},
 	async discover(sessionId: string): Promise<DeploymentDiscovery> {
 		const response: unknown = await apiRequest(root(sessionId));
-		if (!isDeploymentDiscovery(response) || (response.latest && response.latest.sessionId !== sessionId))
+		if (!isDeploymentDiscovery(response) || (response.latest && response.latest.sessionId !== sessionId) ||
+			(response.activeDiscussion && response.activeDiscussion.sessionId !== sessionId))
 			throw new Error("Invalid deployment discovery response");
 		return response;
+	},
+	async beginDiscussion(sessionId: string, file: string, moduleId: string): Promise<DeploymentDiscussion> {
+		const response: unknown = await apiRequest(`${root(sessionId)}/discussions`, { method: "POST", body: { file, moduleId } });
+		return requireDiscussion(response, sessionId);
+	},
+	async getDiscussion(sessionId: string, discussionId: string): Promise<DeploymentDiscussion> {
+		const response: unknown = await apiRequest(`${root(sessionId)}/discussions/${encodeURIComponent(discussionId)}`);
+		return requireDiscussion(response, sessionId, discussionId);
+	},
+	async activeDiscussion(sessionId: string): Promise<DeploymentDiscussion | null> {
+		const response: unknown = await apiRequest(`${root(sessionId)}/discussions/active`);
+		if (response === null) return null;
+		const discussion = requireDiscussion(response, sessionId);
+		if (discussion.status !== "discussing") throw new Error("Invalid active deployment discussion response");
+		return discussion;
+	},
+	async cancelDiscussion(sessionId: string, discussionId: string): Promise<DeploymentDiscussion> {
+		const response: unknown = await apiRequest(`${root(sessionId)}/discussions/${encodeURIComponent(discussionId)}/cancel`, { method: "POST" });
+		return requireDiscussion(response, sessionId, discussionId);
 	},
 	async prepare(sessionId: string, file: string, moduleId: string): Promise<DeploymentRun> {
 		return requireRun(await apiRequest(root(sessionId), { method: "POST", body: { file, moduleId } }), sessionId);
@@ -40,6 +67,9 @@ export const deploymentApi = {
 	},
 	async decideFullAccess(sessionId: string, id: string, stage: "restart" | "verify", approvalId: string, approved: boolean): Promise<DeploymentRun> {
 		return requireRun(await apiRequest(`${root(sessionId)}/${encodeURIComponent(id)}/approvals/${stage}/${encodeURIComponent(approvalId)}/${approved ? "approve" : "reject"}`, { method: "POST" }), sessionId, id);
+	},
+	async decideRecovery(sessionId: string, id: string, proposalId: string, approved: boolean): Promise<DeploymentRun> {
+		return requireRun(await apiRequest(`${root(sessionId)}/${encodeURIComponent(id)}/recovery/${encodeURIComponent(proposalId)}/${approved ? "approve" : "reject"}`, { method: "POST" }), sessionId, id);
 	},
 	async cancel(sessionId: string, id: string): Promise<DeploymentRun> {
 		return requireRun(await apiRequest(`${root(sessionId)}/${encodeURIComponent(id)}/cancel`, { method: "POST" }), sessionId, id);
