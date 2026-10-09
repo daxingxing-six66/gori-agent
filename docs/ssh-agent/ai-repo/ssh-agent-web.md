@@ -6,6 +6,8 @@
 
 侧边栏的工作区展开状态由根布局中的 `WorkspaceTreeProvider` 按工作区 ID 独立保存，切换工作区或会话页面不会收起其他工作区。首次进入尚无展开记录的工作区时默认展开；手动收起（包括当前工作区）会保留到本次页面生命周期结束，刷新浏览器后重新初始化。
 
+窄屏首页仍显示工作区导航；在 Workspace 与 Session 页面，`WorkspaceSidebar` 改为可从页首按钮打开的抽屉，支持关闭按钮、遮罩和 Escape，并在关闭后将焦点还给入口。Workspace 控制台页首显示工作区名称与主机，窄屏时页签换到第二行；Chat 与新会话标题、输入区辅助文字沿用同一字号层级。布局和颜色集中于 `app/globals.css`，不改变 Workspace/Session 路由及审批状态归属。
+
 创建工作区的默认工作目录通过 `LocalDirectoryPicker` 选择，复用新建聊天的 `GET /api/local-files` 本机目录浏览、筛选及面包屑。打开选择器时暂时卸载外层管理弹窗，取消/Escape 只返回草稿，确认后回填 `defaultCwd`；其余表单和连接测试结果保留。
 
 新会话先使用本地化占位标题，首条消息成功启动后由同模型异步命名；WorkspaceTreeProvider 订阅当前工作区的 session.updated 更新侧边栏和页面标题，首次连接及重连均刷新持久化数据。见 [session-title.md](./session-title.md)。
@@ -13,14 +15,14 @@
 Chat 协议接受 runtime system 消息，状态按 `runtimeEventId` 保留同毫秒内的不同切换。时间线不把模式协议显示为 Assistant 气泡，也不因仅有模式记录而隐藏空会话提示。回归见 `tests/chat-system-messages.test.tsx`。
 
 
-工作区创建/编辑表单区分“默认本地工作目录”与“默认远端工作目录”：本地沿用 LocalDirectoryPicker，远端由 RemoteDirectoryPicker 通过 SFTP 选择，初始浏览路径 `/`。创建时使用尚未保存的主机/凭据临时连接，配置完整后才可打开；编辑时使用当前工作区的 SFTP API。选择器只列目录，显示面包屑、搜索、加载和失败重试；`/` 可浏览但不可选为工作区可写根，确认后回填规范化路径。远端目录同时决定 Landlock 可写范围，概览分别显示本地与远端目录；新会话仍继承本地 `defaultCwd`。
+工作区创建/编辑表单区分“默认本地工作目录”与“默认远端工作目录”：本地沿用 LocalDirectoryPicker，远端由 RemoteDirectoryPicker 通过 SFTP 选择，初始浏览路径 `/`。创建时使用尚未保存的主机/凭据临时连接，配置完整后才可打开；编辑时使用当前工作区的 SFTP API。选择器只列目录，显示面包屑、搜索、加载和失败重试；`/` 可浏览但不可选为工作区可写根，确认后回填规范化路径。远端目录同时决定受限命令沙箱的可写根，概览分别显示本地与远端目录；新会话仍继承本地 `defaultCwd`。
 
 
 工作区表单只保留一个远端目录字段。Overview 通过 `remote-sandbox-panel.tsx` 显示尚未验证、显式检测后的 ABI/规范根或失败原因和时间，初始不宣称已开启。检测响应在 Workspace model 边界验证模式、后端、完整约束、ABI 与根路径后才展示为成功；畸形响应进入错误状态。检测请求可取消，状态按 Workspace ID/revision 隔离。见 [remote-sandbox.md](./remote-sandbox.md) 与 `tests/remote-sandbox.test.tsx`。
 
 ## 使用顺序
 
-Chat 的 `UserDecisionPanel` 在输入框上方向上展开，显示模型的三条建议、推荐标记、自定义输入、翻页和跳过。`use-chat-runtime.ts` 将待决 REST 恢复与 Run SSE 合并到 `ChatRuntimeState`；关闭面板仅隐藏，可从输入框上方重新打开，不向后端提交跳过。协议与状态边界见 [user-decision.md](./user-decision.md)。
+Chat 的 `UserDecisionPanel` 在输入框上方向上展开，显示模型的三条建议、推荐图标、自定义输入和跳过；建议选择或跳过自动进入下一题，最后一题完成后才显示提交，返回仍可修改，更多交互见 [user-decision.md](./user-decision.md)。`use-chat-runtime.ts` 将待审批、待决 REST 恢复与 Run SSE 合并到 `ChatRuntimeState`；切回 Session 后加载更早消息或合并压缩结果只更新消息，不丢弃已恢复的待审批和待决状态。关闭决策面板仅隐藏，可从输入框上方重新打开，不向后端提交跳过。普通工具记录以动作与目标组成紧凑单行，展开后显示完整参数和输出；失败线索直接可见，待审批操作保留完整说明和操作按钮。思考、压缩摘要与部署详情沿用各自的展开控件。
 
 1. 先从“页面与总装配”确定功能出现在哪个页面。
 2. 再从“功能路由”打开该功能的组件、运行时或状态入口。
@@ -60,11 +62,11 @@ Chat 的 `UserDecisionPanel` 在输入框上方向上展开，显示模型的三
 | Chat REST 请求、刷新恢复、Run/Queue/Approval/Compaction 状态和 SSE | `features/chat/runtime/use-chat-runtime.ts` | `api/chat-api.ts`、`runtime/chat-event-stream.ts`、`model/chat-runtime-state.ts`、`model/chat.ts` | `tests/chat-runtime-state.test.ts`、`tests/api-clients.test.ts` |
 | Chat 模型选择恢复和失效处理 | `features/chat/runtime/use-chat-model-selection.ts` | `model/chat-model-selection-restore.ts`、`features/llm-provider/api/llm-provider-api.ts`、`features/session/api/session-api.ts` | `tests/chat-model-selection-restore.test.ts` |
 | Chat 编辑器中的 `/`/`@` Composer Menu、Terminal/上下文压缩工具、本地文件引用、目录浏览和搜索 | `features/chat/components/chat-token-editor.tsx` | `model/chat-composer-menu.ts`、`api/local-files-api.ts`、`model/chat-composer.ts`、`chat-reference.tsx`、`app/globals.css` | `tests/chat-composer-menu.test.ts`、`tests/chat-composer.test.ts`、`tests/session-directory-picker.test.tsx` |
-| `/deploy` Profile 与模块选择、模型驱动确认、纵向流水线、Full Access 逐条审批及历史回显 | `features/chat/components/chat-console.tsx`、`features/deploy/components/deployment-panel.tsx` | `features/deploy/api/deployment-api.ts`、`features/deploy/runtime/use-deployment.ts`、`features/deploy/model/deployment-history.ts`、`features/deploy/components/deployment-history-card.tsx`、`features/chat/components/chat-timeline.tsx`；节点同时显示文字状态与命令/路径，上传来源和目标分行，完整日志可展开；仅运行中状态点作轻微呼吸动画并遵守减少动态效果设置；确认需要模型并启动绑定部署的 Chat Run。部署快照经独立游标 API 分页，与聊天按时间合并，历史卡片可只读展开，SSE 更新当前状态 | `tests/deployment-model.test.ts`、`tests/deployment-panel.test.tsx` |
+| `/deploy` 模块选择、跨轮讨论、提案确认、纵向流水线与历史回显 | `features/chat/components/chat-console.tsx`、`features/deploy/components/deployment-panel.tsx`、`features/deploy/components/deployment-module-picker.tsx` | 菜单按语言显示“部署”或“deploy”，每次主动唤起从空白模块选择开始。选中服务后创建 Discussion 并发送本轮规划提示；讨论卡按创建时间插入 Chat 时间线，先于后续讨论消息，同毫秒时也由卡片排在前面，切换 Session 后可重建顺序。模型可在普通聊天中多轮追问，尚无提案时不画空流水线。计划生成后用户核对命令和产物并逐条批准 Full Access，再点击“开始部署”。失败时原卡片留在 `recovering`，可让模型分析，用户展开新旧方案并决定是否确认局部修订；确认后从失败阶段继续。卡片默认只展示阶段状态、进度与故障，命令、路径、日志及尝试历史展开查看。`use-deployment.ts` 独立订阅 `deployments` Workspace SSE、用 REST 恢复快照；规划、执行和诊断记录归入同一历史卡片，成功部署后的最终模型总结单独显示在主时间线。模型记录展开区最高 34rem。Chat SSE 解析保持独立。 | `tests/deployment-model.test.ts`、`tests/deployment-panel.test.tsx`、`tests/use-deployment-selection.test.ts`、`tests/use-deployment-races.test.ts` |
 | SFTP 目录浏览、筛选、下载和删除 | `features/sftp/components/sftp-files-tab.tsx` | `use-sftp-directory.ts`、`sftp-directory-entries.tsx`、`sftp-delete-dialog.tsx`、`api/sftp-api.ts` | `tests/sftp-api.test.ts`、`tests/sftp-state.test.ts` |
 | SFTP 上传、覆盖确认、取消、重试和离开页面保护 | `features/sftp/components/sftp-transfer-provider.tsx` | `sftp-transfer-queue.tsx`、`model/sftp-state.ts`、`model/sftp.ts`、`api/sftp-api.ts` | `tests/sftp-api.test.ts`、`tests/sftp-state.test.ts` |
-| Workspace SSE、服务器指标和 Connection Pool 快照 | `features/sftp/components/realtime-overview-tab.tsx` | `use-workspace-events.ts`、`model/sftp-state.ts`、`model/sftp.ts` | `tests/sftp-state.test.ts` |
-| Terminal Mode 单一 Composer 入口、自动回退提醒、状态标识、开关、过渡和状态轮询 | `features/chat/components/chat-console.tsx` | `features/terminal/components/terminal-sandbox-notice.tsx`、`features/terminal/components/terminal-sandbox-label.ts`、`features/chat/components/chat-token-editor.tsx`、`features/chat/model/chat-composer-menu.ts`、`features/session/components/new-session-chat.tsx`、`features/terminal/runtime/use-terminal-mode.ts`、`features/terminal/api/terminal-api.ts`、`features/terminal/components/terminal-connection-state.tsx`、`features/terminal/model/terminal-ui-defaults.ts` | `tests/chat-composer-menu.test.ts`、`tests/terminal-client.test.ts`、`tests/terminal-sandbox-notice.test.tsx` |
+| Workspace SSE、服务器指标和 Connection Pool 快照 | `features/sftp/components/realtime-overview-tab.tsx` | `use-workspace-events.ts`、`model/sftp-state.ts`、`model/sftp.ts`；概览把 CPU、内存、磁盘并入同一指标区域，连接详情与 Pool 状态分组，沙箱能力和进程表仍独立展示；状态由原有 SSE 快照推导 | `tests/sftp-state.test.ts` |
+| Terminal Mode 单一 Composer 入口、启动失败与历史回退提示、状态标识、开关、过渡和状态轮询 | `features/chat/components/chat-console.tsx` | `features/terminal/components/terminal-open-failure.tsx`、`features/terminal/components/terminal-sandbox-notice.tsx`、`features/terminal/components/terminal-sandbox-label.ts`、`features/chat/components/chat-token-editor.tsx`、`features/chat/model/chat-composer-menu.ts`、`features/session/components/new-session-chat.tsx`、`features/terminal/runtime/use-terminal-mode.ts`、`features/terminal/api/terminal-api.ts`、`features/terminal/components/terminal-connection-state.tsx`、`features/terminal/model/terminal-ui-defaults.ts`；新开启的受限 Terminal 在沙箱不可用时失败关闭，不自动回退 Full Access | `tests/chat-composer-menu.test.ts`、`tests/terminal-client.test.ts`、`tests/terminal-open-failure.test.tsx`、`tests/terminal-sandbox-notice.test.tsx` |
 | 只读 xterm、主题动态配色、snapshot/replay/live 切换、focus ownership 和 resize | `features/terminal/components/terminal-panel.tsx` | `model/terminal-theme.ts`、`runtime/terminal-event-stream.ts`、`model/terminal.ts`、`api/terminal-api.ts` | `tests/terminal-client.test.ts`、`tests/terminal-theme.test.ts` |
 | Terminal Observation 遮罩、范围投影和恢复 | `features/terminal/components/terminal-observation-mask.tsx` | `model/terminal-observation-mask.ts`、`model/terminal-observation-range.ts`、`runtime/terminal-observation-range-tracker.ts` | `tests/terminal-observation-mask.test.ts`、`tests/terminal-observation-range.test.ts` |
 | Terminal 审计时间线 | `features/terminal/components/terminal-timeline.tsx` | `api/terminal-api.ts`、`model/terminal.ts` | `tests/terminal-client.test.ts` |
@@ -86,7 +88,7 @@ Chat 错误展示复用 `features/chat/components/chat-failure-details.tsx`，�
 
 上下文占用入口为 `features/chat/components/chat-context-usage-indicator.tsx`，由 Composer 在模型选择器旁展示圆环及中英文悬浮详情。`runtime/use-chat-runtime.ts` 复用 Run SSE 的 `context.updated`，通过 `runtime/chat-context-usage-store.ts` 接收查询及手动压缩快照；每个 Session 独立存储，查询取消和更新计数避免旧结果覆盖新快照。空数据隐藏，进度视觉上限为 100%，详情保留实际占用；使用统计快照中的模型，不按草稿模型选择预估。测试见 `tests/chat-context-usage.test.tsx`，协议见 [context-usage-integration.md](../frontend/context-usage-integration.md)。
 
-工具参数被截断时，`chat-message.tsx` 的 `ToolRequestArguments` 展示完整参数浮层；右下角复制按钮将完整参数写入剪贴板，显示成功或失败反馈，并在按钮获得焦点时保持浮层打开。
+`chat-message.tsx` 的普通工具记录使用原生 `details`：收起时只显示动作、截断的目标和状态线索，展开后可查看完整参数、输出、耗时并复制参数。连续的纯工具消息在 `chat-timeline.tsx` 中缩小垂直间距。待审批记录使用紧凑的行内确认区：命令预览可滚动，完整参数可展开，后端权限说明、已知远端主机与具体批准动作直接可见；批准或拒绝按钮在请求处理中禁用而不消失。主机从当前 Workspace 只读传入，不改变审批对象或后端权限判断。
 
 | 目录 | 用途 |
 |---|---|

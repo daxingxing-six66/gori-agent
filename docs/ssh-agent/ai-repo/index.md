@@ -20,7 +20,7 @@
 | 创建工作区前测试地址与草稿凭据、临时 SSH 认证和取消 | [connection-test.md](./connection-test.md) | `packages/ssh-agent/src/application/services/connection-test-service.ts`、`packages/ssh-agent-web/features/workspace/components/workspace-dialog.tsx` |
 | SSH Connection Key、连接复用、Channel、主机校验、保活和重连 | [connection-runtime.md](./connection-runtime.md) | `packages/ssh-agent/src/infrastructure/ssh/ssh2-connection-pool.ts` |
 | Session 命令 FIFO、进程并发限制、Operation、Guard 执行校验、Tool、失败和事件 | [command-execution.md](./command-execution.md) | `packages/ssh-agent/src/application/services/session-command-scheduler.ts`、`packages/ssh-agent/src/application/services/command-operation-service.ts` |
-| 远端 Linux Landlock、可写根、启动器分发、Full Access 审批与审计 | [remote-sandbox.md](./remote-sandbox.md) | `packages/ssh-agent/src/infrastructure/sandbox/`、`native/landlock-run/` |
+| 远端 Linux Landlock/Bubblewrap、可写根、安装审批、Full Access 与审计 | [remote-sandbox.md](./remote-sandbox.md) | `packages/ssh-agent/src/infrastructure/sandbox/`、`packages/ssh-agent/src/application/services/bubblewrap-installation-service.ts` |
 | SQLite schema、migration、Repository、Credential 加密和运行时装配 | [sqlite-persistence.md](./sqlite-persistence.md) | `packages/ssh-agent/src/infrastructure/sqlite/` |
 | HTTP 路由、请求校验、CORS、环境变量、进程启动和关闭 | [http-server.md](./http-server.md) | `packages/ssh-agent/src/api/`、`packages/ssh-agent/src/server/` |
 | 本地日志、按日与大小滚动、异常栈 | [logging.md](./logging.md) | `packages/ssh-agent/src/server/file-logger.ts` |
@@ -46,7 +46,7 @@
 
 Workspace/Credential 前端契约见 [workspace-credential-integration.md](../frontend/workspace-credential-integration.md)，SFTP/Overview 实时联调见 [sftp-overview-realtime-integration.md](../frontend/sftp-overview-realtime-integration.md)，LLM Provider 前端契约见 [llm-provider-integration.md](../frontend/llm-provider-integration.md)，SSH 命令事件契约见 [ssh-command-events-integration.md](../frontend/ssh-command-events-integration.md)，Connection Pool 与命令执行的完整设计说明见 [ssh-connection-pool-and-command-execution.md](../design/ssh-connection-pool-and-command-execution.md)，其余请求体和响应体契约见 [frontend-integration.md](../frontend-integration.md)。
 
-远端沙箱的当前后端选择与未来 Bubblewrap 接入边界见 [多后端设计](../design/remote-sandbox-backends.md)。
+远端沙箱的双后端选择、安装审批和验证边界见 [多后端设计](../design/remote-sandbox-backends.md)。
 
 本地与远程联调约定见 [test-environments.md](../test-environments.md)。真实服务器资料不进入本仓库。
 
@@ -56,7 +56,7 @@ Workspace/Credential 前端契约见 [workspace-credential-integration.md](../fr
 
 已经实现的 Terminal Interaction MVP：用户手动开启独立模式，后端维持长周期 PTY 和 Canonical State，Agent 使用专用 Tool，浏览器通过 snapshot + SSE 只读投影并同步 owner resize，Interaction/Input/Observation/Timeline 持久化到 SQLite。
 
-已经实现的 `/deploy`：当前 Workspace 主机的 Deployment Profile、计划确认、模型逐阶段推进、阶段事实持久化和会话时间线历史回显；远端命令继续受 Guard、沙箱和必要的 Full Access 审批约束。详见 [deployment.md](./deployment.md)。
+已经实现的 `/deploy`：用户选定服务后先进入可跨多轮 Chat Run 的模型驱动讨论；模型提交并经服务端校验本次构建、上传、重启与验证参数后，才生成待确认的流水线。确认后模型逐阶段推进；Plan v2 阶段失败会保留原记录，模型可提出仅修改失败阶段的修订，用户确认后从该阶段继续。完整命令和日志按需展开；远端重启与验证在有效沙箱内按 `autoAudit` 批准，只有沙箱不可用或已知写入路径越界时才逐条人工批准 Full Access，所有命令继续受 Guard 约束。详见 [deployment.md](./deployment.md)。
 
 尚未实现：附件删除、非图片附件的通用内容下载和 LLM 输入、图片生成、断点续传、Transfer 历史自动清理、主机密钥重新信任/预置信任/SSH CA、Chat 多 Lane/Fork 和跨进程 delta 重放。Terminal MVP 不允许用户输入、不自动开启模式，使用 REST + SSE 而不引入 WebSocket。
 

@@ -6,7 +6,7 @@
 未传 `cwd` 的命令使用 Workspace `remoteDefaultCwd`，默认 `/`；显式 `cwd` 仍优先。Workspace 本地 `defaultCwd` 不参与远端命令目录解析。
 
 
-默认 `workspace_write` 在远端 Linux 启动器中执行，缺根或准备失败不回退；`full_access` 每次人工审批，`autoAudit` 不能放行。`/deploy` 只有在受限沙箱能力明确不可用或 ABI 不足时，才允许用户在独立页面逐条批准 RESTART/VERIFY；此审批与 Chat 工具审批互不通用。准备后派发前再次复检 Guard。独立的 `SandboxConfirmationCapture` 按 waiting/confirmed/missing 状态处理 stderr 前缀，收到远端确认后才写入实际强制约束事实；确认缺失保守视为可能执行。权限拒绝可能留下部分副作用，不自动重试。完整边界见 [remote-sandbox.md](./remote-sandbox.md)。
+Command Service 缺省 `workspace_write`，在远端 Linux 启动器中执行，准备失败不自动回退。普通 Chat Run 先探测有效沙箱与已声明写入路径：路径在可写范围内时，`autoAudit` 只决定自动还是人工批准，实际命令始终受沙箱约束；明确无可用后端或已知越界时，才申请带 `remote_sandbox_exception` 标识的一次性人工 Full Access 授权。显式 `full_access` 同样必须逐次人工批准。部署 RESTART/VERIFY 也按实际后端与目标路径选模式，受限步骤服从 `autoAudit`，例外步骤仍需逐条人工审批；部署授权与普通 Chat Tool 授权互不通用。准备后派发前再次复检 Guard。独立的 `SandboxConfirmationCapture` 按 waiting/confirmed/missing 状态处理 stderr 前缀，收到远端确认后才写入实际强制约束事实；确认缺失保守视为可能执行。权限拒绝可能留下部分副作用，新的 Full Access 尝试须另经人工批准，不自动重试。完整边界见 [remote-sandbox.md](./remote-sandbox.md)。
 
 ## 当前边界
 
@@ -14,7 +14,7 @@
 
 Chat 的 `remote_server_call` 在创建人工审批前调用 `CommandOperationService.preflightGuard()`；批准后正式 `submit()` 仍会再次执行 Guard 校验，避免审批等待期间规则变化。
 
-部署服务在 Prepare 做同样的 Guard 预检，用户确认后由绑定的 Agent 逐阶段调用部署工具；RESTART/VERIFY 通过 `submit()` 进入相同的 Session FIFO 和审计链。部署专属的 Full Access grant 使用 `fullAccessApprovalScopeId`，不冒用 Chat Tool Call 的 `agentRunId`；`expectedTarget` 保存计划的 SSH 身份，出队后解析的目标若变化就拒绝执行。Command Service 仍先复核 Guard、消费精确的一次性授权，再检查目标并派发；普通计划确认或 Chat Tool 审批不会自行产生部署授权。见 [deployment.md](./deployment.md)。
+部署讨论和普通文字问答不执行远端命令。模型提案时，部署服务对重启和验证命令做同样的 Guard 预检，并冻结写入路径与沙箱路由。用户核对提案后，绑定的执行 Agent 才逐阶段调用部署工具；RESTART/VERIFY 通过 `submit()` 进入相同的 Session FIFO 和审计链。仅 Full Access 例外创建部署专属 grant，使用 `fullAccessApprovalScopeId`，不冒用 Chat Tool Call 的 `agentRunId`；`expectedTarget` 保存计划的 SSH 身份，出队后解析的目标若变化就拒绝执行。Command Service 仍先复核 Guard、消费精确的一次性授权，再检查目标并派发；普通计划确认或 Chat Tool 审批不会自行产生部署 Full Access 授权。见 [deployment.md](./deployment.md)。
 
 该 Tool 仅在普通交互模式可执行；两种模式保持相同 Tool schema，通过 Chat 授权策略和 Runtime 执行实现拒绝错误模式入口。模式切换只追加 system 记录，见 [session-prompt.md](./session-prompt.md)。
 

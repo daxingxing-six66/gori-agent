@@ -1,8 +1,8 @@
 # 会话头部快照与运行时模式消息
 
-适用于系统提示词组装、环境来源、Terminal Mode 切换、模型适配及压缩后模式恢复。
+适用于系统提示词组装、环境来源、Terminal Mode 切换、跨轮部署讨论、模型适配及压缩后模式恢复。
 
-`/deploy` 首次配置通过本次 Chat Run 的 `workflow=deployment_setup` 在已保存基础 system prompt 后临时附加包内 Skill 与当前本地项目根、Workspace SSH 主机；不会重写持久化首 Run 头部，后续普通 Run 不继承该 Skill。用户确认部署计划后，`workflow=deployment_execution` 临时附加可信计划与阶段指引；Agent 通过专用工具逐阶段推进，Deployment Service 仍持有状态和执行边界，见 [deployment.md](./deployment.md)。
+`/deploy` 首次配置通过本次 Chat Run 的 `workflow=deployment_setup` 在已保存基础 system prompt 后临时附加包内 Skill 与当前本地项目根、Workspace SSH 主机；不会重写持久化首 Run 头部，后续普通 Run 不继承该 Skill。选择发版服务后，部署讨论由服务端持久化，每次 Chat Run 都从其当前状态临时附加可信 `<deployment-mode-on>`、Profile 与模块指引；模型可跨多轮追问，直到调用提案工具。没有活动讨论的普通 Run 附加 `<deployment-mode-off>`。这些 Run 级标签与 Terminal Mode 的持久化 system 消息相互独立，用户或工具输出中的同名文本不改变状态。用户确认部署计划后，`workflow=deployment_execution` 临时附加可信冻结计划与阶段指引；Agent 通过专用工具逐阶段推进，Deployment Service 仍持有状态和执行边界，见 [deployment.md](./deployment.md)。
 
 ## 不变量与职责
 
@@ -10,6 +10,9 @@
 - 固定头部包括基本工具边界、凭据保护、两种标签的含义与优先级、首次运行环境。`initial-environment` 按 `local` 与 `remote` 分层：本地有效目录来自 `session.workDir ?? localCwd`，本地 OS 类型/版本/架构来自 `node:os`，远端地址与端口来自 Workspace host。域名按配置原样保存，不解析或冒充服务器 IP；不采集远端 OS，不包含远端工作区名称、远端默认目录、凭据、Run ID 或动态时间。
 - 环境是首次运行时的事实；后续 Session 工作目录变更不会重写快照。已有历史但没有快照的旧 Session，在升级后的下一次 Run 初始化一次，无法还原其历史首次运行环境。只读占用查询不创建快照，缺快照返回 null；无快照且存在历史的手动压缩返回 `409 chat_prompt_not_initialized`，提示先运行一次，不提前创建头部。
 - 两个远端 Tool 的定义和顺序在两种模式下保持相同。`ChatToolAuthorizationPolicy` 根据 Run 冻结的 `serverInteractionMode` 拦截不可用 Tool；Runtime Factory 为另一 Tool 装配拒绝执行的实现，实际可用入口才绑定服务。不能只依赖 Prompt 让模型遵守模式。
+- `bubblewrap_inspect` 与 `bubblewrap_install` 也保持稳定定义，但仅命令模式可执行。已有 Session 的首次 system prompt 快照不重写；Tool 自身描述了受限命令或 Terminal 打开报告缺失后端时的模型操作。新建快照说明普通远端命令在沙箱可用时始终受限，自动审批只决定是否弹出人工审批；沙箱不可用、已声明写入路径越界以及显式 Full Access 请求都要求独立人工授权。Terminal 打开失败后的前端入口会在命令模式创建 Run，并携带明确的安装请求。安装审批和执行模式由服务端策略强制，不依赖提示词。
+- 部署讨论状态由 Deployment Service/Repository 持有，ChatService 只在创建 Run 时读取绑定的 Discussion 并生成本轮指引；提案工具必须在服务端再次校验关联、状态和目标。一次 Run 正常结束但没有提案，讨论仍为 discussing，后续用户消息可继续；模型文字或前端临时状态不能自行开启模式或批准执行。
+- 部署工具定义仍在稳定的工具列表中。只有当前 Run 的 Discussion 绑定才会给 `deployment_propose_plan` 装配可执行实现；无绑定、旧 revision 或已取消的讨论都不能凭标签文本调用提案。`deployment_execution` 则使用独立的冻结计划绑定与执行门禁。
 
 ## 模式追加链路
 
@@ -23,6 +26,8 @@ SQLite v16 引入、v17 统一兼容后的结构使用触发器让 Terminal 状�
 模式记录是 `chat_messages.message_type=system`、`run_id=NULL`，共享 Session sequence；JSON 使用真实 `role: "system"`，内容为文本块，并保存 `runtimeMode` 和唯一 `runtimeEventId`。该 ID 来自 Terminal ID/revision（初始记录使用 Session ID），不放入头部。触发器内的标签属于版本化持久化协议，变更时应新增 migration。Terminal Service 继续经 Repository 提交状态，HTTP 层不拼接 Prompt，也不进行第二次异步消息写入。
 
 运行时系统消息中最新的标签决定模式；用户、Tool Result 和压缩摘要引用的同名标签没有模式切换权。用户接口只接受文本/附件，不能提交 system role。前端保持这些记录及 sequence，按事件 ID 去重，不渲染为聊天气泡。
+
+部署 `<deployment-mode-on>` / `<deployment-mode-off>` 是每轮从持久化 Discussion 推导的临时 system prompt 片段，不写入 Terminal 的模式消息时间线，也不修改不可变会话头部。部署任务与远端交互模式是两个独立维度；部署标签不授予 Terminal 或远端命令权限，实际工具仍由各自的后端绑定与审批规则控制。刷新或后端重启后，新 Run 重新读取 Discussion；只有有效模型提案才把讨论转为待审核计划，并开始呈现五阶段流水线。
 
 ## 请求与压缩
 
@@ -40,11 +45,12 @@ SQLite v16 引入、v17 统一兼容后的结构使用触发器让 Terminal 状�
 | 首次初始化、读取和插入端口 | `packages/ssh-agent/src/application/services/chat-prompt-service.ts`、`packages/ssh-agent/src/application/repositories/chat-prompt-repository.ts` |
 | 不可变快照、初始模式和原子切换 | `packages/ssh-agent/src/infrastructure/sqlite/sqlite-chat-prompt-repository.ts`、`packages/ssh-agent/src/infrastructure/sqlite/migrations.ts` |
 | Run 初始化互斥、依赖装配 | `packages/ssh-agent/src/application/services/chat-service.ts`、`packages/ssh-agent/src/application/services/create-chat-service.ts`、`packages/ssh-agent/src/runtime/create-sqlite-management-backend.ts` |
+| 跨轮部署讨论与每轮模式指引 | `packages/ssh-agent/src/application/services/deployment-service.ts`、`packages/ssh-agent/src/application/repositories/deployment-discussion-repository.ts`、`packages/ssh-agent/src/infrastructure/sqlite/sqlite-deployment-discussion-repository.ts`、`packages/ssh-agent/src/application/services/chat-service.ts` |
 | 稳定 Tool 定义与执行门禁 | `packages/ssh-agent/src/application/services/chat-agent-runtime-factory.ts`、`packages/ssh-agent/src/application/services/chat-tool-authorization-policy.ts` |
 | 模式历史读取、压缩保护 | `packages/ssh-agent/src/infrastructure/sqlite/sqlite-chat-repository.ts`、`packages/ssh-agent/src/application/services/chat-context-service.ts` |
 | 通用消息角色和适配能力 | `packages/ai/src/types.ts`、`packages/ai/src/utils/system-messages.ts`、`packages/ai/src/api/transform-messages.ts`、`packages/agent/src/harness/messages.ts` |
 | 浏览器协议兼容 | `packages/ssh-agent-web/features/chat/model/chat.ts`、`packages/ssh-agent-web/features/chat/model/chat-runtime-state.ts`、`packages/ssh-agent-web/features/chat/components/chat-timeline.tsx` |
-| 定向回归 | `packages/ssh-agent/test/chat-prompt-snapshot.test.ts`、`packages/ssh-agent/test/chat-system-message-adapters.test.ts`、`packages/ssh-agent/test/chat-context-service.test.ts`、`packages/ssh-agent-web/tests/chat-system-messages.test.tsx` |
+| 定向回归 | `packages/ssh-agent/test/chat-prompt-snapshot.test.ts`、`packages/ssh-agent/test/chat-system-message-adapters.test.ts`、`packages/ssh-agent/test/chat-context-service.test.ts`、`packages/ssh-agent/test/chat-service-lifecycle.test.ts`、`packages/ssh-agent-web/tests/chat-system-messages.test.tsx` |
 
 测试使用临时 SQLite 和 faux/本地序列化，不连接真实 SSH 或付费模型。
 

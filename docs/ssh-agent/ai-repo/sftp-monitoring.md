@@ -14,7 +14,7 @@
 - Agent 文件工具按同批次读写路径判断是否并发；底层所有 SFTP 操作复用同连接身份的一个 Channel，各自持有独立文件句柄，空闲 1 秒释放。单任务取消不关闭共享 Channel。详见 [文件工具并发与 Channel 复用](./file-tool-concurrency.md)。
 
 - Workspace SSE 新增可选 `sessions` topic 与 `session.updated`，复用原事件格式、分发和心跳；原 monitoring/connection/transfers 订阅不受影响。见 [session-title.md](./session-title.md)。
-- `/deploy` 的单文件上传复用 `FileTransferService`，其进度仍写入 Transfer 历史；Deployment 独立通过 `deployments` topic 广播结构化阶段快照。实际 SFTP 操作不经过 Landlock，部署服务在计划和上传前检查规范化远端父目录位于 Workspace 根内。见 [deployment.md](./deployment.md)。
+- `/deploy` 的上传阶段按本次模型提案中的产物清单逐个复用 `FileTransferService`，各文件进度写入 Transfer 历史，部署阶段另有汇总进度；Deployment 独立通过 `deployments` topic 广播结构化讨论和阶段快照。实际 SFTP 操作不经过 Landlock，部署服务在提案和上传前检查规范化远端父目录位于 Workspace 根及 Profile 允许目录内。见 [deployment.md](./deployment.md)。
 
 - HTTP SFTP 和监控不进入 Session FIFO、Guard 或 LLM。`sftp_upload` 和 `sftp_download` Agent Tool 直接使用 `SftpFileBroker` 流式传输文件，文件内容不进入 LLM，也不创建 `FileTransfer`。
 - SFTP Tool 的检查、等待覆盖审批、传输进度和固定结果提示携带包内消息描述符；Agent Context 与持久化仍使用规范英文或原始动态内容，Chat SSE 只翻译浏览器投影。上传和下载覆盖审批继续共用 `ToolApproval`，对外仅返回按 Locale 生成的场景 `description`。
