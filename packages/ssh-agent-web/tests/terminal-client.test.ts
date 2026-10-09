@@ -101,6 +101,16 @@ describe("Terminal response validation", () => {
 			data: { bytesBase64: "b2s=" },
 		}, "terminal.output")).not.toBeNull();
 	});
+	it("accepts Bubblewrap Terminal facts and rejects mixed backend fields", () => {
+		const bubblewrap = { mode: "workspace_write", backend: "bubblewrap", enforcement: "full",
+			bubblewrapVersion: "0.12.0", sandboxRoot: "/srv/test" };
+		const response = { terminal: { ...terminal, sandbox: bubblewrap },
+			effectiveServerInteractionMode: "terminal", transitionInProgress: false,
+			capabilities: { minRows: 12, maxRows: 120, minCols: 40, maxCols: 320 } };
+		expect(requireTerminalStatus(response).terminal?.sandbox).toEqual(bubblewrap);
+		expect(() => requireTerminalStatus({ ...response, terminal: { ...terminal,
+			sandbox: { ...bubblewrap, abi: 5 } } })).toThrow();
+	});
 
 	it("rejects malformed state instead of trusting server JSON", () => {
 		const fallback = { mode: "full_access", backend: "none", enforcement: "none", source: "landlock_unavailable", detectedAt: 10 };

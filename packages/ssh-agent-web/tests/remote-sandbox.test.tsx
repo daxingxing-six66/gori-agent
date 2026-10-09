@@ -45,12 +45,22 @@ describe("remote sandbox configuration", () => {
 			expect(fetch.mock.calls[0]?.[1].body).toBeUndefined();
 		} finally { vi.unstubAllGlobals(); }
 	});
+	it("accepts Bubblewrap facts without a Landlock ABI", async () => {
+		const facts = { mode: "workspace_write", backend: "bubblewrap", enforcement: "full",
+			bubblewrapVersion: "0.12.0", sandboxRoot: "/opt/app" };
+		vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json(facts)));
+		try {
+			expect(await workspaceApi.probeSandbox(workspace.id)).toEqual(facts);
+		} finally { vi.unstubAllGlobals(); }
+	});
 	it.each([
 		null,
 		{ mode: "workspace_write", backend: "none", enforcement: "full", abi: 8, sandboxRoot: "/opt/app" },
 		{ mode: "workspace_write", backend: "landlock", enforcement: "full", abi: "8", sandboxRoot: "/opt/app" },
 		{ mode: "workspace_write", backend: "landlock", enforcement: "full", abi: 4, sandboxRoot: "/opt/app" },
 		{ mode: "workspace_write", backend: "landlock", enforcement: "full", abi: 8, sandboxRoot: "/" },
+		{ mode: "workspace_write", backend: "bubblewrap", enforcement: "full", abi: 8, sandboxRoot: "/opt/app" },
+		{ mode: "workspace_write", backend: "bubblewrap", enforcement: "full", bubblewrapVersion: "old", sandboxRoot: "/opt/app" },
 	])("rejects malformed capability responses instead of displaying full enforcement", async (facts) => {
 		vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json(facts)));
 		try {

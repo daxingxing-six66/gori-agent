@@ -22,7 +22,7 @@ export interface Workspace {
 	activeCredentialId: string;
 	/** Local default inherited by new sessions. */
 	defaultCwd: string;
-	/** Remote SSH/SFTP default directory and Landlock writable root. */
+	/** Remote SSH/SFTP default directory and sandbox writable root. */
 	remoteDefaultCwd?: string;
 	connection: {
 		connectTimeoutMs: number;
@@ -50,7 +50,7 @@ export interface CreateWorkspaceInput {
 	credential: CreateCredentialInput;
 	/** Local default inherited by new sessions. */
 	defaultCwd: string;
-	/** Remote SSH/SFTP default directory and Landlock writable root. */
+	/** Remote SSH/SFTP default directory and sandbox writable root. */
 	remoteDefaultCwd?: string;
 	connection?: Partial<Workspace["connection"]>;
 }
@@ -68,24 +68,27 @@ export interface ActivateWorkspaceCredentialResult {
 export type TestWorkspaceConnectionInput = Pick<CreateWorkspaceInput, "host" | "credential" | "connection">;
 export interface TestWorkspaceConnectionResult { success: true; }
 
-export interface RemoteSandboxProbe {
-	mode: "workspace_write";
-	backend: "landlock";
-	enforcement: "full";
-	abi: number;
-	sandboxRoot: string;
-}
+export type RemoteSandboxProbe =
+	| { mode: "workspace_write"; backend: "landlock"; enforcement: "full"; abi: number; sandboxRoot: string }
+	| { mode: "workspace_write"; backend: "bubblewrap"; enforcement: "full"; bubblewrapVersion: string; sandboxRoot: string };
 
 export function parseRemoteSandboxProbe(value: unknown): RemoteSandboxProbe {
 	if (value === null || typeof value !== "object" || Array.isArray(value)) throw new Error("Invalid remote sandbox probe response");
 	const facts = value as Record<string, unknown>;
-	if (facts.mode !== "workspace_write" || facts.backend !== "landlock" || facts.enforcement !== "full" ||
-		typeof facts.abi !== "number" || !Number.isSafeInteger(facts.abi) || facts.abi < 5 ||
+	if (facts.mode !== "workspace_write" || facts.enforcement !== "full" ||
 		typeof facts.sandboxRoot !== "string" || !isCanonicalRemoteSandboxRoot(facts.sandboxRoot)) {
 		throw new Error("Invalid remote sandbox probe response");
 	}
-	return { mode: facts.mode, backend: facts.backend, enforcement: facts.enforcement,
-		abi: facts.abi, sandboxRoot: facts.sandboxRoot };
+	if (facts.backend === "landlock" && facts.bubblewrapVersion === undefined && typeof facts.abi === "number" &&
+		Number.isSafeInteger(facts.abi) && facts.abi >= 5)
+		return { mode: "workspace_write", backend: "landlock", enforcement: "full",
+			abi: facts.abi, sandboxRoot: facts.sandboxRoot };
+	if (facts.backend === "bubblewrap" && facts.abi === undefined && facts.launcherVersion === undefined &&
+		typeof facts.bubblewrapVersion === "string" &&
+		/^[0-9]+\.[0-9]+\.[0-9]+$/.test(facts.bubblewrapVersion))
+		return { mode: "workspace_write", backend: "bubblewrap", enforcement: "full",
+			bubblewrapVersion: facts.bubblewrapVersion, sandboxRoot: facts.sandboxRoot };
+	throw new Error("Invalid remote sandbox probe response");
 }
 
 export function isRemoteSandboxRoot(path: string): boolean {

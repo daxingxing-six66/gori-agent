@@ -283,14 +283,14 @@ export class CommandOperationService {
 					tail,
 				);
 			}
-			if (operation.sandbox?.mode === "full_access" &&
-				(!pending.fullAccessRequest || !this.sandboxApprovals.consume(pending.fullAccessRequest))) {
-				throw sandboxFailure("sandbox_approval_required", "full_access requires a new human approval for this exact tool call. The command was not executed.");
-			}
 			const target = await this.targets.resolve(operation.sessionId);
+			if (operation.sandbox?.mode === "full_access" &&
+				(!pending.fullAccessRequest || !this.sandboxApprovals.consume(pending.fullAccessRequest, target))) {
+				throw sandboxFailure("sandbox_approval_required", "full_access requires a new human approval for this exact tool call and SSH target. The command was not executed.");
+			}
 			if (pending.expectedTarget && !sameExecutionTarget(target, pending.expectedTarget))
 				throw new SshAgentError({ code: "invalid_request", category: "request", phase: "validate",
-					message: "Workspace SSH identity changed after deployment approval. The command was not executed.", retryable: false });
+					message: "Workspace SSH identity changed after approval. The command was not executed.", retryable: false });
 			operation.executionContext = target;
 			operation.resolvedCwd = requireCwd(operation.requestedCwd ?? target.defaultCwd);
 			const controller = new AbortController();

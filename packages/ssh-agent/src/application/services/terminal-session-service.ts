@@ -1,12 +1,10 @@
 import type { Clock, IdGenerator, SessionId } from "../../domain/ids.ts";
-import { isTerminalSandboxFallbackEligible } from "../../domain/remote-sandbox.ts";
 import { SshAgentError } from "../../domain/ssh-failure.ts";
 import type {
 	TerminalCloseReason,
 	TerminalGeometry,
 	TerminalObservation,
 	TerminalSession,
-	TerminalSandboxFacts,
 	TerminalSandboxMode,
 	TerminalTimelineEvent,
 } from "../../domain/terminal.ts";
@@ -402,26 +400,16 @@ export class TerminalSessionService {
 		try {
 			const open = Promise.resolve().then(async () => {
 				const target = await this.#targets.resolve(actor.sessionId);
-				let sandbox: TerminalSandboxFacts;
-				let launch: Parameters<TerminalChannelBroker["open"]>[0]["launch"];
-				try {
-					const prepared = await this.#sandbox.prepareTerminal({ target, signal: controller.signal });
-					sandbox = prepared.sandbox;
-					launch = { kind: "sandboxed_exec", command: prepared.command, confirmation: prepared.confirmation };
-				} catch (error) {
-					if (!isTerminalSandboxFallbackEligible(error)) throw error;
-					sandbox = { mode: "full_access", backend: "none", enforcement: "none", source: "sandbox_unavailable", detectedAt: this.#clock.now() };
-					launch = { kind: "login_shell" };
-				}
+				const prepared = await this.#sandbox.prepareTerminal({ target, signal: controller.signal });
 				const channel = await this.#broker.open({
 					target,
-					launch,
+					launch: { kind: "sandboxed_exec", command: prepared.command, confirmation: prepared.confirmation },
 					geometry: actor.view.geometry,
 					term: "xterm-256color",
 					signal: controller.signal,
 					onData: (bytes) => actor.acceptSshData(bytes),
 				});
-				return { channel, sandbox };
+				return { channel, sandbox: prepared.sandbox };
 			});
 			const timeout = new Promise<never>((_resolve, reject) => {
 				openTimeout = setTimeout(() => {

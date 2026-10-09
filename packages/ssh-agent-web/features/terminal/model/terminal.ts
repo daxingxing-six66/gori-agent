@@ -4,6 +4,7 @@ export type TerminalSessionStatus = "opening" | "active" | "closing" | "closed" 
 export type ServerInteractionMode = "command" | "terminal";
 export type TerminalSandboxFacts =
 	| { mode: "workspace_write"; backend: "landlock"; enforcement: "full"; abi: number; launcherVersion: string; sandboxRoot: string }
+	| { mode: "workspace_write"; backend: "bubblewrap"; enforcement: "full"; bubblewrapVersion: string; sandboxRoot: string }
 	| { mode: "full_access"; backend: "none"; enforcement: "none"; source: "sandbox_unavailable" | "landlock_unavailable"; detectedAt: number }
 	| { mode: "full_access"; backend: "none"; enforcement: "none"; approvedAt: number };
 
@@ -232,10 +233,13 @@ function isSandboxFacts(value: unknown): value is TerminalSandboxFacts | null {
 		((value.source === "sandbox_unavailable" || value.source === "landlock_unavailable") && isPositiveSafeInteger(value.detectedAt) && Object.keys(value).length === 5) ||
 		(isPositiveSafeInteger(value.approvedAt) && Object.keys(value).length === 4)
 	);
-	return value.mode === "workspace_write" && value.backend === "landlock" && value.enforcement === "full" &&
-		isPositiveSafeInteger(value.abi) && value.abi >= 5 && typeof value.launcherVersion === "string" &&
-		/^[1-9]\d*$/.test(value.launcherVersion) && typeof value.sandboxRoot === "string" &&
-		isCanonicalRemoteSandboxRoot(value.sandboxRoot) && Object.keys(value).length === 6;
+	if (value.mode !== "workspace_write" || value.enforcement !== "full" ||
+		typeof value.sandboxRoot !== "string" || !isCanonicalRemoteSandboxRoot(value.sandboxRoot)) return false;
+	if (value.backend === "landlock") return isPositiveSafeInteger(value.abi) && value.abi >= 5 &&
+		typeof value.launcherVersion === "string" && /^[1-9]\d*$/.test(value.launcherVersion) &&
+		Object.keys(value).length === 6;
+	return value.backend === "bubblewrap" && typeof value.bubblewrapVersion === "string" &&
+		/^[0-9]+\.[0-9]+\.[0-9]+$/.test(value.bubblewrapVersion) && Object.keys(value).length === 5;
 }
 
 function isSnapshot(value: unknown): value is TerminalSnapshotV1 {

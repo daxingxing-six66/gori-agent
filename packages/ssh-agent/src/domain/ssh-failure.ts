@@ -35,6 +35,7 @@ export type SshFailurePhase =
 
 export type SshFailureCode =
 	| "sandbox_unavailable"
+	| "sandbox_bubblewrap_not_installed"
 	| "sandbox_confirmation_missing"
 	| "sandbox_launcher_missing"
 	| "sandbox_launcher_upload_failed"

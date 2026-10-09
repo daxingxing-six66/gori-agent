@@ -152,7 +152,9 @@ function toolResult(result: TerminalInteractionResult, sandbox: TerminalSandboxF
 }
 
 function sandboxSummary(sandbox: TerminalSandboxFacts): string {
-	if (sandbox.mode === "workspace_write") return `Terminal sandbox: Landlock ABI ${sandbox.abi}; writable root ${sandbox.sandboxRoot}.`;
+	if (sandbox.mode === "workspace_write") return sandbox.backend === "landlock"
+		? `Terminal sandbox: Landlock ABI ${sandbox.abi}; writable root ${sandbox.sandboxRoot}.`
+		: `Terminal sandbox: Bubblewrap ${sandbox.bubblewrapVersion}; writable root ${sandbox.sandboxRoot}.`;
 	return "source" in sandbox
 		? "Terminal sandbox: Landlock unavailable; SSH account permissions apply without filesystem confinement."
 		: `Terminal sandbox: Full Access confirmed ${new Date(sandbox.approvedAt).toISOString()}.`;

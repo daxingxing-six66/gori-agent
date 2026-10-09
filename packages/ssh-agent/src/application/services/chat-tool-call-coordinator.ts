@@ -36,6 +36,7 @@ export class ChatToolCallCoordinator {
 			toolCallId: input.toolCallId,
 			toolName: input.toolName,
 			args: input.args,
+			signal,
 		});
 		if (prepared.kind === "allow") return undefined;
 		if (prepared.kind === "defer_to_tool") {
@@ -50,8 +51,8 @@ export class ChatToolCallCoordinator {
 				run: input.run,
 				assistantMessageId: input.assistantMessageId,
 				toolCallId: input.toolCallId,
-				toolName: input.toolName,
-				description: `Tool ${input.toolName} requests permission to execute. Continue?`,
+				toolName: prepared.approvalToolName ?? input.toolName,
+				description: `Tool ${prepared.approvalToolName ?? input.toolName} requests permission to execute. Continue?`,
 				descriptionMessage: prepared.descriptionMessage ?? toolExecutionApprovalMessage(input.toolName),
 				autoApprove: prepared.autoApprove,
 			},

@@ -8,6 +8,7 @@ import { ChatToolAuthorizationPolicy } from "../src/application/services/chat-to
 import { ChatToolCallCoordinator } from "../src/application/services/chat-tool-call-coordinator.ts";
 import { CommandOperationService } from "../src/application/services/command-operation-service.ts";
 import { RemoteSandboxApprovalStore } from "../src/application/services/remote-sandbox-approval-store.ts";
+import { createRemoteServerCallTool } from "../src/application/tools/remote-server-call-tool.ts";
 import type { RemoteSandboxProvider } from "../src/application/services/remote-sandbox-provider.ts";
 import type { ExecuteRemoteCommandInput, UploadRemoteFileInput } from "../src/application/ssh-channel-broker.ts";
 import type { ChatRun } from "../src/domain/chat.ts";
@@ -226,7 +227,8 @@ describe("Remote launcher distribution and capability", () => {
 });
 const disposers: Array<() => void> = [];
 afterEach(() => { for (const dispose of disposers.splice(0)) dispose(); });
-function operationFixture(options: { sandbox?: RemoteSandboxProvider; noProvider?: boolean; databasePath?: string } = {}) {
+function operationFixture(options: { sandbox?: RemoteSandboxProvider; noProvider?: boolean; databasePath?: string;
+ remoteRoute?: "unavailable" | "outside" } = {}) {
  const db = openSshAgentDatabase(options.databasePath ?? ":memory:");
  db.exec(`INSERT INTO workspaces (id,display_name,environment,hostname,port,default_cwd,remote_default_cwd,connect_timeout_ms,keepalive_interval_ms,keepalive_max_count,revision,created_at,updated_at) VALUES ('w','test','development','example.test',22,'/','/opt/app',1000,1000,3,1,1,1);
  INSERT INTO credentials (id,workspace_id,display_name,type,remote_user,is_active,auth_version,revision,created_at,updated_at) VALUES ('c','w','test','password','test',1,1,1,1,1);
@@ -259,6 +261,10 @@ function operationFixture(options: { sandbox?: RemoteSandboxProvider; noProvider
  const run: ChatRun = { id: "run", sessionId: "s", workspaceId: "w", requestId: "req", providerId: "p", modelId: "m", thinkingLevel: "off", serverInteractionMode: "command", terminalSessionId: null, status: "running", createdAt: 1, updatedAt: 1 };
  const policy = new ChatToolAuthorizationPolicy({ sessions, sandboxApprovals: approvals,
   terminalInteractions: { preflightSubmit: vi.fn(), approve: vi.fn(), reject: vi.fn() },
+  ...(options.remoteRoute === undefined ? {} : { assessRemoteSandbox: async () => ({ target,
+   route: { mode: "full_access" as const,
+    reason: options.remoteRoute === "outside" ? "write_path_outside_sandbox" as const : "sandbox_unavailable" as const,
+    details: options.remoteRoute === "outside" ? "Declared path /etc/app is outside the writable roots" : "No backend" } }) }),
   preflightRemoteGuard: async () => ({ allowed: !blocked }) });
  return { db, broker, guards, service, sandbox, approvals, repository, policy, run, dispose, block: () => { blocked = true; } };
 }
@@ -297,7 +303,7 @@ describe("Command execution and one-shot authorization", () => {
 			["none carrying Landlock ABI", { mode: "workspace_write", backend: "none", enforcement: "none", abi: 5, commandMayHaveRun: false }],
 			["Full Access carrying root", { mode: "full_access", backend: "none", enforcement: "none", sandboxRoot: "/opt/app", commandMayHaveRun: true }],
 			["Full Access claiming denial", { mode: "full_access", backend: "none", enforcement: "none", commandMayHaveRun: true, denialSuspected: true }],
-			["unimplemented backend", { mode: "workspace_write", backend: "bubblewrap", enforcement: "full", sandboxRoot: "/opt/app", commandMayHaveRun: true }],
+			["Bubblewrap without version", { mode: "workspace_write", backend: "bubblewrap", enforcement: "full", sandboxRoot: "/opt/app", commandMayHaveRun: true }],
 		] as const).map(([name, facts]) => [name, JSON.stringify(facts)] as const),
 	] as const)("rejects invalid persisted sandbox facts: %s", async (_name, json) => {
 		const f = operationFixture();
@@ -311,6 +317,8 @@ describe("Command execution and one-shot authorization", () => {
 		["failed", { mode: "full_access", backend: "none", enforcement: "none", commandMayHaveRun: true, denialSuspected: false }],
 		["running", { mode: "workspace_write", backend: "landlock", enforcement: "none", abi: 5, launcherVersion: "3", sandboxRoot: "/opt/app", commandMayHaveRun: false }],
 		["uncertain", { mode: "workspace_write", backend: "landlock", enforcement: "none", abi: 5, launcherVersion: "3", sandboxRoot: "/opt/app", commandMayHaveRun: true }],
+		["running", { mode: "workspace_write", backend: "bubblewrap", enforcement: "full",
+			bubblewrapVersion: "0.12.0", sandboxRoot: "/opt/app", commandMayHaveRun: true }],
 	] as const)("preserves historical %s sandbox facts at the SQLite boundary", async (status, facts) => {
 		const f = operationFixture();
 		const result = await f.service.submit({ toolCallId: "tool", sessionId: "s", command: "echo x" });
@@ -408,6 +416,55 @@ describe("Command execution and one-shot authorization", () => {
   expect((await f.service.submit(fullInput)).operation).toMatchObject({ status: "completed", sandbox: { mode: "full_access", enforcement: "none", backend: "none" } });
   expect((await f.service.submit(fullInput)).operation.failure?.code).toBe("sandbox_approval_required"); expect(f.broker.execute).toHaveBeenCalledOnce();
  });
+	it("keeps both automatic and manually approved ordinary commands sandboxed", async () => {
+		const f = operationFixture();
+		const approval = vi.fn(async (input: { autoApprove: boolean }) => ({
+			approved: true as const, source: input.autoApprove ? "auto" as const : "user" as const,
+		}));
+		const coordinator = new ChatToolCallCoordinator({ authorization: f.policy, approvals: { request: approval } });
+		const tool = createRemoteServerCallTool({ sessionId: "s", agentRunId: "run", operations: f.service,
+			sandboxApprovals: f.approvals });
+		const command = "cat /etc/os-release";
+
+		await coordinator.beforeToolCall({ run: f.run, toolCallId: "automatic", toolName: "remote_server_call",
+			assistantMessageId: "message-1", args: { command }, onApprovalRejection: vi.fn() });
+		await expect(tool.execute("automatic", { command })).resolves.toMatchObject({
+			details: { status: "completed", sandbox: { mode: "workspace_write", backend: "landlock", enforcement: "full" } },
+		});
+		expect(f.broker.execute).toHaveBeenCalledOnce();
+
+		f.db.prepare("UPDATE sessions SET auto_audit = 0 WHERE id = 's'").run();
+		await coordinator.beforeToolCall({ run: f.run, toolCallId: "manual", toolName: "remote_server_call",
+			assistantMessageId: "message-2", args: { command }, onApprovalRejection: vi.fn() });
+		expect(approval).toHaveBeenLastCalledWith(expect.objectContaining({ autoApprove: false,
+			descriptionMessage: { key: "approval.remote_sandboxed_command" } }), undefined);
+		await expect(tool.execute("manual", { command })).resolves.toMatchObject({
+			details: { status: "completed", sandbox: { mode: "workspace_write", backend: "landlock", enforcement: "full" } },
+		});
+		expect(f.sandbox.prepare).toHaveBeenCalledTimes(2);
+		expect(f.broker.execute).toHaveBeenCalledTimes(2);
+		expect(f.approvals.approvedJustification({ agentRunId: "run", toolCallId: "manual", sessionId: "s", command }))
+			.toBeUndefined();
+	});
+	it("runs a marked sandbox exception only after human approval even when autoAudit is enabled", async () => {
+		const f = operationFixture({ remoteRoute: "outside" });
+		const approval = vi.fn(async () => ({ approved: true as const, source: "user" as const }));
+		const coordinator = new ChatToolCallCoordinator({ authorization: f.policy, approvals: { request: approval } });
+		const tool = createRemoteServerCallTool({ sessionId: "s", agentRunId: "run", operations: f.service,
+			sandboxApprovals: f.approvals });
+		const command = "write /etc/app";
+		await coordinator.beforeToolCall({ run: f.run, toolCallId: "exception", toolName: "remote_server_call",
+			assistantMessageId: "message", args: { command, write_paths: ["/etc/app"] }, onApprovalRejection: vi.fn() });
+		expect(approval).toHaveBeenCalledWith(expect.objectContaining({
+			toolName: "remote_sandbox_exception", autoApprove: false,
+			descriptionMessage: { key: "approval.remote_sandbox_exception",
+				values: { reason: "Declared path /etc/app is outside the writable roots" } },
+		}), undefined);
+		await expect(tool.execute("exception", { command, write_paths: ["/etc/app"] })).resolves.toMatchObject({
+			details: { sandbox: { mode: "full_access", backend: "none", enforcement: "none" } },
+		});
+		expect(f.broker.execute).toHaveBeenCalledOnce();
+	});
  it("rejects full access without approval and after human rejection", async () => {
   const f = operationFixture(); const prepared = await f.policy.prepare({ run: f.run, toolCallId: "tool", toolName: "remote_server_call", args: { command: request.command, sandbox_permissions: "full_access", justification: request.justification } });
   f.policy.recordDecision(prepared, false);

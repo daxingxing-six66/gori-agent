@@ -1,3 +1,5 @@
+import type { SshTargetSnapshot } from "../../domain/ssh-target.ts";
+
 export interface FullAccessRequest {
 	agentRunId: string;
 	toolCallId: string;
@@ -10,20 +12,30 @@ export interface FullAccessRequest {
 
 /** Only the human approval path grants access. A grant authorizes one exact request. */
 export class RemoteSandboxApprovalStore {
-	readonly #grants = new Map<string, Map<string, string>>();
+	readonly #grants = new Map<string, Map<string, { signature: string; justification: string; target?: string }>>();
 
-	approve(request: FullAccessRequest): void {
-		const runGrants = this.#grants.get(request.agentRunId) ?? new Map<string, string>();
-		runGrants.set(request.toolCallId, this.signature(request));
+	approve(request: FullAccessRequest, target?: SshTargetSnapshot): void {
+		const runGrants = this.#grants.get(request.agentRunId) ?? new Map<string, { signature: string; justification: string; target?: string }>();
+		runGrants.set(request.toolCallId, { signature: this.signature(request), justification: request.justification,
+			...(target === undefined ? {} : { target: targetSignature(target) }) });
 		this.#grants.set(request.agentRunId, runGrants);
 	}
 
-	consume(request: FullAccessRequest): boolean {
+	/** Lets the Tool select Full Access after approval; dispatch still consumes and verifies the grant. */
+	approvedJustification(request: Omit<FullAccessRequest, "justification">): string | undefined {
+		const grant = this.#grants.get(request.agentRunId)?.get(request.toolCallId);
+		if (!grant) return undefined;
+		return grant.signature === this.signature({ ...request, justification: grant.justification })
+			? grant.justification : undefined;
+	}
+
+	consume(request: FullAccessRequest, actualTarget?: SshTargetSnapshot): boolean {
 		const runGrants = this.#grants.get(request.agentRunId);
 		const grant = runGrants?.get(request.toolCallId);
 		runGrants?.delete(request.toolCallId);
 		if (runGrants?.size === 0) this.#grants.delete(request.agentRunId);
-		return grant !== undefined && grant === this.signature(request);
+		return grant !== undefined && grant.signature === this.signature(request) &&
+			(grant.target === undefined || (actualTarget !== undefined && grant.target === targetSignature(actualTarget)));
 	}
 
 	clearRun(agentRunId: string): void {
@@ -33,4 +45,10 @@ export class RemoteSandboxApprovalStore {
 	private signature(request: FullAccessRequest): string {
 		return JSON.stringify([request.sessionId, request.command, request.cwd, request.timeoutMs, request.justification]);
 	}
+}
+
+function targetSignature(target: SshTargetSnapshot): string {
+	return JSON.stringify([target.workspaceId, target.workspaceRevision, target.hostname, target.port,
+		target.hostKeyAlgorithm, target.hostKeyFingerprint, target.credentialId, target.credentialAuthVersion,
+		target.remoteUser, target.defaultCwd]);
 }

@@ -43,6 +43,19 @@ describe("remote sandbox backend selection", () => {
 		expect(() => new RemoteSandboxCoordinator([])).toThrow("At least one remote sandbox backend must be configured");
 	});
 
+	it("reports a missing Bubblewrap installation only after Landlock is unavailable", async () => {
+		const first = backend(async () => { throw sandboxFailure("sandbox_unavailable", "No Landlock"); });
+		first.probe = vi.fn(async () => { throw sandboxFailure("sandbox_unavailable", "No Landlock"); });
+		const second = backend(async () => { throw sandboxFailure("sandbox_bubblewrap_not_installed", "Missing Bubblewrap"); });
+		second.probe = vi.fn(async () => { throw sandboxFailure("sandbox_bubblewrap_not_installed", "Missing Bubblewrap"); });
+		const sandbox = new RemoteSandboxCoordinator([first, second]);
+		await expect(sandbox.probe(target, new AbortController().signal))
+			.rejects.toMatchObject({ failure: { code: "sandbox_bubblewrap_not_installed" } });
+		await expect(sandbox.prepare({ target, cwd: "/srv/app", command: "true",
+			policy: { mode: "workspace_write" }, signal: new AbortController().signal }))
+			.rejects.toMatchObject({ failure: { code: "sandbox_bubblewrap_not_installed" } });
+	});
+
 	it("does not allow Terminal fallback if any attempted backend rejects the target platform or architecture", async () => {
 		const first = backend(async () => execution);
 		first.prepareTerminal = vi.fn(async () => { throw sandboxFailure("sandbox_unsupported_architecture", "Unsupported CPU"); });

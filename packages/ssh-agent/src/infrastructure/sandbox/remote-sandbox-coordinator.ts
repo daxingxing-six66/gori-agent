@@ -5,7 +5,7 @@ import type {
 	RemoteSandboxBackend,
 	RemoteSandboxProvider,
 } from "../../application/services/remote-sandbox-provider.ts";
-import { isSandboxBackendUnavailable, isTerminalSandboxFallbackEligible } from "../../domain/remote-sandbox.ts";
+import { isSandboxBackendUnavailable, isGenericTerminalSandboxFailure } from "../../domain/remote-sandbox.ts";
 import type { SshTargetSnapshot } from "../../domain/ssh-target.ts";
 import { wrapRemoteCommand } from "./shell-command.ts";
 
@@ -39,7 +39,7 @@ export class RemoteSandboxCoordinator implements RemoteSandboxProvider {
 
 	async #firstAvailable<T>(attempt: (backend: RemoteSandboxBackend) => Promise<T>, signal: AbortSignal, terminal = false): Promise<T> {
 		let unavailable: unknown;
-		let fallbackIneligible: unknown;
+		let specificTerminalFailure: unknown;
 		for (const backend of this.#backends) {
 			signal.throwIfAborted();
 			try {
@@ -47,10 +47,10 @@ export class RemoteSandboxCoordinator implements RemoteSandboxProvider {
 			} catch (error) {
 				if (!isSandboxBackendUnavailable(error)) throw error;
 				unavailable = error;
-				if (terminal && !isTerminalSandboxFallbackEligible(error)) fallbackIneligible ??= error;
+				if (terminal && !isGenericTerminalSandboxFailure(error)) specificTerminalFailure ??= error;
 			}
 		}
 		signal.throwIfAborted();
-		throw fallbackIneligible ?? unavailable;
+		throw specificTerminalFailure ?? unavailable;
 	}
 }

@@ -13,6 +13,7 @@ export function useTerminalMode(sessionId: string) {
 	const [loading, setLoading] = useState(true);
 	const [transition, setTransition] = useState<TerminalModeTransition | null>(null);
 	const [error, setError] = useState<string | null>(null);
+	const [openError, setOpenError] = useState<string | null>(null);
 	const mutating = transition !== null;
 
 	const refresh = useCallback(async (signal?: AbortSignal) => {
@@ -25,6 +26,7 @@ export function useTerminalMode(sessionId: string) {
 		const controller = new AbortController();
 		void Promise.resolve().then(async () => {
 			if (controller.signal.aborted) return;
+			setOpenError(null);
 			setLoading(true);
 			try {
 				await refresh(controller.signal);
@@ -59,11 +61,12 @@ export function useTerminalMode(sessionId: string) {
 		if (mutating) return;
 		setTransition("connecting");
 		setError(null);
+		setOpenError(null);
 		try {
 			await terminalApi.open(sessionId, crypto.randomUUID());
 			await refresh();
 		} catch (requestError) {
-			setError(errorMessage(requestError));
+			setOpenError(errorMessage(requestError));
 		} finally {
 			setTransition(null);
 		}
@@ -84,5 +87,5 @@ export function useTerminalMode(sessionId: string) {
 		}
 	}, [mutating, refresh, sessionId, status?.terminal]);
 
-	return { status, loading, mutating, transition, error, setError, open, close, refresh };
+	return { status, loading, mutating, transition, error, openError, setError, setOpenError, open, close, refresh };
 }

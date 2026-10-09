@@ -188,9 +188,10 @@ describe("TerminalSessionService", () => {
 			const repeated = await service.open({ sessionId: "session-1", requestId: "open-1" });
 			expect(repeated.id).toBe(opening.id);
 			await new Promise<void>((resolve) => setImmediate(resolve));
-			expect(service.get("session-1")).toMatchObject({ status: "active", connectionGeneration: 2 });
-			expect(broker.openCount).toBe(1);
-			expect(lifecycle.getUsage("session-1").byKind.terminal_session).toBe(1);
+				expect(service.get("session-1")).toMatchObject({ status: "active", connectionGeneration: 2 });
+				expect(broker.openCount).toBe(1);
+				expect(broker.lastLaunch).toMatchObject({ kind: "sandboxed_exec" });
+				expect(lifecycle.getUsage("session-1").byKind.terminal_session).toBe(1);
 
 			await service.close({
 				sessionId: "session-1",
@@ -263,24 +264,26 @@ describe("TerminalSessionService", () => {
 		}
 	});
 
-	it.each(["sandbox_unavailable", "sandbox_partial_enforcement"] as const)(
-		"automatically opens an unconfined PTY only for capability verdict %s", async (code) => {
+	it.each(["sandbox_unavailable", "sandbox_partial_enforcement", "sandbox_bubblewrap_not_installed"] as const)(
+		"fails closed without opening a PTY when sandbox capability reports %s", async (code) => {
 			const database = createDatabase();
 			const broker = new FakeBroker();
+			const lifecycle = new SessionLifecycleCoordinator();
 			const service = new TerminalSessionService({ sessions: new SqliteSessionRepository(database),
 				terminals: new SqliteTerminalRepository(database), targets: { resolve: async () => target }, broker,
-				sandbox: { ...terminalTestSandbox, prepareTerminal: async () => { throw sandboxFailure(code, "Landlock unavailable"); } },
-				lifecycle: new SessionLifecycleCoordinator(), clock: { now: () => 100 },
+				sandbox: { ...terminalTestSandbox, prepareTerminal: async () => { throw sandboxFailure(code, "No usable sandbox backend"); } },
+				lifecycle, clock: { now: () => 100 },
 				ids: new SequentialIds(), hasActiveChatRun: async () => false });
 			try {
-				const opening = await service.open({ sessionId: "session-1", requestId: `fallback-${code}` });
+				const opening = await service.open({ sessionId: "session-1", requestId: `failed-${code}` });
 				await new Promise<void>((resolve) => setImmediate(resolve));
-				expect(service.get("session-1")).toMatchObject({ status: "active", requestedSandboxMode: "workspace_write",
-					sandbox: { mode: "full_access", source: "sandbox_unavailable", detectedAt: 100 } });
-				expect(broker.lastLaunch).toEqual({ kind: "login_shell" });
-				expect((await service.open({ sessionId: "session-1", requestId: `fallback-${code}` })).id).toBe(opening.id);
-				expect(broker.openCount).toBe(1);
-		} finally { await service.shutdown(); database.close(); }
+				expect(service.get("session-1")).toMatchObject({ status: "failed", requestedSandboxMode: "workspace_write",
+					sandbox: null, failureCode: code, closeReason: "open_failed" });
+				expect((await service.open({ sessionId: "session-1", requestId: `failed-${code}` })).id).toBe(opening.id);
+				expect(broker.openCount).toBe(0);
+				expect(broker.lastLaunch).toBeNull();
+				expect(lifecycle.getUsage("session-1").byKind.terminal_session).toBe(0);
+			} finally { await service.shutdown(); database.close(); }
 		},
 	);
 

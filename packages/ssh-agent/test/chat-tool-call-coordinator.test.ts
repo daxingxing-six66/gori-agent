@@ -117,6 +117,18 @@ describe("ChatToolCallCoordinator", () => {
 		expect(context.authorization.recordDecision).toHaveBeenCalledWith(prepared, true);
 	});
 
+	it("shows the sandbox exception as a distinct approval tool without changing the called tool", async () => {
+		const context = createContext({ kind: "approval", autoApprove: false,
+			approvalToolName: "remote_sandbox_exception" });
+		await context.coordinator.beforeToolCall({ ...beforeInput(), toolName: "remote_server_call" });
+		expect(context.approvals.request).toHaveBeenCalledWith(
+			expect.objectContaining({ toolName: "remote_sandbox_exception" }), undefined,
+		);
+		expect(context.authorization.prepare).toHaveBeenCalledWith(
+			expect.objectContaining({ toolName: "remote_server_call" }),
+		);
+	});
+
 	it("stops automatic continuation only for user rejection and timeout", async () => {
 		const userRejected = createContext(
 			{ kind: "approval", autoApprove: false },

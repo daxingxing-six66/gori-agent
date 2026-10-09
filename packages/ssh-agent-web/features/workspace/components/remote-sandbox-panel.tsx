@@ -38,7 +38,11 @@ export function RemoteSandboxPanel({ workspace }: { workspace: Workspace }) {
 				{intl.formatMessage({ id: checking ? "workspace.sandbox.checking" : "workspace.sandbox.check" })}
 			</button>
 		</div>
-		<p role="status" className="mt-3 text-[11px]">{intl.formatMessage({ id: error ? "workspace.sandbox.unavailable" : result ? "workspace.sandbox.full" : "workspace.sandbox.notProbed" })}{result ? ` · ABI ${result.abi}` : ""}</p>
+		<p role="status" className="mt-3 text-[11px]">{intl.formatMessage({ id: error ? "workspace.sandbox.unavailable" :
+			result?.backend === "landlock" ? "workspace.sandbox.full" :
+			result?.backend === "bubblewrap" ? "workspace.sandbox.bubblewrap" : "workspace.sandbox.notProbed" })}
+			{result?.backend === "landlock" ? ` · ABI ${result.abi}` :
+				result?.backend === "bubblewrap" ? ` · ${result.bubblewrapVersion}` : ""}</p>
 		<p className="mt-2 break-all font-mono text-[11px]">{result?.sandboxRoot ?? (isRemoteSandboxRoot(workspace.remoteDefaultCwd ?? "/") ? workspace.remoteDefaultCwd : intl.formatMessage({ id: "workspace.sandbox.notConfigured" }))}</p>
 		{error ? <p role="alert" className="mt-2 text-[11px] text-rose-600">{error}</p> : null}
 		{checkedAt ? <p className="mt-2 text-[10px] text-[var(--text-secondary)]">{intl.formatMessage({ id: "workspace.sandbox.checkedAt" }, { time: new Date(checkedAt).toLocaleString(intl.locale) })}</p> : null}

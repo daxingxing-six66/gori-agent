@@ -12,10 +12,12 @@ export interface RemoteSandboxPolicy {
 
 export interface RemoteSandboxFacts {
 	mode: RemoteSandboxMode;
-	backend: "landlock" | "none";
+	backend: "landlock" | "bubblewrap" | "none";
 	enforcement: "full" | "partial" | "none";
 	abi?: number;
 	launcherVersion?: string;
+	/** Installed Bubblewrap version, when Bubblewrap was selected. */
+	bubblewrapVersion?: string;
 	sandboxRoot?: string;
 	/** A stderr hint, never proof of a kernel denial. */
 	denialSuspected?: boolean;
@@ -31,8 +33,8 @@ export function isSandboxBackendUnavailable(error: unknown): error is SshAgentEr
 		error.failure.code === "sandbox_unsupported_architecture";
 }
 
-/** Automatic Terminal fallback is limited to a Linux backend that explicitly lacks the required protection. */
-export function isTerminalSandboxFallbackEligible(error: unknown): boolean {
+/** Prefer a specific Terminal failure, such as missing Bubblewrap, over generic backend unavailability. */
+export function isGenericTerminalSandboxFailure(error: unknown): boolean {
 	return error instanceof SshAgentError &&
 		(error.failure.code === "sandbox_unavailable" || error.failure.code === "sandbox_partial_enforcement");
 }

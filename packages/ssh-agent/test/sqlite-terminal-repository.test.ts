@@ -266,6 +266,14 @@ describe("SqliteTerminalRepository", () => {
 					launcherVersion: "3", sandboxRoot: "/opt/app" }));
 			expect(repository.findSession("terminal-1")?.sandbox).toEqual({ mode: "workspace_write", backend: "landlock", enforcement: "full",
 				abi: 5, launcherVersion: "3", sandboxRoot: "/opt/app" });
+			const bubblewrap = { mode: "workspace_write", backend: "bubblewrap", enforcement: "full",
+				bubblewrapVersion: "0.12.0", sandboxRoot: "/opt/app" };
+			database.prepare("UPDATE terminal_sessions SET sandbox_json = ? WHERE id = 'terminal-1'")
+				.run(JSON.stringify(bubblewrap));
+			expect(repository.findSession("terminal-1")?.sandbox).toEqual(bubblewrap);
+			database.prepare("UPDATE terminal_sessions SET sandbox_json = ? WHERE id = 'terminal-1'")
+				.run(JSON.stringify({ ...bubblewrap, abi: 5 }));
+			expect(() => repository.findSession("terminal-1")).toThrow("Invalid persisted Terminal sandbox facts");
 			database.prepare("UPDATE terminal_sessions SET sandbox_json = ? WHERE id = 'terminal-1'")
 				.run(JSON.stringify({ mode: "workspace_write", backend: "landlock", enforcement: "full", abi: 5,
 					launcherVersion: "3", sandboxRoot: "/opt/app/" }));
@@ -283,7 +291,8 @@ describe("SqliteTerminalRepository", () => {
 		try {
 			database.exec("CREATE TABLE ssh_agent_schema_migrations(version INTEGER PRIMARY KEY, applied_at INTEGER NOT NULL) STRICT");
 			const recorded = database.prepare("INSERT INTO ssh_agent_schema_migrations VALUES (?, 1)");
-			for (let version = 1; version <= 19; version++) recorded.run(version);
+			// Exercise v20 in isolation; later deployment migrations require full historical tables.
+			for (let version = 1; version <= 26; version++) if (version !== 20) recorded.run(version);
 			database.exec("CREATE TABLE terminal_sessions (id TEXT PRIMARY KEY, status TEXT NOT NULL) STRICT");
 			database.exec("CREATE TABLE workspaces (id TEXT PRIMARY KEY, remote_default_cwd TEXT NOT NULL DEFAULT '/', remote_sandbox_root TEXT) STRICT");
 			database.exec("INSERT INTO terminal_sessions VALUES ('legacy', 'closed')");

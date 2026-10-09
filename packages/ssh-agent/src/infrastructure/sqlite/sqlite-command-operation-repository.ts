@@ -218,17 +218,17 @@ function parseSandboxFacts(json: string): RemoteSandboxFacts {
 	const value: unknown = JSON.parse(json);
 	if (value === null || typeof value !== "object" || Array.isArray(value)) throw new Error("Invalid stored command sandbox facts");
 	const facts = value as Record<string, unknown>;
-	const { mode, backend, enforcement, abi, launcherVersion, sandboxRoot, denialSuspected, commandMayHaveRun } = facts;
+	const { mode, backend, enforcement, abi, launcherVersion, bubblewrapVersion, sandboxRoot, denialSuspected, commandMayHaveRun } = facts;
 	const invalid = () => new Error("Invalid stored command sandbox facts");
 	if ((mode !== "workspace_write" && mode !== "full_access") ||
-		(backend !== "landlock" && backend !== "none") ||
+		(backend !== "landlock" && backend !== "bubblewrap" && backend !== "none") ||
 		(enforcement !== "full" && enforcement !== "none") ||
 		typeof commandMayHaveRun !== "boolean" ||
 		(denialSuspected !== undefined && typeof denialSuspected !== "boolean")) throw invalid();
 
 	if (backend === "none") {
 		// Older queued and pre-dispatch failures have no backend facts. Full Access also uses none.
-		if (enforcement !== "none" || abi !== undefined || launcherVersion !== undefined || sandboxRoot !== undefined ||
+		if (enforcement !== "none" || abi !== undefined || launcherVersion !== undefined || bubblewrapVersion !== undefined || sandboxRoot !== undefined ||
 			(mode === "workspace_write" && (commandMayHaveRun || denialSuspected !== undefined)) ||
 			(mode === "full_access" && denialSuspected === true) ||
 			!onlyKeys(facts, ["mode", "backend", "enforcement", "commandMayHaveRun", "denialSuspected"])) throw invalid();
@@ -237,14 +237,21 @@ function parseSandboxFacts(json: string): RemoteSandboxFacts {
 	}
 
 	// The launcher has been prepared even when the command ended before confirmation.
-	if (mode !== "workspace_write" || backend !== "landlock" ||
-		(typeof abi !== "number" || !Number.isSafeInteger(abi) || abi < GORI_MIN_LANDLOCK_ABI) ||
-		(typeof launcherVersion !== "string" || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(launcherVersion)) ||
+	if (mode !== "workspace_write" ||
+		(backend === "landlock"
+			? (typeof abi !== "number" || !Number.isSafeInteger(abi) || abi < GORI_MIN_LANDLOCK_ABI ||
+				typeof launcherVersion !== "string" || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(launcherVersion) ||
+				bubblewrapVersion !== undefined)
+			: (abi !== undefined || launcherVersion !== undefined || typeof bubblewrapVersion !== "string" ||
+				!/^[0-9]+\.[0-9]+\.[0-9]+$/.test(bubblewrapVersion))) ||
 		(typeof sandboxRoot !== "string" || !canonicalRemoteSandboxRoot(sandboxRoot)) ||
 		(enforcement === "full" && !commandMayHaveRun) ||
 		(enforcement === "none" && denialSuspected !== undefined) ||
-		!onlyKeys(facts, ["mode", "backend", "enforcement", "abi", "launcherVersion", "sandboxRoot", "commandMayHaveRun", "denialSuspected"])) throw invalid();
-	return { mode, backend, enforcement, abi, launcherVersion, sandboxRoot, commandMayHaveRun,
+		!onlyKeys(facts, ["mode", "backend", "enforcement", "abi", "launcherVersion", "bubblewrapVersion", "sandboxRoot", "commandMayHaveRun", "denialSuspected"])) throw invalid();
+	return { mode, backend, enforcement,
+		...(backend === "landlock" ? { abi: Number(abi), launcherVersion: String(launcherVersion) }
+			: { bubblewrapVersion: String(bubblewrapVersion) }),
+		sandboxRoot: String(sandboxRoot), commandMayHaveRun,
 		...(denialSuspected === undefined ? {} : { denialSuspected }) };
 }
 

@@ -463,6 +463,11 @@ function readSandboxFacts(value: unknown): TerminalSandboxFacts | null {
 		canonicalRemoteSandboxRoot(fact.sandboxRoot) && Object.keys(fact).length === 6)
 		return { mode: "workspace_write", backend: "landlock", enforcement: "full", abi: Number(fact.abi),
 			launcherVersion: fact.launcherVersion, sandboxRoot: fact.sandboxRoot };
+	if (fact.mode === "workspace_write" && fact.backend === "bubblewrap" && fact.enforcement === "full" &&
+		typeof fact.bubblewrapVersion === "string" && /^[0-9]+\.[0-9]+\.[0-9]+$/.test(fact.bubblewrapVersion) &&
+		typeof fact.sandboxRoot === "string" && canonicalRemoteSandboxRoot(fact.sandboxRoot) && Object.keys(fact).length === 5)
+		return { mode: "workspace_write", backend: "bubblewrap", enforcement: "full",
+			bubblewrapVersion: fact.bubblewrapVersion, sandboxRoot: fact.sandboxRoot };
 	throw new Error("Invalid persisted Terminal sandbox facts");
 }
 
