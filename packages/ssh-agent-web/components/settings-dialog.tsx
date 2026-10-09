@@ -78,8 +78,8 @@ export function SettingsDialog() {
 			<div ref={dialogRef} className="settings-dialog relative" role="dialog" aria-modal="true" aria-labelledby="settings-dialog-title">
 				<aside className="settings-dialog-sidebar">
 					<div className="flex items-center gap-2.5 px-3 pb-6 pt-1">
-						<span className="grid h-8 w-8 place-items-center rounded-[10px] bg-[var(--accent-soft)] text-[var(--accent-ink)]"><Settings2 size={16} /></span>
-						<h2 id="settings-dialog-title" className="text-[14px] font-semibold tracking-[-0.02em] text-[var(--ink)]">{intl.formatMessage({ id: "settings.title" })}</h2>
+						<Settings2 size={17} className="text-[var(--accent-ink)]" aria-hidden="true" />
+						<h2 id="settings-dialog-title" className="text-[16px] font-semibold tracking-[-0.02em] text-[var(--ink)]">{intl.formatMessage({ id: "settings.title" })}</h2>
 					</div>
 					<nav className="space-y-1" aria-label={intl.formatMessage({ id: "settings.categories" })}>
 						<button

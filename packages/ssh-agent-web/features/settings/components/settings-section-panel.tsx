@@ -36,8 +36,8 @@ export function SettingsSectionPanel({
 						</button>
 					) : null}
 					<div className="min-w-0">
-						<p className="text-[15px] font-semibold tracking-[-0.02em] text-[var(--ink)]">{title}</p>
-						<p className="mt-1.5 max-w-[520px] text-[10px] leading-5 text-[var(--text-muted)]">{description}</p>
+						<h2 className="text-[16px] font-semibold tracking-[-0.02em] text-[var(--ink)]">{title}</h2>
+						<p className="mt-1.5 max-w-[520px] text-[12px] leading-5 text-[var(--text-muted)]">{description}</p>
 					</div>
 				</div>
 				<button
