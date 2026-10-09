@@ -1,3 +1,8 @@
+import { spawnSync } from "node:child_process";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { describe, expect, it, vi } from "vitest";
 import { createNodeHttpServer } from "../src/server/node-http-server.ts";
 import { createSshAgentServer } from "../src/server/ssh-agent-server.ts";
@@ -23,6 +28,69 @@ describe("SSH Agent Node HTTP server", () => {
 			expect(await tree.json()).toEqual({ workspaces: [] });
 		} finally {
 			await server.close();
+		}
+	});
+
+	it("prevents another server from recovering a live deployment, then recovers it after shutdown", async () => {
+		const directory = await mkdtemp(join(tmpdir(), "gori-server-owner-"));
+		const databasePath = join(directory, "gori.sqlite");
+		const options = {
+			databasePath,
+			credentialEncryptionKey: new Uint8Array(32).fill(3),
+			host: "127.0.0.1",
+			port: 0,
+			llmModelsFactory: createTestLlmModels,
+		};
+		try {
+			const first = createSshAgentServer(options);
+			try {
+				const address = await first.listen();
+				const database = new DatabaseSync(databasePath);
+				try {
+					insertRunningDeployment(database);
+					expect(() => createSshAgentServer(options)).toThrow("Gori database is already in use");
+					expect(database.prepare("SELECT status FROM deployment_runs WHERE id = 'deploy-1'").get())
+						.toEqual({ status: "running" });
+					expect((await fetch(`${address.origin}/healthz`)).status).toBe(200);
+				} finally { database.close(); }
+			} finally { await first.close(); }
+			const restarted = createSshAgentServer(options);
+			try {
+				await restarted.listen();
+				const database = new DatabaseSync(databasePath);
+				try {
+					expect(database.prepare("SELECT status FROM deployment_runs WHERE id = 'deploy-1'").get())
+						.toEqual({ status: "failed" });
+				} finally { database.close(); }
+			} finally { await restarted.close(); }
+		} finally {
+			await rm(directory, { recursive: true, force: true });
+		}
+	});
+
+	it("keeps ownership across processes and releases it after a failed port bind", async () => {
+		const directory = await mkdtemp(join(tmpdir(), "gori-server-owner-"));
+		const databasePath = join(directory, "gori.sqlite");
+		const occupied = createNodeHttpServer({ host: "127.0.0.1", port: 0, handleRequest: async () => new Response(null) });
+		try {
+			const address = await occupied.listen();
+			const options = {
+				databasePath,
+				credentialEncryptionKey: new Uint8Array(32).fill(3),
+				host: "127.0.0.1",
+				port: address.port,
+				llmModelsFactory: createTestLlmModels,
+			};
+			const failed = createSshAgentServer(options);
+			expect(childCanOwn(databasePath)).toBe(false);
+			await expect(failed.listen()).rejects.toMatchObject({ code: "EADDRINUSE" });
+			expect(childCanOwn(databasePath)).toBe(true);
+			const replacement = createSshAgentServer({ ...options, port: 0 });
+			try { await replacement.listen(); }
+			finally { await replacement.close(); }
+		} finally {
+			await occupied.close();
+			await rm(directory, { recursive: true, force: true });
 		}
 	});
 
@@ -151,3 +219,44 @@ describe("SSH Agent Node HTTP server", () => {
 		}
 	});
 });
+
+function childCanOwn(databasePath: string): boolean {
+	const script = `import { DatabaseSync } from "node:sqlite";
+		const database = new DatabaseSync(process.argv[1]);
+		try { database.exec("PRAGMA busy_timeout = 0; BEGIN EXCLUSIVE"); database.exec("ROLLBACK"); }
+		catch (error) { if (error.errcode === 5) process.exitCode = 1; else { console.error(error); process.exitCode = 2; } }
+		finally { database.close(); }`;
+	const result = spawnSync(process.execPath, ["--input-type=module", "-e", script, `${databasePath}.server-lock.sqlite`]);
+	if (result.error) throw result.error;
+	if (result.status !== 0 && result.status !== 1) throw new Error(`Lock probe failed: ${result.stderr.toString()}`);
+	return result.status === 0;
+}
+
+function insertRunningDeployment(database: DatabaseSync): void {
+	database.exec(`INSERT INTO workspaces (id, display_name, environment, hostname, port, default_cwd,
+		connect_timeout_ms, keepalive_interval_ms, keepalive_max_count, revision, created_at, updated_at)
+		VALUES ('workspace-1', 'test', 'development', 'example.org', 22, '/srv/api', 1000, 1000, 3, 1, 1, 1);
+		INSERT INTO sessions (id, workspace_id, display_name, terminal_context_cursor, revision, created_at, updated_at)
+		VALUES ('session-1', 'workspace-1', 'test', 0, 1, 1, 1);`);
+	const snapshot = {
+		id: "deploy-1", sessionId: "session-1", workspaceId: "workspace-1", agentRunId: "agent-1",
+		status: "running", createdAt: 1, startedAt: 2, updatedAt: 2,
+		plan: {
+			profilePath: "/test/deploy.md", profileHash: "hash", remoteAccess: { mode: "workspace_write" },
+			project: "test", target: { host: "example.org" },
+			targetBinding: { port: 22, hostKeyFingerprint: "SHA256:test", credentialId: "credential-1",
+				credentialAuthVersion: 1, remoteUser: "test", writableRoot: "/srv/api" },
+			module: { id: "api", name: "API" },
+			build: { cwd: "/test", command: "true", artifact: "/test/api.jar" },
+			upload: { remotePath: "/srv/api/api.jar" }, restart: { command: "true" },
+		},
+		stages: {
+			prepare: { status: "success", log: "" }, build: { status: "running", log: "", startedAt: 2 },
+			upload: { status: "pending", log: "" }, restart: { status: "pending", log: "" },
+			verify: { status: "pending", log: "" },
+		},
+	};
+	database.prepare(`INSERT INTO deployment_runs (id, session_id, workspace_id, status, snapshot_json, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?)`).run(snapshot.id, snapshot.sessionId, snapshot.workspaceId, snapshot.status,
+		JSON.stringify(snapshot), snapshot.createdAt, snapshot.updatedAt);
+}

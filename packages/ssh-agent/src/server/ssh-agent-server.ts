@@ -6,6 +6,7 @@ import {
 	type LlmModelsFactory,
 	type SqliteManagementBackend,
 } from "../runtime/create-sqlite-management-backend.ts";
+import { acquireDatabaseOwnership, type DatabaseOwnership } from "./database-ownership.ts";
 import { createNodeHttpServer, type NodeHttpServer, type NodeHttpServerAddress } from "./node-http-server.ts";
 
 export interface CreateSshAgentServerOptions {
@@ -30,27 +31,32 @@ export interface SshAgentServer {
 export function createSshAgentServer(options: CreateSshAgentServerOptions): SshAgentServer {
 	if (options.databasePath !== ":memory:") mkdirSync(dirname(options.databasePath), { recursive: true });
 	if (options.localCwd !== undefined) mkdirSync(options.localCwd, { recursive: true });
-	const backend = createSqliteManagementBackend({
-		databasePath: options.databasePath,
-		credentialEncryptionKey: options.credentialEncryptionKey,
-		llmModelsFactory: options.llmModelsFactory,
-		...(options.localCwd === undefined ? {} : { localCwd: options.localCwd }),
-		...(options.attachmentBaseDir === undefined ? {} : { attachmentBaseDir: options.attachmentBaseDir }),
-		...(options.maxConcurrentOperations === undefined
-			? {}
-			: { maxConcurrentOperations: options.maxConcurrentOperations }),
-	});
+	const ownership = acquireDatabaseOwnership(options.databasePath);
 	try {
+		let backend: SqliteManagementBackend | undefined;
 		const httpServer = createNodeHttpServer({
-			handleRequest: backend.handleRequest,
+			handleRequest: (request) => {
+				if (!backend) throw new Error("SSH Agent backend is not initialized");
+				return backend.handleRequest(request);
+			},
 			host: options.host ?? "127.0.0.1",
 			port: options.port ?? 3001,
 			...(options.allowedOrigins === undefined ? {} : { allowedOrigins: options.allowedOrigins }),
 			...(options.maxRequestBodyBytes === undefined ? {} : { maxRequestBodyBytes: options.maxRequestBodyBytes }),
 		});
-		return new DefaultSshAgentServer(backend, httpServer);
+		backend = createSqliteManagementBackend({
+			databasePath: options.databasePath,
+			credentialEncryptionKey: options.credentialEncryptionKey,
+			llmModelsFactory: options.llmModelsFactory,
+			...(options.localCwd === undefined ? {} : { localCwd: options.localCwd }),
+			...(options.attachmentBaseDir === undefined ? {} : { attachmentBaseDir: options.attachmentBaseDir }),
+			...(options.maxConcurrentOperations === undefined
+				? {}
+				: { maxConcurrentOperations: options.maxConcurrentOperations }),
+		});
+		return new DefaultSshAgentServer(backend, httpServer, ownership);
 	} catch (error) {
-		void backend.close();
+		ownership.release();
 		throw error;
 	}
 }
@@ -61,11 +67,13 @@ class DefaultSshAgentServer implements SshAgentServer {
 	readonly api: SshAgentManagementApi;
 	private readonly backend: SqliteManagementBackend;
 	private readonly httpServer: NodeHttpServer;
+	private readonly ownership: DatabaseOwnership;
 	private state: ServerState = "created";
 
-	constructor(backend: SqliteManagementBackend, httpServer: NodeHttpServer) {
+	constructor(backend: SqliteManagementBackend, httpServer: NodeHttpServer, ownership: DatabaseOwnership) {
 		this.backend = backend;
 		this.httpServer = httpServer;
+		this.ownership = ownership;
 		this.api = backend.api;
 	}
 
@@ -77,7 +85,7 @@ class DefaultSshAgentServer implements SshAgentServer {
 			this.state = "listening";
 			return address;
 		} catch (error) {
-			await this.closeBackend();
+			await this.close();
 			throw error;
 		}
 	}
@@ -89,13 +97,8 @@ class DefaultSshAgentServer implements SshAgentServer {
 		try {
 			await this.backend.close();
 		} finally {
-			await httpClose;
+			try { await httpClose; }
+			finally { this.ownership.release(); }
 		}
-	}
-
-	private async closeBackend(): Promise<void> {
-		if (this.state === "closed") return;
-		this.state = "closed";
-		await this.backend.close();
 	}
 }

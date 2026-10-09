@@ -1,3 +1,3 @@
 export interface TransactionRunner {
-	run<T>(operation: () => Promise<T>): Promise<T>;
+	run<T>(operation: () => T | Promise<T>): Promise<T>;
 }
