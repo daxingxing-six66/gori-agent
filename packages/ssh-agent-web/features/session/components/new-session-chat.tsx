@@ -61,7 +61,7 @@ export function NewSessionChat({ workspaceId }: { workspaceId: string }) {
 	const composerTools = useMemo<readonly ChatComposerTool[]>(() => [{
 		id: "deploy",
 		icon: "deploy",
-		name: "/deploy",
+		name: intl.formatMessage({ id: "deploy.tool.name" }),
 		description: intl.formatMessage({ id: "deploy.tool.description" }),
 		keywords: ["deploy", "部署", "发布", "流水线"],
 		status: { label: intl.formatMessage({ id: "session.tool.notStarted" }), tone: "inactive" },
@@ -155,8 +155,8 @@ export function NewSessionChat({ workspaceId }: { workspaceId: string }) {
 			<div className="flex h-dvh min-h-[640px] overflow-hidden bg-[var(--canvas)]">
 			<WorkspaceSidebar activeWorkspaceId={workspace.id} />
 			<main className="flex min-w-0 flex-1 flex-col bg-[var(--panel)]">
-				<header className="flex h-16 shrink-0 items-center border-b border-[var(--line-soft)] bg-white/90 px-6 backdrop-blur-xl">
-					<div className="min-w-0"><h1 className="truncate text-[13px] font-semibold tracking-[-0.01em]">{intl.formatMessage({ id: "session.new" })}</h1><p className="mt-0.5 truncate text-[10px] text-zinc-400">{workspace.displayName} · {workspace.host.hostname}:{workspace.host.port}</p></div>
+				<header className="new-session-header flex h-16 shrink-0 items-center border-b border-[var(--line-soft)] bg-[var(--surface)] px-6">
+					<div className="min-w-0"><h1 className="truncate text-[15px] font-semibold tracking-[-0.01em]">{intl.formatMessage({ id: "session.new" })}</h1><p className="mt-0.5 truncate text-[12px] text-[var(--text-muted)]">{workspace.displayName} · {workspace.host.hostname}:{workspace.host.port}</p></div>
 				</header>
 
 				<div className="app-scrollbar min-h-0 flex-1 overflow-y-auto">
@@ -165,7 +165,7 @@ export function NewSessionChat({ workspaceId }: { workspaceId: string }) {
 							<div className="text-center">
 								<span className="mx-auto grid h-11 w-11 place-items-center rounded-2xl border border-[#d8e5dc] bg-[#edf4f0] text-[#397b5c]"><Sparkles size={18} /></span>
 								<h2 className="mt-5 text-[20px] font-semibold tracking-[-0.025em] text-zinc-800">{intl.formatMessage({ id: "session.new.heading" }, { name: workspace.displayName })}</h2>
-								<p className="mt-2 text-[11px] leading-5 text-zinc-400">{intl.formatMessage({ id: "session.new.description" })}</p>
+								<p className="mt-2 text-[12px] leading-5 text-[var(--text-muted)]">{intl.formatMessage({ id: "session.new.description" })}</p>
 							</div>
 						</div>
 					</div>
@@ -181,18 +181,18 @@ export function NewSessionChat({ workspaceId }: { workspaceId: string }) {
 									<div className="flex min-w-0 items-center">
 										<button type="button" className="flex h-7 min-w-0 max-w-[140px] items-center gap-2 rounded-lg px-2 text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-700 disabled:cursor-default disabled:opacity-50 sm:max-w-[180px]" aria-label={workDir ? intl.formatMessage({ id: "session.new.workDir.change" }, { path: workDir }) : intl.formatMessage({ id: "session.new.workDir.select" })} title={workDir || intl.formatMessage({ id: "session.new.workDir.title" })} disabled={sessionSettingsLocked} onClick={() => setDirectoryPickerOpen(true)}>
 											<FolderOpen size={12} className="shrink-0 text-zinc-400" />
-											<span className="truncate text-[9px] font-medium leading-none text-zinc-500">{workDirLabel || intl.formatMessage({ id: "session.new.workDir.label" })}</span>
+											<span className="truncate text-[11px] font-medium leading-none text-[var(--text-muted)]">{workDirLabel || intl.formatMessage({ id: "session.new.workDir.label" })}</span>
 										</button>
 										{selectedWorkDir !== null ? <button type="button" className="grid h-6 w-6 shrink-0 place-items-center rounded-md text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-700 disabled:cursor-default disabled:opacity-40" aria-label={intl.formatMessage({ id: "session.new.workDir.useDefault" })} title={intl.formatMessage({ id: "session.new.workDir.useDefault" })} disabled={sessionSettingsLocked} onClick={() => setWorkDir(null)}><X size={10} /></button> : null}
 									</div>
-									<div className="flex shrink-0 items-center gap-2 px-1.5 text-[9px] font-medium text-zinc-500" title={intl.formatMessage({ id: "session.new.autoApproval.hint" })}>
+									<div className="flex shrink-0 items-center gap-2 px-1.5 text-[11px] font-medium text-[var(--text-muted)]" title={intl.formatMessage({ id: "session.new.autoApproval.hint" })}>
 										<ShieldCheck size={12} className={autoAudit ? "text-[#397b5c]" : "text-zinc-400"} /><span>{intl.formatMessage({ id: "session.new.autoApproval" })}</span><ToggleSwitch checked={autoAudit} disabled={sessionSettingsLocked} label={intl.formatMessage({ id: "session.new.autoApproval.label" })} onChange={setAutoAudit} />
 									</div>
 								</div>
 								<div className="flex shrink-0 items-center gap-1.5"><ModelThinkingSelector selectedModel={model} thinkingLevel={thinkingLevel} disabled={submitting} attention={modelRequired} appearance="composer" onSelectModel={selectModel} onSelectThinkingLevel={setThinkingLevel} /><button type="button" className="grid h-8 w-8 place-items-center rounded-full bg-[#282b28] text-white transition hover:bg-[#171a17] disabled:cursor-not-allowed disabled:bg-zinc-200 disabled:text-zinc-400" aria-label={intl.formatMessage({ id: "session.new.submit" })} disabled={!hasContent || model === null || submitting} onClick={() => void submit()}>{submitting ? <LoaderCircle size={13} className="animate-spin" /> : <Send size={13} />}</button></div>
 							</div>
 						</div>
-						<p className="mt-2 text-center text-[8px] tracking-[0.01em] text-zinc-400">{intl.formatMessage({ id: "session.new.guardNotice" })}</p>
+						<p className="mt-2 text-center text-[10px] leading-4 text-[var(--text-muted)]">{intl.formatMessage({ id: "session.new.guardNotice" })}</p>
 					</div>
 				</div>
 			</main>

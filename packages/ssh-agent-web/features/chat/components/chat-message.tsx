@@ -1,8 +1,7 @@
 "use client";
 
-import { Check, ChevronDown, ChevronRight, CircleAlert, Clock3, Copy, LoaderCircle, Minimize2, SquareTerminal } from "lucide-react";
-import { memo, useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
-import { createPortal } from "react-dom";
+import { BookOpen, Check, ChevronDown, CircleAlert, Clock3, Copy, Download, FilePenLine, LoaderCircle, MessageCircleQuestion, Minimize2, Rocket, SquareTerminal, Upload } from "lucide-react";
+import { memo, useId, useMemo, useState } from "react";
 import { useIntl, type IntlShape } from "react-intl";
 import { ChatImagePreviewDialog, formatImageMetadata, type ImageDimensions } from "@/features/chat/components/chat-image-preview-dialog";
 import { ChatFailureDetails } from "@/features/chat/components/chat-failure-details";
@@ -19,6 +18,7 @@ export const ChatMessageRow = memo(function ChatMessageRow({
 	tools,
 	approvals,
 	approvalMutationId,
+	targetHost,
 	onResolveApproval,
 }: {
 	entry: ChatTimelineEntry;
@@ -26,6 +26,7 @@ export const ChatMessageRow = memo(function ChatMessageRow({
 	tools: Record<string, ChatToolExecution>;
 	approvals: Record<string, ToolApproval>;
 	approvalMutationId: string | null;
+	targetHost?: string;
 	onResolveApproval(approval: ToolApproval, approved: boolean): void;
 }) {
 	const intl = useIntl();
@@ -33,12 +34,12 @@ export const ChatMessageRow = memo(function ChatMessageRow({
 	if (message.role === "toolResult" || message.role === "system") return null;
 	if (message.role === "compactionSummary") {
 		return (
-			<details className="group rounded-xl border border-[var(--line-soft)] bg-[var(--surface-muted)] px-3.5 py-3">
-				<summary className="flex cursor-pointer list-none items-center gap-2 text-[10px] text-[var(--secondary)]">
-					<span className="grid h-6 w-6 shrink-0 place-items-center rounded-md bg-[var(--accent-soft)] text-[var(--accent)]"><Minimize2 size={12} /></span>
-					<span className="font-semibold text-[var(--ink)]">{intl.formatMessage({ id: "chat.compaction.summary.title" })}</span>
-					<span className="ml-auto text-[8px] tabular-nums text-[var(--muted)]">{intl.formatMessage({ id: "chat.compaction.summary.tokens" }, { count: message.tokensBefore })}</span>
-					<ChevronRight size={11} className="transition-transform group-open:rotate-90" />
+			<details className="group rounded-xl border border-line-soft bg-surface-muted px-3.5 py-2.5">
+				<summary className="chat-disclosure-trigger flex w-full list-none gap-2">
+					<Minimize2 size={14} className="shrink-0 text-accent" aria-hidden="true" />
+					<span className="font-semibold text-ink">{intl.formatMessage({ id: "chat.compaction.summary.title" })}</span>
+					<span className="ml-auto text-[11px] tabular-nums text-muted">{intl.formatMessage({ id: "chat.compaction.summary.tokens" }, { count: message.tokensBefore })}</span>
+					<ChevronDown size={14} className="shrink-0 transition-transform group-open:rotate-180" aria-hidden="true" />
 				</summary>
 				<div className="mt-3 border-t border-[var(--line-soft)] pt-3"><ChatMarkdown subtle>{message.summary}</ChatMarkdown></div>
 			</details>
@@ -49,12 +50,13 @@ export const ChatMessageRow = memo(function ChatMessageRow({
 		return <UserMessageBubble message={text} attachments={entry.attachments ?? []} final={entry.final} />;
 	}
 	const hasText = message.content.some((part) => part.type === "text" && part.text.trim().length > 0);
+	const toolOnly = message.content.length > 0 && message.content.every((part) => part.type === "toolCall");
 	return (
-		<div className="min-w-0 space-y-3.5">
+		<div className={`chat-assistant-message min-w-0 [&>*+*]:mt-3.5 [&>.chat-tool-line+.chat-tool-line]:mt-1 ${toolOnly ? "chat-tool-only" : ""}`}>
 				{message.content.map((part, index) => {
 					if (part.type === "text") return part.text ? <ChatMarkdown key={`text:${index}`}>{part.text}</ChatMarkdown> : null;
 					if (part.type === "thinking") return <ThinkingBlock key={`thinking:${index}:${entry.final}:${hasText}`} content={part} streaming={!entry.final} hasText={hasText} />;
-					return <ToolCard key={`${part.id}:${tools[part.id]?.status ?? "waiting"}`} call={part} execution={tools[part.id]} approval={approvalForTool(approvals, part.id)} approvalBusy={approvalMutationId === approvalForTool(approvals, part.id)?.id} onResolveApproval={onResolveApproval} />;
+					return <ToolCard key={`${part.id}:${tools[part.id]?.status ?? "waiting"}`} call={part} execution={tools[part.id]} approval={approvalForTool(approvals, part.id)} approvalBusy={approvalMutationId === approvalForTool(approvals, part.id)?.id} targetHost={targetHost} onResolveApproval={onResolveApproval} />;
 				})}
 				{!hideFailure && (message.failure || message.errorMessage) ? <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-[10px] leading-5 text-rose-700"><ChatFailureDetails failure={message.failure} fallback={message.errorMessage ?? ""} /></div> : null}
 				{!entry.final ? <span className="chat-streaming-dots" aria-label={intl.formatMessage({ id: "chat.message.generating" })}><i /><i /><i /></span> : null}
@@ -126,190 +128,154 @@ function isDisplayableImageAttachment(attachment: SessionAttachment): boolean {
 
 function ThinkingBlock({ content, streaming, hasText }: { content: ThinkingContent; streaming: boolean; hasText: boolean }) {
 	const intl = useIntl();
+	const contentId = useId();
 	const [expanded, setExpanded] = useState(streaming && !hasText);
 	if (!content.thinking && !content.redacted) return null;
 	return (
 		<section className="chat-thinking">
-			<button type="button" onClick={() => setExpanded((value) => !value)} aria-expanded={expanded}>
-				{expanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+			<button type="button" onClick={() => setExpanded((value) => !value)} aria-expanded={expanded} aria-controls={contentId}>
 				<span>{intl.formatMessage({ id: streaming && !hasText ? "chat.thinking.active" : "chat.thinking.process" })}</span>
+				<ChevronDown size={14} className={`transition-transform ${expanded ? "rotate-180" : ""}`} aria-hidden="true" />
 			</button>
-			{expanded ? <div className="chat-thinking-content"><ChatMarkdown subtle>{content.redacted ? intl.formatMessage({ id: "chat.thinking.redacted" }) : content.thinking}</ChatMarkdown></div> : null}
+			<div id={contentId} hidden={!expanded} className="chat-thinking-content"><ChatMarkdown subtle>{content.redacted ? intl.formatMessage({ id: "chat.thinking.redacted" }) : content.thinking}</ChatMarkdown></div>
 		</section>
 	);
 }
 
-function ToolCard({ call, execution, approval, approvalBusy, onResolveApproval }: {
+function ToolCard({ call, execution, approval, approvalBusy, targetHost, onResolveApproval }: {
 	call: ToolCallContent;
 	execution?: ChatToolExecution;
 	approval?: ToolApproval;
 	approvalBusy: boolean;
+	targetHost?: string;
 	onResolveApproval(approval: ToolApproval, approved: boolean): void;
 }) {
 	const intl = useIntl();
+	const approvalTitleId = useId();
+	const approvalDescriptionId = useId();
 	const failed = execution?.status === "failed";
-	const [expanded, setExpanded] = useState(failed);
-	const output = toolResultText(execution?.result ?? (execution?.latestUpdate?.type === "text" ? execution.latestUpdate.detail.content : undefined));
-	const state = toolState(execution, approval);
-	const approvalActions = approvalActionLabels(intl, call.name);
-	return (
-		<section className={`chat-tool-card ${failed ? "chat-tool-card-error" : ""}`}>
-			{state === "approval" ? <div className="px-3.5 pt-3"><div className="flex items-center justify-between gap-3"><p className="flex min-w-0 items-center gap-2 truncate text-[10px] font-semibold tracking-[0.025em] text-zinc-800 before:h-3 before:w-0.5 before:shrink-0 before:rounded-full before:bg-[#78a088]">{toolLabel(intl, call.name)}</p><ToolStatus state={state} /></div><p className="mt-2 whitespace-pre-wrap break-words rounded-lg bg-[#f6f6f3] px-3 py-2 font-mono text-[11px] font-semibold leading-5 text-zinc-700">{toolTarget(intl, call)}</p></div> : <div className="flex items-start gap-3 px-3.5 py-3"><span className="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-[#edf2ee] text-[#397b5c]"><SquareTerminal size={14} /></span><div className="min-w-0 flex-1"><p className="flex items-center gap-2 truncate text-[10px] font-semibold tracking-[0.025em] text-zinc-800 before:h-3 before:w-0.5 before:shrink-0 before:rounded-full before:bg-[#78a088]">{toolLabel(intl, call.name)}</p><ToolRequestArguments call={call} target={toolTarget(intl, call)} /></div><div className="flex shrink-0 items-center gap-1.5"><ToolStatus state={state} />{execution?.startedAt && execution.finishedAt ? <span className="inline-flex items-center gap-1 text-[8px] text-zinc-400"><Clock3 size={10} />{Math.max(0, execution.finishedAt - execution.startedAt)} ms</span> : null}{output ? <button type="button" className="grid h-7 w-7 place-items-center rounded-md text-zinc-400 hover:bg-black/[0.04] hover:text-zinc-700" onClick={() => setExpanded((value) => !value)} aria-label={intl.formatMessage({ id: expanded ? "chat.tool.output.collapse" : "chat.tool.output.expand" })}>{expanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}</button> : null}</div></div>}
-			{approval?.status === "pending" ? <p className="px-3.5 pt-2 text-[10px] font-medium leading-5 text-zinc-600">{approval.description}</p> : null}
-			<ToolUpdateView update={execution?.latestUpdate} failed={failed} />
-			{approval?.status === "pending" ? <div className="flex min-h-10 items-center justify-end gap-2 px-3.5 pb-3 pt-1">{approvalBusy ? <span className="inline-flex items-center gap-1.5 px-2 text-[9px] font-medium text-[var(--muted)]"><LoaderCircle size={11} className="animate-spin" />{intl.formatMessage({ id: "chat.tool.processing" })}</span> : <><button type="button" className="inline-flex h-8 min-w-16 items-center justify-center rounded-lg border border-[var(--line)] bg-[var(--surface)] px-3 text-[10px] font-medium text-[var(--secondary)] shadow-[0_1px_1px_rgb(15_23_42/3%)] transition hover:border-[var(--line-strong)] hover:bg-[var(--surface-muted)] hover:text-[var(--ink)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]" onClick={() => onResolveApproval(approval, false)}>{approvalActions.cancel}</button><button type="button" className="inline-flex h-8 min-w-20 items-center justify-center rounded-lg border border-[var(--accent)] bg-[var(--accent)] px-3.5 text-[10px] font-semibold text-[var(--text-inverse)] shadow-[0_3px_10px_rgb(38_96_68/14%)] transition hover:border-[var(--accent-hover)] hover:bg-[var(--accent-hover)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]" onClick={() => onResolveApproval(approval, true)}>{approvalActions.approve}</button></>}</div> : null}
-			{expanded && output ? <pre className={`app-scrollbar max-h-64 overflow-auto border-t px-3.5 py-3 font-mono text-[9px] leading-5 ${failed ? "border-rose-200 bg-rose-50/60 text-rose-700" : "border-[var(--line-soft)] bg-[#f3f2ee] text-zinc-600"}`}>{output}</pre> : null}
-		</section>
-	);
-}
-
-function ToolRequestArguments({ call, target }: { call: ToolCallContent; target: string }) {
-	const intl = useIntl();
-	const tooltipId = useId();
-	const targetRef = useRef<HTMLParagraphElement>(null);
-	const popoverRef = useRef<HTMLDivElement>(null);
 	const [copyStatus, setCopyStatus] = useState<"idle" | "copied" | "failed">("idle");
-	const closeTimerRef = useRef<number | null>(null);
-	const [truncated, setTruncated] = useState(false);
-	const [open, setOpen] = useState(false);
-	const [position, setPosition] = useState<{ left: number; top: number; above: boolean } | null>(null);
-	const fullArguments = toolRequestArguments(call);
+	const output = toolResultText(execution?.result ?? (execution?.latestUpdate?.type === "text" ? execution.latestUpdate.detail.content : undefined));
+	const failurePreview = failed ? output.trim().split("\n").filter(Boolean).at(-1)?.slice(0, 180) : null;
+	const state = toolState(execution, approval);
+	const approvalActions = approvalActionLabels(intl, call.name, approval?.toolName);
+	const target = toolTarget(intl, call);
+	const compactTarget = call.name === "read" || call.name === "write" ? target.split("/").at(-1) || target : target;
+	const argumentsText = toolRequestArguments(call);
 	const copyArguments = async () => {
 		try {
-			await navigator.clipboard.writeText(fullArguments);
+			await navigator.clipboard.writeText(argumentsText);
 			setCopyStatus("copied");
 		} catch {
 			setCopyStatus("failed");
 		}
 	};
-	useEffect(() => {
-		setCopyStatus("idle");
-	}, [open, fullArguments]);
-	useEffect(() => {
-		if (copyStatus === "idle") return;
-		const timer = window.setTimeout(() => setCopyStatus("idle"), 1500);
-		return () => window.clearTimeout(timer);
-	}, [copyStatus]);
-
-	const updateTruncation = useCallback(() => {
-		const targetElement = targetRef.current;
-		if (!targetElement) return false;
-		const nextTruncated = targetElement.scrollWidth > targetElement.clientWidth;
-		setTruncated(nextTruncated);
-		if (!nextTruncated) setOpen(false);
-		return nextTruncated;
-	}, []);
-
-	const updatePosition = useCallback(() => {
-		const targetElement = targetRef.current;
-		if (!targetElement) return;
-		const rect = targetElement.getBoundingClientRect();
-		const width = Math.min(560, window.innerWidth - 24);
-		const left = Math.min(Math.max(12, rect.left), window.innerWidth - width - 12);
-		const below = window.innerHeight - rect.bottom;
-		const above = below < 176 && rect.top > below;
-		setPosition({ left, top: above ? rect.top - 8 : rect.bottom + 8, above });
-	}, []);
-
-	const close = () => {
-		if (closeTimerRef.current !== null) window.clearTimeout(closeTimerRef.current);
-		closeTimerRef.current = window.setTimeout(() => {
-			if (!popoverRef.current?.contains(document.activeElement) && document.activeElement !== targetRef.current) setOpen(false);
-		}, 120);
-	};
-	const show = () => {
-		if (closeTimerRef.current !== null) window.clearTimeout(closeTimerRef.current);
-		if (!updateTruncation()) return;
-		updatePosition();
-		setOpen(true);
-	};
-
-	useEffect(() => {
-		const targetElement = targetRef.current;
-		if (!targetElement) return;
-		updateTruncation();
-		if (typeof ResizeObserver === "undefined") return;
-		const observer = new ResizeObserver(updateTruncation);
-		observer.observe(targetElement);
-		return () => observer.disconnect();
-	}, [target, updateTruncation]);
-
-	useEffect(() => {
-		if (!open) return;
-		window.addEventListener("resize", updatePosition);
-		window.addEventListener("scroll", updatePosition, true);
-		return () => {
-			window.removeEventListener("resize", updatePosition);
-			window.removeEventListener("scroll", updatePosition, true);
-		};
-	}, [open, updatePosition]);
-
-	useEffect(() => () => {
-		if (closeTimerRef.current !== null) window.clearTimeout(closeTimerRef.current);
-	}, []);
-
-	return (
-		<>
-			<p
-				ref={targetRef}
-				className={`mt-1.5 truncate font-mono text-[10px] font-medium text-zinc-500 ${truncated ? "cursor-help" : ""}`}
-				tabIndex={truncated ? 0 : undefined}
-				aria-describedby={open ? tooltipId : undefined}
-				onPointerEnter={show}
-				onPointerLeave={close}
-				onFocus={show}
-				onBlur={(event) => { if (!popoverRef.current?.contains(event.relatedTarget)) close(); }}
-			>
-				{target}
-			</p>
-			{open && position ? createPortal(
-				<div
-					ref={popoverRef}
-					id={tooltipId}
-					role="dialog"
-					aria-label={intl.formatMessage({ id: "chat.tool.arguments.full" })}
-					className="fixed z-[70] w-[min(560px,calc(100vw-24px))]"
-					style={{ left: position.left, top: position.top, transform: position.above ? "translateY(-100%)" : undefined }}
-					onPointerEnter={show}
-					onPointerLeave={close}
-					onFocus={show}
-					onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) close(); }}
-					onKeyDown={(event) => {
-						if (event.key === "Escape") {
-							targetRef.current?.focus();
-							setOpen(false);
-						}
-					}}
-				>
-					<div className="chat-tool-request-popover app-scrollbar" style={{ position: "relative", width: "100%" }}>
-						<p>{intl.formatMessage({ id: "chat.tool.arguments.full" })}</p>
-						<pre>{fullArguments}</pre>
-					</div>
-					<div className="flex justify-end pt-1">
-						<button type="button" onClick={() => void copyArguments()} className="grid h-6 w-6 place-items-center rounded-md text-[var(--muted)] hover:bg-[var(--surface-muted)] hover:text-[var(--accent)] focus-visible:outline-2 focus-visible:outline-[var(--accent)]">
-							{copyStatus === "copied" ? <Check size={12} /> : copyStatus === "failed" ? <CircleAlert size={12} /> : <Copy size={12} />}
-							<span className="sr-only" aria-live="polite">{intl.formatMessage({ id: copyStatus === "failed" ? "chat.tool.arguments.copyFailed" : copyStatus === "copied" ? "chat.code.copied" : "chat.code.copy" })}</span>
-						</button>
-					</div>
-				</div>,
-				document.body,
-			) : null}
-		</>
+	if (approval?.status !== "pending") return (
+		<details className="chat-tool-line group min-w-0 text-xs">
+			<summary className="flex min-h-7 min-w-0 cursor-pointer list-none items-center gap-1.5 rounded-md px-1 text-secondary transition-colors hover:bg-surface-hover focus-visible:outline-2 focus-visible:outline-accent [&::-webkit-details-marker]:hidden">
+				<span className="shrink-0"><ToolIcon name={call.name} /></span>
+				<span className={`shrink-0 font-medium ${failed ? "text-danger" : "text-ink"}`}>{toolActionLabel(intl, call.name, state)}</span>
+				<span className={`min-w-0 flex-1 truncate text-secondary ${call.name === "bash" || call.name === "remote_server_call" || call.name === "terminal_interaction" ? "font-mono" : ""}`} title={target}>{compactTarget}</span>
+				{state === "running" && toolActionKind(call.name) !== null ? <LoaderCircle size={13} className="shrink-0 animate-spin text-accent" aria-hidden="true" /> : null}
+				{toolActionKind(call.name) === null || state === "waiting" ? <ToolStatus state={state} /> : null}
+				<ChevronDown size={14} className="shrink-0 transition-transform group-open:rotate-180" aria-hidden="true" />
+			</summary>
+			{failurePreview ? <p role="alert" className="ml-7 line-clamp-1 break-words text-[11px] leading-5 text-danger group-open:hidden">{failurePreview}</p> : null}
+			{state === "running" ? <ToolUpdateView update={execution?.latestUpdate} failed={failed} /> : null}
+			<div className="ml-6 mt-2 min-w-0 rounded-xl border border-line bg-surface-muted px-3 py-2.5">
+				<div className="flex items-center gap-2 text-xs text-secondary">
+					<span className="font-medium">{toolDetailLabel(intl, call.name)}</span>
+					<span className="ml-auto">{state !== "running" ? <ToolStatus state={state} /> : null}</span>
+					{execution?.startedAt && execution.finishedAt ? <span className="shrink-0 tabular-nums text-muted">{Math.max(0, execution.finishedAt - execution.startedAt)} ms</span> : null}
+					<button type="button" onClick={() => void copyArguments()} className="grid h-6 w-6 shrink-0 place-items-center rounded-md text-muted hover:bg-surface-hover hover:text-ink focus-visible:outline-2 focus-visible:outline-accent" title={intl.formatMessage({ id: "chat.code.copy" })} aria-label={intl.formatMessage({ id: "chat.code.copy" })}>
+						{copyStatus === "copied" ? <Check size={13} /> : copyStatus === "failed" ? <CircleAlert size={13} /> : <Copy size={13} />}
+					</button>
+				</div>
+				<pre className="app-scrollbar mt-2 max-h-48 overflow-auto whitespace-pre-wrap break-words font-mono text-xs leading-5 text-ink">{argumentsText}</pre>
+				{state !== "running" ? <ToolUpdateView update={execution?.latestUpdate} failed={failed} /> : null}
+				{output ? <pre className={`app-scrollbar mt-3 max-h-64 overflow-auto border-t border-line-soft pt-3 font-mono text-[11px] leading-5 ${failed ? "text-danger" : "text-secondary"}`}>{output}</pre> : null}
+				<span className="sr-only" aria-live="polite">{copyStatus === "copied" ? intl.formatMessage({ id: "chat.code.copied" }) : copyStatus === "failed" ? intl.formatMessage({ id: "chat.tool.arguments.copyFailed" }) : ""}</span>
+			</div>
+		</details>
 	);
+	const fullAccess = approval.toolName === "remote_sandbox_exception";
+	const remoteHost = isRemoteApproval(call.name) ? targetHost : undefined;
+	const commandPreview = typeof call.arguments.command === "string" ? call.arguments.command : target;
+	return <section className="chat-tool-approval min-w-0 p-3.5" aria-labelledby={approvalTitleId} aria-describedby={approvalDescriptionId} aria-busy={approvalBusy}>
+		<div className="flex min-w-0 flex-wrap items-start gap-x-3 gap-y-1.5">
+			<span className="mt-0.5 shrink-0 text-warning"><ToolIcon name={call.name} /></span>
+			<div className="min-w-0 flex-1">
+				<h3 id={approvalTitleId} className="text-xs font-semibold text-ink">{toolLabel(intl, call.name)}</h3>
+				{remoteHost ? <p className="mt-0.5 truncate text-[11px] text-muted" title={remoteHost}>{intl.formatMessage({ id: "chat.approval.target" }, { host: remoteHost })}</p> : null}
+			</div>
+			<ToolStatus state={state} />
+		</div>
+		<pre tabIndex={0} aria-label={intl.formatMessage({ id: "chat.approval.commandPreview" })} className="chat-tool-approval-command app-scrollbar mt-3 whitespace-pre-wrap break-words font-mono text-xs text-ink">{commandPreview}</pre>
+		<p id={approvalDescriptionId} className="mt-2.5 whitespace-pre-wrap text-xs leading-5 text-secondary">{approval.description}</p>
+		{fullAccess ? <p className="chat-tool-approval-scope mt-2 text-[11px] font-semibold">{intl.formatMessage({ id: "chat.approval.fullAccess" })}</p> : null}
+		<details className="group mt-2">
+			<summary className="chat-disclosure-trigger text-[11px]">{intl.formatMessage({ id: "chat.approval.fullRequest" })}<ChevronDown size={13} className="transition-transform group-open:rotate-180" aria-hidden="true" /></summary>
+			<pre className="app-scrollbar mt-1 max-h-44 overflow-auto whitespace-pre-wrap break-words rounded-md bg-surface-muted px-3 py-2 font-mono text-[11px] leading-5 text-secondary">{argumentsText || target}</pre>
+		</details>
+		<div className="mt-2.5 flex flex-wrap items-center justify-end gap-2 border-t border-line-soft pt-2.5">
+			<button type="button" disabled={approvalBusy} className="min-h-8 rounded-md px-2.5 py-1.5 text-xs font-medium text-secondary transition hover:bg-surface-hover hover:text-ink focus-visible:outline-2 focus-visible:outline-accent disabled:cursor-wait disabled:opacity-50" onClick={() => onResolveApproval(approval, false)}>{approvalActions.deny}</button>
+			<button type="button" disabled={approvalBusy} className="inline-flex min-h-8 items-center gap-1.5 rounded-md bg-accent px-3 py-1.5 text-xs font-semibold text-[var(--text-inverse)] transition hover:bg-accent-hover focus-visible:outline-2 focus-visible:outline-accent disabled:cursor-wait disabled:opacity-70" onClick={() => onResolveApproval(approval, true)}>{approvalBusy ? <LoaderCircle size={12} className="animate-spin" aria-hidden="true" /> : null}{approvalBusy ? intl.formatMessage({ id: "chat.tool.processing" }) : approvalActions.approve}</button>
+		</div>
+	</section>;
+}
+
+function isRemoteApproval(toolName: string): boolean {
+	return toolName === "remote_server_call" || toolName === "terminal_interaction" ||
+		toolName === "sftp_upload" || toolName === "sftp_download" || toolName === "bubblewrap_install";
+}
+
+function ToolIcon({ name }: { name: string }) {
+	if (name === "read") return <BookOpen size={14} aria-hidden="true" />;
+	if (name === "write") return <FilePenLine size={14} aria-hidden="true" />;
+	if (name === "ask_user_decision") return <MessageCircleQuestion size={14} aria-hidden="true" />;
+	if (name.startsWith("deployment_")) return <Rocket size={14} aria-hidden="true" />;
+	if (name === "sftp_upload") return <Upload size={14} aria-hidden="true" />;
+	if (name === "sftp_download") return <Download size={14} aria-hidden="true" />;
+	return <SquareTerminal size={14} aria-hidden="true" />;
+}
+
+type ToolActionKind = "run" | "read" | "write" | "upload" | "download" | "terminal" | "ask";
+
+function toolActionKind(name: string): ToolActionKind | null {
+	return name === "bash" || name === "remote_server_call" ? "run"
+		: name === "read" ? "read"
+		: name === "write" ? "write"
+		: name === "sftp_upload" ? "upload"
+		: name === "sftp_download" ? "download"
+		: name === "terminal_interaction" ? "terminal"
+		: name === "ask_user_decision" ? "ask" : null;
+}
+
+function toolActionLabel(intl: IntlShape, name: string, state: ReturnType<typeof toolState>): string {
+	const action = toolActionKind(name);
+	if (!action || state === "waiting" || state === "approval") return toolLabel(intl, name);
+	return intl.formatMessage({ id: `chat.tool.action.${action}.${state}` });
+}
+
+function toolDetailLabel(intl: IntlShape, name: string): string {
+	if (name === "bash") return intl.formatMessage({ id: "chat.tool.detail.shell" });
+	if (name === "remote_server_call") return intl.formatMessage({ id: "chat.tool.detail.ssh" });
+	if (name === "terminal_interaction") return intl.formatMessage({ id: "chat.tool.detail.terminal" });
+	return toolLabel(intl, name);
 }
 
 function ToolUpdateView({ update, failed }: { update?: ToolUpdate; failed: boolean }) {
 	const intl = useIntl();
 	if (!update || update.type === "text") return null;
 	if (update.type === "status") {
-		return <div className="flex items-center gap-2 px-3.5 pb-3 text-[9px] text-zinc-500"><span className="h-1.5 w-1.5 shrink-0 rounded-full bg-[#78a088]" />{update.detail.message}</div>;
+		return <div className="flex items-center gap-2 px-3.5 pb-3 text-xs text-secondary"><span className="h-1.5 w-1.5 shrink-0 rounded-full bg-accent" />{update.detail.message}</div>;
 	}
 	const percent = update.detail.total === 0 ? 100 : Math.min(100, update.detail.current / update.detail.total * 100);
 	return (
 		<div className="px-3.5 pb-3" role="progressbar" aria-label={update.detail.message ?? intl.formatMessage({ id: "chat.tool.progress" })} aria-valuemin={0} aria-valuemax={update.detail.total} aria-valuenow={update.detail.current}>
-			<div className="mb-1.5 flex items-center justify-between gap-3 text-[9px]"><span className="min-w-0 truncate font-medium text-zinc-600">{update.detail.message ?? intl.formatMessage({ id: update.detail.unit === "bytes" ? "chat.tool.progress.transfer" : "chat.tool.progress.processing" })}</span><span className="shrink-0 font-semibold tabular-nums text-zinc-500">{Math.round(percent)}%</span></div>
-			<div className="h-1.5 overflow-hidden rounded-full bg-zinc-200/80"><div className={`h-full rounded-full transition-[width] duration-300 ease-out ${failed ? "bg-rose-500" : "bg-[#4b8b6b]"}`} style={{ width: `${percent}%` }} /></div>
-			<p className="mt-1.5 text-right text-[8px] tabular-nums text-zinc-400">{formatProgress(intl, update)}</p>
+			<div className="mb-1.5 flex items-center justify-between gap-3 text-xs"><span className="min-w-0 truncate font-medium text-secondary">{update.detail.message ?? intl.formatMessage({ id: update.detail.unit === "bytes" ? "chat.tool.progress.transfer" : "chat.tool.progress.processing" })}</span><span className="shrink-0 font-semibold tabular-nums text-muted">{Math.round(percent)}%</span></div>
+			<div className="h-1.5 overflow-hidden rounded-full bg-line"><div className={`h-full rounded-full transition-[width] duration-300 ease-out ${failed ? "bg-danger" : "bg-accent"}`} style={{ width: `${percent}%` }} /></div>
+			<p className="mt-1.5 text-right text-[11px] tabular-nums text-muted">{formatProgress(intl, update)}</p>
 		</div>
 	);
 }
@@ -334,12 +300,12 @@ function formatBytes(value: number): string {
 function ToolStatus({ state }: { state: "waiting" | "approval" | "running" | "completed" | "failed" }) {
 	const intl = useIntl();
 	const content = useMemo(() => {
-		if (state === "completed") return { icon: <Check size={10} />, label: intl.formatMessage({ id: "chat.tool.status.completed" }), className: "text-[#397b5c]" };
-		if (state === "failed") return { icon: <CircleAlert size={10} />, label: intl.formatMessage({ id: "chat.tool.status.failed" }), className: "text-rose-600" };
-		if (state === "running") return { icon: <LoaderCircle size={10} className="animate-spin" />, label: intl.formatMessage({ id: "chat.tool.status.running" }), className: "text-[#397b5c]" };
-		return { icon: <Clock3 size={10} />, label: intl.formatMessage({ id: state === "approval" ? "chat.tool.status.approval" : "chat.tool.status.waiting" }), className: "text-amber-700" };
+		if (state === "completed") return { icon: <Check size={12} />, label: intl.formatMessage({ id: "chat.tool.status.completed" }), className: "text-accent" };
+		if (state === "failed") return { icon: <CircleAlert size={12} />, label: intl.formatMessage({ id: "chat.tool.status.failed" }), className: "text-danger" };
+		if (state === "running") return { icon: <LoaderCircle size={12} className="animate-spin" />, label: intl.formatMessage({ id: "chat.tool.status.running" }), className: "text-accent" };
+		return { icon: <Clock3 size={12} />, label: intl.formatMessage({ id: state === "approval" ? "chat.tool.status.approval" : "chat.tool.status.waiting" }), className: state === "approval" ? "text-warning" : "text-muted" };
 	}, [intl, state]);
-	return <span className={`inline-flex items-center gap-1 text-[8px] font-semibold ${content.className}`}>{content.icon}{content.label}</span>;
+	return <span className={`inline-flex shrink-0 items-center gap-1 text-[11px] font-medium ${content.className}`}>{content.icon}{content.label}</span>;
 }
 
 function toolState(execution?: ChatToolExecution, approval?: ToolApproval): "waiting" | "approval" | "running" | "completed" | "failed" {
@@ -348,14 +314,35 @@ function toolState(execution?: ChatToolExecution, approval?: ToolApproval): "wai
 }
 
 function toolLabel(intl: IntlShape, name: string): string {
-	const id = ({ remote_server_call: "chat.tool.remote", bash: "chat.tool.bash", read: "chat.tool.read", write: "chat.tool.write", ask_user_decision: "chat.decision.tool" } as const)[name as "remote_server_call" | "bash" | "read" | "write" | "ask_user_decision"];
+	const labels = {
+		remote_server_call: "chat.tool.remote",
+		terminal_interaction: "chat.tool.terminal",
+		sftp_upload: "chat.tool.upload",
+		sftp_download: "chat.tool.download",
+		bash: "chat.tool.bash",
+		read: "chat.tool.read",
+		write: "chat.tool.write",
+		ask_user_decision: "chat.decision.tool",
+		deployment_propose_plan: "chat.tool.deployment.propose",
+		deployment_inspect: "chat.tool.deployment.inspect",
+		deployment_execute_next: "chat.tool.deployment.execute",
+		deployment_propose_recovery: "chat.tool.deployment.recovery",
+	} as const;
+	const id = labels[name as keyof typeof labels];
 	return id ? intl.formatMessage({ id }) : name;
 }
 
-function approvalActionLabels(intl: IntlShape, toolName: string): { cancel: string; approve: string } {
+function approvalActionLabels(intl: IntlShape, toolName: string, approvalToolName?: string): { deny: string; approve: string } {
+	const overwrite = toolName === "sftp_upload" || toolName === "sftp_download";
+	const approveId = overwrite ? "chat.approval.approveOverwrite"
+		: approvalToolName === "remote_sandbox_exception" ? "chat.approval.approveFullAccess"
+		: toolName === "remote_server_call" ? "chat.approval.approveRemote"
+		: toolName === "bash" ? "chat.approval.approveLocal"
+		: toolName === "terminal_interaction" ? "chat.approval.approveTerminal"
+		: "chat.approval.approve";
 	return {
-		cancel: intl.formatMessage({ id: "chat.approval.cancel" }),
-		approve: intl.formatMessage({ id: toolName === "sftp_upload" ? "chat.approval.overwrite" : "chat.approval.confirm" }),
+		deny: intl.formatMessage({ id: overwrite ? "chat.approval.denyOverwrite" : "chat.approval.deny" }),
+		approve: intl.formatMessage({ id: approveId }),
 	};
 }
 
@@ -371,6 +358,10 @@ function toolTarget(intl: IntlShape, call: ToolCallContent): string {
 		if (args.key === "CTRL_C") return "Ctrl+C";
 		if (typeof args.action === "string") return args.action;
 	}
+	if (call.name === "sftp_upload" && typeof args.sourceFilePath === "string" && typeof args.targetPath === "string")
+		return `${args.sourceFilePath} → ${args.targetPath}`;
+	if (call.name === "sftp_download" && typeof args.remoteFilePath === "string" && typeof args.targetPath === "string")
+		return `${args.remoteFilePath} → ${args.targetPath}`;
 	for (const field of call.name === "read" || call.name === "write" ? ["path", "file_path"] : ["command", "path"]) {
 		if (typeof args[field] === "string") return args[field];
 	}
@@ -380,6 +371,8 @@ function toolTarget(intl: IntlShape, call: ToolCallContent): string {
 
 function toolRequestArguments(call: ToolCallContent): string {
 	const args = call.arguments;
+	if ((call.name === "bash" || call.name === "remote_server_call") && typeof args.command === "string" && Object.keys(args).length === 1)
+		return `$ ${args.command}`;
 	if (call.name === "ask_user_decision" && Array.isArray(args.questions)) {
 		return args.questions.map((entry, index) => typeof entry === "object" && entry !== null && "question" in entry && typeof entry.question === "string"
 			? `${index + 1}. ${entry.question}` : `${index + 1}. ?`).join("\n");

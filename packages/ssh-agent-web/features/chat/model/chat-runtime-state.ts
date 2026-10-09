@@ -66,8 +66,8 @@ export const initialChatRuntimeState: ChatRuntimeState = {
 
 export function chatRuntimeReducer(state: ChatRuntimeState, action: ChatRuntimeAction): ChatRuntimeState {
 	if (action.type === "reset") return initialChatRuntimeState;
-	if (action.type === "hydrate") return hydrate(state, action.messages, action.approvals ?? [], action.decisions ?? [], false);
-	if (action.type === "mergePersisted") return hydrate(state, action.messages, action.approvals ?? [], action.decisions ?? [], true);
+	if (action.type === "hydrate") return hydrate(state, action.messages, action.approvals, action.decisions, false);
+	if (action.type === "mergePersisted") return hydrate(state, action.messages, action.approvals, action.decisions, true);
 	if (action.type === "connection") return { ...state, connection: action.connection };
 	if (action.type === "setRun") return applyRun(state, action.run);
 	if (action.type === "clearPendingRuntime") {
@@ -116,21 +116,31 @@ export function activeChatRun(run: ChatRun | null): run is ChatRun {
 	return run?.status === "pending" || run?.status === "running";
 }
 
-function hydrate(state: ChatRuntimeState, messages: ChatMessage[], approvals: ToolApproval[], decisions: UserDecision[], merge: boolean): ChatRuntimeState {
+function hydrate(state: ChatRuntimeState, messages: ChatMessage[], approvals: ToolApproval[] | undefined, decisions: UserDecision[] | undefined, merge: boolean): ChatRuntimeState {
 	const persisted = messages.map(toTimelineEntry);
 	const persistedFingerprints = new Set(persisted.map((entry) => messageFingerprint(entry.message)));
 	const retained = merge
 		? state.timeline.filter((entry) => entry.sequence === undefined && !persistedFingerprints.has(messageFingerprint(entry.message)))
 		: [];
 	const timeline = dedupeTimeline([...(merge ? state.timeline.filter((entry) => entry.sequence !== undefined) : []), ...persisted, ...retained]);
-	const approvalMap = merge
-		? Object.fromEntries(Object.entries(state.approvals).filter(([, approval]) => approval.status !== "pending"))
+	// Message-only pagination must not discard pending controls restored by REST or SSE.
+	// An explicitly supplied (possibly empty) list is an authoritative pending snapshot.
+	const approvalMap: Record<string, ToolApproval> = merge
+		? Object.fromEntries(Object.entries(state.approvals).filter(([, approval]) => approvals === undefined || approval.status !== "pending"))
 		: {};
-	for (const approval of approvals) approvalMap[approval.id] = approval;
-	const decisionMap = merge
-		? Object.fromEntries(Object.entries(state.decisions).filter(([, decision]) => decision.status !== "pending"))
+	for (const approval of approvals ?? []) {
+		const current = approvalMap[approval.id];
+		if (approval.status === "pending" && current && current.status !== "pending") continue;
+		approvalMap[approval.id] = approval;
+	}
+	const decisionMap: Record<string, UserDecision> = merge
+		? Object.fromEntries(Object.entries(state.decisions).filter(([, decision]) => decisions === undefined || decision.status !== "pending"))
 		: {};
-	for (const decision of decisions) decisionMap[decision.id] = decision;
+	for (const decision of decisions ?? []) {
+		const current = decisionMap[decision.id];
+		if (decision.status === "pending" && current && current.status !== "pending") continue;
+		decisionMap[decision.id] = decision;
+	}
 	let tools = merge ? state.tools : {};
 	for (const entry of timeline) {
 		if (entry.message.role === "toolResult") tools = applyToolResult(tools, entry.message);
@@ -337,7 +347,8 @@ function userText(message: AgentMessage): string {
 }
 
 export function approvalForTool(approvals: Record<string, ToolApproval>, toolCallId: string): ToolApproval | undefined {
-	return Object.values(approvals).find((approval) => approval.toolCallId === toolCallId);
+	const matching = Object.values(approvals).filter((approval) => approval.toolCallId === toolCallId);
+	return matching.find((approval) => approval.status === "pending") ?? matching.at(-1);
 }
 
 export function toolResultText(value: unknown): string {

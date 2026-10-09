@@ -4,12 +4,14 @@ import { IntlProvider } from "react-intl";
 import { describe, expect, it, vi } from "vitest";
 import { ChatMarkdown } from "../features/chat/components/chat-markdown.tsx";
 import { ChatMessageRow } from "../features/chat/components/chat-message.tsx";
+import { ChatTimeline } from "../features/chat/components/chat-timeline.tsx";
 import {
+	approvalForTool,
 	chatRuntimeReducer,
 	initialChatRuntimeState,
 } from "../features/chat/model/chat-runtime-state.ts";
 import { chatScrollBehavior, isNearChatHistoryTop } from "../features/chat/model/chat-scroll.ts";
-import type { AssistantMessage, ChatRun, CompactionSummaryMessage, UserMessage } from "../features/chat/model/chat.ts";
+import type { AssistantMessage, ChatRun, CompactionSummaryMessage, ToolApproval, UserMessage } from "../features/chat/model/chat.ts";
 import { isUserDecision, type UserDecision } from "../features/chat/model/user-decision.ts";
 import type { SessionAttachment } from "../features/session/api/session-attachment-api.ts";
 import { ChatEventStream, parseChatStreamEvent } from "../features/chat/runtime/chat-event-stream.ts";
@@ -39,6 +41,112 @@ function assistant(content: AssistantMessage["content"], timestamp = 20): Assist
 }
 
 describe("Chat runtime state", () => {
+	it("restores a pending approval after switching Sessions and keeps its buttons when older messages load", () => {
+		const toolMessage = assistant([
+			{ type: "toolCall", id: "tool-1", name: "bash", arguments: { command: "git log -5" } },
+			{ type: "toolCall", id: "tool-2", name: "remote_server_call", arguments: { command: "systemctl restart api", sandbox_permissions: "full_access" } },
+		], 30);
+		const approval: ToolApproval = {
+			id: "approval-1", sessionId: run.sessionId, runId: run.id, assistantMessageId: "30",
+			toolCallId: "tool-1", toolName: "bash", description: "本地命令请求执行，是否继续？",
+			status: "pending", createdAt: 31,
+		};
+		const sandboxException: ToolApproval = {
+			id: "approval-2", sessionId: run.sessionId, runId: run.id, assistantMessageId: "30",
+			toolCallId: "tool-2", toolName: "remote_sandbox_exception",
+			description: "远端沙箱不可用；批准后本次命令将无沙箱执行。",
+			status: "pending", createdAt: 31,
+		};
+		const decision: UserDecision = {
+			id: "decision-1", sessionId: run.sessionId, runId: run.id, toolCallId: "decision-tool",
+			status: "pending", createdAt: 32,
+			questions: [{ question: "继续吗？", options: [
+				{ label: "是", description: "继续" }, { label: "否", description: "停止" },
+				{ label: "稍后", description: "稍后决定" },
+			], recommendedIndex: 0 }],
+		};
+		const renderTimeline = (state: ReturnType<typeof chatRuntimeReducer>) => renderLocalized(createElement(ChatTimeline, {
+			showActivity: false, loading: false, loadingOlderMessages: false,
+			timeline: state.timeline, tools: state.tools, approvals: state.approvals,
+			approvalMutationId: null, targetHost: "server.example:22", run: state.run, latestUserText: "",
+			onResolveApproval: vi.fn(), onRestoreDraft: vi.fn(),
+		}));
+		let state = chatRuntimeReducer(initialChatRuntimeState, {
+			type: "hydrate",
+			messages: [{ id: "message-1", sequence: 101, runId: run.id, message: toolMessage, createdAt: 30 }],
+			approvals: [approval, sandboxException], decisions: [decision],
+		});
+		state = chatRuntimeReducer(state, { type: "setRun", run });
+		expect(renderTimeline(state)).toContain("批准本地执行");
+		expect(renderTimeline(state)).toContain("批准无沙箱执行");
+
+		// loadOlderMessages only supplies persisted messages. It is not an approval or decision refresh.
+		state = chatRuntimeReducer(state, {
+			type: "mergePersisted",
+			messages: [{ id: "message-older", sequence: 1, runId: run.id,
+				message: { role: "user", content: "查看代码", timestamp: 1 }, createdAt: 1 }],
+		});
+		expect(state.approvals[approval.id]).toEqual(approval);
+		expect(state.approvals[sandboxException.id]).toEqual(sandboxException);
+		expect(state.decisions[decision.id]).toEqual(decision);
+		expect(renderTimeline(state)).toContain("批准本地执行");
+		expect(renderTimeline(state)).toContain("批准无沙箱执行");
+		expect(renderTimeline(state)).toContain(sandboxException.description);
+		expect(renderTimeline(state)).toContain("拒绝本次");
+
+		// Only a successful REST refresh returning an empty pending snapshot may remove the controls.
+		state = chatRuntimeReducer(state, { type: "mergePersisted", messages: [], approvals: [], decisions: [] });
+		expect(state.approvals).toEqual({});
+		expect(state.decisions).toEqual({});
+		expect(renderTimeline(state)).not.toContain("批准本地执行");
+	});
+
+	it("does not revert resolved controls when an older REST pending snapshot arrives after SSE", () => {
+		const approval: ToolApproval = {
+			id: "approval-1", sessionId: run.sessionId, runId: run.id, assistantMessageId: "20",
+			toolCallId: "tool-1", toolName: "bash", description: "执行命令？", status: "pending", createdAt: 20,
+		};
+		const decision: UserDecision = {
+			id: "decision-1", sessionId: run.sessionId, runId: run.id, toolCallId: "decision-tool",
+			status: "pending", createdAt: 20,
+			questions: [{ question: "继续吗？", options: [
+				{ label: "是", description: "继续" }, { label: "否", description: "停止" },
+				{ label: "稍后", description: "稍后决定" },
+			], recommendedIndex: 0 }],
+		};
+		let state = chatRuntimeReducer(initialChatRuntimeState, { type: "hydrate", messages: [], approvals: [approval], decisions: [decision] });
+		const resolvedApproval: ToolApproval = { ...approval, status: "approved", source: "user", resolvedAt: 21 };
+		const resolvedDecision: UserDecision = { ...decision, status: "answered", answers: [{ kind: "option", optionIndex: 0 }], resolvedAt: 21 };
+		state = chatRuntimeReducer(state, { type: "event", event: { type: "approval.resolved", data: resolvedApproval } });
+		state = chatRuntimeReducer(state, { type: "event", event: { type: "decision.resolved", data: resolvedDecision } });
+		state = chatRuntimeReducer(state, { type: "mergePersisted", messages: [], approvals: [approval], decisions: [decision] });
+		expect(state.approvals[approval.id]).toEqual(resolvedApproval);
+		expect(state.decisions[decision.id]).toEqual(resolvedDecision);
+	});
+
+	it("shows a newer pending approval for a ToolCall even when an earlier approval was resolved", () => {
+		const message = assistant([{ type: "toolCall", id: "upload-1", name: "sftp_upload",
+			arguments: { sourceFilePath: "/tmp/app.jar", targetPath: "/opt/app.jar" } }]);
+		const earlier: ToolApproval = {
+			id: "approval-1", sessionId: run.sessionId, runId: run.id, assistantMessageId: "20",
+			toolCallId: "upload-1", toolName: "sftp_upload", description: "执行上传？",
+			status: "approved", source: "user", createdAt: 21, resolvedAt: 22,
+		};
+		const overwrite: ToolApproval = {
+			...earlier, id: "approval-2", description: "远端文件已存在，批准后将覆盖。",
+			status: "pending", source: undefined, createdAt: 23, resolvedAt: undefined,
+		};
+		const approvals = { [earlier.id]: earlier, [overwrite.id]: overwrite };
+		expect(approvalForTool(approvals, "upload-1")).toEqual(overwrite);
+		const html = renderLocalized(createElement(ChatMessageRow, {
+			entry: { key: "message-1", message, final: true }, tools: {}, approvals,
+			approvalMutationId: null, onResolveApproval: vi.fn(),
+		}));
+		expect(html).toContain("远端文件已存在，批准后将覆盖。");
+		expect(html).toContain("批准覆盖");
+		expect(html).toContain("拒绝覆盖");
+	});
+
 	it("restores a pending decision and removes its answer entry when the Run ends", () => {
 		const decision: UserDecision = {
 			id: "decision-1", sessionId: run.sessionId, runId: run.id, toolCallId: "tool-1", status: "pending", createdAt: 3,

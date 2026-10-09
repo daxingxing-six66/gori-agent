@@ -24,8 +24,9 @@ interface SubmitInput {
 	thinkingLevel: ThinkingLevel;
 	behavior: ChatQueueBehavior;
 	serverInteractionMode: "command" | "terminal";
-	workflow?: "deployment_setup" | "deployment_execution";
+	workflow?: "deployment_setup" | "deployment_planning" | "deployment_execution" | "deployment_recovery";
 	deploymentRunId?: string;
+	deploymentDiscussionId?: string;
 }
 
 export function useChatRuntime(sessionId: string) {
@@ -73,8 +74,8 @@ export function useChatRuntime(sessionId: string) {
 		dispatch({
 			type: options.merge ? "mergePersisted" : "hydrate",
 			messages: page.messages,
-			approvals: approvals.status === "fulfilled" ? approvals.value.approvals : [],
-			decisions: decisions.status === "fulfilled" ? decisions.value.decisions : [],
+			...(approvals.status === "fulfilled" ? { approvals: approvals.value.approvals } : {}),
+			...(decisions.status === "fulfilled" ? { decisions: decisions.value.decisions } : {}),
 		});
 		if (options.afterSequence === undefined) setNextBeforeSequence(page.nextBeforeSequence);
 		dispatch({ type: "setRun", run: activeRun.run });
@@ -170,7 +171,7 @@ export function useChatRuntime(sessionId: string) {
 		};
 	}, [contextUsageStore, locale, runId, sessionId, synchronize]);
 
-	const submit = useCallback(async ({ message, attachments, model, thinkingLevel, behavior, serverInteractionMode, workflow, deploymentRunId }: SubmitInput): Promise<ChatRun | null> => {
+	const submit = useCallback(async ({ message, attachments, model, thinkingLevel, behavior, serverInteractionMode, workflow, deploymentRunId, deploymentDiscussionId }: SubmitInput): Promise<ChatRun | null> => {
 		const normalized = message.trim();
 		const attachmentIds = attachments.map((attachment) => attachment.id);
 		if ((!normalized && attachmentIds.length === 0) || submitting) return null;
@@ -199,6 +200,7 @@ export function useChatRuntime(sessionId: string) {
 					serverInteractionMode,
 					...(workflow === undefined ? {} : { workflow }),
 					...(deploymentRunId === undefined ? {} : { deploymentRunId }),
+					...(deploymentDiscussionId === undefined ? {} : { deploymentDiscussionId }),
 				});
 				dispatch({ type: "setRun", run });
 				return run;
