@@ -5,7 +5,7 @@ import type {
 	CommandGuardEvaluator,
 } from "../src/application/services/command-guard-evaluator.ts";
 import { SessionLifecycleCoordinator } from "../src/application/services/session-lifecycle-coordinator.ts";
-import { TerminalInteractionService } from "../src/application/services/terminal-interaction-service.ts";
+import { TerminalInteractionService, type TerminalInteractionRequest } from "../src/application/services/terminal-interaction-service.ts";
 import { TerminalSessionService } from "../src/application/services/terminal-session-service.ts";
 import type {
 	TerminalChannelBroker,
@@ -147,6 +147,13 @@ async function setup(guards: CommandGuardEvaluator) {
 			ids,
 		}),
 		terminal,
+	};
+}
+
+function submitRequest(terminalSessionId: string, toolCallId: string): TerminalInteractionRequest {
+	return {
+		sessionId: "session-1", terminalSessionId, agentRunId: "run-1", toolCallId,
+		action: { type: "submit", input: "echo approved" }, expectation: "finite",
 	};
 }
 
@@ -297,7 +304,10 @@ describe("TerminalInteractionService", () => {
 			context.interactions.approve("run-1", "tool-2");
 			await expect(context.interactions.execute(request)).rejects.toMatchObject({ code: "guard_blocked" });
 			expect(context.broker.handle?.written).toEqual([]);
-			expect(context.repository.findInteractionByToolCall("run-1", "tool-2")?.status).toBe("rejected");
+			expect(context.repository.findInteractionByToolCall("run-1", "tool-2")).toMatchObject({
+				status: "rejected", failure: { code: "guard_blocked" },
+				guardDecision: { allowed: false, guardRevision: 2, matchedRuleId: "rule-1", reason: "blocked after approval" },
+			});
 		} finally {
 			await context.terminals.shutdown();
 			context.database.close();
@@ -325,6 +335,156 @@ describe("TerminalInteractionService", () => {
 				status: "cancelled",
 				failure: { code: "run_cancelled" },
 			});
+		} finally {
+			await context.terminals.shutdown();
+			context.database.close();
+		}
+	});
+
+	it("keeps approval pending and uses the persisted input after approval, with idempotent execution", async () => {
+		const guards = { evaluate: vi.fn(async () => ({ allowed: true, guardRevision: 1 })) };
+		const context = await setup(guards);
+		try {
+			const request = submitRequest(context.terminal.id, "approved-input");
+			await context.interactions.preflightSubmit(request, true);
+			await expect(context.interactions.execute(request)).rejects.toMatchObject({ code: "terminal_approval_required" });
+			expect(context.repository.findInteractionByToolCall("run-1", request.toolCallId)?.status).toBe("awaiting_approval");
+			expect(context.broker.handle?.written).toEqual([]);
+			context.interactions.approve("run-1", request.toolCallId);
+			const handle = context.broker.handle!;
+			const write = handle.write.bind(handle);
+			vi.spyOn(handle, "write").mockImplementation(async (bytes) => {
+				const interaction = context.repository.findInteractionByToolCall("run-1", request.toolCallId)!;
+				expect(interaction.status).toBe("writing");
+				expect(context.repository.findInputByInteraction(interaction.id)?.status).toBe("prepared");
+				await write(bytes);
+			});
+			const result = await context.interactions.execute({ ...request, action: { type: "submit", input: "changed after approval" } });
+			expect(guards.evaluate).toHaveBeenLastCalledWith("workspace-1", "echo approved");
+			expect(new TextDecoder().decode(handle.written[0])).toBe("echo approved\r");
+			const repeated = await context.interactions.execute(request);
+			expect(repeated.observation.id).toBe(result.observation.id);
+			expect(handle.written).toHaveLength(1);
+		} finally {
+			await context.terminals.shutdown();
+			context.database.close();
+		}
+	});
+
+	it.each(["before_execute", "during_guard", "after_input_event"] as const)(
+		"does not write a cancelled submit at %s", async (stage) => {
+			const controller = new AbortController();
+			let checks = 0;
+			const context = await setup({ evaluate: async () => {
+				checks += 1;
+				if (checks === 2 && stage === "during_guard") controller.abort();
+				return { allowed: true };
+			} });
+			try {
+				const request = submitRequest(context.terminal.id, `cancel-${stage}`);
+				await context.interactions.preflightSubmit(request, false);
+				if (stage === "before_execute") controller.abort();
+				if (stage === "after_input_event") {
+					const actor = context.terminals.getActor("session-1")!;
+					const recordEvent = actor.recordDurableEvent.bind(actor);
+					vi.spyOn(actor, "recordDurableEvent").mockImplementation(async (type, data) => {
+						const sequence = await recordEvent(type, data);
+						if (type === "terminal.input") controller.abort();
+						return sequence;
+					});
+				}
+				await expect(context.interactions.execute(request, controller.signal)).rejects.toMatchObject({ name: "TerminalObservationCancelledError" });
+				expect(context.broker.handle?.written).toEqual([]);
+				const interaction = context.repository.findInteractionByToolCall("run-1", request.toolCallId)!;
+				expect(interaction).toMatchObject({ status: "cancelled", failure: { code: "run_cancelled" } });
+				expect(context.repository.findInputByInteraction(interaction.id)?.status).toBe("prepared");
+			} finally {
+				await context.terminals.shutdown();
+				context.database.close();
+			}
+		},
+	);
+
+	it.each(["channel_write", "input_persistence"] as const)(
+		"marks attempted input uncertain after %s fails and never repeats the write", async (failure) => {
+			const context = await setup(new Decisions([]));
+			try {
+				const request = submitRequest(context.terminal.id, `uncertain-${failure}`);
+				await context.interactions.preflightSubmit(request, false);
+				const handle = context.broker.handle!;
+				if (failure === "channel_write") {
+					vi.spyOn(handle, "write").mockImplementationOnce(async (bytes) => {
+						handle.written.push(bytes.slice());
+						throw new Error("channel acknowledgement lost");
+					});
+				} else vi.spyOn(context.repository, "updateInputStatus").mockReturnValueOnce(false);
+				await expect(context.interactions.execute(request)).rejects.toThrow();
+				const interaction = context.repository.findInteractionByToolCall("run-1", request.toolCallId)!;
+				expect(interaction).toMatchObject({ status: "write_uncertain", failure: { code: "terminal_write_uncertain" } });
+				expect(context.repository.findInputByInteraction(interaction.id)).toMatchObject({ status: "uncertain", terminalSequence: expect.any(Number) });
+				await expect(context.interactions.execute(request)).rejects.toMatchObject({ code: "terminal_interaction_write_uncertain" });
+				expect(handle.written).toHaveLength(1);
+			} finally {
+				await context.terminals.shutdown();
+				context.database.close();
+			}
+		},
+	);
+
+	it("does not write when the writing transition cannot be persisted", async () => {
+		const context = await setup(new Decisions([]));
+		try {
+			const request = submitRequest(context.terminal.id, "writing-persistence");
+			await context.interactions.preflightSubmit(request, false);
+			vi.spyOn(context.repository, "updateInteraction").mockReturnValueOnce(false);
+			await expect(context.interactions.execute(request)).rejects.toMatchObject({ code: "terminal_persistence_failed" });
+			expect(context.broker.handle?.written).toEqual([]);
+			expect(context.repository.findInteractionByToolCall("run-1", request.toolCallId)?.status).toBe("failed");
+		} finally {
+			await context.terminals.shutdown();
+			context.database.close();
+		}
+	});
+
+	it("settles an observation persistence failure without replaying input or advancing the delivered cursor", async () => {
+		const context = await setup(new Decisions([]));
+		try {
+			const request = submitRequest(context.terminal.id, "observation-persistence");
+			await context.interactions.preflightSubmit(request, false);
+			vi.spyOn(context.repository, "insertObservation").mockImplementationOnce(() => { throw new Error("storage unavailable"); });
+			await expect(context.interactions.execute(request)).rejects.toThrow("storage unavailable");
+			expect(context.repository.findInteractionByToolCall("run-1", request.toolCallId)?.status).toBe("failed");
+			await expect(context.interactions.execute(request)).rejects.toMatchObject({ code: "terminal_interaction_failed" });
+			const next = await context.interactions.execute({ ...request, toolCallId: "unread-after-failure", action: { type: "observe" } });
+			expect(next.observation.agentViewText).toContain("result");
+			expect(context.broker.handle?.written).toHaveLength(1);
+		} finally {
+			await context.terminals.shutdown();
+			context.database.close();
+		}
+	});
+
+	it("shares an in-flight retry, rejects competing interactions and releases the slot after completion", async () => {
+		const context = await setup(new Decisions([]));
+		try {
+			const request = submitRequest(context.terminal.id, "in-flight");
+			await context.interactions.preflightSubmit(request, false);
+			let release: () => void = () => undefined;
+			let entered: () => void = () => undefined;
+			const gate = new Promise<void>((resolve) => { release = resolve; });
+			const writing = new Promise<void>((resolve) => { entered = resolve; });
+			const handle = context.broker.handle!;
+			const write = handle.write.bind(handle);
+			vi.spyOn(handle, "write").mockImplementationOnce(async (bytes) => { entered(); await gate; await write(bytes); });
+			const first = context.interactions.execute(request);
+			expect(context.interactions.execute(request)).toBe(first);
+			await writing;
+			const competing = { ...request, toolCallId: "competing", action: { type: "observe" as const } };
+			await expect(context.interactions.execute(competing)).rejects.toMatchObject({ code: "terminal_interaction_busy" });
+			release();
+			await first;
+			await expect(context.interactions.execute(competing)).resolves.toMatchObject({ interaction: { status: "completed" } });
+			expect(handle.written).toHaveLength(1);
 		} finally {
 			await context.terminals.shutdown();
 			context.database.close();

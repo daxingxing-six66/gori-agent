@@ -5,7 +5,6 @@ import type {
 	TerminalGeometry,
 	TerminalObservation,
 	TerminalSession,
-	TerminalSandboxMode,
 	TerminalTimelineEvent,
 } from "../../domain/terminal.ts";
 import { effectiveServerInteractionMode, isLiveTerminalStatus, TerminalError } from "../../domain/terminal.ts";
@@ -13,6 +12,7 @@ import type { SessionRepository } from "../repositories/session-repository.ts";
 import type { TerminalRepository } from "../repositories/terminal-repository.ts";
 import type { TerminalChannelBroker } from "../ssh-channel-broker.ts";
 import { TERMINAL_DEFAULTS } from "../terminal/terminal-defaults.ts";
+import { TerminalChannelOpener } from "../terminal/terminal-channel-opener.ts";
 import { TerminalRuntimeRegistry } from "../terminal/terminal-runtime-registry.ts";
 import type {
 	TerminalAttachmentBootstrap,
@@ -54,15 +54,12 @@ export interface TerminalStatusView {
 export class TerminalSessionService {
 	readonly #sessions: SessionRepository;
 	readonly #terminals: TerminalRepository;
-	readonly #targets: SshTargetResolver;
-	readonly #broker: TerminalChannelBroker;
-	readonly #sandbox: RemoteSandboxProvider;
+	readonly #opener: TerminalChannelOpener;
 	readonly #lifecycle: SessionLifecycleCoordinator;
 	readonly #registry: TerminalRuntimeRegistry;
 	readonly #clock: Clock;
 	readonly #ids: IdGenerator;
 	readonly #hasActiveChatRun: (sessionId: SessionId) => Promise<boolean>;
-	readonly #openTimeoutMs: number;
 	readonly #openingControllers = new Map<string, AbortController>();
 	readonly #idleTimer: ReturnType<typeof setInterval>;
 	#closed = false;
@@ -82,15 +79,15 @@ export class TerminalSessionService {
 	}) {
 		this.#sessions = options.sessions;
 		this.#terminals = options.terminals;
-		this.#targets = options.targets;
-		this.#broker = options.broker;
-		this.#sandbox = options.sandbox;
+		this.#opener = new TerminalChannelOpener({
+			targets: options.targets, sandbox: options.sandbox, broker: options.broker,
+			timeoutMs: options.openTimeoutMs ?? TERMINAL_DEFAULTS.lifecycle.openTimeoutMs,
+		});
 		this.#lifecycle = options.lifecycle;
 		this.#registry = options.registry ?? new TerminalRuntimeRegistry();
 		this.#clock = options.clock;
 		this.#ids = options.ids;
 		this.#hasActiveChatRun = options.hasActiveChatRun;
-		this.#openTimeoutMs = options.openTimeoutMs ?? TERMINAL_DEFAULTS.lifecycle.openTimeoutMs;
 		this.#idleTimer = setInterval(() => this.#scanIdle(), TERMINAL_DEFAULTS.lifecycle.idleScanIntervalMs);
 		this.#idleTimer.unref();
 	}
@@ -122,125 +119,112 @@ export class TerminalSessionService {
 	}
 
 	async open(input: OpenTerminalInput): Promise<TerminalSession> {
-		if (this.#closed)
-			throw new TerminalError("terminal_session_unavailable", "Terminal service is closing", { status: 503 });
-		const existingRequest = this.#terminals.findSessionByOpenRequest(input.sessionId, input.requestId);
-		const requestedSandboxMode: TerminalSandboxMode = "workspace_write";
-		if (existingRequest) {
-			if (existingRequest.requestedSandboxMode !== requestedSandboxMode)
+		this.#requireOpenAvailable();
+		const existing = this.#terminals.findSessionByOpenRequest(input.sessionId, input.requestId);
+		if (existing) {
+			if (existing.requestedSandboxMode !== "workspace_write") {
 				throw new TerminalError("terminal_open_request_conflict", "Open request mode differs from the existing TerminalSession", { status: 409 });
-			return existingRequest;
+			}
+			return existing;
 		}
-		const useLease = this.#lifecycle.acquireUse(input.sessionId, "terminal_open");
+		const lease = this.#lifecycle.acquireUse(input.sessionId, "terminal_open");
 		try {
-			const session = await this.#sessions.findById(input.sessionId);
-			if (!session) throw new TerminalError("terminal_session_not_found", "Session was not found", { status: 404 });
-			if (await this.#hasActiveChatRun(input.sessionId)) {
-				throw new TerminalError("session_has_active_chat_run", "Session has an active Chat Run", { status: 409 });
-			}
-			const current = this.#terminals.findCurrentSession(input.sessionId);
-			if (current && isLiveTerminalStatus(current.status)) {
-				throw new TerminalError(
-					"terminal_session_already_active",
-					"Session already has an active TerminalSession",
-					{
-						status: 409,
-						details: { terminalSessionId: current.id, status: current.status },
-					},
-				);
-			}
-			const geometry = requireGeometry(input.rows, input.cols);
-			const reservation = this.#registry.reserve();
-			if (!reservation) {
-				throw new TerminalError("terminal_capacity_exceeded", "Process Terminal capacity exceeded", {
-					status: 429,
-					retryable: true,
-				});
-			}
-			let sessionLease: SessionUseLease | undefined;
-			let actor: TerminalSessionActor | undefined;
-			let runtimeOwnsResources = false;
-			try {
-				sessionLease = this.#lifecycle.acquireUse(input.sessionId, "terminal_session");
-				const now = this.#clock.now();
-				const terminal: TerminalSession = {
-					id: this.#ids.next(),
-					sessionId: session.id,
-					workspaceId: session.workspaceId,
-					openRequestId: input.requestId,
-					closeRequestId: null,
-					status: "opening",
-					requestedSandboxMode,
-					sandbox: null,
-					revision: 1,
-					geometry,
-					eventSequence: 0,
-					ownershipEpoch: 0,
-					connectionGeneration: null,
-					term: "xterm-256color",
-					activatedAt: null,
-					lastConsumerActivityAt: now,
-					idleDeadlineAt: null,
-					closingAt: null,
-					closedAt: null,
-					closeReason: null,
-					failureCode: null,
-					failureMessage: null,
-					createdAt: now,
-					updatedAt: now,
-				};
-				this.#terminals.insertSession(terminal);
-				const createdActor = new TerminalSessionActor({
-					session: terminal,
-					repository: this.#terminals,
-					clock: this.#clock,
-					ids: this.#ids,
-					sessionLease,
-					onDisposed: () => {
-						this.#registry.remove(createdActor);
-						reservation.release();
-					},
-				});
-				actor = createdActor;
-				this.#registry.register(createdActor);
-				runtimeOwnsResources = true;
-				this.#terminals.appendTimelineEvent({
-					id: this.#ids.next(),
-					terminalSessionId: terminal.id,
-					sessionId: terminal.sessionId,
-					terminalEventSequence: 0,
-					type: "terminal.opening",
-					interactionId: null,
-					observationId: null,
-					agentRunId: null,
-					data: { rows: geometry.rows, cols: geometry.cols, requestedSandboxMode },
-					createdAt: now,
-				});
-				const controller = new AbortController();
-				this.#openingControllers.set(createdActor.id, controller);
-				void this.#startActor(createdActor, controller);
-				return terminal;
-			} catch (error) {
-				if (runtimeOwnsResources) {
-					await actor?.failOpening(
-						"terminal_initialization_failed",
-						error instanceof Error ? error.message : "Terminal initialization failed",
-					);
-				} else {
-					sessionLease?.release();
-					reservation.release();
-				}
-				throw error;
-			}
+			const session = await this.#requireOpenSession(input.sessionId);
+			this.#requireOpenState(input.sessionId);
+			return await this.#createRuntime(input, session.workspaceId, requireGeometry(input.rows, input.cols));
 		} finally {
-			useLease.release();
+			lease.release();
 		}
 	}
 
-	async close(input: CloseTerminalInput): Promise<TerminalSession> {
-		if (await this.#hasActiveChatRun(input.sessionId)) {
+	#requireOpenAvailable(): void {
+		if (this.#closed)
+			throw new TerminalError("terminal_session_unavailable", "Terminal service is closing", { status: 503 });
+	}
+
+	async #requireNoActiveChatRun(sessionId: SessionId): Promise<void> {
+		if (await this.#hasActiveChatRun(sessionId)) {
 			throw new TerminalError("session_has_active_chat_run", "Session has an active Chat Run", { status: 409 });
 		}
+	}
+
+	async #requireOpenSession(sessionId: SessionId) {
+		const session = await this.#sessions.findById(sessionId);
+		if (!session) throw new TerminalError("terminal_session_not_found", "Session was not found", { status: 404 });
+		await this.#requireNoActiveChatRun(sessionId);
+		return session;
+	}
+
+	#requireOpenState(sessionId: SessionId): void {
+		// Check after the final validation await; shutdown or another open may have completed.
+		this.#requireOpenAvailable();
+		const current = this.#terminals.findCurrentSession(sessionId);
+		if (current && isLiveTerminalStatus(current.status)) {
+			throw new TerminalError("terminal_session_already_active", "Session already has an active TerminalSession", {
+				status: 409, details: { terminalSessionId: current.id, status: current.status },
+			});
+		}
+	}
+
+	async #createRuntime(input: OpenTerminalInput, workspaceId: string, geometry: TerminalGeometry): Promise<TerminalSession> {
+		const reservation = this.#registry.reserve();
+		if (!reservation) {
+			throw new TerminalError("terminal_capacity_exceeded", "Process Terminal capacity exceeded", {
+				status: 429, retryable: true,
+			});
+		}
+		let sessionLease: SessionUseLease | undefined;
+		let actor: TerminalSessionActor | undefined;
+		try {
+			sessionLease = this.#lifecycle.acquireUse(input.sessionId, "terminal_session");
+			const terminal = this.#newOpeningSession(input, workspaceId, geometry);
+			this.#terminals.insertSession(terminal);
+			const createdActor = new TerminalSessionActor({
+				session: terminal, repository: this.#terminals, clock: this.#clock, ids: this.#ids, sessionLease,
+				onDisposed: () => { this.#registry.remove(createdActor); reservation.release(); },
+			});
+			// Once constructed, the Actor owns the Session lease and capacity reservation.
+			actor = createdActor;
+			this.#registry.register(createdActor);
+			this.#appendOpeningTimeline(terminal);
+			const controller = new AbortController();
+			this.#openingControllers.set(actor.id, controller);
+			void this.#startActor(actor, controller);
+			return terminal;
+		} catch (error) {
+			if (actor) {
+				await actor.failOpening("terminal_initialization_failed", error instanceof Error ? error.message : "Terminal initialization failed");
+			} else {
+				sessionLease?.release();
+				reservation.release();
+			}
+			throw error;
+		}
+	}
+
+	#newOpeningSession(input: OpenTerminalInput, workspaceId: string, geometry: TerminalGeometry): TerminalSession {
+		const now = this.#clock.now();
+		return {
+			id: this.#ids.next(), sessionId: input.sessionId, workspaceId, openRequestId: input.requestId,
+			closeRequestId: null, status: "opening", requestedSandboxMode: "workspace_write", sandbox: null,
+			revision: 1, geometry, eventSequence: 0, ownershipEpoch: 0, connectionGeneration: null,
+			term: "xterm-256color", activatedAt: null, lastConsumerActivityAt: now, idleDeadlineAt: null,
+			closingAt: null, closedAt: null, closeReason: null, failureCode: null, failureMessage: null,
+			createdAt: now, updatedAt: now,
+		};
+	}
+
+	#appendOpeningTimeline(terminal: TerminalSession): void {
+		this.#terminals.appendTimelineEvent({
+			id: this.#ids.next(), terminalSessionId: terminal.id, sessionId: terminal.sessionId, terminalEventSequence: 0,
+			type: "terminal.opening", interactionId: null, observationId: null, agentRunId: null,
+			data: { rows: terminal.geometry.rows, cols: terminal.geometry.cols, requestedSandboxMode: terminal.requestedSandboxMode },
+			createdAt: terminal.createdAt,
+		});
+	}
+
+	async close(input: CloseTerminalInput): Promise<TerminalSession> {
+		await this.#requireNoActiveChatRun(input.sessionId);
 		const actor = this.#registry.findBySession(input.sessionId);
 		if (!actor || actor.id !== input.terminalSessionId) {
 			const persisted = this.#terminals.findSession(input.terminalSessionId);
@@ -391,45 +375,8 @@ export class TerminalSessionService {
 	}
 
 	async #startActor(actor: TerminalSessionActor, controller: AbortController): Promise<void> {
-		let openTimeout: ReturnType<typeof setTimeout> | undefined;
-		let timedOut = false;
-		const timeoutError = new TerminalError("terminal_open_timeout", "Timed out opening the SSH terminal channel", {
-			status: 504,
-			retryable: true,
-		});
 		try {
-			const open = Promise.resolve().then(async () => {
-				const target = await this.#targets.resolve(actor.sessionId);
-				const prepared = await this.#sandbox.prepareTerminal({ target, signal: controller.signal });
-				const channel = await this.#broker.open({
-					target,
-					launch: { kind: "sandboxed_exec", command: prepared.command, confirmation: prepared.confirmation },
-					geometry: actor.view.geometry,
-					term: "xterm-256color",
-					signal: controller.signal,
-					onData: (bytes) => actor.acceptSshData(bytes),
-				});
-				return { channel, sandbox: prepared.sandbox };
-			});
-			const timeout = new Promise<never>((_resolve, reject) => {
-				openTimeout = setTimeout(() => {
-					timedOut = true;
-					controller.abort();
-					reject(timeoutError);
-				}, this.#openTimeoutMs);
-				openTimeout.unref();
-			});
-			void open.then(
-				({ channel }) => {
-					if (timedOut) channel.dispose();
-				},
-				() => undefined,
-			);
-			const { channel, sandbox } = await Promise.race([open, timeout]);
-			if (timedOut) {
-				channel.dispose();
-				throw timeoutError;
-			}
+			const { channel, sandbox } = await this.#opener.open(actor, controller);
 			await actor.activate(channel, sandbox);
 		} catch (error) {
 			await actor.failOpening(
@@ -437,7 +384,6 @@ export class TerminalSessionService {
 				error instanceof Error ? error.message : "Terminal open failed",
 			);
 		} finally {
-			if (openTimeout !== undefined) clearTimeout(openTimeout);
 			if (this.#openingControllers.get(actor.id) === controller) this.#openingControllers.delete(actor.id);
 		}
 	}

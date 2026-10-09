@@ -1,8 +1,9 @@
 import { DatabaseSync } from "node:sqlite";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { SessionLifecycleCoordinator } from "../src/application/services/session-lifecycle-coordinator.ts";
 import type { SshTargetResolver } from "../src/application/services/ssh-target-resolver.ts";
 import { TerminalSessionService } from "../src/application/services/terminal-session-service.ts";
+import { TerminalRuntimeRegistry } from "../src/application/terminal/terminal-runtime-registry.ts";
 import type {
 	TerminalChannelBroker,
 	TerminalChannelExit,
@@ -97,6 +98,21 @@ const createDatabase = (): DatabaseSync => {
 	`);
 	return database;
 };
+
+function setupService(options: Partial<ConstructorParameters<typeof TerminalSessionService>[0]> = {}) {
+	const database = createDatabase();
+	const repository = new SqliteTerminalRepository(database);
+	const registry = new TerminalRuntimeRegistry({ capacity: 1 });
+	const lifecycle = new SessionLifecycleCoordinator();
+	const broker = new FakeBroker();
+	const service = new TerminalSessionService({
+		sessions: new SqliteSessionRepository(database), terminals: repository,
+		targets: { resolve: async () => target }, broker, sandbox: terminalTestSandbox,
+		lifecycle, registry, clock: { now: () => Date.now() }, ids: new SequentialIds(),
+		hasActiveChatRun: async () => false, openTimeoutMs: 10, ...options,
+	});
+	return { database, repository, registry, lifecycle, broker, service };
+}
 
 describe("TerminalSessionService", () => {
 	it("marks an active Terminal Session as lost when its runtime is absent during close", async () => {
@@ -304,4 +320,137 @@ describe("TerminalSessionService", () => {
 			} finally { await service.shutdown(); database.close(); }
 		},
 	);
+
+	it("stops before sandbox preparation when a target resolves after the opening deadline", async () => {
+		vi.useFakeTimers();
+		let resolveTarget: (value: SshTargetSnapshot) => void = () => undefined;
+		const resolved = new Promise<SshTargetSnapshot>((resolve) => { resolveTarget = resolve; });
+		const prepareTerminal = vi.fn(terminalTestSandbox.prepareTerminal);
+		const context = setupService({
+			targets: { resolve: async () => resolved }, sandbox: { ...terminalTestSandbox, prepareTerminal },
+		});
+		try {
+			await context.service.open({ sessionId: "session-1", requestId: "late-target" });
+			await vi.advanceTimersByTimeAsync(10);
+			expect(context.service.get("session-1")).toMatchObject({ status: "failed", failureCode: "terminal_open_timeout" });
+			expect(context.registry.reservationCount).toBe(0);
+			expect(context.lifecycle.getUsage("session-1").byKind.terminal_session).toBe(0);
+			resolveTarget(target);
+			await vi.advanceTimersByTimeAsync(0);
+			expect(prepareTerminal).not.toHaveBeenCalled();
+			expect(context.broker.openCount).toBe(0);
+		} finally {
+			await context.service.shutdown();
+			context.database.close();
+			vi.useRealTimers();
+		}
+	});
+
+	it("stops before PTY dispatch when sandbox preparation resolves after the opening deadline", async () => {
+		vi.useFakeTimers();
+		const prepared = await terminalTestSandbox.prepareTerminal({ target, signal: new AbortController().signal });
+		let resolvePreparation: (value: typeof prepared) => void = () => undefined;
+		const preparation = new Promise<typeof prepared>((resolve) => { resolvePreparation = resolve; });
+		const context = setupService({ sandbox: { ...terminalTestSandbox, prepareTerminal: async () => preparation } });
+		try {
+			await context.service.open({ sessionId: "session-1", requestId: "late-preparation" });
+			await vi.advanceTimersByTimeAsync(10);
+			expect(context.service.get("session-1")).toMatchObject({ status: "failed", failureCode: "terminal_open_timeout" });
+			resolvePreparation(prepared);
+			await vi.advanceTimersByTimeAsync(0);
+			expect(context.broker.openCount).toBe(0);
+			expect(context.registry.reservationCount).toBe(0);
+		} finally {
+			await context.service.shutdown();
+			context.database.close();
+			vi.useRealTimers();
+		}
+	});
+
+	it.each(["timeout", "close"] as const)("disposes a channel returned after %s without activating it", async (interruption) => {
+		vi.useFakeTimers();
+		let resolveChannel: (channel: TerminalChannelHandle) => void = () => undefined;
+		const pending = new Promise<TerminalChannelHandle>((resolve) => { resolveChannel = resolve; });
+		const handle = new FakeHandle();
+		const dispose = vi.spyOn(handle, "dispose");
+		const startOutput = vi.spyOn(handle, "startOutput");
+		const context = setupService({ broker: { open: async () => pending } });
+		try {
+			const opening = await context.service.open({ sessionId: "session-1", requestId: `late-channel-${interruption}` });
+			await vi.advanceTimersByTimeAsync(0);
+			if (interruption === "timeout") await vi.advanceTimersByTimeAsync(10);
+			else await context.service.close({ sessionId: "session-1", terminalSessionId: opening.id, requestId: "close-pending" });
+			expect(context.service.get("session-1")?.status).toBe(interruption === "timeout" ? "failed" : "closed");
+			expect(context.registry.reservationCount).toBe(0);
+			expect(context.lifecycle.getUsage("session-1").byKind.terminal_session).toBe(0);
+			resolveChannel(handle);
+			await vi.advanceTimersByTimeAsync(0);
+			expect(dispose).toHaveBeenCalledTimes(1);
+			expect(startOutput).not.toHaveBeenCalled();
+			expect(context.service.get("session-1")?.status).toBe(interruption === "timeout" ? "failed" : "closed");
+		} finally {
+			await context.service.shutdown();
+			context.database.close();
+			vi.useRealTimers();
+		}
+	});
+
+	it("does not create a runtime if shutdown happens while open validation is awaiting", async () => {
+		let finishValidation: (value: boolean) => void = () => undefined;
+		let started: () => void = () => undefined;
+		const waiting = new Promise<void>((resolve) => { started = resolve; });
+		const validation = new Promise<boolean>((resolve) => { finishValidation = resolve; });
+		const context = setupService({ hasActiveChatRun: async () => { started(); return validation; } });
+		try {
+			const opening = context.service.open({ sessionId: "session-1", requestId: "shutdown-during-validation" });
+			await waiting;
+			await context.service.shutdown();
+			finishValidation(false);
+			await expect(opening).rejects.toMatchObject({ code: "terminal_session_unavailable" });
+			expect(context.service.get("session-1")).toBeNull();
+			expect(context.registry.reservationCount).toBe(0);
+			expect(context.lifecycle.getUsage("session-1").total).toBe(0);
+			expect(context.broker.openCount).toBe(0);
+		} finally {
+			await context.service.shutdown();
+			context.database.close();
+		}
+	});
+
+	it("admits only one runtime when concurrent opens finish asynchronous validation", async () => {
+		const context = setupService();
+		try {
+			const results = await Promise.allSettled([
+				context.service.open({ sessionId: "session-1", requestId: "concurrent-1" }),
+				context.service.open({ sessionId: "session-1", requestId: "concurrent-2" }),
+			]);
+			expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+			const rejected = results.find((result) => result.status === "rejected");
+			expect(rejected?.status === "rejected" ? rejected.reason : undefined).toMatchObject({ code: "terminal_session_already_active" });
+			expect(context.registry.reservationCount).toBe(1);
+			expect(context.lifecycle.getUsage("session-1").byKind.terminal_session).toBe(1);
+		} finally {
+			await context.service.shutdown();
+			context.database.close();
+		}
+	});
+
+	it.each(["insert_session", "opening_timeline"] as const)("releases both leases and capacity when %s fails", async (stage) => {
+		const context = setupService();
+		try {
+			if (stage === "insert_session") vi.spyOn(context.repository, "insertSession").mockImplementationOnce(() => { throw new Error("insert failed"); });
+			else vi.spyOn(context.repository, "appendTimelineEvent").mockImplementationOnce(() => { throw new Error("timeline failed"); });
+			await expect(context.service.open({ sessionId: "session-1", requestId: `initialization-${stage}` })).rejects.toThrow();
+			expect(context.registry.reservationCount).toBe(0);
+			expect(context.registry.list()).toEqual([]);
+			expect(context.lifecycle.getUsage("session-1").total).toBe(0);
+			expect(context.broker.openCount).toBe(0);
+			if (stage === "opening_timeline") {
+				expect(context.service.get("session-1")).toMatchObject({ status: "failed", failureCode: "terminal_initialization_failed" });
+			}
+		} finally {
+			await context.service.shutdown();
+			context.database.close();
+		}
+	});
 });
