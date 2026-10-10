@@ -320,7 +320,7 @@ describe("SqliteTerminalRepository", () => {
 			database.exec("CREATE TABLE ssh_agent_schema_migrations(version INTEGER PRIMARY KEY, applied_at INTEGER NOT NULL) STRICT");
 			const recorded = database.prepare("INSERT INTO ssh_agent_schema_migrations VALUES (?, 1)");
 			// Exercise v20 in isolation; later deployment migrations require full historical tables.
-			for (let version = 1; version <= 26; version++) if (version !== 20) recorded.run(version);
+			for (let version = 1; version <= 27; version++) if (version !== 20) recorded.run(version);
 			database.exec("CREATE TABLE terminal_sessions (id TEXT PRIMARY KEY, status TEXT NOT NULL) STRICT");
 			database.exec("CREATE TABLE workspaces (id TEXT PRIMARY KEY, remote_default_cwd TEXT NOT NULL DEFAULT '/', remote_sandbox_root TEXT) STRICT");
 			database.exec("INSERT INTO terminal_sessions VALUES ('legacy', 'closed')");

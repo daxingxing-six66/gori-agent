@@ -22,14 +22,15 @@ const run: ChatRun = {
 	updatedAt: 1,
 };
 
-function createPolicy(options: { autoAudit?: boolean; remoteAllowed?: boolean; terminalAllowed?: boolean;
-	remoteRoute?: RemoteSandboxRoute; deploymentStageMode?: "workspace_write" | "full_access" } = {}) {
+function createPolicy(options: { autoAudit?: boolean; sandboxEnabled?: boolean; remoteAllowed?: boolean; terminalAllowed?: boolean;
+	remoteRoute?: RemoteSandboxRoute; deploymentStageMode?: "workspace_write" | "full_access"; deploymentSessionAuthorized?: boolean } = {}) {
 	const session: Session = {
 		id: "session-1",
 		workspaceId: "workspace-1",
 		displayName: "test",
 		workDir: null,
 		autoAudit: options.autoAudit ?? false,
+		sandboxEnabled: options.sandboxEnabled ?? true,
 		terminalContextCursor: 0,
 		revision: 1,
 		createdAt: 1,
@@ -53,7 +54,7 @@ function createPolicy(options: { autoAudit?: boolean; remoteAllowed?: boolean; t
 			facts: { mode: "workspace_write" as const, backend: "landlock" as const, enforcement: "full" as const,
 				sandboxRoot: "/srv/app", abi: 5, launcherVersion: "3" } } }));
 	const previewDeploymentRemoteStage = vi.fn(() => ({ command: "cd /srv/app && ./restart.sh",
-		mode: options.deploymentStageMode ?? "workspace_write" }));
+		mode: options.deploymentStageMode ?? "workspace_write", sessionAuthorized: options.deploymentSessionAuthorized }));
 	const resolveRemoteTarget = vi.fn(async () => ({ defaultCwd: "/srv/app" }) as SshTargetSnapshot);
 	return {
 		policy: new ChatToolAuthorizationPolicy({
@@ -76,6 +77,33 @@ function createPolicy(options: { autoAudit?: boolean; remoteAllowed?: boolean; t
 }
 
 describe("ChatToolAuthorizationPolicy", () => {
+	it.each([true, false])("uses ordinary approval for unconfined deployment stages, autoAudit=%s", async (autoAudit) => {
+		const context = createPolicy({ autoAudit, sandboxEnabled: false, deploymentStageMode: "full_access", deploymentSessionAuthorized: true });
+		context.policy.bindDeploymentRun(run.id, "deployment");
+		await expect(context.policy.prepare({ run, toolCallId: "restart", toolName: "deployment_execute_next", args: { stage: "restart" } }))
+			.resolves.toMatchObject({ kind: "approval", autoApprove: autoAudit, descriptionMessage: { key: "approval.remote_session_unconfined" } });
+	});
+	it.each([false, true])("skips sandbox probes and exception approval when disabled, autoAudit=%s", async (autoAudit) => {
+		const context = createPolicy({ sandboxEnabled: false, autoAudit });
+		for (const sandbox_permissions of [undefined, "workspace_write", "full_access"]) {
+			const prepared = await context.policy.prepare({ run: { ...run, serverInteractionMode: "command", terminalSessionId: null },
+				toolCallId: "direct", toolName: "remote_server_call", args: { command: "pwd", sandbox_permissions, write_paths: ["/etc/app"] } });
+			expect(prepared).toMatchObject({ kind: "approval", autoApprove: autoAudit,
+				descriptionMessage: { key: "approval.remote_session_unconfined" },
+				executionContext: { access: { mode: "full_access", authorizationSource: "session_setting" } } });
+			expect(prepared).not.toHaveProperty("remoteFullAccess");
+			expect(prepared).not.toHaveProperty("approvalToolName");
+		}
+		expect(context.assessRemoteSandbox).not.toHaveBeenCalled();
+		expect(context.preflightRemoteGuard).toHaveBeenCalledTimes(3);
+	});
+
+	it("keeps Guard blocking unconfined commands before resolving or probing", async () => {
+		const context = createPolicy({ sandboxEnabled: false, autoAudit: true, remoteAllowed: false });
+		await expect(context.policy.prepare({ run, toolCallId: "blocked", toolName: "remote_server_call", args: { command: "rm -rf /" } }))
+			.resolves.toMatchObject({ kind: "block", terminate: true });
+		expect(context.assessRemoteSandbox).not.toHaveBeenCalled(); expect(context.resolveRemoteTarget).not.toHaveBeenCalled();
+	});
 	it("returns a recoverable error when the installation service is unavailable", async () => {
 		const context = createPolicy();
 		await expect(context.policy.prepare({ run, toolCallId: "install", toolName: "bubblewrap_install", args: {} }))
@@ -208,7 +236,7 @@ describe("ChatToolAuthorizationPolicy", () => {
 			reason: expect.stringContaining("sandbox_permissions"),
 		});
 		expect(context.preflightRemoteGuard).toHaveBeenCalledWith(run.sessionId, args.command);
-		expect(context.findById).not.toHaveBeenCalled();
+		expect(context.findById).toHaveBeenCalledWith(run.sessionId);
 
 		await expect(context.policy.prepare({
 			run: commandRun, toolCallId: "remote-full-access", toolName: "remote_server_call",

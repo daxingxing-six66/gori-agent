@@ -12,6 +12,7 @@ export type ManagementErrorCode =
 	| "session_has_active_chat_run"
 	| "session_has_active_attachment_upload"
 	| "session_deletion_in_progress"
+	| "session_configuration_in_progress"
 	| "session_work_dir_unavailable"
 	| "host_key_mismatch"
 	| "connection_failed"

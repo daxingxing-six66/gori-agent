@@ -30,6 +30,8 @@ export interface DefaultSessionServiceOptions {
 	lifecycle?: SessionLifecycleCoordinator;
 	closeTerminalForDeletion?: (sessionId: SessionId) => Promise<void>;
 	cleanupAttachmentsForDeletion?: (sessionId: SessionId) => Promise<void>;
+	/** Closes a live PTY, persists the setting, then starts a replacement PTY. */
+	reconfigureTerminal?: (sessionId: SessionId, persist: () => Promise<Session>) => Promise<Session>;
 }
 
 export class DefaultSessionService implements SessionService {
@@ -42,6 +44,7 @@ export class DefaultSessionService implements SessionService {
 	private readonly lifecycle?: SessionLifecycleCoordinator;
 	private readonly closeTerminalForDeletion?: (sessionId: SessionId) => Promise<void>;
 	private readonly cleanupAttachmentsForDeletion?: (sessionId: SessionId) => Promise<void>;
+	private readonly reconfigureTerminal?: DefaultSessionServiceOptions["reconfigureTerminal"];
 
 	constructor(options: DefaultSessionServiceOptions) {
 		this.sessions = options.sessions;
@@ -53,6 +56,7 @@ export class DefaultSessionService implements SessionService {
 		this.lifecycle = options.lifecycle;
 		this.closeTerminalForDeletion = options.closeTerminalForDeletion;
 		this.cleanupAttachmentsForDeletion = options.cleanupAttachmentsForDeletion;
+		this.reconfigureTerminal = options.reconfigureTerminal;
 	}
 
 	async create(input: CreateSessionInput): Promise<Session> {
@@ -67,6 +71,7 @@ export class DefaultSessionService implements SessionService {
 			displayName: requireDisplayName(input.displayName),
 			workDir: await normalizeWorkDir(input.workDir ?? workspace.defaultCwd),
 			autoAudit: input.autoAudit ?? false,
+			sandboxEnabled: input.sandboxEnabled ?? true,
 			terminalContextCursor: 0,
 			revision: 1,
 			createdAt: now,
@@ -95,10 +100,10 @@ export class DefaultSessionService implements SessionService {
 	}
 
 	async update(input: UpdateSessionInput): Promise<Session> {
-		const lease = this.lifecycle?.acquireUse(input.id, "session_update");
+		const lease = this.lifecycle?.acquireUse(input.id, input.sandboxEnabled === undefined ? "session_update" : "sandbox_update");
 		try {
 			requirePositiveRevision(input.expectedRevision);
-			if (input.displayName === undefined && input.workDir === undefined && input.autoAudit === undefined) {
+			if (input.displayName === undefined && input.workDir === undefined && input.autoAudit === undefined && input.sandboxEnabled === undefined) {
 				throw new ManagementError("validation_error", "Session update must contain a mutable field", "body");
 			}
 			const current = await this.get(input.id);
@@ -106,10 +111,14 @@ export class DefaultSessionService implements SessionService {
 				throw new ManagementError("revision_conflict", "Session was modified by another request");
 			}
 			if (
-				(input.workDir !== undefined || input.autoAudit !== undefined) &&
+				(input.workDir !== undefined || input.autoAudit !== undefined || input.sandboxEnabled !== undefined) &&
 				(await this.hasActiveChatRun?.(input.id)) === true
 			) {
 				throw new ManagementError("session_has_active_chat_run", "Session has an active Chat Run");
+			}
+			const sandboxChanged = input.sandboxEnabled !== undefined && input.sandboxEnabled !== current.sandboxEnabled;
+			if (sandboxChanged && this.operations && await this.operations.countActiveBySessionId(input.id) > 0) {
+				throw new ManagementError("session_has_active_operations", "Session still contains active command Operations");
 			}
 			const updated: Session = {
 				...current,
@@ -121,16 +130,24 @@ export class DefaultSessionService implements SessionService {
 							? null
 							: await normalizeWorkDir(input.workDir),
 				autoAudit: input.autoAudit ?? current.autoAudit,
+				sandboxEnabled: input.sandboxEnabled ?? current.sandboxEnabled,
 				revision: current.revision + 1,
 				updatedAt: this.clock.now(),
 			};
-			if (!(await this.sessions.update(updated, input.expectedRevision))) {
-				throw new ManagementError("revision_conflict", "Session was modified by another request");
-			}
-			return updated;
+			const persist = () => this.persistUpdate(updated, input.expectedRevision);
+			return sandboxChanged && this.reconfigureTerminal
+				? await this.reconfigureTerminal(input.id, persist)
+				: await persist();
 		} finally {
 			lease?.release();
 		}
+	}
+
+	private async persistUpdate(updated: Session, expectedRevision: number): Promise<Session> {
+		if (!(await this.sessions.update(updated, expectedRevision))) {
+			throw new ManagementError("revision_conflict", "Session was modified by another request");
+		}
+		return updated;
 	}
 
 	async delete(input: DeleteSessionInput): Promise<void> {

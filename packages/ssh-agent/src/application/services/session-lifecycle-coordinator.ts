@@ -6,6 +6,7 @@ export type SessionUseKind =
 	| "chat_compaction"
 	| "command_operation"
 	| "session_update"
+	| "sandbox_update"
 	| "attachment_upload"
 	| "terminal_open"
 	| "terminal_session"
@@ -36,6 +37,7 @@ const USE_KINDS: readonly SessionUseKind[] = [
 	"chat_compaction",
 	"command_operation",
 	"session_update",
+	"sandbox_update",
 	"attachment_upload",
 	"terminal_open",
 	"terminal_session",
@@ -50,6 +52,10 @@ export class SessionLifecycleCoordinator {
 		if (state.deleting) {
 			throw new ManagementError("session_deletion_in_progress", "Session deletion is in progress");
 		}
+		if (state.counts.sandbox_update > 0 && kind !== "terminal_session") {
+			throw new ManagementError("session_configuration_in_progress", "Session execution environment is changing");
+		}
+		if (kind === "sandbox_update") this.#requireSandboxChangeAvailable(state);
 		state.counts[kind] += 1;
 		let released = false;
 		return {
@@ -64,6 +70,9 @@ export class SessionLifecycleCoordinator {
 
 	async acquireDeletionBarrier(sessionId: SessionId): Promise<SessionDeletionBarrier> {
 		const state = this.#getOrCreate(sessionId);
+		if (state.counts.sandbox_update > 0) {
+			throw new ManagementError("session_configuration_in_progress", "Session execution environment is changing");
+		}
 		if (state.deleting) {
 			await new Promise<void>((resolve) => state.barrierWaiters.push(resolve));
 			return this.acquireDeletionBarrier(sessionId);
@@ -93,6 +102,16 @@ export class SessionLifecycleCoordinator {
 			total: USE_KINDS.reduce((total, kind) => total + byKind[kind], 0),
 			byKind,
 		};
+	}
+
+	#requireSandboxChangeAvailable(state: SessionLifecycleState): void {
+		if (state.counts.chat_run > 0) {
+			throw new ManagementError("session_has_active_chat_run", "Session has an active Chat Run");
+		}
+		const blockingKinds: readonly SessionUseKind[] = ["chat_compaction", "command_operation", "deployment_run", "terminal_open", "session_update"];
+		if (blockingKinds.some((kind) => state.counts[kind] > 0)) {
+			throw new ManagementError("session_has_active_operations", "Finish active Session operations before changing its execution environment");
+		}
 	}
 
 	#getOrCreate(sessionId: SessionId): SessionLifecycleState {

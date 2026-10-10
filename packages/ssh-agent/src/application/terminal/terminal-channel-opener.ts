@@ -4,6 +4,11 @@ import type { RemoteSandboxProvider } from "../services/remote-sandbox-provider.
 import type { SshTargetResolver } from "../services/ssh-target-resolver.ts";
 import type { TerminalChannelBroker, TerminalChannelHandle } from "../ssh-channel-broker.ts";
 import type { TerminalSessionActor } from "./terminal-session-actor.ts";
+import { randomBytes } from "node:crypto";
+import type { SessionRepository } from "../repositories/session-repository.ts";
+import { SessionSandboxPolicy } from "../services/session-sandbox-policy.ts";
+import { quoteShell, wrapRemoteCommand } from "../remote-shell-command.ts";
+import type { OpenTerminalChannelInput } from "../ssh-channel-broker.ts";
 
 interface OpenedTerminalChannel {
 	readonly channel: TerminalChannelHandle;
@@ -16,17 +21,20 @@ export class TerminalChannelOpener {
 	readonly #sandbox: RemoteSandboxProvider;
 	readonly #broker: TerminalChannelBroker;
 	readonly #timeoutMs: number;
+	readonly #policy: SessionSandboxPolicy;
 
 	constructor(options: {
 		targets: SshTargetResolver;
 		sandbox: RemoteSandboxProvider;
 		broker: TerminalChannelBroker;
 		timeoutMs: number;
+		sessions: Pick<SessionRepository, "findById">;
 	}) {
 		this.#targets = options.targets;
 		this.#sandbox = options.sandbox;
 		this.#broker = options.broker;
 		this.#timeoutMs = options.timeoutMs;
+		this.#policy = new SessionSandboxPolicy(options.sessions);
 	}
 
 	async open(actor: TerminalSessionActor, controller: AbortController): Promise<OpenedTerminalChannel> {
@@ -71,11 +79,17 @@ export class TerminalChannelOpener {
 		requireOpening(signal);
 		const target = await this.#targets.resolve(actor.sessionId);
 		requireOpening(signal);
-		const prepared = await this.#sandbox.prepareTerminal({ target, signal });
+		const mode = await this.#policy.mode(actor.sessionId);
+		if (mode !== actor.view.requestedSandboxMode) {
+			throw new TerminalError("terminal_open_request_conflict", "Session sandbox setting changed during Terminal opening", { status: 409 });
+		}
+		const prepared = mode === "full_access"
+			? unconfinedTerminal(target.defaultCwd)
+			: await this.#prepareSandboxed(target, signal);
 		requireOpening(signal);
 		const channel = await this.#broker.open({
 			target,
-			launch: { kind: "sandboxed_exec", command: prepared.command, confirmation: prepared.confirmation },
+			launch: prepared.launch,
 			geometry: actor.view.geometry,
 			term: actor.view.term,
 			signal,
@@ -83,6 +97,20 @@ export class TerminalChannelOpener {
 		});
 		return { channel, sandbox: prepared.sandbox };
 	}
+
+	async #prepareSandboxed(target: OpenTerminalChannelInput["target"], signal: AbortSignal) {
+		const prepared = await this.#sandbox.prepareTerminal({ target, signal });
+		return { launch: { kind: "sandboxed_exec" as const, command: prepared.command, confirmation: prepared.confirmation }, sandbox: prepared.sandbox };
+	}
+}
+
+function unconfinedTerminal(cwd: string): { launch: OpenTerminalChannelInput["launch"]; sandbox: TerminalSandboxFacts } {
+	const confirmation = `gori-terminal: ready token=${randomBytes(16).toString("hex")}`;
+	return {
+		launch: { kind: "unconfined_exec", confirmation,
+			command: wrapRemoteCommand(cwd, `printf '%s\\n' ${quoteShell(confirmation)} >&2; exec /bin/bash --login -i`) },
+		sandbox: { mode: "full_access", backend: "none", enforcement: "none", source: "session_setting", configuredAt: Date.now() },
+	};
 }
 
 function openingCancelled(): TerminalError {

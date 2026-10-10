@@ -3,7 +3,7 @@ export type DeployStage = typeof DEPLOY_STAGES[number];
 export type DeployStatus = "preparing" | "running" | "recovering" | "success" | "failed" | "cancelled";
 export type DeploymentRemoteStage = "restart" | "verify";
 export type DeploymentExecutableStage = Exclude<DeployStage, "prepare">;
-export type DeploymentFullAccessReason = "deployment_policy" | "sandbox_unavailable" | "sandbox_partial_enforcement" | "sandbox_scope_exceeded";
+export type DeploymentFullAccessReason = "deployment_policy" | "sandbox_unavailable" | "sandbox_partial_enforcement" | "sandbox_scope_exceeded" | "session_sandbox_disabled";
 export type DeploymentRemoteAccess = { mode: "workspace_write" } | { mode: "full_access"; reason: DeploymentFullAccessReason };
 
 interface DeploymentRemoteCommand {
@@ -21,7 +21,7 @@ export interface DeploymentFullAccessApproval {
 	resolvedAt?: number;
 	expiresAt?: number;
 	toolName?: "remote_sandbox_exception";
-	reason?: DeploymentFullAccessReason;
+	reason?: Exclude<DeploymentFullAccessReason, "session_sandbox_disabled">;
 }
 
 export interface DeploymentProfileSummary {
@@ -175,7 +175,10 @@ export function isDeploymentRun(value: unknown): value is DeploymentRun {
 	if (value.status === "recovering" && (plan.version !== 2 || value.agentRunId === undefined)) return false;
 	if ((value.recoveries === undefined) !== (value.initialPlan === undefined)) return false;
 	const remoteStages: DeploymentRemoteStage[] = plan.verify ? ["restart", "verify"] : ["restart"];
-	const fullAccessStages = remoteStages.filter((stage) => deploymentRemoteStageAccess(plan, stage).mode === "full_access");
+	const fullAccessStages = remoteStages.filter((stage) => {
+		const access = deploymentRemoteStageAccess(plan, stage);
+		return access.mode === "full_access" && access.reason !== "session_sandbox_disabled";
+	});
 	if (fullAccessStages.length === 0) return value.fullAccessApprovals === undefined;
 	const approvals = value.fullAccessApprovals;
 	if (!isRecord(approvals) ||
@@ -390,7 +393,7 @@ function isRemoteAccess(value: unknown): value is DeploymentRemoteAccess {
 	return isRecord(value) && (value.mode === "workspace_write"
 		? exactKeys(value, ["mode"])
 		: value.mode === "full_access" && exactKeys(value, ["mode", "reason"]) &&
-			oneOf(value.reason, ["deployment_policy", "sandbox_unavailable", "sandbox_partial_enforcement", "sandbox_scope_exceeded"]));
+			oneOf(value.reason, ["deployment_policy", "sandbox_unavailable", "sandbox_partial_enforcement", "sandbox_scope_exceeded", "session_sandbox_disabled"]));
 }
 
 function sameRemoteAccess(a: DeploymentRemoteAccess, b: DeploymentRemoteAccess): boolean {

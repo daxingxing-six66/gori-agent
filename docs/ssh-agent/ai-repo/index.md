@@ -21,6 +21,7 @@
 | SSH Connection Key、连接复用、Channel、主机校验、保活和重连 | [connection-runtime.md](./connection-runtime.md) | `packages/ssh-agent/src/infrastructure/ssh/ssh2-connection-pool.ts` |
 | Session 命令 FIFO、进程并发限制、Operation、Guard 执行校验、Tool、失败和事件 | [command-execution.md](./command-execution.md) | `packages/ssh-agent/src/application/services/session-command-scheduler.ts`、`packages/ssh-agent/src/application/services/command-operation-service.ts` |
 | 远端 Linux Landlock/Bubblewrap、可写根、安装审批、Full Access 与审计 | [remote-sandbox.md](./remote-sandbox.md) | `packages/ssh-agent/src/infrastructure/sandbox/`、`packages/ssh-agent/src/application/services/bubblewrap-installation-service.ts` |
+| Session 沙盒模式、单一 Composer 命令、执行绕过与 Terminal 自动重开 | [session-sandbox.md](./session-sandbox.md) | `packages/ssh-agent/src/application/services/session-sandbox-policy.ts`、`session-service.ts`、`packages/ssh-agent-web/features/session/runtime/use-session-sandbox.ts` |
 | SQLite schema、migration、Repository、Credential 加密和运行时装配 | [sqlite-persistence.md](./sqlite-persistence.md) | `packages/ssh-agent/src/infrastructure/sqlite/` |
 | HTTP 路由、请求校验、CORS、环境变量、进程启动和关闭 | [http-server.md](./http-server.md) | `packages/ssh-agent/src/api/`、`packages/ssh-agent/src/server/` |
 | 本地日志、按日与大小滚动、异常栈 | [logging.md](./logging.md) | `packages/ssh-agent/src/server/file-logger.ts` |
@@ -56,7 +57,7 @@ Workspace/Credential 前端契约见 [workspace-credential-integration.md](../fr
 
 已经实现的 Terminal Interaction MVP：用户手动开启独立模式，后端维持长周期 PTY 和 Canonical State，Agent 使用专用 Tool，浏览器通过 snapshot + SSE 只读投影并同步 owner resize，Interaction/Input/Observation/Timeline 持久化到 SQLite。
 
-已经实现的 `/deploy`：用户选定服务后先进入可跨多轮 Chat Run 的模型驱动讨论；模型提交并经服务端校验本次构建、上传、重启与验证参数后，才生成待确认的流水线。确认后模型逐阶段推进；Plan v2 阶段失败会保留原记录，模型可提出仅修改失败阶段的修订，用户确认后从该阶段继续。完整命令和日志按需展开；远端重启与验证在有效沙箱内按 `autoAudit` 批准，只有沙箱不可用或已知写入路径越界时才逐条人工批准 Full Access，所有命令继续受 Guard 约束。详见 [deployment.md](./deployment.md)。
+已经实现的 `/deploy`：用户选定服务后先进入可跨多轮 Chat Run 的模型驱动讨论；模型提交并经服务端校验本次构建、上传、重启与验证参数后，才生成待确认的流水线。确认后模型逐阶段推进；Plan v2 阶段失败会保留原记录，模型可提出仅修改失败阶段的修订，用户确认后从该阶段继续。完整命令和日志按需展开；远端重启与验证按 Session 沙盒设置与 `autoAudit` 执行，开启时只有沙箱不可用或已知写入路径越界才逐条人工批准 Full Access，关闭时跳过沙箱链路并保留普通审批，所有命令继续受 Guard 约束。详见 [deployment.md](./deployment.md)。
 
 尚未实现：附件删除、非图片附件的通用内容下载和 LLM 输入、图片生成、断点续传、Transfer 历史自动清理、主机密钥重新信任/预置信任/SSH CA、Chat 多 Lane/Fork 和跨进程 delta 重放。Terminal MVP 不允许用户输入、不自动开启模式，使用 REST + SSE 而不引入 WebSocket。
 

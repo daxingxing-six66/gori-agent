@@ -50,8 +50,10 @@ export function DeploymentPanel(props: Props) {
 	}, [props.run?.id, props.run?.status, props.run?.plan.remoteAccess.mode]);
 
 	const run = props.run;
-	const fullAccessStages = run ? REMOTE_STAGES.filter((stage) => run.plan[stage] &&
-		deploymentRemoteStageAccess(run.plan, stage).mode === "full_access") : [];
+	const fullAccessStages = run ? REMOTE_STAGES.filter((stage) => {
+		const access = deploymentRemoteStageAccess(run.plan, stage);
+		return run.plan[stage] && access.mode === "full_access" && access.reason !== "session_sandbox_disabled";
+	}) : [];
 	const approvalsNeeded = run
 		? fullAccessStages.filter((stage) => {
 			if (["success", "skipped"].includes(run.stages[stage].status)) return false;
@@ -114,6 +116,8 @@ export function DeploymentPanel(props: Props) {
 		</div> : null}
 
 		{run ? <>
+			{run.plan.remoteAccess.mode === "full_access" && run.plan.remoteAccess.reason === "session_sandbox_disabled"
+				? <p className="mt-4 text-xs text-warning">{intl.formatMessage({ id: "session.sandbox.disabledDescription" })}</p> : null}
 			{fullAccessStages.length > 0 ? <FullAccessNotice run={run} stages={fullAccessStages} /> : null}
 			<div className="mt-6 flex flex-wrap items-baseline justify-between gap-2">
 				<h3 className="text-sm font-semibold text-ink">{intl.formatMessage({ id: "deploy.pipeline" })}</h3>
@@ -149,7 +153,7 @@ function FullAccessNotice({ run, stages }: { run: DeploymentRun; stages: readonl
 			<p>{intl.formatMessage({ id: "deploy.fullAccess.notice" }, { host: identity })}</p>
 			<ul className="mt-2 space-y-1">{stages.map((stage) => {
 				const access = deploymentRemoteStageAccess(run.plan, stage);
-				return access.mode === "full_access" ? <li key={stage}>
+				return access.mode === "full_access" && access.reason !== "session_sandbox_disabled" ? <li key={stage}>
 					<span className="font-semibold">{intl.formatMessage({ id: `deploy.stage.${stage}` })}：</span>
 					{intl.formatMessage({ id: `deploy.fullAccess.reason.${access.reason}` })}
 				</li> : null;

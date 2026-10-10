@@ -53,6 +53,7 @@ export const ChatComposerPanel = forwardRef<ChatComposerPanelHandle, {
 	cancelling: boolean;
 	terminalBusy: boolean;
 	onSubmit(message: string, attachments: SessionAttachment[]): Promise<boolean>;
+	isLocalCommand?(message: string): boolean;
 	onCancel(): void;
 	autoAuditChecked: boolean;
 	autoAuditPending: boolean;
@@ -88,6 +89,7 @@ export const ChatComposerPanel = forwardRef<ChatComposerPanelHandle, {
 	cancelling,
 	terminalBusy,
 	onSubmit,
+	isLocalCommand,
 	onCancel,
 	autoAuditChecked,
 	autoAuditPending,
@@ -119,8 +121,9 @@ export const ChatComposerPanel = forwardRef<ChatComposerPanelHandle, {
 	const attachments = imageUploads.flatMap((upload) => upload.status === "uploaded" && upload.attachment !== null ? [upload.attachment] : []);
 	const hasPendingImageUploads = imageUploads.some((upload) => upload.status === "preparing" || upload.status === "uploading");
 	const hasSubmittableContent = hasContent || attachments.length > 0;
-	const modelRequired = hasSubmittableContent && !active && model === null && !modelSelectionLoading;
-	const canSubmit = !submitting && !terminalBusy && !hasPendingImageUploads && (active || model !== null);
+	const localCommand = isLocalCommand?.(draft) === true;
+	const modelRequired = hasSubmittableContent && !localCommand && !active && model === null && !modelSelectionLoading;
+	const canSubmit = !submitting && !terminalBusy && !hasPendingImageUploads && (localCommand || active || model !== null);
 
 	useEffect(() => {
 		setDraft("");

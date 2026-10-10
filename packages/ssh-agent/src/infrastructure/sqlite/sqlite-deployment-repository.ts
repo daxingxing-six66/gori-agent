@@ -270,7 +270,7 @@ function validatePlan(run: Record<string, unknown>): Record<string, unknown> {
 function validateRemoteAccess(access: Record<string, unknown>): void {
 	if (access.mode !== "workspace_write" && access.mode !== "full_access") throw corrupt();
 	if (access.mode === "workspace_write" ? Object.keys(access).length !== 1
-		: !["deployment_policy", "sandbox_unavailable", "sandbox_partial_enforcement", "sandbox_scope_exceeded"].includes(String(access.reason)) ||
+		: !["deployment_policy", "sandbox_unavailable", "sandbox_partial_enforcement", "sandbox_scope_exceeded", "session_sandbox_disabled"].includes(String(access.reason)) ||
 			Object.keys(access).length !== 2) throw corrupt();
 }
 
@@ -299,7 +299,10 @@ function remoteWritePath(value: unknown): void {
 
 function validateApprovals(run: Record<string, unknown>, plan: Record<string, unknown>): void {
 	const remoteStages = ["restart", ...(plan.verify === undefined ? [] : ["verify"])];
-	const fullStages = remoteStages.filter((stage) => remoteStageAccess(plan, stage).mode === "full_access");
+	const fullStages = remoteStages.filter((stage) => {
+		const access = remoteStageAccess(plan, stage);
+		return access.mode === "full_access" && access.reason !== "session_sandbox_disabled";
+	});
 	if (fullStages.length > 0) {
 		const approvals = record(run.fullAccessApprovals);
 		for (const stage of fullStages) {

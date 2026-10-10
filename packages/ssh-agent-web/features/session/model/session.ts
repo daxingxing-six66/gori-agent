@@ -6,6 +6,7 @@ export interface Session {
 	displayName: string;
 	workDir: string | null;
 	autoAudit: boolean;
+	sandboxEnabled: boolean;
 	terminalContextCursor: number;
 	revision: number;
 	createdAt: number;

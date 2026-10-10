@@ -4,7 +4,7 @@ import type { SessionId, WorkspaceId } from "../../domain/ids.ts";
 import type { AdvanceTerminalContextCursorInput, Session } from "../../domain/session.ts";
 import { type SessionRow, sessionFromRow } from "./rows.ts";
 
-const SESSION_COLUMNS = `id, workspace_id, display_name, work_dir, auto_audit, terminal_context_cursor,
+const SESSION_COLUMNS = `id, workspace_id, display_name, work_dir, auto_audit, sandbox_enabled, terminal_context_cursor,
 	revision, created_at, updated_at`;
 
 export class SqliteSessionRepository implements SessionRepository {
@@ -36,14 +36,15 @@ export class SqliteSessionRepository implements SessionRepository {
 	async insert(session: Session): Promise<void> {
 		this.database
 			.prepare(`INSERT INTO sessions (
-				id, workspace_id, display_name, work_dir, auto_audit, terminal_context_cursor, revision, created_at, updated_at
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+				id, workspace_id, display_name, work_dir, auto_audit, sandbox_enabled, terminal_context_cursor, revision, created_at, updated_at
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
 			.run(
 				session.id,
 				session.workspaceId,
 				session.displayName,
 				session.workDir,
 				session.autoAudit ? 1 : 0,
+				session.sandboxEnabled === false ? 0 : 1,
 				session.terminalContextCursor,
 				session.revision,
 				session.createdAt,
@@ -54,12 +55,13 @@ export class SqliteSessionRepository implements SessionRepository {
 	async update(session: Session, expectedRevision: number): Promise<boolean> {
 		const result = this.database
 			.prepare(
-				"UPDATE sessions SET display_name = ?, work_dir = ?, auto_audit = ?, revision = ?, updated_at = ? WHERE id = ? AND revision = ?",
+				"UPDATE sessions SET display_name = ?, work_dir = ?, auto_audit = ?, sandbox_enabled = ?, revision = ?, updated_at = ? WHERE id = ? AND revision = ?",
 			)
 			.run(
 				session.displayName,
 				session.workDir,
 				session.autoAudit ? 1 : 0,
+				session.sandboxEnabled === false ? 0 : 1,
 				session.revision,
 				session.updatedAt,
 				session.id,

@@ -272,16 +272,19 @@ export function parseUpdateWorkspace(value: unknown): { displayName: string; def
 		expectedRevision: number(body, "expectedRevision") };
 }
 
-export function parseCreateSession(value: unknown): { displayName: string; workDir?: string; autoAudit?: boolean } {
+export function parseCreateSession(value: unknown): { displayName: string; workDir?: string; autoAudit?: boolean; sandboxEnabled?: boolean } {
 	const body = object(value, "body");
-	exactKeys(body, ["displayName", "workDir", "autoAudit"]);
+	exactKeys(body, ["displayName", "workDir", "autoAudit", "sandboxEnabled"]);
 	const workDir = optionalString(body, "workDir");
 	if (body.autoAudit !== undefined && typeof body.autoAudit !== "boolean")
 		invalid("autoAudit must be a boolean", "autoAudit");
+	if (body.sandboxEnabled !== undefined && typeof body.sandboxEnabled !== "boolean")
+		invalid("sandboxEnabled must be a boolean", "sandboxEnabled");
 	return {
 		displayName: string(body, "displayName"),
 		...(workDir === undefined ? {} : { workDir }),
 		...(body.autoAudit === undefined ? {} : { autoAudit: body.autoAudit as boolean }),
+		...(body.sandboxEnabled === undefined ? {} : { sandboxEnabled: body.sandboxEnabled as boolean }),
 	};
 }
 
@@ -289,18 +292,22 @@ export function parseUpdateSession(value: unknown): {
 	displayName?: string;
 	workDir?: string | null;
 	autoAudit?: boolean;
+	sandboxEnabled?: boolean;
 	expectedRevision: number;
 } {
 	const body = object(value, "body");
-	exactKeys(body, ["displayName", "workDir", "autoAudit", "expectedRevision"]);
+	exactKeys(body, ["displayName", "workDir", "autoAudit", "sandboxEnabled", "expectedRevision"]);
 	if (body.workDir !== undefined && body.workDir !== null && typeof body.workDir !== "string")
 		invalid("workDir must be a string or null", "workDir");
 	if (body.autoAudit !== undefined && typeof body.autoAudit !== "boolean")
 		invalid("autoAudit must be a boolean", "autoAudit");
+	if (body.sandboxEnabled !== undefined && typeof body.sandboxEnabled !== "boolean")
+		invalid("sandboxEnabled must be a boolean", "sandboxEnabled");
 	return {
 		...(body.displayName === undefined ? {} : { displayName: string(body, "displayName") }),
 		...(body.workDir === undefined ? {} : { workDir: body.workDir as string | null }),
 		...(body.autoAudit === undefined ? {} : { autoAudit: body.autoAudit as boolean }),
+		...(body.sandboxEnabled === undefined ? {} : { sandboxEnabled: body.sandboxEnabled as boolean }),
 		expectedRevision: number(body, "expectedRevision"),
 	};
 }

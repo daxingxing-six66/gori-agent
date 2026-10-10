@@ -3,6 +3,7 @@ import { isCanonicalRemoteSandboxRoot } from "@/features/workspace/model/workspa
 export type TerminalSessionStatus = "opening" | "active" | "closing" | "closed" | "failed" | "lost";
 export type ServerInteractionMode = "command" | "terminal";
 export type TerminalSandboxFacts =
+	| { mode: "full_access"; backend: "none"; enforcement: "none"; source: "session_setting"; configuredAt: number }
 	| { mode: "workspace_write"; backend: "landlock"; enforcement: "full"; abi: number; launcherVersion: string; sandboxRoot: string }
 	| { mode: "workspace_write"; backend: "bubblewrap"; enforcement: "full"; bubblewrapVersion: string; sandboxRoot: string }
 	| { mode: "full_access"; backend: "none"; enforcement: "none"; source: "sandbox_unavailable" | "landlock_unavailable"; detectedAt: number }
@@ -209,7 +210,7 @@ function isTerminalSession(value: unknown): value is TerminalSessionView {
 	if (value.requestedSandboxMode !== null && value.requestedSandboxMode !== "workspace_write" && value.requestedSandboxMode !== "full_access") return false;
 	if (!isSandboxFacts(value.sandbox)) return false;
 	if (value.sandbox !== null && value.sandbox.mode !== value.requestedSandboxMode &&
-		!(value.requestedSandboxMode === "workspace_write" && value.sandbox.mode === "full_access" && "source" in value.sandbox)) return false;
+		!(value.requestedSandboxMode === "workspace_write" && value.sandbox.mode === "full_access" && "source" in value.sandbox && value.sandbox.source !== "session_setting")) return false;
 	if (value.status === "opening" && value.sandbox !== null) return false;
 	if (value.status === "active" && value.requestedSandboxMode !== null && value.sandbox === null) return false;
 	return (
@@ -230,6 +231,7 @@ function isSandboxFacts(value: unknown): value is TerminalSandboxFacts | null {
 	if (value === null) return true;
 	if (!isRecord(value)) return false;
 	if (value.mode === "full_access") return value.backend === "none" && value.enforcement === "none" && (
+		(value.source === "session_setting" && isPositiveSafeInteger(value.configuredAt) && Object.keys(value).length === 5) ||
 		((value.source === "sandbox_unavailable" || value.source === "landlock_unavailable") && isPositiveSafeInteger(value.detectedAt) && Object.keys(value).length === 5) ||
 		(isPositiveSafeInteger(value.approvedAt) && Object.keys(value).length === 4)
 	);

@@ -27,6 +27,7 @@ import { RemoteSandboxApprovalStore, type FullAccessRequest } from "./remote-san
 import { validateDeploymentProposal, type DeploymentPlanProposal } from "../deployment-plan-proposal.ts";
 import { validateRecoveryInput, type DeploymentRecoveryInput } from "../deployment-recovery-proposal.ts";
 import type { RemoteSandboxRoute } from "./remote-sandbox-routing.ts";
+import { SessionSandboxPolicy } from "./session-sandbox-policy.ts";
 
 const LOG_LIMIT = 128 * 1024;
 const FULL_ACCESS_APPROVAL_TTL_MS = 5 * 60_000;
@@ -86,13 +87,18 @@ export class DeploymentService {
 	private readonly proposals = new Map<string, Promise<DeploymentRun>>();
 	private closing = false;
 	private readonly options: DeploymentServiceOptions;
+	private readonly sandboxPolicy: SessionSandboxPolicy;
 
 	constructor(options: DeploymentServiceOptions) {
 		this.options = options;
+		this.sandboxPolicy = new SessionSandboxPolicy(options.sessions);
 	}
 
-	private async resolveRemoteCommand(target: SshTargetSnapshot, proposed: { command: string; writePaths?: string[] },
+	private async resolveRemoteCommand(sessionId: string, target: SshTargetSnapshot, proposed: { command: string; writePaths?: string[] },
 		signal: AbortSignal): Promise<DeploymentRemoteCommand> {
+		if (await this.sandboxPolicy.mode(sessionId) === "full_access") {
+			return { ...proposed, access: { mode: "full_access", reason: "session_sandbox_disabled" } };
+		}
 		const route = await this.options.assessRemoteSandbox?.(target, proposed.writePaths ?? [], signal);
 		const access: DeploymentRemoteAccess = route?.mode === "workspace_write" ? { mode: "workspace_write" }
 			: route?.mode === "full_access" ? { mode: "full_access", reason: route.reason === "write_path_outside_sandbox"
@@ -112,10 +118,12 @@ export class DeploymentService {
 
 	/** Read-only preview for Chat tool authorization; execution still rechecks plan and Guard. */
 	previewRemoteStage(sessionId: string, deploymentRunId: string, stage: DeploymentRemoteStage):
-		{ command: string; mode: DeploymentRemoteAccess["mode"] } | undefined {
+		{ command: string; mode: DeploymentRemoteAccess["mode"]; sessionAuthorized?: true } | undefined {
 		const run = this.get(sessionId, deploymentRunId);
 		const command = run.plan[stage];
-		return command ? { command: command.command, mode: remoteStageAccess(run.plan, stage).mode } : undefined;
+		const access = remoteStageAccess(run.plan, stage);
+		return command ? { command: command.command, mode: access.mode,
+			...(sessionAuthorizedAccess(access) ? { sessionAuthorized: true as const } : {}) } : undefined;
 	}
 
 	async listProfiles(sessionId: string): Promise<{ host: string; profiles: DeploymentProfileSummary[]; errors: { file: string; message: string }[]; latest: DeploymentRun | null; activeDiscussion: DeploymentDiscussion | null }> {
@@ -371,8 +379,8 @@ export class DeploymentService {
 				const decision = await this.options.commands.preflightGuard(sessionId, command);
 				if (!decision.allowed) throw new DeploymentError("deployment_guard_blocked", decision.matchedRule?.reason ?? "Workspace Guard blocked a deployment command", 409);
 			}
-			const restart = await this.resolveRemoteCommand(target, requested.restart, signal);
-			const verify = requested.verify === undefined ? undefined : await this.resolveRemoteCommand(target, requested.verify, signal);
+			const restart = await this.resolveRemoteCommand(sessionId, target, requested.restart, signal);
+			const verify = requested.verify === undefined ? undefined : await this.resolveRemoteCommand(sessionId, target, requested.verify, signal);
 			signal.throwIfAborted();
 			if (this.closing) throw new DeploymentError("deployment_unavailable", "Deployment service is closing", 503);
 			const now = Date.now();
@@ -470,8 +478,8 @@ export class DeploymentService {
 			if (!decision.allowed) throw new DeploymentError("deployment_guard_blocked", decision.matchedRule?.reason ?? "Workspace Guard blocked a deployment command", 409);
 		}
 		const signal = new AbortController().signal;
-		const restart = await this.resolveRemoteCommand(target, module.restart, signal);
-		const verify = module.verify === undefined ? undefined : await this.resolveRemoteCommand(target, module.verify, signal);
+		const restart = await this.resolveRemoteCommand(sessionId, target, module.restart, signal);
+		const verify = module.verify === undefined ? undefined : await this.resolveRemoteCommand(sessionId, target, module.verify, signal);
 		const plan: DeploymentPlan = {
 			profilePath: path,
 			profileHash: hash,
@@ -588,7 +596,7 @@ export class DeploymentService {
 			const next: NonNullable<DeploymentRun["fullAccessApprovals"]> = {};
 			for (const stage of (["restart", "verify"] as const)) {
 				const command = run.plan[stage];
-				if (!command || remoteStageAccess(run.plan, stage).mode !== "full_access") continue;
+				if (!command || !requiresSandboxException(remoteStageAccess(run.plan, stage))) continue;
 				const prior = run.fullAccessApprovals?.[stage];
 				next[stage] = run.stages[stage].status === "success" && prior ? prior
 					: fullAccessApproval(stage, command.command, remoteStageAccess(run.plan, stage), proposal.resolvedAt);
@@ -628,8 +636,8 @@ export class DeploymentService {
 			if (!decision.allowed) throw new DeploymentError("deployment_guard_blocked", decision.matchedRule?.reason ?? "Workspace Guard blocked a deployment command", 409);
 		}
 		const target = await this.requireBoundTarget(run);
-		const restart = stage === "restart" ? await this.resolveRemoteCommand(target, proposal.restart, signal) : run.plan.restart;
-		const verify = stage === "verify" && proposal.verify ? await this.resolveRemoteCommand(target, proposal.verify, signal) : run.plan.verify;
+		const restart = stage === "restart" ? await this.resolveRemoteCommand(run.sessionId, target, proposal.restart, signal) : run.plan.restart;
+		const verify = stage === "verify" && proposal.verify ? await this.resolveRemoteCommand(run.sessionId, target, proposal.verify, signal) : run.plan.verify;
 		signal.throwIfAborted();
 		return { ...run.plan, buildSteps, artifacts, remoteAccess: stage === "restart" || stage === "verify"
 			? summarizeRemoteAccess(restart, verify) : run.plan.remoteAccess, restart,
@@ -737,7 +745,7 @@ export class DeploymentService {
 				// remain valid until their stage runs or this deployment ends.
 				for (const stage of ["restart", "verify"] as const) {
 					const command = run.plan[stage];
-					if (command && remoteStageAccess(run.plan, stage).mode === "full_access" && run.stages[stage].status !== "success")
+					if (command && requiresSandboxException(remoteStageAccess(run.plan, stage)) && run.stages[stage].status !== "success")
 						this.options.sandboxApprovals.approve(this.fullAccessRequest(run, stage, command.command));
 				}
 			}
@@ -1008,7 +1016,8 @@ export class DeploymentService {
 	private async remoteCommand(run: DeploymentRun, stage: "restart" | "verify", command: string, signal: AbortSignal): Promise<void> {
 		const expectedTarget = await this.requireBoundTarget(run);
 		await this.requireCurrentSandboxException(run, expectedTarget, stage, signal);
-		const fullAccess = remoteStageAccess(run.plan, stage).mode === "full_access"
+		const access = remoteStageAccess(run.plan, stage);
+		const fullAccess = requiresSandboxException(access)
 			? this.fullAccessRequest(run, stage, command)
 			: undefined;
 		const cwd = deploymentCommandCwd(run);
@@ -1021,6 +1030,7 @@ export class DeploymentService {
 			sandboxPermissions: fullAccess ? "full_access" : "workspace_write",
 			...(fullAccess ? { fullAccessApprovalScopeId: fullAccess.agentRunId, justification: fullAccess.justification } : {}),
 			expectedTarget,
+			expectedSandboxEnabled: !sessionAuthorizedAccess(access),
 			signal,
 			onEvent: (event) => {
 				if ((event.type === "stdout" || event.type === "stderr") && "chunk" in event.data)
@@ -1040,6 +1050,12 @@ export class DeploymentService {
 
 	/** Recheck the reviewed plan before each side effect; Agent tools can modify project files between stages. */
 	private async requireCurrentPlan(run: DeploymentRun): Promise<void> {
+		const sessionAuthorized = await this.sandboxPolicy.mode(run.sessionId) === "full_access";
+		for (const stage of ["restart", "verify"] as const) {
+			if (run.plan[stage] && sessionAuthorizedAccess(remoteStageAccess(run.plan, stage)) !== sessionAuthorized) {
+				throw new DeploymentError("deployment_sandbox_route_changed", "Session sandbox setting changed; review a new deployment plan", 409);
+			}
+		}
 		const context = await this.context(run.sessionId);
 		if (context.workspaceId !== run.workspaceId || context.host !== run.plan.target.host)
 			throw new DeploymentError("deployment_target_mismatch", "Workspace target changed before deployment", 409);
@@ -1075,7 +1091,7 @@ export class DeploymentService {
 		const now = Date.now();
 		const stages: ("restart" | "verify")[] = run.plan.verify ? ["restart", "verify"] : ["restart"];
 		for (const stage of stages) {
-			if (remoteStageAccess(run.plan, stage).mode !== "full_access") continue;
+			if (!requiresSandboxException(remoteStageAccess(run.plan, stage))) continue;
 			if (["success", "skipped"].includes(run.stages[stage].status)) continue;
 			const approval = run.fullAccessApprovals?.[stage];
 			if (!approval || approval.status !== "approved" || approval.command !== run.plan[stage]?.command ||
@@ -1246,6 +1262,14 @@ function remoteStageAccess(plan: DeploymentPlan, stage: DeploymentRemoteStage): 
 	return plan[stage]?.access ?? plan.remoteAccess;
 }
 
+function sessionAuthorizedAccess(access: DeploymentRemoteAccess): boolean {
+	return access.mode === "full_access" && access.reason === "session_sandbox_disabled";
+}
+
+function requiresSandboxException(access: DeploymentRemoteAccess): boolean {
+	return access.mode === "full_access" && !sessionAuthorizedAccess(access);
+}
+
 function summarizeRemoteAccess(restart: DeploymentRemoteCommand, verify?: DeploymentRemoteCommand): DeploymentRemoteAccess {
 	return [restart.access, verify?.access].find((access): access is Extract<DeploymentRemoteAccess, { mode: "full_access" }> =>
 		access?.mode === "full_access") ?? { mode: "workspace_write" };
@@ -1253,7 +1277,7 @@ function summarizeRemoteAccess(restart: DeploymentRemoteCommand, verify?: Deploy
 
 function fullAccessApproval(stage: DeploymentRemoteStage, command: string, access: DeploymentRemoteAccess, requestedAt: number):
 	NonNullable<DeploymentRun["fullAccessApprovals"]>[DeploymentRemoteStage] {
-	if (access.mode !== "full_access") throw new Error("Full Access approval requires a sandbox exception");
+	if (access.mode !== "full_access" || access.reason === "session_sandbox_disabled") throw new Error("Full Access approval requires a sandbox exception");
 	return {
 		id: randomUUID(), stage, command, status: "pending", requestedAt, reason: access.reason,
 		...(access.reason === "deployment_policy" ? {} : { toolName: "remote_sandbox_exception" as const }),
@@ -1266,7 +1290,7 @@ function fullAccessApprovalsForPlan(plan: DeploymentPlan, requestedAt: number): 
 		const command = plan[stage];
 		if (!command) continue;
 		const access = remoteStageAccess(plan, stage);
-		if (access.mode === "full_access") approvals[stage] = fullAccessApproval(stage, command.command, access, requestedAt);
+		if (requiresSandboxException(access)) approvals[stage] = fullAccessApproval(stage, command.command, access, requestedAt);
 	}
 	return Object.keys(approvals).length > 0 ? { fullAccessApprovals: approvals } : {};
 }

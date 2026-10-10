@@ -129,8 +129,8 @@ function openChannel(context: Ssh2ConnectionContext, input: OpenTerminalChannelI
 			resolve(createHandle(context.client, context.generation, channel, input));
 		};
 		try {
-			if (input.launch.kind === "sandboxed_exec") context.client.exec(input.launch.command, { pty }, onOpened);
-			else context.client.shell(pty, onOpened);
+			if (input.launch.kind === "login_shell") context.client.shell(pty, onOpened);
+			else context.client.exec(input.launch.command, { pty }, onOpened);
 		} catch (error) {
 			input.signal.removeEventListener("abort", onAbort);
 			reject(error);
@@ -168,7 +168,7 @@ function createHandle(
 	let bufferedBytes = 0;
 	const buffered: Buffer[] = [];
 	const writesClosed = new AbortController();
-	const capture = input.launch.kind === "sandboxed_exec" ? new TerminalStartupCapture(input.launch.confirmation) : undefined;
+	const capture = input.launch.kind === "login_shell" ? undefined : new TerminalStartupCapture(input.launch.confirmation);
 	let resolveReady: () => void = () => undefined;
 	let rejectReady: (error: Error) => void = () => undefined;
 	const ready = new Promise<void>((resolve, reject) => { resolveReady = resolve; rejectReady = reject; });
@@ -185,7 +185,7 @@ function createHandle(
 		client.removeListener("close", onClientClose);
 		if (!readySettled) {
 			readySettled = true;
-			rejectReady(new Error("Terminal confinement confirmation was not received before channel close"));
+			rejectReady(new Error("Terminal startup confirmation was not received before channel close"));
 		}
 		writesClosed.abort(new Error(exit.message ?? "Terminal channel closed before the write drained"));
 		resolveClosed(exit);

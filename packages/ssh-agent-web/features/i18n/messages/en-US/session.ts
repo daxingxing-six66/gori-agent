@@ -1,4 +1,13 @@
 export const enUSSessionMessages = {
+	"session.sandbox.on": "Sandbox enabled",
+	"session.sandbox.off": "Sandbox disabled",
+	"session.sandbox.changing": "Changing sandbox setting…",
+	"session.sandbox.enabledDescription": "Remote commands and Terminal use a filesystem sandbox. Full Access exceptions require separate approval.",
+	"session.sandbox.disabledDescription": "Sandboxing is disabled for this Session. Remote commands and Terminal use the SSH account's permissions. Guard and ordinary approval still apply.",
+	"session.sandbox.command.name": "sandbox",
+	"session.sandbox.command.description": "Restrict remote processes to writing within the workspace and temporary directories",
+	"session.sandbox.restarting": "A live Terminal closes and reopens automatically; shell state is lost",
+	"session.sandbox.usage": "Use /sandbox to switch modes, or /sandbox on, off or status, without attachments.",
 	"session.new": "New conversation",
 	"session.create": "Create Session",
 	"session.edit": "Edit Session",

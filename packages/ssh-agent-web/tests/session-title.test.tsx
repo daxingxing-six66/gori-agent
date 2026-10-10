@@ -10,7 +10,7 @@ vi.mock("../features/sftp/components/use-workspace-events", () => ({ useWorkspac
 
 const tree: WorkspaceSessionTree = { workspaces: [{
 	workspace: { id: "workspace-1", displayName: "server", environment: "development", host: { hostname: "localhost", port: 22, hostKey: null }, activeCredentialId: "key", defaultCwd: "/tmp", connection: { connectTimeoutMs: 1000, keepaliveIntervalMs: 1000, keepaliveMaxCount: 3 }, revision: 1, createdAt: 1, updatedAt: 1 },
-	sessions: [{ id: "session-1", workspaceId: "workspace-1", displayName: "新会话", workDir: "/tmp", autoAudit: false, terminalContextCursor: 4, revision: 1, createdAt: 1, updatedAt: 1 }],
+	sessions: [{ id: "session-1", workspaceId: "workspace-1", displayName: "新会话", workDir: "/tmp", autoAudit: false, sandboxEnabled: true, terminalContextCursor: 4, revision: 1, createdAt: 1, updatedAt: 1 }],
 }] };
 const update = { id: "session-1", workspaceId: "workspace-1", displayName: "SSH 终端问题排查", revision: 2, updatedAt: 2 };
 

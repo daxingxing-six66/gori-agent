@@ -71,6 +71,7 @@ const CODE_MESSAGES: Readonly<Record<string, BackendMessageKey>> = {
 	session_has_active_chat_run: "management.session_has_active_chat_run",
 	session_has_active_attachment_upload: "management.session_has_active_attachment_upload",
 	session_deletion_in_progress: "management.session_deletion_in_progress",
+	session_configuration_in_progress: "management.session_configuration_in_progress",
 	session_work_dir_unavailable: "management.session_work_dir_unavailable",
 	host_key_mismatch: "management.host_key_mismatch",
 	connection_failed: "management.connection_failed",
@@ -401,6 +402,7 @@ function managementStatus(code: ManagementError["code"]): number {
 		case "session_has_active_attachment_upload":
 		case "session_work_dir_unavailable":
 		case "session_deletion_in_progress":
+		case "session_configuration_in_progress":
 		case "host_key_mismatch":
 			return 409;
 		case "connection_failed":

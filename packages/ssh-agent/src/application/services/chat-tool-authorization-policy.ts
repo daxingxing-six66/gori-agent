@@ -12,6 +12,7 @@ import {
 import type { RemoteSandboxApprovalStore } from "./remote-sandbox-approval-store.ts";
 import type { RemoteSandboxRoute } from "./remote-sandbox-routing.ts";
 import type { TerminalInteractionService } from "./terminal-interaction-service.ts";
+import { SessionSandboxPolicy } from "./session-sandbox-policy.ts";
 
 export type { PreparedToolAuthorization } from "../tools/tool-authorization.ts";
 
@@ -24,7 +25,7 @@ interface ToolAuthorizationOptions {
 	assessRemoteSandbox?: (sessionId: string, declaredWritePaths: readonly string[], signal: AbortSignal) =>
 		Promise<{ readonly target: SshTargetSnapshot; readonly route: RemoteSandboxRoute }>;
 	previewDeploymentRemoteStage?: (sessionId: string, deploymentRunId: string, stage: "restart" | "verify") =>
-		{ readonly command: string; readonly mode: "workspace_write" | "full_access" } | undefined;
+		{ readonly command: string; readonly mode: "workspace_write" | "full_access"; readonly sessionAuthorized?: boolean } | undefined;
 	resolveRemoteTarget?: (sessionId: string) => Promise<SshTargetSnapshot>;
 }
 
@@ -32,9 +33,11 @@ interface ToolAuthorizationOptions {
 export class ChatToolAuthorizationPolicy {
 	readonly #deploymentRunIds = new Map<string, string>();
 	readonly #options: ToolAuthorizationOptions;
+	readonly #sandboxPolicy: SessionSandboxPolicy;
 
 	constructor(options: ToolAuthorizationOptions) {
 		this.#options = options;
+		this.#sandboxPolicy = new SessionSandboxPolicy(options.sessions);
 	}
 
 	async prepare(input: ToolAuthorizationInput): Promise<PreparedToolAuthorization> {
@@ -53,6 +56,7 @@ export class ChatToolAuthorizationPolicy {
 			case "remote_server_call":
 				return prepareRemoteCommandAuthorization(input, {
 					autoApprove,
+					sandboxEnabled: async () => await this.#sandboxPolicy.mode(input.run.sessionId) === "workspace_write",
 					preflightGuard: this.#options.preflightRemoteGuard,
 					assessSandbox: this.#options.assessRemoteSandbox,
 					resolveTarget: this.#options.resolveRemoteTarget,

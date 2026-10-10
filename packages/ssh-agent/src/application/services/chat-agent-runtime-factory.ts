@@ -49,6 +49,7 @@ import type { ChatUserDecisionService } from "./chat-user-decision-service.ts";
 import type { BubblewrapInstallationService } from "./bubblewrap-installation-service.ts";
 import { bubblewrapInspectDefinition, bubblewrapInstallDefinition, createBubblewrapInspectionTool,
 	createBubblewrapInstallTool } from "../tools/bubblewrap-installation-tool.ts";
+import { sessionSandboxInstructions, type SessionSandboxPolicy } from "./session-sandbox-policy.ts";
 
 type ToolCallCoordinator = Pick<ChatToolCallCoordinator, "beforeToolCall" | "requestSftpOverwriteApproval">;
 type QueueService = Pick<ChatQueueService, "cancelSteeringAfterTurn">;
@@ -64,6 +65,7 @@ export interface ChatAgentRuntimeFactoryOptions {
 	decisions: Pick<ChatUserDecisionService, "request">;
 	deployments?: AgentDeploymentService;
 	bubblewrapInstallations?: BubblewrapInstallationService;
+	sandboxPolicy?: Pick<SessionSandboxPolicy, "mode">;
 	createRemoteTool(sessionId: string, abortRun?: () => void, agentRunId?: string): AgentTool;
 	createTerminalTool(input: { sessionId: string; terminalSessionId: string; agentRunId: string }): AgentTool;
 	createSftpTool(input: {
@@ -90,6 +92,7 @@ export class ChatAgentRuntimeFactory {
 	readonly #decisions: ChatAgentRuntimeFactoryOptions["decisions"];
 	readonly #deployments?: ChatAgentRuntimeFactoryOptions["deployments"];
 	readonly #bubblewrapInstallations?: ChatAgentRuntimeFactoryOptions["bubblewrapInstallations"];
+	readonly #sandboxPolicy?: ChatAgentRuntimeFactoryOptions["sandboxPolicy"];
 	readonly #createRemoteTool: ChatAgentRuntimeFactoryOptions["createRemoteTool"];
 	readonly #createTerminalTool: ChatAgentRuntimeFactoryOptions["createTerminalTool"];
 	readonly #createSftpTool: ChatAgentRuntimeFactoryOptions["createSftpTool"];
@@ -107,6 +110,7 @@ export class ChatAgentRuntimeFactory {
 		this.#decisions = options.decisions;
 		this.#deployments = options.deployments;
 		this.#bubblewrapInstallations = options.bubblewrapInstallations;
+		this.#sandboxPolicy = options.sandboxPolicy;
 		this.#createRemoteTool = options.createRemoteTool;
 		this.#createTerminalTool = options.createTerminalTool;
 		this.#createSftpTool = options.createSftpTool;
@@ -138,6 +142,9 @@ export class ChatAgentRuntimeFactory {
 		};
 		let runtime: ChatRunRuntime | undefined;
 		try {
+			const systemPrompt = this.#sandboxPolicy
+				? `${input.systemPrompt}\n\n${sessionSandboxInstructions(await this.#sandboxPolicy.mode(input.run.sessionId))}`
+				: input.systemPrompt;
 			const requireRuntime = (): ChatRunRuntime => {
 				if (!runtime) throw new Error("Chat Runtime is unavailable during Agent callback");
 				return runtime;
@@ -248,7 +255,7 @@ export class ChatAgentRuntimeFactory {
 			const agent = this.#createAgent({
 				onRunFailure: (error) => requireRuntime().captureFailure(error),
 				initialState: {
-					systemPrompt: input.systemPrompt,
+					systemPrompt,
 					model: input.model,
 					thinkingLevel: input.run.thinkingLevel,
 					tools: configureFileToolConcurrency(

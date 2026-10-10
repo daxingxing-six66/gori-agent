@@ -6,6 +6,8 @@ import type { SshTargetSnapshot } from "../../domain/ssh-target.ts";
 import type { CommandGuardDecision, CommandGuardEvaluator } from "./command-guard-evaluator.ts";
 import type { FullAccessRequest, RemoteSandboxApprovalStore } from "./remote-sandbox-approval-store.ts";
 import type { SshTargetResolver } from "./ssh-target-resolver.ts";
+import type { SessionRepository } from "../repositories/session-repository.ts";
+import { SessionSandboxPolicy } from "./session-sandbox-policy.ts";
 
 export interface CommandExecutionTarget {
 	readonly target: SshTargetSnapshot;
@@ -23,17 +25,20 @@ export class CommandExecutionPolicy {
 	private readonly guards: CommandGuardEvaluator;
 	private readonly approvals: RemoteSandboxApprovalStore;
 	private readonly clock: Clock;
+	private readonly sandboxPolicy: SessionSandboxPolicy;
 
 	constructor(options: {
 		targets: SshTargetResolver;
 		guards: CommandGuardEvaluator;
 		approvals: RemoteSandboxApprovalStore;
 		clock: Clock;
+		sessions: Pick<SessionRepository, "findById">;
 	}) {
 		this.targets = options.targets;
 		this.guards = options.guards;
 		this.approvals = options.approvals;
 		this.clock = options.clock;
+		this.sandboxPolicy = new SessionSandboxPolicy(options.sessions);
 	}
 
 	checkQueued(operation: Readonly<CommandOperation>, signal?: AbortSignal): SshFailure | undefined {
@@ -59,7 +64,11 @@ export class CommandExecutionPolicy {
 		authorization: { readonly fullAccessRequest?: FullAccessRequest; readonly expectedTarget?: SshTargetSnapshot },
 	): Promise<CommandExecutionTarget> {
 		const target = await this.targets.resolve(operation.sessionId);
-		if (operation.sandbox?.mode === "full_access" &&
+		const sessionAuthorized = operation.sandbox?.authorizationSource === "session_setting";
+		if ((await this.sandboxPolicy.mode(operation.sessionId) === "full_access") !== sessionAuthorized) {
+			throw sandboxFailure("sandbox_approval_required", "Session sandbox setting changed after authorization. The command was not executed.");
+		}
+		if (operation.sandbox?.mode === "full_access" && !sessionAuthorized &&
 			(!authorization.fullAccessRequest || !this.approvals.consume(authorization.fullAccessRequest, target))) {
 			throw sandboxFailure("sandbox_approval_required", "full_access requires a new human approval for this exact tool call and SSH target. The command was not executed.");
 		}

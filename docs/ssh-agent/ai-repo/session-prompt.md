@@ -10,7 +10,7 @@
 - 固定头部包括基本工具边界、凭据保护、两种标签的含义与优先级、首次运行环境。`initial-environment` 按 `local` 与 `remote` 分层：本地有效目录来自 `session.workDir ?? localCwd`，本地 OS 类型/版本/架构来自 `node:os`，远端地址与端口来自 Workspace host。域名按配置原样保存，不解析或冒充服务器 IP；不采集远端 OS，不包含远端工作区名称、远端默认目录、凭据、Run ID 或动态时间。
 - 环境是首次运行时的事实；后续 Session 工作目录变更不会重写快照。已有历史但没有快照的旧 Session，在升级后的下一次 Run 初始化一次，无法还原其历史首次运行环境。只读占用查询不创建快照，缺快照返回 null；无快照且存在历史的手动压缩返回 `409 chat_prompt_not_initialized`，提示先运行一次，不提前创建头部。
 - 两个远端 Tool 的定义和顺序在两种模式下保持相同。Runtime Factory 根据 Run 冻结的 `serverInteractionMode` 为不可用 Tool 装配 `unavailableTool`，实际可用入口才绑定服务。工具在参数准备阶段（审批前）和直接执行入口拒绝本次调用，返回 `terminate: false` 的错误结果供模型纠正；授权策略不再重复集中校验模式。不能只依赖 Prompt 让模型遵守模式。错误 Tool 调用不改变模式；Run 绑定模式与最新持久化模式发生冲突时仍停止 Run。
-- `bubblewrap_inspect` 与 `bubblewrap_install` 也保持稳定定义，但仅命令模式可执行。已有 Session 的首次 system prompt 快照不重写；Tool 自身描述了受限命令或 Terminal 打开报告缺失后端时的模型操作。新建快照说明普通远端命令在沙箱可用时始终受限，自动审批只决定是否弹出人工审批；沙箱不可用、已声明写入路径越界以及显式 Full Access 请求都要求独立人工授权。Terminal 打开失败后的前端入口会在命令模式创建 Run，并携带明确的安装请求。安装审批和执行模式由服务端策略强制，不依赖提示词。
+- `bubblewrap_inspect` 与 `bubblewrap_install` 也保持稳定定义，但仅命令模式可执行。已有 Session 的首次 system prompt 快照不重写；Tool 自身描述了受限命令或 Terminal 打开报告缺失后端时的模型操作。新建快照说明普通远端命令在沙箱可用时始终受限，自动审批只决定是否弹出人工审批；沙箱不可用、已声明写入路径越界以及显式 Full Access 请求都要求独立人工授权。Terminal 打开失败后的前端入口会在命令模式创建 Run，并携带明确的安装请求。上述要求适用于 Session 开启沙盒。Runtime Factory 每个 Run 读取当前 `sandboxEnabled`，在基础 Prompt 后追加可信 `<session-sandbox>`，明确其优先于旧快照的沙箱说明；关闭时指示直接执行，不为运行普通命令探测、安装或申请一次性例外。远端工具描述说明两种策略，Terminal 工具描述读取当前 PTY 事实，参数结构保持兼容。安装审批和执行模式由服务端策略强制，不依赖提示词。见 [session-sandbox.md](./session-sandbox.md)。
 - 部署讨论状态由 Deployment Service/Repository 持有，ChatService 只在创建 Run 时读取绑定的 Discussion 并生成本轮指引；提案工具必须在服务端再次校验关联、状态和目标。一次 Run 正常结束但没有提案，讨论仍为 discussing，后续用户消息可继续；模型文字或前端临时状态不能自行开启模式或批准执行。
 - 部署工具定义仍在稳定的工具列表中。只有当前 Run 的 Discussion 绑定才会给 `deployment_propose_plan` 装配可执行实现；无绑定、旧 revision 或已取消的讨论都不能凭标签文本调用提案。`deployment_execution` 则使用独立的冻结计划绑定与执行门禁。
 
@@ -35,7 +35,7 @@ SQLite v16 引入、v17 统一兼容后的结构使用触发器让 Terminal 状�
 
 压缩只替换有效历史，固定头部不变。最新权威模式若落入摘要区，会以原 system 消息保留在 retained tail；摘要请求期间发生的新模式事件也加入尾部，避免被新 compact 行的 sequence 边界遮蔽。每次 Provider 请求及压缩返回后复核最新持久化模式：同一事件不重复插入，若与当前 Run 绑定模式不一致则停止并返回模式冲突，不继续使用已失效 PTY。
 
-普通切换保留头部和工具 schema 前缀；历史只追加。这消除了模式切换主动改写前缀的问题，但不保证供应商缓存命中；压缩、模型变更、供应商缓存策略仍会影响缓存。
+Terminal 模式切换保留头部和工具 schema 前缀；历史只追加。Session 沙盒切换同样保留持久化头部，但下一 Run 的可信策略片段与相关 Tool 描述会反映新设置。这消除了模式切换主动改写前缀的问题，但不保证供应商缓存命中；压缩、模型变更、供应商缓存策略仍会影响缓存。
 
 ## 代码与验证
 

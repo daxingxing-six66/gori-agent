@@ -8,6 +8,8 @@ export interface Session {
 	/** Normalized absolute local path. Null uses the server default. */
 	workDir: string | null;
 	autoAudit: boolean;
+	/** User-selected remote execution environment, independent of tool approval. */
+	sandboxEnabled: boolean;
 	terminalContextCursor: number;
 	revision: number;
 	createdAt: number;
@@ -19,6 +21,7 @@ export interface CreateSessionInput {
 	displayName: string;
 	workDir?: string;
 	autoAudit?: boolean;
+	sandboxEnabled?: boolean;
 }
 
 export interface UpdateSessionInput {
@@ -26,6 +29,7 @@ export interface UpdateSessionInput {
 	displayName?: string;
 	workDir?: string | null;
 	autoAudit?: boolean;
+	sandboxEnabled?: boolean;
 	expectedRevision: number;
 }
 

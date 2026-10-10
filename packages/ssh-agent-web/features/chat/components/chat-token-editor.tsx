@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronRight, File, Folder, LoaderCircle, Minimize2, Rocket, SquareTerminal } from "lucide-react";
+import { ChevronRight, File, Folder, LoaderCircle, Minimize2, Rocket, Shield, SquareTerminal } from "lucide-react";
 import {
 	type DragEvent as ReactDragEvent,
 	forwardRef,
@@ -417,7 +417,7 @@ export const ChatTokenEditor = forwardRef<ChatTokenEditorHandle, ChatTokenEditor
 					{menuSections.showTools ? <div className="chat-composer-menu-group">
 						<div className="chat-composer-menu-group-title">{intl.formatMessage({ id: "chat.composer.menu.tools" })}</div>
 						{visibleTools.map((tool) => {
-							const ToolIcon = tool.icon === "compact" ? Minimize2 : tool.icon === "deploy" ? Rocket : SquareTerminal;
+							const ToolIcon = tool.icon === "compact" ? Minimize2 : tool.icon === "deploy" ? Rocket : tool.icon === "shield" ? Shield : SquareTerminal;
 							const optionIndex = menuOptions.findIndex((option) => option.type === "tool" && option.tool.id === tool.id);
 							return (
 								<button

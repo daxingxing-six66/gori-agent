@@ -376,6 +376,7 @@ export function createSqliteManagementBackend(options: CreateSqliteManagementBac
 				operations: commandOperationRepository,
 				hasActiveChatRun: (sessionId) => chat.hasActiveRun(sessionId),
 				closeTerminalForDeletion: (sessionId) => terminalSessions.closeForSessionDeletion(sessionId),
+				reconfigureTerminal: (sessionId, persist) => terminalSessions.reconfigureSandbox(sessionId, persist),
 				cleanupAttachmentsForDeletion: (sessionId) => attachments.cleanupSession(sessionId),
 			}),
 			guards: new DefaultGuardService({ guards, clock, ids, rulePacks }),

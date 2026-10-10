@@ -22,6 +22,7 @@ import { sandboxFailure } from "../src/domain/remote-sandbox.ts";
 import type { SshTargetSnapshot } from "../src/domain/ssh-target.ts";
 import { terminalInteractionDefinition } from "../src/application/tools/terminal-interaction-tool.ts";
 import type { AgentDeploymentService } from "../src/application/tools/deployment-agent-tool.ts";
+import type { Session } from "../src/domain/session.ts";
 import type { ChatRun } from "../src/domain/chat.ts";
 import type { DeploymentRun } from "../src/domain/deployment.ts";
 import { ChatCompactionError } from "../src/domain/context-compaction.ts";
@@ -41,6 +42,9 @@ const commandRun: ChatRun = {
 	updatedAt: 1,
 };
 
+const session: Session = { id: "session-1", workspaceId: "workspace-1", displayName: "test", workDir: null,
+	autoAudit: false, sandboxEnabled: true, terminalContextCursor: 0, revision: 1, createdAt: 1, updatedAt: 1 };
+
 function namedTool(name: string): AgentTool {
 	return {
 		name,
@@ -53,7 +57,7 @@ function namedTool(name: string): AgentTool {
 
 function createContext(
 	options: { createExecutionEnv?: (workDir: string) => NodeExecutionEnv; provider?: string; deployments?: AgentDeploymentService;
-		toolCalls?: ChatAgentRuntimeFactoryOptions["toolCalls"] } = {},
+		toolCalls?: ChatAgentRuntimeFactoryOptions["toolCalls"]; sandboxPolicy?: ChatAgentRuntimeFactoryOptions["sandboxPolicy"] } = {},
 ) {
 	const faux = fauxProvider({
 		provider: options.provider ?? "factory-provider",
@@ -70,6 +74,7 @@ function createContext(
 	});
 	const createTerminalTool = vi.fn(() => namedTool("terminal_interaction"));
 	const factory = new ChatAgentRuntimeFactory({
+		sandboxPolicy: options.sandboxPolicy,
 		models,
 		toolCalls: options.toolCalls ?? {
 			beforeToolCall: vi.fn(async () => undefined),
@@ -105,11 +110,27 @@ function createContext(
 }
 
 describe("ChatAgentRuntimeFactory", () => {
+	it("refreshes the trusted sandbox instruction for each Run without changing the base snapshot", async () => {
+		let mode: "workspace_write" | "full_access" = "full_access";
+		const sandboxPolicy = { mode: vi.fn(async () => mode) };
+		const context = createContext({ sandboxPolicy });
+		const input = { run: commandRun, model: context.model, workDir: process.cwd(), history: [], systemPrompt: "immutable snapshot" };
+		const direct = await context.factory.create(input);
+		try { expect(context.getAgentOptions()?.initialState?.systemPrompt).toContain("disabled remote sandboxing for this Session"); }
+		finally { await direct.dispose(); }
+		mode = "workspace_write";
+		const confined = await context.factory.create(input);
+		try {
+			expect(context.getAgentOptions()?.initialState?.systemPrompt).toContain("Remote sandboxing is enabled");
+			expect(input.systemPrompt).toBe("immutable snapshot");
+			expect(sandboxPolicy.mode).toHaveBeenCalledTimes(2);
+		} finally { await confined.dispose(); }
+	});
 	it("carries the selected Full Access plan from human approval through Agent into the remote tool", async () => {
 		const target = { defaultCwd: "/srv/app" } as SshTargetSnapshot;
 		const sandboxApprovals = new RemoteSandboxApprovalStore();
 		const authorization = new ChatToolAuthorizationPolicy({ sandboxApprovals,
-			sessions: { findById: vi.fn(async () => undefined) },
+			sessions: { findById: vi.fn(async () => session) },
 			terminalInteractions: { preflightSubmit: vi.fn(), approve: vi.fn(), reject: vi.fn() },
 			preflightRemoteGuard: async () => ({ allowed: true }),
 			assessRemoteSandbox: async () => ({ target, route: { mode: "full_access", reason: "write_path_outside_sandbox",
@@ -150,7 +171,7 @@ describe("ChatAgentRuntimeFactory", () => {
 
 	it("sends a wrong-mode tool error to the model and executes its corrected call", async () => {
 		const authorization = new ChatToolAuthorizationPolicy({
-			sessions: { findById: vi.fn(async () => undefined) },
+			sessions: { findById: vi.fn(async () => session) },
 			terminalInteractions: { preflightSubmit: vi.fn(async () => ({ allowed: true })), approve: vi.fn(), reject: vi.fn() },
 			preflightRemoteGuard: vi.fn(async () => ({ allowed: true })),
 		});
@@ -195,7 +216,7 @@ describe("ChatAgentRuntimeFactory", () => {
 		const probe = vi.fn(async () => ({ mode: "workspace_write" as const, backend: "landlock" as const,
 			enforcement: "full" as const, sandboxRoot: "/srv/app", abi: 5, launcherVersion: "3" }));
 		const authorization = new ChatToolAuthorizationPolicy({
-			sessions: { findById: vi.fn(async () => undefined) },
+			sessions: { findById: vi.fn(async () => session) },
 			terminalInteractions: { preflightSubmit: vi.fn(async () => ({ allowed: true })), approve: vi.fn(), reject: vi.fn() },
 			preflightRemoteGuard: vi.fn(async () => ({ allowed: true })),
 			assessRemoteSandbox: async (_sessionId, declaredWritePaths, signal) => ({ target,
@@ -270,7 +291,7 @@ describe("ChatAgentRuntimeFactory", () => {
 	])("keeps infrastructure authorization errors fatal: %s", async (failure) => {
 		const approvals = { request: vi.fn(async () => ({ approved: true as const, source: "user" as const })) };
 		const authorization = new ChatToolAuthorizationPolicy({
-			sessions: { findById: vi.fn(async () => undefined) },
+			sessions: { findById: vi.fn(async () => session) },
 			terminalInteractions: { preflightSubmit: vi.fn(async () => ({ allowed: true })), approve: vi.fn(), reject: vi.fn() },
 			preflightRemoteGuard: vi.fn(async () => ({ allowed: true })),
 			assessRemoteSandbox: vi.fn(async () => { throw failure; }),

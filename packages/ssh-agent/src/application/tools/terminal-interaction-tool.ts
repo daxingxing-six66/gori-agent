@@ -191,7 +191,9 @@ function sandboxSummary(sandbox: TerminalSandboxFacts): string {
 		? `Terminal sandbox: Landlock ABI ${sandbox.abi}; writable root ${sandbox.sandboxRoot}.`
 		: `Terminal sandbox: Bubblewrap ${sandbox.bubblewrapVersion}; writable root ${sandbox.sandboxRoot}.`;
 	return "source" in sandbox
-		? "Terminal sandbox: Landlock unavailable; SSH account permissions apply without filesystem confinement."
+		? sandbox.source === "session_setting"
+			? "Terminal sandbox: disabled by the user for this Session; SSH account permissions apply without filesystem confinement."
+			: "Terminal sandbox: Landlock unavailable; SSH account permissions apply without filesystem confinement."
 		: `Terminal sandbox: Full Access confirmed ${new Date(sandbox.approvedAt).toISOString()}.`;
 }
 

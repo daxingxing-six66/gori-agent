@@ -14,6 +14,7 @@ const session: Session = {
 	displayName: "Session",
 	workDir: "/Users/example/projects/app",
 	autoAudit: false,
+	sandboxEnabled: true,
 	terminalContextCursor: 0,
 	revision: 1,
 	createdAt: 1,

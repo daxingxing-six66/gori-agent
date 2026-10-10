@@ -22,6 +22,8 @@ export interface RemoteSandboxFacts {
 	/** A stderr hint, never proof of a kernel denial. */
 	denialSuspected?: boolean;
 	commandMayHaveRun?: boolean;
+	/** Session authorization is distinct from a one-command human exception. */
+	authorizationSource?: "session_setting";
 }
 
 /** Only an explicit lack of backend capability permits trying another backend. */

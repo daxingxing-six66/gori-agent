@@ -18,7 +18,7 @@ export function useTerminalMode(sessionId: string) {
 
 	const refresh = useCallback(async (signal?: AbortSignal) => {
 		const next = await terminalApi.getStatus(sessionId, signal);
-		setStatus(next);
+		if (!signal?.aborted) setStatus(next);
 		return next;
 	}, [sessionId]);
 

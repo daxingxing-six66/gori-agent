@@ -6,7 +6,7 @@ export const DEPLOY_STAGES = ["prepare", "build", "upload", "restart", "verify"]
 export type DeployStage = typeof DEPLOY_STAGES[number];
 export type DeployStageStatus = "pending" | "running" | "success" | "failed" | "skipped";
 export type DeployStatus = "preparing" | "running" | "recovering" | "success" | "failed" | "cancelled";
-export type DeploymentFullAccessReason = "deployment_policy" | "sandbox_unavailable" | "sandbox_partial_enforcement" | "sandbox_scope_exceeded";
+export type DeploymentFullAccessReason = "deployment_policy" | "sandbox_unavailable" | "sandbox_partial_enforcement" | "sandbox_scope_exceeded" | "session_sandbox_disabled";
 export type DeploymentRemoteAccess = { mode: "workspace_write" } | { mode: "full_access"; reason: DeploymentFullAccessReason };
 export type DeploymentRemoteStage = "restart" | "verify";
 
@@ -28,7 +28,7 @@ export interface DeploymentFullAccessApproval {
 	expiresAt?: number;
 	/** Identifies why this exceptional approval exists, including in deployment API snapshots. */
 	toolName?: "remote_sandbox_exception";
-	reason?: DeploymentFullAccessReason;
+	reason?: Exclude<DeploymentFullAccessReason, "session_sandbox_disabled">;
 }
 
 export interface DeployModuleV1 {

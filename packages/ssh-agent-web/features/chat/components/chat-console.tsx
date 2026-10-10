@@ -18,6 +18,10 @@ import { useChatRuntime } from "@/features/chat/runtime/use-chat-runtime";
 import { resolveConfiguredModel } from "@/features/llm-provider/api/llm-provider-api";
 import { thinkingLevelForModel } from "@/features/llm-provider/model/llm-provider";
 import { sessionApi } from "@/features/session/api/session-api";
+import { SessionSandboxBadge } from "@/features/session/components/session-sandbox-badge";
+import { SessionSandboxStatus } from "@/features/session/components/session-sandbox-status";
+import { isSessionSandboxCommand } from "@/features/session/model/session-sandbox-command";
+import { useSessionSandbox } from "@/features/session/runtime/use-session-sandbox";
 import { TerminalConnectionState } from "@/features/terminal/components/terminal-connection-state";
 import { TerminalOpenFailure, terminalOpenFailureFromStatus } from "@/features/terminal/components/terminal-open-failure";
 import { TerminalSandboxNotice } from "@/features/terminal/components/terminal-sandbox-notice";
@@ -54,6 +58,8 @@ export function ChatConsole({ sessionId }: { sessionId: string }) {
 	const [planningSubmitting, setPlanningSubmitting] = useState(false);
 	const [dismissedTerminalFailureKey, setDismissedTerminalFailureKey] = useState<string | null>(null);
 	const active = activeChatRun(runtime.state.run);
+	const sandbox = useSessionSandbox({ sessionId, session: item?.session, refreshSessions: refresh,
+		refreshTerminal: terminalMode.refresh, disabled: active || runtime.submitting || runtime.compacting || autoAuditPending || planningSubmitting || deployment.busy || terminalMode.loading || terminalMode.mutating || terminalMode.status?.transitionInProgress === true });
 	const showActivity = waitingForChatResponse(runtime.state, runtime.loading, runtime.submitting);
 	const autoAuditChecked = autoAuditOverride ?? item?.session.autoAudit ?? false;
 	const terminalActive = terminalMode.status?.terminal?.status === "active";
@@ -66,7 +72,9 @@ export function ChatConsole({ sessionId }: { sessionId: string }) {
 		(terminalFailure.key === null || terminalFailure.key !== dismissedTerminalFailureKey) ? terminalFailure : null;
 	const terminalPresent = terminalActive || terminalTransition !== null || visibleTerminalFailure !== null;
 	const terminalExpanded = terminalActive || (terminalTransition !== null && terminalTransition !== "exiting") || visibleTerminalFailure !== null;
-	const terminalDisabledReason = active
+	const terminalDisabledReason = sandbox.pending
+		? intl.formatMessage({ id: "session.sandbox.changing" })
+		: active
 		? intl.formatMessage({ id: "terminal.disabled.runActive" })
 		: terminalMode.loading
 			? intl.formatMessage({ id: "terminal.disabled.loading" })
@@ -90,7 +98,9 @@ export function ChatConsole({ sessionId }: { sessionId: string }) {
 					: terminalActive
 						? { label: intl.formatMessage({ id: "terminal.status.started" }), tone: "active" as const }
 						: { label: intl.formatMessage({ id: "terminal.status.stopped" }), tone: "inactive" as const };
-	const compactionDisabledReason = runtime.loading
+	const compactionDisabledReason = sandbox.pending
+		? intl.formatMessage({ id: "session.sandbox.changing" })
+		: runtime.loading
 		? intl.formatMessage({ id: "chat.compaction.disabled.loading" })
 		: active
 			? intl.formatMessage({ id: "chat.compaction.disabled.activeRun" })
@@ -98,6 +108,7 @@ export function ChatConsole({ sessionId }: { sessionId: string }) {
 				? intl.formatMessage({ id: "chat.compaction.inProgress" })
 				: undefined;
 	const composerTools: readonly ChatComposerTool[] = [
+		...sandbox.tools,
 		{
 			id: "deploy",
 			icon: "deploy",
@@ -105,7 +116,7 @@ export function ChatConsole({ sessionId }: { sessionId: string }) {
 			description: intl.formatMessage({ id: "deploy.tool.description" }),
 			keywords: ["deploy", "部署", "发布", "流水线"],
 			...(deployment.activeDiscussion ? { status: { label: intl.formatMessage({ id: "deploy.discussion.status" }), tone: "active" as const } } : {}),
-			disabled: active || deployment.busy,
+			disabled: active || deployment.busy || sandbox.pending,
 		},
 		{
 			id: "terminal",
@@ -232,6 +243,9 @@ export function ChatConsole({ sessionId }: { sessionId: string }) {
 	};
 
 	const submit = useCallback(async (message: string, attachments: SessionAttachment[]): Promise<boolean> => {
+		const localResult = await sandbox.execute(message, attachments.length > 0);
+		if (localResult !== null) return localResult;
+		if (sandbox.pending) return false;
 		if (terminalMode.loading || terminalMode.status?.transitionInProgress || runtime.submitting) return false;
 		if (!active && !model) return false;
 		try {
@@ -263,10 +277,10 @@ export function ChatConsole({ sessionId }: { sessionId: string }) {
 			}
 			return false;
 		}
-	}, [active, deployment.activeDiscussion, deployment.open, deployment.readOnly, deployment.run, model, modelSelection.selectModel, modelSelection.selectThinkingLevel, runtime.submit, runtime.submitting, terminalMode.loading, terminalMode.status?.effectiveServerInteractionMode, terminalMode.status?.transitionInProgress, thinkingLevel]);
+	}, [active, deployment.activeDiscussion, deployment.open, deployment.readOnly, deployment.run, model, modelSelection.selectModel, modelSelection.selectThinkingLevel, runtime.submit, runtime.submitting, sandbox.execute, sandbox.pending, terminalMode.loading, terminalMode.status?.effectiveServerInteractionMode, terminalMode.status?.transitionInProgress, thinkingLevel]);
 
 	const updateAutoAudit = async (checked: boolean) => {
-		if (!item || active || autoAuditPending) return;
+		if (!item || active || autoAuditPending || sandbox.pending) return;
 		setAutoAuditOverride(checked);
 		setAutoAuditPending(true);
 		setAutoAuditError(null);
@@ -283,26 +297,28 @@ export function ChatConsole({ sessionId }: { sessionId: string }) {
 	};
 
 	const selectComposerTool = useCallback((toolId: string) => {
+		if (toolId === "sandbox") { void sandbox.execute("/sandbox"); return; }
+		if (sandbox.pending) return;
 		if (toolId === "deploy" && !active && !deployment.busy) { void deployment.show(); return; }
 		if (toolId === "terminal" && terminalDisabledReason === undefined) {
 			void (terminalActive ? terminalMode.close() : terminalMode.open());
 			return;
 		}
 		if (toolId === "compact" && compactionDisabledReason === undefined) void runtime.compact();
-	}, [active, compactionDisabledReason, deployment, runtime.compact, terminalActive, terminalDisabledReason, terminalMode.close, terminalMode.open]);
+	}, [active, compactionDisabledReason, deployment, runtime.compact, sandbox.execute, sandbox.pending, terminalActive, terminalDisabledReason, terminalMode.close, terminalMode.open]);
 
 	const requestBubblewrapInstallation = useCallback(async () => {
-		if (!model || active || runtime.submitting || terminalMode.status?.effectiveServerInteractionMode !== "command") return;
+		if (!model || active || sandbox.pending || runtime.submitting || terminalMode.status?.effectiveServerInteractionMode !== "command") return;
 		try {
 			const run = await runtime.submit({ message: intl.formatMessage({ id: "terminal.openFailure.installPrompt" }),
 				attachments: [], model, thinkingLevel, behavior: "follow_up", serverInteractionMode: "command" });
 			if (run && terminalFailure?.key) setDismissedTerminalFailureKey(terminalFailure.key);
 		} catch { /* Chat composer shows the Run creation error. */ }
-	}, [active, intl, model, runtime.submit, runtime.submitting, terminalFailure?.key,
+	}, [active, intl, model, sandbox.pending, runtime.submit, runtime.submitting, terminalFailure?.key,
 		terminalMode.status?.effectiveServerInteractionMode, thinkingLevel]);
 
 	const startDeploymentSetup = useCallback(async () => {
-		if (!model || active) return;
+		if (!model || active || sandbox.pending) return;
 		const run = await runtime.submit({
 			message: "请根据当前项目为这个 Workspace 的 SSH 主机创建 Gori deployment profile。使用 ask_user_decision 确认所有无法可靠推断的信息；只保存配置，不执行部署。",
 			attachments: [], model, thinkingLevel, behavior: "follow_up",
@@ -310,10 +326,10 @@ export function ChatConsole({ sessionId }: { sessionId: string }) {
 			workflow: "deployment_setup",
 		});
 		if (run) deployment.hide();
-	}, [active, deployment, model, runtime.submit, terminalMode.status?.effectiveServerInteractionMode, thinkingLevel]);
+	}, [active, deployment, model, sandbox.pending, runtime.submit, terminalMode.status?.effectiveServerInteractionMode, thinkingLevel]);
 
 	const startDeploymentDiscussion = useCallback(async (profileFile: string, moduleId: string) => {
-		if (!model || active || runtime.submitting || planningRequestRef.current) return;
+		if (!model || active || sandbox.pending || runtime.submitting || planningRequestRef.current) return;
 		const request = { sessionId };
 		planningRequestRef.current = request;
 		setPlanningSubmitting(true);
@@ -335,11 +351,11 @@ export function ChatConsole({ sessionId }: { sessionId: string }) {
 				setPlanningSubmitting(false);
 			}
 		}
-	}, [active, deployment, intl, model, runtime.submit, runtime.submitting, sessionId, terminalMode.status?.effectiveServerInteractionMode, thinkingLevel]);
+	}, [active, deployment, intl, model, sandbox.pending, runtime.submit, runtime.submitting, sessionId, terminalMode.status?.effectiveServerInteractionMode, thinkingLevel]);
 
 	const startDeploymentExecution = useCallback(async () => {
 		const plan = deployment.run;
-		if (!plan || (plan.status !== "preparing" && !(plan.status === "recovering" && plan.recoveries?.at(-1)?.status === "approved")) || !model || active || runtime.submitting) return;
+		if (!plan || (plan.status !== "preparing" && !(plan.status === "recovering" && plan.recoveries?.at(-1)?.status === "approved")) || !model || active || sandbox.pending || runtime.submitting) return;
 		deployment.setError(null);
 		try {
 			const run = await runtime.submit({
@@ -351,12 +367,12 @@ export function ChatConsole({ sessionId }: { sessionId: string }) {
 			});
 			if (run) await deployment.refresh();
 		} catch (error) { deployment.setError(error instanceof Error ? error.message : String(error)); }
-	}, [active, deployment, model, runtime.submit, runtime.submitting, terminalMode.status?.effectiveServerInteractionMode, thinkingLevel]);
+	}, [active, deployment, model, sandbox.pending, runtime.submit, runtime.submitting, terminalMode.status?.effectiveServerInteractionMode, thinkingLevel]);
 
 	const startDeploymentRecovery = useCallback(async () => {
 		const plan = deployment.run;
 		if (!plan || plan.status !== "recovering" || plan.recoveries?.at(-1)?.status === "approved" ||
-			plan.recoveries?.at(-1)?.status === "pending" || !model || active || runtime.submitting) return;
+			plan.recoveries?.at(-1)?.status === "pending" || !model || active || sandbox.pending || runtime.submitting) return;
 		deployment.setError(null);
 		try {
 			await runtime.submit({
@@ -365,7 +381,7 @@ export function ChatConsole({ sessionId }: { sessionId: string }) {
 				workflow: "deployment_recovery", deploymentRunId: plan.id,
 			});
 		} catch (error) { deployment.setError(error instanceof Error ? error.message : String(error)); }
-	}, [active, deployment, intl, model, runtime.submit, runtime.submitting, terminalMode.status?.effectiveServerInteractionMode, thinkingLevel]);
+	}, [active, deployment, intl, model, sandbox.pending, runtime.submit, runtime.submitting, terminalMode.status?.effectiveServerInteractionMode, thinkingLevel]);
 
 	const resolveApproval = useCallback((approval: ToolApproval, approved: boolean) => {
 		void runtime.resolveApproval(approval, approved);
@@ -386,11 +402,11 @@ export function ChatConsole({ sessionId }: { sessionId: string }) {
 		key={deployment.run ? `run:${deployment.run.id}` : `new-plan:${deployment.freshOpenRevision}`}
 		discovery={deployment.discovery} discussion={deployment.selectedDiscussion} run={deployment.run} loading={deployment.loading} busy={deployment.busy} planning={planning}
 		activity={activity}
-		canSetup={model !== null && !active && !runtime.submitting}
-		canPlan={model !== null && !active && !runtime.submitting && !planningSubmitting}
+		canSetup={model !== null && !active && !runtime.submitting && !sandbox.pending}
+		canPlan={model !== null && !active && !runtime.submitting && !sandbox.pending && !planningSubmitting}
 		planHint={model === null ? intl.formatMessage({ id: "deploy.selectModelPlanning" }) : undefined}
-		canConfirm={model !== null && !active && !runtime.submitting}
-		canRecover={model !== null && !active && !runtime.submitting}
+		canConfirm={model !== null && !active && !runtime.submitting && !sandbox.pending}
+		canRecover={model !== null && !active && !runtime.submitting && !sandbox.pending}
 		readOnly={deployment.readOnly}
 		error={deployment.error} onClose={deployment.hide} onPlan={(file, moduleId) => { void startDeploymentDiscussion(file, moduleId); }}
 		onConfirm={() => { void startDeploymentExecution(); }} onDecideFullAccess={(stage, approvalId, approved) => { void deployment.decideFullAccess(stage, approvalId, approved); }} onCancel={() => { void deployment.cancel(); }}
@@ -416,16 +432,20 @@ export function ChatConsole({ sessionId }: { sessionId: string }) {
 				<div className="session-console-header min-w-0">
 					<header className="flex h-16 shrink-0 items-center justify-between border-b border-[var(--line-soft)] bg-[var(--surface)] px-6">
 						<div className="min-w-0"><h1 className="truncate text-[15px] font-semibold tracking-[-0.01em]">{item.session.displayName}</h1><p className="mt-0.5 truncate text-[12px] text-[var(--text-muted)]">{item.workspace.displayName} · local {item.session.workDir ?? intl.formatMessage({ id: "session.workDir.systemDefault.short" })}</p></div>
-						<ChatStatus active={active} runStatus={runtime.state.run?.status} connection={runtime.state.connection} queueCount={pendingQueue.length} />
+						<div className="ml-4 flex shrink-0 items-center gap-2">
+							<SessionSandboxBadge enabled={sandbox.enabled} />
+							<ChatStatus active={active} runStatus={runtime.state.run?.status} connection={runtime.state.connection} queueCount={pendingQueue.length} />
+						</div>
 					</header>
+					<SessionSandboxStatus pending={sandbox.pending} label={sandbox.statusLabel} error={sandbox.error} notice={sandbox.notice} onDismiss={sandbox.clearNotice} />
 					{terminalMode.error && !visibleTerminalFailure ? <button type="button" className="w-full border-b border-rose-200 bg-rose-50 px-4 py-2 text-left text-xs text-rose-700" onClick={() => terminalMode.setError(null)}>{terminalMode.error}</button> : null}
 					<TerminalSandboxNotice sandbox={terminalActive ? terminalMode.status?.terminal?.sandbox : null} />
 				</div>
-				{terminalActive && terminalMode.transition === null && terminalMode.status ? <TerminalPanel sessionId={sessionId} status={terminalMode.status} onTerminalStateChange={terminalMode.refresh} /> : null}
+				{terminalActive && !sandbox.pending && terminalMode.transition === null && terminalMode.status ? <TerminalPanel sessionId={sessionId} status={terminalMode.status} onTerminalStateChange={terminalMode.refresh} /> : null}
 				{terminalPresent && terminalTransition ? <TerminalConnectionState phase={terminalTransition} /> : null}
 				{visibleTerminalFailure ? <TerminalOpenFailure failure={visibleTerminalFailure}
 					canRetry={terminalDisabledReason === undefined}
-					canRequestInstallation={Boolean(model && !active && !runtime.submitting && terminalMode.status?.effectiveServerInteractionMode === "command")}
+					canRequestInstallation={Boolean(model && !active && !runtime.submitting && !sandbox.pending && terminalMode.status?.effectiveServerInteractionMode === "command")}
 					onRetry={() => { setDismissedTerminalFailureKey(null); void terminalMode.open(); }}
 					onRequestInstallation={() => { void requestBubblewrapInstallation(); }}
 					onDismiss={() => { if (visibleTerminalFailure.key) setDismissedTerminalFailureKey(visibleTerminalFailure.key); else terminalMode.setOpenError(null); }}
@@ -458,13 +478,14 @@ export function ChatConsole({ sessionId }: { sessionId: string }) {
 					onSelectThinkingLevel={modelSelection.selectThinkingLevel}
 					composerTools={composerTools}
 					onToolSelect={selectComposerTool}
-					submitting={runtime.submitting}
+					submitting={runtime.submitting || sandbox.pending}
 					cancelling={runtime.cancelling}
 					terminalBusy={terminalMode.loading || terminalMode.status?.transitionInProgress === true}
 					onSubmit={submit}
+					isLocalCommand={isSessionSandboxCommand}
 					onCancel={cancelRun}
 					autoAuditChecked={autoAuditChecked}
-					autoAuditPending={autoAuditPending}
+					autoAuditPending={autoAuditPending || sandbox.pending}
 					autoAuditError={autoAuditError}
 					onClearAutoAuditError={() => setAutoAuditError(null)}
 					onUpdateAutoAudit={(checked) => void updateAutoAudit(checked)}

@@ -26,8 +26,9 @@ function readWithoutBackend(facts: Record<string, unknown>, state: ExecutionStat
 	const { mode, enforcement, commandMayHaveRun, denialSuspected } = state;
 	if (enforcement !== "none" || (mode === "workspace_write" && (commandMayHaveRun || denialSuspected !== undefined)) ||
 		(mode === "full_access" && denialSuspected === true) ||
-		!onlyKeys(facts, ["mode", "backend", "enforcement", "commandMayHaveRun", "denialSuspected"])) throw invalidFacts();
-	return { ...state, backend: "none" };
+		(facts.authorizationSource !== undefined && (mode !== "full_access" || facts.authorizationSource !== "session_setting")) ||
+		!onlyKeys(facts, ["mode", "backend", "enforcement", "commandMayHaveRun", "denialSuspected", "authorizationSource"])) throw invalidFacts();
+	return { ...state, backend: "none", ...(facts.authorizationSource === "session_setting" ? { authorizationSource: "session_setting" } : {}) };
 }
 
 function readPreparedBackend(facts: Record<string, unknown>, state: ExecutionState): RemoteSandboxFacts {

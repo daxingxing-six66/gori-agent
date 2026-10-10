@@ -16,7 +16,7 @@ import { SqliteDeploymentRepository } from "../src/infrastructure/sqlite/sqlite-
 const temporary: string[] = [];
 afterEach(async () => { for (const path of temporary.splice(0)) await rm(path, { recursive: true, force: true }); });
 
-async function harness(overrides: { host?: string; remoteRoot?: string; guard?: boolean; remoteFails?: boolean; remoteFailureRef?: { current: boolean }; remoteFailureCode?: "remote_exit_non_zero" | "sandbox_partial_enforcement"; transferHost?: string; buildCommand?: string; uploadGate?: Promise<void>; includeVerify?: boolean; cancelAgentRun?: (sessionId: string, agentRunId: string) => Promise<void>; assessRemoteSandbox?: (paths: readonly string[]) => RemoteSandboxRoute } = {}) {
+async function harness(overrides: { sandboxEnabledRef?: { current: boolean }; host?: string; remoteRoot?: string; guard?: boolean; remoteFails?: boolean; remoteFailureRef?: { current: boolean }; remoteFailureCode?: "remote_exit_non_zero" | "sandbox_partial_enforcement"; transferHost?: string; buildCommand?: string; uploadGate?: Promise<void>; includeVerify?: boolean; cancelAgentRun?: (sessionId: string, agentRunId: string) => Promise<void>; assessRemoteSandbox?: (paths: readonly string[]) => RemoteSandboxRoute } = {}) {
 	const root = await mkdtemp(join(tmpdir(), "gori-deploy-test-"));
 	temporary.push(root);
 	await mkdir(join(root, ".gori"));
@@ -76,7 +76,7 @@ ${overrides.includeVerify === false ? "" : "    verify:\n      command: systemct
 		credentialAuthVersion: 1, remoteUser: "test", defaultCwd: overrides.remoteRoot ?? "/srv/api",
 		connectTimeoutMs: 1000, keepaliveIntervalMs: 1000, keepaliveMaxCount: 3 };
 	const service = new DeploymentService({
-		sessions: { findById: async () => ({ id: "session-1", workspaceId: "workspace-1", workDir: root }) } as never,
+		sessions: { findById: async () => ({ id: "session-1", workspaceId: "workspace-1", workDir: root, sandboxEnabled: overrides.sandboxEnabledRef?.current ?? true }) } as never,
 		workspaces: { findById: async () => ({ id: "workspace-1", host: { hostname: overrides.host ?? "example.org" } }) } as never,
 		targets: { resolve: async () => target } as never,
 		commands: { submit, preflightGuard: async () => ({ allowed: overrides.guard !== false }) } as never,
@@ -147,6 +147,34 @@ function approveDeployment(service: DeploymentService, id: string, sessionId = "
 }
 
 describe("deployment workflow", () => {
+	it("skips all sandbox assessments and exception grants for a disabled Session", async () => {
+		const assessRemoteSandbox = vi.fn(() => sandboxReady);
+		const { service, database, submit } = await harness({ sandboxEnabledRef: { current: false }, assessRemoteSandbox });
+		try {
+			const plan = await service.prepare("session-1", "deploy-example.org.md", "api");
+			expect(plan.plan.remoteAccess).toEqual({ mode: "full_access", reason: "session_sandbox_disabled" });
+			expect(plan.fullAccessApprovals).toBeUndefined();
+			expect(service.previewRemoteStage("session-1", plan.id, "restart")).toMatchObject({ sessionAuthorized: true });
+			await service.claimForAgent("session-1", plan.id, AGENT_RUN_ID);
+			expect((await runStages(service, plan.id)).status).toBe("success");
+			expect(assessRemoteSandbox).not.toHaveBeenCalled();
+			for (const [input] of submit.mock.calls) {
+				expect(input.expectedSandboxEnabled).toBe(false);
+				expect(input).not.toHaveProperty("fullAccessApprovalScopeId");
+			}
+		} finally { await service.close(); database.close(); }
+	});
+
+	it.each([true, false])("refuses stale plans when sandbox was %s during planning", async (enabled) => {
+		const sandboxEnabledRef = { current: enabled };
+		const { service, database, submit, upload } = await harness({ sandboxEnabledRef, assessRemoteSandbox: () => sandboxReady });
+		try {
+			const plan = await service.prepare("session-1", "deploy-example.org.md", "api");
+			sandboxEnabledRef.current = !enabled;
+			await expect(service.claimForAgent("session-1", plan.id, AGENT_RUN_ID)).rejects.toMatchObject({ code: "deployment_sandbox_route_changed" });
+			expect(submit).not.toHaveBeenCalled(); expect(upload).not.toHaveBeenCalled();
+		} finally { await service.close(); database.close(); }
+	});
 	it("runs both remote stages inside an available sandbox without Full Access approval", async () => {
 		const checkedPaths: string[][] = [];
 		const { service, database, submit } = await harness({ assessRemoteSandbox: (paths) => {

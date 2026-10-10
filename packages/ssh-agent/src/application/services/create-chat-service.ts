@@ -24,6 +24,7 @@ import type { AgentDeploymentService } from "../tools/deployment-agent-tool.ts";
 import type { BubblewrapInstallationService } from "./bubblewrap-installation-service.ts";
 import type { SshTargetSnapshot } from "../../domain/ssh-target.ts";
 import type { RemoteSandboxRoute } from "./remote-sandbox-routing.ts";
+import { SessionSandboxPolicy } from "./session-sandbox-policy.ts";
 
 export interface CreateChatServiceOptions {
 	prompts: ChatPromptService;
@@ -39,7 +40,7 @@ export interface CreateChatServiceOptions {
 	deploymentSetupInstructions?: (sessionId: string) => Promise<string>;
 	deployments?: AgentDeploymentService;
 	previewDeploymentRemoteStage?: (sessionId: string, deploymentRunId: string,
-		stage: "restart" | "verify") => { readonly command: string; readonly mode: "workspace_write" | "full_access" } | undefined;
+		stage: "restart" | "verify") => { readonly command: string; readonly mode: "workspace_write" | "full_access"; readonly sessionAuthorized?: boolean } | undefined;
 	resolveRemoteTarget?: (sessionId: string) => Promise<SshTargetSnapshot>;
 	bubblewrapInstallations?: BubblewrapInstallationService;
 	assessRemoteSandbox?: (sessionId: string, declaredWritePaths: readonly string[], signal: AbortSignal) =>
@@ -111,6 +112,7 @@ export function createChatService(options: CreateChatServiceOptions): ChatServic
 	const runtimeFactory =
 		options.runtimeFactory ??
 		new ChatAgentRuntimeFactory({
+			sandboxPolicy: new SessionSandboxPolicy(options.sessions),
 			models: options.models,
 			toolCalls,
 			queues,

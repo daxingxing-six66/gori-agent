@@ -104,6 +104,7 @@ export interface SessionRow {
 	display_name: string;
 	work_dir: string | null;
 	auto_audit: number;
+	sandbox_enabled: number;
 	terminal_context_cursor: number;
 	revision: number;
 	created_at: number;
@@ -117,6 +118,7 @@ export function sessionFromRow(row: SessionRow): Session {
 		displayName: row.display_name,
 		workDir: row.work_dir,
 		autoAudit: row.auto_audit === 1,
+		sandboxEnabled: row.sandbox_enabled === 1,
 		terminalContextCursor: row.terminal_context_cursor,
 		revision: row.revision,
 		createdAt: row.created_at,

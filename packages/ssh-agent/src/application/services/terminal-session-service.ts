@@ -24,6 +24,8 @@ import { TerminalSessionActor } from "../terminal/terminal-session-actor.ts";
 import type { SessionLifecycleCoordinator, SessionUseLease } from "./session-lifecycle-coordinator.ts";
 import type { SshTargetResolver } from "./ssh-target-resolver.ts";
 import type { RemoteSandboxProvider } from "./remote-sandbox-provider.ts";
+import type { Session } from "../../domain/session.ts";
+import { sessionSandboxMode } from "./session-sandbox-policy.ts";
 
 export interface OpenTerminalInput {
 	readonly sessionId: SessionId;
@@ -82,6 +84,7 @@ export class TerminalSessionService {
 		this.#opener = new TerminalChannelOpener({
 			targets: options.targets, sandbox: options.sandbox, broker: options.broker,
 			timeoutMs: options.openTimeoutMs ?? TERMINAL_DEFAULTS.lifecycle.openTimeoutMs,
+			sessions: options.sessions,
 		});
 		this.#lifecycle = options.lifecycle;
 		this.#registry = options.registry ?? new TerminalRuntimeRegistry();
@@ -122,16 +125,13 @@ export class TerminalSessionService {
 		this.#requireOpenAvailable();
 		const existing = this.#terminals.findSessionByOpenRequest(input.sessionId, input.requestId);
 		if (existing) {
-			if (existing.requestedSandboxMode !== "workspace_write") {
-				throw new TerminalError("terminal_open_request_conflict", "Open request mode differs from the existing TerminalSession", { status: 409 });
-			}
 			return existing;
 		}
 		const lease = this.#lifecycle.acquireUse(input.sessionId, "terminal_open");
 		try {
 			const session = await this.#requireOpenSession(input.sessionId);
 			this.#requireOpenState(input.sessionId);
-			return await this.#createRuntime(input, session.workspaceId, requireGeometry(input.rows, input.cols));
+			return await this.#createRuntime(input, session, requireGeometry(input.rows, input.cols));
 		} finally {
 			lease.release();
 		}
@@ -166,7 +166,7 @@ export class TerminalSessionService {
 		}
 	}
 
-	async #createRuntime(input: OpenTerminalInput, workspaceId: string, geometry: TerminalGeometry): Promise<TerminalSession> {
+	async #createRuntime(input: OpenTerminalInput, session: Session, geometry: TerminalGeometry): Promise<TerminalSession> {
 		const reservation = this.#registry.reserve();
 		if (!reservation) {
 			throw new TerminalError("terminal_capacity_exceeded", "Process Terminal capacity exceeded", {
@@ -177,7 +177,7 @@ export class TerminalSessionService {
 		let actor: TerminalSessionActor | undefined;
 		try {
 			sessionLease = this.#lifecycle.acquireUse(input.sessionId, "terminal_session");
-			const terminal = this.#newOpeningSession(input, workspaceId, geometry);
+			const terminal = this.#newOpeningSession(input, session, geometry);
 			this.#terminals.insertSession(terminal);
 			const createdActor = new TerminalSessionActor({
 				session: terminal, repository: this.#terminals, clock: this.#clock, ids: this.#ids, sessionLease,
@@ -202,11 +202,11 @@ export class TerminalSessionService {
 		}
 	}
 
-	#newOpeningSession(input: OpenTerminalInput, workspaceId: string, geometry: TerminalGeometry): TerminalSession {
+	#newOpeningSession(input: OpenTerminalInput, session: Session, geometry: TerminalGeometry): TerminalSession {
 		const now = this.#clock.now();
 		return {
-			id: this.#ids.next(), sessionId: input.sessionId, workspaceId, openRequestId: input.requestId,
-			closeRequestId: null, status: "opening", requestedSandboxMode: "workspace_write", sandbox: null,
+			id: this.#ids.next(), sessionId: input.sessionId, workspaceId: session.workspaceId, openRequestId: input.requestId,
+			closeRequestId: null, status: "opening", requestedSandboxMode: sessionSandboxMode(session), sandbox: null,
 			revision: 1, geometry, eventSequence: 0, ownershipEpoch: 0, connectionGeneration: null,
 			term: "xterm-256color", activatedAt: null, lastConsumerActivityAt: now, idleDeadlineAt: null,
 			closingAt: null, closedAt: null, closeReason: null, failureCode: null, failureMessage: null,
@@ -273,6 +273,39 @@ export class TerminalSessionService {
 			this.#openingControllers.get(actor.id)?.abort();
 			await actor.close("session_deleted");
 		}
+	}
+
+	/** Called only while SessionService owns the sandbox_update lifecycle lease. */
+	async reconfigureSandbox(sessionId: SessionId, persist: () => Promise<Session>): Promise<Session> {
+		const current = this.get(sessionId);
+		if (current?.status === "opening" || current?.status === "closing") {
+			throw new TerminalError("terminal_transition_in_progress", "Wait for the Terminal transition before changing sandbox mode", { status: 409 });
+		}
+		if (current?.status !== "active") return persist();
+		await this.close({ sessionId, terminalSessionId: current.id, requestId: this.#ids.next() });
+		let session: Session;
+		try { session = await persist(); }
+		catch (error) {
+			await this.#restorePreviousTerminal(sessionId, current.geometry);
+			throw error;
+		}
+		await this.#reopenAfterConfiguration(session, current.geometry);
+		return session;
+	}
+
+	async #restorePreviousTerminal(sessionId: SessionId, geometry: TerminalGeometry): Promise<void> {
+		try {
+			const unchanged = await this.#sessions.findById(sessionId);
+			if (unchanged) await this.#reopenAfterConfiguration(unchanged, geometry);
+		} catch (error) {
+			// Restoration is best effort; retain the original setting persistence error.
+			console.error("Failed to restore Terminal after Session configuration failure", { sessionId, error });
+		}
+	}
+
+	async #reopenAfterConfiguration(session: Session, geometry: TerminalGeometry): Promise<void> {
+		this.#requireOpenState(session.id);
+		await this.#createRuntime({ sessionId: session.id, requestId: this.#ids.next() }, session, geometry);
 	}
 
 	async attach(sessionId: SessionId, requestId: string): Promise<TerminalAttachmentBootstrap> {

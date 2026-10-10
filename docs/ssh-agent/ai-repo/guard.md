@@ -3,7 +3,7 @@
 适用于 Guard 配置持久化、命令规则字段、规则 ID 所有权、整体 PATCH、预设规则包、revision 冲突和执行期匹配。
 
 
-远端沙箱准备后、最终派发前会再读 Guard；Full Access 审批也不能绕过它。预检查或任一执行检查阻断时，不执行用户命令。见 [remote-sandbox.md](./remote-sandbox.md)。
+远端命令准备后、最终派发前会再读 Guard；Full Access 审批或 Session 关闭沙盒均不能绕过它。关闭沙盒时跳过受限准备，保留相同 Guard 预检和执行期复检。预检查或任一执行检查阻断时，不执行用户命令。见 [remote-sandbox.md](./remote-sandbox.md)。
 
 ## 当前契约
 

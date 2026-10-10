@@ -23,6 +23,7 @@ export type TerminalSandboxMode = "workspace_write" | "full_access";
 export type TerminalSandboxFacts =
 	| { readonly mode: "workspace_write"; readonly backend: "landlock"; readonly enforcement: "full"; readonly abi: number; readonly launcherVersion: string; readonly sandboxRoot: string }
 	| { readonly mode: "workspace_write"; readonly backend: "bubblewrap"; readonly enforcement: "full"; readonly bubblewrapVersion: string; readonly sandboxRoot: string }
+	| { readonly mode: "full_access"; readonly backend: "none"; readonly enforcement: "none"; readonly source: "session_setting"; readonly configuredAt: number }
 	| { readonly mode: "full_access"; readonly backend: "none"; readonly enforcement: "none"; readonly source: "sandbox_unavailable" | "landlock_unavailable"; readonly detectedAt: number }
 	/** Historical sessions opened through the former explicit Full Access entry. */
 	| { readonly mode: "full_access"; readonly backend: "none"; readonly enforcement: "none"; readonly approvedAt: number };

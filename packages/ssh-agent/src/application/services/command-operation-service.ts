@@ -16,6 +16,8 @@ import type { SshTargetResolver } from "./ssh-target-resolver.ts";
 import type { SshTargetSnapshot } from "../../domain/ssh-target.ts";
 import { CommandExecutionPolicy, commandQueueFailure, type CommandExecutionTarget } from "./command-execution-policy.ts";
 import { CommandOperationRecorder, type CommandOperationResult } from "./command-operation-recorder.ts";
+import { sessionSandboxMode } from "./session-sandbox-policy.ts";
+import { wrapRemoteCommand } from "../remote-shell-command.ts";
 
 export type { CommandOperationResult } from "./command-operation-recorder.ts";
 
@@ -44,6 +46,8 @@ export interface SubmitCommandInput {
 	abortRun?: () => void;
 	/** Reject queued execution if the approved Workspace SSH identity changes before dispatch. */
 	expectedTarget?: SshTargetSnapshot;
+	/** Authorization-time setting. Standalone calls resolve the current Session setting. */
+	expectedSandboxEnabled?: boolean;
 }
 
 interface PendingCommand {
@@ -92,6 +96,7 @@ export class CommandOperationService {
 			guards: options.guards,
 			approvals: options.sandboxApprovals ?? new RemoteSandboxApprovalStore(),
 			clock: options.clock,
+			sessions: options.sessions,
 		});
 		this.clock = options.clock;
 		this.ids = options.ids;
@@ -107,9 +112,8 @@ export class CommandOperationService {
 		await this.ready;
 		const command = requireCommand(input.command);
 		const timeoutMs = requireTimeout(input.timeoutMs);
-		const mode = input.sandboxPermissions ?? "workspace_write";
-		if (mode !== "workspace_write" && mode !== "full_access") throw sandboxFailure("invalid_request", "Invalid sandbox permissions");
-		if (mode === "full_access" && !input.justification?.trim()) throw sandboxFailure("invalid_request", "full_access requires a justification");
+		const requestedMode = input.sandboxPermissions ?? "workspace_write";
+		if (requestedMode !== "workspace_write" && requestedMode !== "full_access") throw sandboxFailure("invalid_request", "Invalid sandbox permissions");
 		if (this.closed) {
 			return this.createRejectedResult(input, command, timeoutMs, {
 				code: "queue_closed",
@@ -119,19 +123,27 @@ export class CommandOperationService {
 				retryable: false,
 			});
 		}
-		const session = await this.sessions.findById(input.sessionId);
-		if (!session) {
-			return this.createRejectedResult(input, command, timeoutMs, {
-				code: "session_not_found",
-				category: "request",
-				phase: "validate",
-				message: "SSH session does not exist",
-				retryable: false,
-				sessionId: input.sessionId,
-			});
-		}
-		const lease = this.lifecycle?.acquireUse(session.id, "command_operation");
+		const lease = this.lifecycle?.acquireUse(input.sessionId, "command_operation");
 		try {
+			const session = await this.sessions.findById(input.sessionId);
+			if (!session) {
+				return this.createRejectedResult(input, command, timeoutMs, {
+					code: "session_not_found",
+					category: "request",
+					phase: "validate",
+					message: "SSH session does not exist",
+					retryable: false,
+					sessionId: input.sessionId,
+				});
+			}
+			const sandboxEnabled = sessionSandboxMode(session) === "workspace_write";
+			const sessionAuthorized = !sandboxEnabled;
+			if (input.expectedSandboxEnabled !== undefined && input.expectedSandboxEnabled !== sandboxEnabled) {
+				throw sandboxFailure("sandbox_approval_required", "Session sandbox setting changed after authorization. The command was not executed.");
+			}
+			const mode = sessionAuthorized ? "full_access" : requestedMode;
+			if (mode === "full_access" && !sessionAuthorized && !input.justification?.trim())
+				throw sandboxFailure("invalid_request", "full_access requires a justification");
 			const now = this.clock.now();
 			const operation: CommandOperation = {
 				id: this.ids.next(),
@@ -140,7 +152,8 @@ export class CommandOperationService {
 				workspaceId: session.workspaceId,
 				command,
 				agentRunId: input.agentRunId,
-				sandbox: { mode, backend: "none", enforcement: "none", commandMayHaveRun: false },
+				sandbox: { mode, backend: "none", enforcement: "none", commandMayHaveRun: false,
+					...(sessionAuthorized ? { authorizationSource: "session_setting" as const } : {}) },
 				sandboxJustification: input.justification,
 				...(input.cwd === undefined ? {} : { requestedCwd: input.cwd }),
 				timeoutMs,
@@ -153,7 +166,7 @@ export class CommandOperationService {
 			await this.recorder(operation, input.onEvent).enqueue();
 			const pending: PendingCommand = {
 				operationId: operation.id,
-				...(mode !== "full_access" ? {} : { fullAccessRequest: {
+				...(mode !== "full_access" || sessionAuthorized ? {} : { fullAccessRequest: {
 					agentRunId: input.fullAccessApprovalScopeId ?? input.agentRunId ?? "", toolCallId: input.toolCallId, sessionId: input.sessionId,
 					command: input.command, cwd: input.cwd, timeoutMs: input.timeoutMs, justification: input.justification ?? "",
 				} }),
@@ -222,6 +235,10 @@ export class CommandOperationService {
 		execution: CommandExecutionTarget,
 		signal: AbortSignal,
 	): Promise<PreparedRemoteExecution> {
+		if (operation.sandbox?.authorizationSource === "session_setting") return {
+			command: wrapRemoteCommand(execution.cwd, operation.command),
+			sandbox: { mode: "full_access", backend: "none", enforcement: "none", authorizationSource: "session_setting" },
+		};
 		if (!this.sandbox) throw sandboxFailure("sandbox_unavailable", "Remote sandbox provider is unavailable. The command was not executed.");
 		const prepared = await this.sandbox.prepare({
 			target: execution.target, cwd: execution.cwd, command: operation.command,

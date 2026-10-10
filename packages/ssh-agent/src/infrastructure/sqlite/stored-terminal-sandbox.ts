@@ -29,7 +29,7 @@ function readFacts(value: unknown): TerminalSandboxFacts | null {
 	catch (error) { throw new Error("Invalid persisted Terminal sandbox JSON", { cause: error }); }
 	if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) throw invalidFacts();
 	const fact = parsed as Record<string, unknown>;
-	if (fact.mode === "full_access") return readHistoricalFullAccess(fact);
+	if (fact.mode === "full_access") return readFullAccess(fact);
 	if (fact.mode !== "workspace_write" || fact.enforcement !== "full" ||
 		typeof fact.sandboxRoot !== "string" || !canonicalRemoteSandboxRoot(fact.sandboxRoot)) throw invalidFacts();
 	if (fact.backend === "landlock") return readLandlock(fact, fact.sandboxRoot);
@@ -49,8 +49,10 @@ function readBubblewrap(fact: Record<string, unknown>, sandboxRoot: string): Ter
 	return { mode: "workspace_write", backend: "bubblewrap", enforcement: "full", bubblewrapVersion: fact.bubblewrapVersion, sandboxRoot };
 }
 
-function readHistoricalFullAccess(fact: Record<string, unknown>): TerminalSandboxFacts {
+function readFullAccess(fact: Record<string, unknown>): TerminalSandboxFacts {
 	if (fact.backend !== "none" || fact.enforcement !== "none") throw invalidFacts();
+	if (fact.source === "session_setting" && positiveInteger(fact.configuredAt) && Object.keys(fact).length === 5)
+		return { mode: "full_access", backend: "none", enforcement: "none", source: "session_setting", configuredAt: fact.configuredAt };
 	if (positiveInteger(fact.approvedAt) && Object.keys(fact).length === 4)
 		return { mode: "full_access", backend: "none", enforcement: "none", approvedAt: fact.approvedAt };
 	if ((fact.source === "sandbox_unavailable" || fact.source === "landlock_unavailable") &&
@@ -60,7 +62,7 @@ function readHistoricalFullAccess(fact: Record<string, unknown>): TerminalSandbo
 }
 
 function isHistoricalFallback(mode: TerminalSandboxMode | null, sandbox: TerminalSandboxFacts): boolean {
-	return mode === "workspace_write" && sandbox.mode === "full_access" && "source" in sandbox;
+	return mode === "workspace_write" && sandbox.mode === "full_access" && "source" in sandbox && sandbox.source !== "session_setting";
 }
 
 function positiveInteger(value: unknown): value is number {

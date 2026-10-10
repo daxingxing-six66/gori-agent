@@ -9,6 +9,7 @@
 - `ChatRunRuntime.context` 使用活动 Agent 的模型对应 Prompt/Tools，消息由 `ChatContextService.load()` 按持久化 compact 边界恢复。Agent transcript 不会随 Loop Context 替换而删除旧历史，不能直接用完整 transcript 作为占用输入。
 - `turn_end` 处理结束后推送一次 `context.updated`。每次自动 `compaction.completed` 后推送已保存的 Context 占用；手动压缩只返回 HTTP 快照。
 - 查询接口根据活动 Runtime 或最近 Run 的模型、固定头部快照和有效历史估算。无 Run、模型已移除或旧 Session 尚未初始化头部快照时返回 null；不需要凭证。未消费 Queue 和流式片段不计入。
+- 活动 Runtime 的 Prompt/Tools 包含当前可信 Session 沙盒指引与描述；离线查询使用基础快照及静态工具估算，不把历史沙盒指令当作当前权限，也不承诺与活动 Run 临时片段逐字相同。
 - 不保存占用快照；头部复用独立的 `chat_prompt_snapshots`。校准系数沿用进程内生命周期，重启可能产生估算差异。
 
 ## 代码位置

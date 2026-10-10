@@ -4,7 +4,7 @@ import type { RemoteServerCallParameters } from "./remote-server-call-tool.ts";
 
 type CommandAccess =
 	| { readonly mode: "workspace_write" }
-	| { readonly mode: "full_access"; readonly justification: string };
+	| { readonly mode: "full_access"; readonly justification: string; readonly authorizationSource?: "session_setting" };
 
 type CommandRequest = Omit<Readonly<RemoteServerCallParameters>, "write_paths"> & {
 	readonly write_paths?: readonly string[];
@@ -42,7 +42,7 @@ export class RemoteCommandExecutionPlan {
 	}
 
 	fullAccessRequest(): FullAccessRequest | undefined {
-		if (this.access.mode !== "full_access" || this.agentRunId === undefined) return undefined;
+		if (this.access.mode !== "full_access" || this.access.authorizationSource === "session_setting" || this.agentRunId === undefined) return undefined;
 		return Object.freeze({ agentRunId: this.agentRunId, sessionId: this.sessionId, toolCallId: this.toolCallId,
 			command: this.request.command, cwd: this.request.cwd, timeoutMs: this.request.timeoutMs,
 			justification: this.access.justification });

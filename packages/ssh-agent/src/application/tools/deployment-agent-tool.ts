@@ -47,20 +47,22 @@ export async function prepareDeploymentStageAuthorization(input: ToolAuthorizati
 	deploymentRunId?: string;
 	autoApprove(): Promise<boolean>;
 	previewRemoteStage?: (sessionId: string, deploymentRunId: string, stage: "restart" | "verify") =>
-		{ readonly command: string; readonly mode: "workspace_write" | "full_access" } | undefined;
+		{ readonly command: string; readonly mode: "workspace_write" | "full_access"; readonly sessionAuthorized?: boolean } | undefined;
 }): Promise<PreparedToolAuthorization> {
 	const stage = isToolArguments(input.args) ? input.args.stage : undefined;
 	if ((stage !== "restart" && stage !== "verify") || !options.deploymentRunId) return { kind: "allow" };
 	const preview = options.previewRemoteStage?.(input.run.sessionId, options.deploymentRunId, stage);
-	if (!preview || preview.mode === "full_access") return { kind: "allow" };
+	if (!preview || (preview.mode === "full_access" && !preview.sessionAuthorized)) return { kind: "allow" };
 	return { kind: "approval", autoApprove: await options.autoApprove(),
-		descriptionMessage: backendMessage("approval.deployment_sandboxed_command", { stage, command: preview.command }) };
+		descriptionMessage: preview.sessionAuthorized
+			? backendMessage("approval.remote_session_unconfined", { command: preview.command })
+			: backendMessage("approval.deployment_sandboxed_command", { stage, command: preview.command }) };
 }
 
 export const deploymentProposePlanDefinition = {
 	name: "deployment_propose_plan",
 	label: "Propose deployment plan",
-	description: "Submit a deployment plan for server validation and user review. This creates a proposal only. Paths in buildSteps.workdir and artifacts.source are relative to the Session project root. Artifact targets are absolute remote files. Declare known remote write destinations in restart.writePaths and verify.writePaths; opaque script effects remain confined by the sandbox at execution. A sandbox exception requires separate human approval.",
+	description: "Submit a deployment plan for server validation and user review. This creates a proposal only. Paths in buildSteps.workdir and artifacts.source are relative to the Session project root. Artifact targets are absolute remote files. Declare known remote write destinations in restart.writePaths and verify.writePaths; when Session sandboxing is enabled, opaque script effects remain confined and a sandbox exception requires separate human approval. When the user disables sandboxing for this Session, remote stages run directly under ordinary approval and Guard.",
 	parameters: Type.Object({
 		buildSteps: Type.Array(Type.Object({
 			workdir: Type.String({ minLength: 1, maxLength: 2_048 }),

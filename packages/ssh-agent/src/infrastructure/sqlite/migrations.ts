@@ -819,6 +819,11 @@ const MIGRATIONS = [
 				WHERE json_extract(snapshot_json, '$.planningAgentRunId') IS NOT NULL;
 		`,
 	},
+	{
+		version: 27,
+		sql: `ALTER TABLE sessions ADD COLUMN sandbox_enabled INTEGER NOT NULL DEFAULT 1
+			CHECK (sandbox_enabled IN (0, 1));`,
+	},
 ] as const;
 
 export function applyMigrations(database: DatabaseSync): void {

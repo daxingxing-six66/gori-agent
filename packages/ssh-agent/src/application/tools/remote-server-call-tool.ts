@@ -18,10 +18,10 @@ import { isToolArguments, toolRequestError, type PreparedToolAuthorization, type
 
 const remoteServerCallParameters = Type.Object({
 	sandbox_permissions: Type.Optional(Type.Union([Type.Literal("workspace_write"), Type.Literal("full_access")], {
-		description: "Defaults to workspace_write. Automatic approval controls whether a sandboxed command needs human confirmation; it does not change confinement. Explicit full_access requires justification and a separate human approval. Never retry automatically after a sandbox denial.",
+		description: "While Session sandboxing is enabled, defaults to workspace_write. Automatic approval controls whether a sandboxed command needs human confirmation; it does not change confinement. Explicit full_access requires justification and a separate human approval. Never retry automatically after a sandbox denial.",
 	})),
-	justification: Type.Optional(Type.String({ minLength: 1, description: "Why this exact call needs to bypass remote filesystem confinement; required with explicit sandbox_permissions=full_access" })),
-	write_paths: Type.Optional(Type.Array(Type.String({ minLength: 1 }), { description: "Known absolute remote write destinations. Declare only paths known before execution; omitted or unknown script effects run in the sandbox first. A known destination outside the writable roots requires a separate human approval." })),
+	justification: Type.Optional(Type.String({ minLength: 1, description: "While Session sandboxing is enabled, why this exact call needs to bypass filesystem confinement; required with explicit sandbox_permissions=full_access" })),
+	write_paths: Type.Optional(Type.Array(Type.String({ minLength: 1 }), { description: "Known absolute remote write destinations. While Session sandboxing is enabled, declare only paths known before execution; omitted or unknown script effects run in the sandbox first. A known destination outside the writable roots requires a separate human approval." })),
 	command: Type.String({ minLength: 1, description: "Shell command to execute on the remote Linux server" }),
 	cwd: Type.Optional(
 		Type.String({ minLength: 1, description: "Absolute remote working directory, ~, or a path under ~/" }),
@@ -53,12 +53,13 @@ export const remoteServerCallDefinition = {
 	name: "remote_server_call",
 	label: "Remote server command",
 	description:
-		"Execute a shell command in the current SSH Workspace. The Session determines the server and credential; never ask for connection details. With an available Landlock or Bubblewrap backend, commands run in the filesystem sandbox regardless of whether approval is automatic or manual. Content writes are confined to the Workspace's default remote working directory, /tmp and /dev/null; a per-command cwd does not expand that boundary. Declare known absolute write_paths so an out-of-scope destination can receive a separate human approval for one full_access command. If no usable sandbox exists, one full_access command also requires human approval. If Bubblewrap is absent, use bubblewrap_inspect then propose bubblewrap_install for human approval when installation is appropriate. An explicitly requested full_access call requires justification and human approval. Unknown script effects run sandboxed first; after a permission failure, inspect partial effects and request a new human-approved full_access call only if needed. Metadata changes, network and IPC are outside the restricted filesystem policy.",
+		"Execute a shell command in the current SSH Workspace. The Session determines the server, credential and whether sandboxing is enabled; never ask for connection details. When the user disables sandboxing for this Session, commands run directly under SSH account permissions and ordinary approval, with Guard still enforced. Sandbox probes and preparation are skipped. The following confinement and exception rules apply only while sandboxing is enabled. With an available Landlock or Bubblewrap backend, commands run in the filesystem sandbox regardless of whether approval is automatic or manual. Content writes are confined to the Workspace's default remote working directory, /tmp and /dev/null; a per-command cwd does not expand that boundary. Declare known absolute write_paths so an out-of-scope destination can receive a separate human approval for one full_access command. If no usable sandbox exists, one full_access command also requires human approval. If Bubblewrap is absent, use bubblewrap_inspect then propose bubblewrap_install for human approval when installation is appropriate. An explicitly requested full_access call requires justification and human approval. Unknown script effects run sandboxed first; after a permission failure, inspect partial effects and request a new human-approved full_access call only if needed. Metadata changes, network and IPC are outside the restricted filesystem policy.",
 	parameters: remoteServerCallParameters,
 };
 
 export interface RemoteCommandAuthorization {
 	autoApprove(): Promise<boolean>;
+	sandboxEnabled?(): Promise<boolean>;
 	preflightGuard(sessionId: string, command: string): Promise<{ allowed: boolean; reason?: string }>;
 	assessSandbox?: (sessionId: string, declaredWritePaths: readonly string[], signal: AbortSignal) =>
 		Promise<{ readonly target: SshTargetSnapshot; readonly route: RemoteSandboxRoute }>;
@@ -77,6 +78,14 @@ export async function prepareRemoteCommandAuthorization(
 	const decision = await authorization.preflightGuard(callInput.run.sessionId, command);
 	if (!decision.allowed) return { kind: "block", block: true, terminate: true,
 		reason: decision.reason ?? "Command blocked by Workspace Guard" };
+	if (await authorization.sandboxEnabled?.() === false) {
+		const plan = new RemoteCommandExecutionPlan({ agentRunId: callInput.run.id,
+			sessionId: callInput.run.sessionId, toolCallId: callInput.toolCallId, request,
+			access: { mode: "full_access", justification: "Session sandbox disabled by user", authorizationSource: "session_setting" },
+			expectedTarget: await authorization.resolveTarget?.(callInput.run.sessionId) });
+		return { kind: "approval", autoApprove: await authorization.autoApprove(), executionContext: plan,
+			descriptionMessage: backendMessage("approval.remote_session_unconfined", { command }) };
+	}
 	if (request.sandbox_permissions === "full_access") {
 		if (typeof request.justification !== "string" || !request.justification.trim())
 			throw toolRequestError("full_access requires a non-empty justification");
@@ -122,7 +131,7 @@ export function createRemoteServerCallTool(options: {
 		...remoteServerCallDefinition,
 		executionMode: "sequential",
 		execute: async (toolCallId, params, signal, _onUpdate, executionContext) => {
-			// Standalone callers have no Chat authorization hook and retain sandboxed execution.
+			// Standalone callers have no Chat plan; Command Service resolves the current Session policy.
 			const plan = executionContext ?? (options.agentRunId === undefined && params.sandbox_permissions !== "full_access"
 				? new RemoteCommandExecutionPlan({ sessionId: options.sessionId, toolCallId,
 					request: params, access: { mode: "workspace_write" } }) : undefined);
@@ -136,6 +145,7 @@ export function createRemoteServerCallTool(options: {
 				command: request.command,
 				agentRunId: plan.agentRunId,
 				sandboxPermissions: plan.access.mode,
+				...(executionContext === undefined ? {} : { expectedSandboxEnabled: plan.access.mode !== "full_access" || plan.access.authorizationSource !== "session_setting" }),
 				...(plan.access.mode === "full_access" ? { justification: plan.access.justification } : {}),
 				...(request.cwd === undefined ? {} : { cwd: request.cwd }),
 				...(request.timeoutMs === undefined ? {} : { timeoutMs: request.timeoutMs }),

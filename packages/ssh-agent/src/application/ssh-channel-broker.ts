@@ -83,7 +83,7 @@ export interface TerminalChannelExit {
 export interface OpenTerminalChannelInput {
 	readonly target: SshTargetSnapshot;
 	readonly launch: { readonly kind: "login_shell" } | {
-		readonly kind: "sandboxed_exec";
+		readonly kind: "sandboxed_exec" | "unconfined_exec";
 		readonly command: string;
 		readonly confirmation: string;
 	};

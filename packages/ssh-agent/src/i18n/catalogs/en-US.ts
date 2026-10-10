@@ -1,4 +1,6 @@
 export const enUSMessages = {
+	"approval.remote_session_unconfined": "Sandboxing is disabled for this Session. This command will run with the SSH user's filesystem permissions: {command}. Approve this command?",
+	"management.session_configuration_in_progress": "The Session execution environment is changing. Try again after the Terminal restart finishes.",
 	"approval.remote_full_access": "This command will run without the remote filesystem sandbox, with the SSH user permissions. Reason: {justification}. Approve this call only?",
 	"approval.remote_sandboxed_command": "This remote command will run inside the filesystem sandbox. Approve this call?",
 	"approval.remote_sandbox_exception": "The remote sandbox cannot confine this command: {reason}. Approving will run this exact command once with the SSH user's full filesystem permissions. Continue?",
