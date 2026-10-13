@@ -25,6 +25,7 @@
 - Transfer 只持久化 `pending/running/completed/failed/cancelled/uncertain`；文件内容不持久化，重启不续传。
 - JSON 请求仍受 2 MiB 限制；上传内容和下载响应直接流式桥接。SSE 每 15 秒 heartbeat。
 - Metrics Collector 每 Workspace 唯一，基础数据 2 秒、Top 20 进程 3 秒；同一 Workspace 内探测串行。
+- Session 页首复用该 Collector 显示 CPU/内存/网络，新增默认路由网卡的收发速率与新订阅者的缓存快照初始化；网络计算和前端订阅由独立模块持有，Overview 仍保留原三个卡片。详见 [session-server-metrics.md](./session-server-metrics.md)。
 - 前端区分 SSE 首次连接、实时、重连和关闭状态；`monitor.error` 会替换无限等待状态，并在已有快照时保留最后一次成功数据。
 - 概览采用 Dashboard 布局：三个资源指标卡位于顶部，进程表为主区域，连接池与手动沙箱检测放在辅助区域，SSH 参数默认收起。窄屏自动改为单列，宽表在自身容器内横向滚动；展示仍只使用现有快照，不生成历史曲线或模拟指标。
 - SFTP 页面将上传放在内容标题操作区，目录路径、搜索和过滤组成紧凑工具栏；条目使用语义表格，名称可截断且保留完整悬停文本，窄屏仅表格局部横向滚动。传输队列在宽屏右侧、较窄屏幕下方；上传上下文及取消、覆盖确认和离开保护不随布局改变。

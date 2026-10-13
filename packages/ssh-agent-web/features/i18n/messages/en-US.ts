@@ -8,6 +8,7 @@ import { enUSGuardMessages } from "@/features/i18n/messages/en-US/guard";
 import { enUSProviderMessages } from "@/features/i18n/messages/en-US/provider";
 import { enUSSftpMessages } from "@/features/i18n/messages/en-US/sftp";
 import { enUSTerminalMessages } from "@/features/i18n/messages/en-US/terminal";
+import { enUSServerMetricsMessages } from "@/features/i18n/messages/en-US/server-metrics";
 
 export const enUSMessages = {
 	...enUSCommonMessages,
@@ -19,4 +20,5 @@ export const enUSMessages = {
 	...enUSProviderMessages,
 	...enUSSftpMessages,
 	...enUSTerminalMessages,
+	...enUSServerMetricsMessages,
 } satisfies Record<MessageId, string>;

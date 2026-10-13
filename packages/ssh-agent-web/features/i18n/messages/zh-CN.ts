@@ -7,6 +7,7 @@ import { zhCNGuardMessages } from "@/features/i18n/messages/zh-CN/guard";
 import { zhCNProviderMessages } from "@/features/i18n/messages/zh-CN/provider";
 import { zhCNSftpMessages } from "@/features/i18n/messages/zh-CN/sftp";
 import { zhCNTerminalMessages } from "@/features/i18n/messages/zh-CN/terminal";
+import { zhCNServerMetricsMessages } from "@/features/i18n/messages/zh-CN/server-metrics";
 
 export const zhCNMessages = {
 	...zhCNCommonMessages,
@@ -18,6 +19,7 @@ export const zhCNMessages = {
 	...zhCNProviderMessages,
 	...zhCNSftpMessages,
 	...zhCNTerminalMessages,
+	...zhCNServerMetricsMessages,
 } as const;
 
 export type MessageId = keyof typeof zhCNMessages;

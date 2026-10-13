@@ -1,0 +1,15 @@
+export const enUSServerMetricsMessages = {
+	"serverMetrics.label": "Remote server resources",
+	"serverMetrics.cpu": "CPU {value}",
+	"serverMetrics.memory": "Memory {value}",
+	"serverMetrics.upload": "Server sending {value}",
+	"serverMetrics.download": "Server receiving {value}",
+	"serverMetrics.interface": "Interface {name} · From the server's perspective",
+	"serverMetrics.networkUnavailable": "Network statistics unavailable; no readable default-route interface",
+	"serverMetrics.updated": "Updated at {time}",
+	"serverMetrics.status.sampling": "Sampling",
+	"serverMetrics.status.live": "Live",
+	"serverMetrics.status.reconnecting": "Reconnecting; showing the last sample",
+	"serverMetrics.status.unavailable": "Collection failed; showing the last sample",
+	"serverMetrics.status.stale": "Waiting for updates; showing the last sample",
+} as const;

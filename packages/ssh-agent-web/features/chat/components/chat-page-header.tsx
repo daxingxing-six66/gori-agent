@@ -1,6 +1,7 @@
 "use client";
 
 import { useIntl } from "react-intl";
+import type { ReactNode } from "react";
 import { PageHeader } from "@/components/page-layout";
 import { SessionSandboxBadge } from "@/features/session/components/session-sandbox-badge";
 
@@ -14,14 +15,16 @@ interface ChatStatusProps {
 interface ChatPageHeaderProps extends ChatStatusProps {
 	title: string;
 	sandboxEnabled: boolean;
+	serverMetrics?: ReactNode;
 }
 
-export function ChatPageHeader({ title, sandboxEnabled, active, runStatus, connection, queueCount }: ChatPageHeaderProps) {
+export function ChatPageHeader({ title, sandboxEnabled, serverMetrics, active, runStatus, connection, queueCount }: ChatPageHeaderProps) {
 	return (
 		<PageHeader
 			title={title}
 			compact
 			actions={<>
+				{serverMetrics}
 				<SessionSandboxBadge enabled={sandboxEnabled} />
 				<ChatStatus active={active} runStatus={runStatus} connection={connection} queueCount={queueCount} />
 			</>}

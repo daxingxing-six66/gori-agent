@@ -13,6 +13,8 @@ Frontend <- Workspace SSE <- Event Hub <- Transfer Service / Metrics Collector /
 
 每个 Workspace 最多一个 Metrics Collector。同一 Workspace 的多个 SSE 订阅共享采样结果；最后一个 monitoring 订阅离开 30 秒后释放 Collector。
 
+已有 Session 页首也可订阅同一 `monitoring` topic，无需先打开 Overview。订阅建立后，`stream.ready` 后会立即向新订阅者发送已有 `monitor.snapshot` 缓存（若有），不额外执行 SSH 命令；后续继续接收周期快照。Session 仅展示 CPU/内存/网络，Overview 原三个指标卡保持不变。
+
 ## 公共 Schema
 
 ```ts
@@ -256,6 +258,11 @@ interface RemoteMetricsSnapshot {
   sampledAt: number;
   cpu: { usagePercent: number; cores: number; loadAverage: [number, number, number] };
   memory: { usedBytes: number; totalBytes: number; usagePercent: number };
+  network?: {
+    interfaceName: string; // 默认路由网卡，优先 IPv4，其次 IPv6
+    receiveBytesPerSecond: number | null; // 服务器接收；首次基准为 null
+    transmitBytesPerSecond: number | null; // 服务器发送；首次基准为 null
+  };
   filesystems: Array<{ device: string; mountPoint: string; usedBytes: number; totalBytes: number; usagePercent: number }>;
   uptimeSeconds: number;
   processes: Array<{

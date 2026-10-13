@@ -35,6 +35,7 @@
 | Session 附件上传、自动命名、受控图片回显、SQLite 元数据和生命周期约束 | [attachments.md](./attachments.md) | `packages/ssh-agent/src/application/services/attachment-service.ts` |
 | Chat 图片附件引用、真实格式校验、Provider 多模态投影和引用持久化 | [chat-image-input.md](./chat-image-input.md) | `packages/ssh-agent/src/application/services/chat-attachment-service.ts` |
 | SFTP 文件管理、Transfer、Workspace SSE 和 Linux 实时监控 | [sftp-monitoring.md](./sftp-monitoring.md) | `packages/ssh-agent/src/application/services/file-transfer-service.ts`、`packages/ssh-agent/src/application/services/remote-metrics-service.ts` |
+| Session 页首 CPU/内存/网络速率、共享监控缓存和默认网卡统计 | [session-server-metrics.md](./session-server-metrics.md) | `packages/ssh-agent-web/features/server-metrics/`、`packages/ssh-agent/src/application/monitoring/remote-network-sampler.ts` |
 | 文件工具路径冲突、整批串并行与共享 SFTP Channel | [file-tool-concurrency.md](./file-tool-concurrency.md) | `packages/ssh-agent/src/application/services/file-tool-concurrency.ts`、`packages/ssh-agent/src/infrastructure/ssh/ssh2-sftp-channel-pool.ts` |
 | 新会话首条消息自动标题、模型命名和 SSE 更新 | [session-title.md](./session-title.md) | `packages/ssh-agent/src/application/services/session-title-service.ts` |
 | 首次 Run 固定头部、环境快照、模式 system 消息与缓存边界 | [session-prompt.md](./session-prompt.md) | `packages/ssh-agent/src/application/services/chat-prompt-service.ts`、`packages/ssh-agent/src/application/chat-context.ts` |

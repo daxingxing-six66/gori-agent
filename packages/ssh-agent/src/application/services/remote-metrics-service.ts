@@ -1,6 +1,8 @@
 import type { RemoteCommandBroker, SshConnectionPoolControl } from "../ssh-channel-broker.ts";
 import type { RemoteMetricsSnapshot, WorkspaceEventHub } from "../workspace-event-hub.ts";
 import type { WorkspaceSshTargetResolver } from "./ssh-target-resolver.ts";
+import { connectionKeyFor, serializeConnectionKey } from "../../domain/ssh-target.ts";
+import { REMOTE_NETWORK_COMMAND, RemoteNetworkSampler } from "../monitoring/remote-network-sampler.ts";
 
 export const REMOTE_METRICS_BASE_COMMAND = [
 	"LC_ALL=C",
@@ -10,6 +12,7 @@ export const REMOTE_METRICS_BASE_COMMAND = [
 	`awk '{ print "LOAD", $1, $2, $3 }' /proc/loadavg`,
 	`awk '{ print "UP", $1 }' /proc/uptime`,
 	`df -Pk | awk 'NR > 1 { print "FS", $1, $2, $3, $6 }'`,
+	REMOTE_NETWORK_COMMAND,
 ].join("; ");
 
 export const REMOTE_METRICS_PROCESS_COMMAND = `LC_ALL=C; ps -eo pid=,ppid=,user=,stat=,pcpu=,pmem=,rss=,etimes=,comm=,args= --sort=-pcpu | head -20 | sed 's/^/PROC /'`;
@@ -26,11 +29,13 @@ interface Collector {
 	queue: Promise<void>;
 	cpu?: CpuCounters;
 	latest?: RemoteMetricsSnapshot;
+	network: RemoteNetworkSampler;
 }
 
 export class RemoteMetricsService {
 	private readonly collectors = new Map<string, Collector>();
 	private readonly unsubscribe: () => void;
+	private readonly unregisterSnapshots: () => void;
 	private readonly options: {
 		targets: WorkspaceSshTargetResolver;
 		broker: RemoteCommandBroker & Pick<SshConnectionPoolControl, "snapshotWorkspace">;
@@ -43,6 +48,10 @@ export class RemoteMetricsService {
 		events: WorkspaceEventHub;
 	}) {
 		this.options = options;
+		this.unregisterSnapshots = options.events.registerSnapshotProvider("monitoring", (workspaceId) => {
+			const snapshot = this.latest(workspaceId);
+			return snapshot ? [{ type: "monitor.snapshot", data: snapshot }] : [];
+		});
 		this.unsubscribe = options.events.onTopicCountChange((workspaceId, topic, count) => {
 			if (topic !== "monitoring") return;
 			if (count > 0) this.start(workspaceId);
@@ -56,6 +65,7 @@ export class RemoteMetricsService {
 
 	close(): void {
 		this.unsubscribe();
+		this.unregisterSnapshots();
 		for (const collector of this.collectors.values()) this.stop(collector);
 		this.collectors.clear();
 	}
@@ -67,7 +77,7 @@ export class RemoteMetricsService {
 			existing.stopTimer = undefined;
 			return;
 		}
-		const collector: Collector = { workspaceId, queue: Promise.resolve() };
+		const collector: Collector = { workspaceId, queue: Promise.resolve(), network: new RemoteNetworkSampler() };
 		this.collectors.set(workspaceId, collector);
 		this.enqueue(collector, true);
 		collector.baseTimer = setInterval(() => this.enqueue(collector, false), 2_000);
@@ -96,13 +106,18 @@ export class RemoteMetricsService {
 	}
 
 	private async sample(collector: Collector, includeProcesses: boolean): Promise<void> {
+		if (this.collectors.get(collector.workspaceId) !== collector) return;
 		try {
 			const target = await this.options.targets.resolveWorkspace(collector.workspaceId);
 			const base = await executeProbe(this.options.broker, target, REMOTE_METRICS_BASE_COMMAND);
+			if (this.collectors.get(collector.workspaceId) !== collector) return;
 			const process = includeProcesses
 				? await executeProbe(this.options.broker, target, REMOTE_METRICS_PROCESS_COMMAND)
 				: undefined;
+			if (this.collectors.get(collector.workspaceId) !== collector) return;
 			const parsed = parseRemoteMetricsBase(base, collector.cpu);
+			const connection = this.options.broker.snapshotWorkspace(collector.workspaceId);
+			const source = `${serializeConnectionKey(connectionKeyFor(target))}:${connection.generation}`;
 			collector.cpu = parsed.counters;
 			const snapshot: RemoteMetricsSnapshot = {
 				workspaceId: collector.workspaceId,
@@ -112,14 +127,16 @@ export class RemoteMetricsService {
 				filesystems: parsed.filesystems,
 				uptimeSeconds: parsed.uptimeSeconds,
 				processes: process === undefined ? (collector.latest?.processes ?? []) : parseRemoteProcesses(process),
+				network: collector.network.sample(base, source),
 			};
 			collector.latest = snapshot;
 			this.options.events.publish(collector.workspaceId, { type: "monitor.snapshot", data: snapshot });
 			this.options.events.publish(collector.workspaceId, {
 				type: "connection.snapshot",
-				data: this.options.broker.snapshotWorkspace(collector.workspaceId),
+				data: connection,
 			});
 		} catch (error) {
+			if (this.collectors.get(collector.workspaceId) !== collector) return;
 			console.error("SSH Agent remote metrics collection failed", {
 				workspaceId: collector.workspaceId,
 				error,

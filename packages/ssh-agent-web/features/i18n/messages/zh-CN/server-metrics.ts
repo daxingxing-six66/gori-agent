@@ -1,0 +1,15 @@
+export const zhCNServerMetricsMessages = {
+	"serverMetrics.label": "远端服务器整体资源",
+	"serverMetrics.cpu": "CPU {value}",
+	"serverMetrics.memory": "内存 {value}",
+	"serverMetrics.upload": "服务器发送 {value}",
+	"serverMetrics.download": "服务器接收 {value}",
+	"serverMetrics.interface": "网卡 {name} · 以服务器为视角",
+	"serverMetrics.networkUnavailable": "网络统计不可用，未找到可读取的默认路由网卡",
+	"serverMetrics.updated": "更新于 {time}",
+	"serverMetrics.status.sampling": "采样中",
+	"serverMetrics.status.live": "实时",
+	"serverMetrics.status.reconnecting": "重新连接中，显示最近一次数据",
+	"serverMetrics.status.unavailable": "采集失败，显示最近一次数据",
+	"serverMetrics.status.stale": "等待更新，显示最近一次数据",
+} as const;

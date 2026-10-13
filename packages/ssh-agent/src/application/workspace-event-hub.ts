@@ -4,12 +4,14 @@ import type { DeploymentDiscussion, DeploymentRun } from "../domain/deployment.t
 import type { BackendLocale, BackendMessageKey } from "../i18n/message.ts";
 import { localizePublicValue } from "../i18n/projection.ts";
 import type { ConnectionPoolSnapshot } from "./ssh-channel-broker.ts";
+import type { RemoteNetworkMetrics } from "../domain/remote-network-metrics.ts";
 
 export interface RemoteMetricsSnapshot {
 	workspaceId: string;
 	sampledAt: number;
 	cpu: { usagePercent: number; cores: number; loadAverage: [number, number, number] };
 	memory: { usedBytes: number; totalBytes: number; usagePercent: number };
+	network?: RemoteNetworkMetrics;
 	filesystems: Array<{
 		device: string;
 		mountPoint: string;
@@ -59,6 +61,15 @@ export class WorkspaceEventHub {
 	>();
 	private sequence = 0;
 	private closed = false;
+	private readonly snapshotProviders = new Map<WorkspaceEventTopic, (workspaceId: string) => readonly WorkspaceEvent[]>();
+
+	/** Initial snapshots are sent only to the new subscriber, without invoking remote work. */
+	registerSnapshotProvider(topic: WorkspaceEventTopic, provider: (workspaceId: string) => readonly WorkspaceEvent[]): () => void {
+		this.snapshotProviders.set(topic, provider);
+		return () => {
+			if (this.snapshotProviders.get(topic) === provider) this.snapshotProviders.delete(topic);
+		};
+	}
 
 	subscribe(
 		workspaceId: string,
@@ -85,7 +96,14 @@ export class WorkspaceEventHub {
 						}),
 					),
 				);
-				for (const topic of topics) this.notify(workspaceId, topic);
+				for (const topic of topics) {
+					for (const event of this.snapshotProviders.get(topic)?.(workspaceId) ?? []) {
+						controller.enqueue(encoder.encode(formatEvent(++this.sequence, {
+							...event, data: localizePublicValue(event.data, locale),
+						})));
+					}
+					this.notify(workspaceId, topic);
+				}
 			},
 			cancel: () => {
 				if (!subscriber) return;
@@ -143,6 +161,7 @@ export class WorkspaceEventHub {
 		for (const subscribers of this.subscribers.values())
 			for (const subscriber of subscribers) subscriber.controller.close();
 		this.subscribers.clear();
+		this.snapshotProviders.clear();
 	}
 
 	private notify(workspaceId: string, topic: WorkspaceEventTopic): void {

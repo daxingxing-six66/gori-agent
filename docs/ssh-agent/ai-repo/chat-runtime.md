@@ -24,6 +24,7 @@ Runtime Factory 将 Run ID 绑定到远端 Tool。Full Access grant 绑定完整
 - 上下文占用在每次 `turn_end` 和自动压缩保存摘要后推送 `context.updated`；刷新通过独立查询恢复，手动压缩返回 `contextUsage`。头部组装纯函数位于 `application/chat-context.ts`，工具共享静态定义；有效消息按 compact 边界加载，不能把 Agent 完整 transcript 当作压缩后 Context。见 [context-usage.md](./context-usage.md)。
 
 - Session 保存 `workDir`、`autoAudit`、默认开启的 `sandboxEnabled` 与独立 `sandboxWritableRoots`；创建时未指定 `workDir` 则从 Workspace `defaultCwd` 继承并验证本地目录，创建后独立保存。已有 Session 的 null 值仍使用服务默认目录。
+- 已有 Session 页首通过可选展示插槽接入独立 `SessionServerMetrics`，按 Workspace 共享服务器 CPU/内存/网络快照；它使用 monitoring SSE，与 Chat Run、审批、消息和 Agent Context 无关。桌面保留紧凑页首，窄屏允许指标换行。详见 [session-server-metrics.md](./session-server-metrics.md)。
 - Chat 页首由 `ChatPageHeader` 组合会话标题、必要运行状态及 `SessionSandboxBadge`，桌面使用 44px 单行页首，不显示工作区/本地目录副标题和空闲“就绪”标签；活动运行、排队、重连、失败及取消状态继续展示。组件只读取总装配传入的状态，不持有请求或审批逻辑。沙盒标识显示已确认的 Session 设置，只有图标和开启/关闭短文案；标识只读，无配置按钮或点击动作；Session 目录配置统一由侧边栏铅笔编辑入口提供，保存后刷新当前 Terminal；切换进度与异常继续由独立状态提示展示。见 [session-sandbox.md](./session-sandbox.md)。
 - Session 详情从最近一次 `chat_runs` 记录投影 `chatModelSelection`；首次 Run 显式选模型，后续 Run 可继承，模型与 thinking level 变化按当前 `pi-ai` 目录重新校验。
 - 模型选择从 SSH Agent 的有效目录读取。上游明确返回所选模型不再受支持时，Run 以 `chat_model_not_supported` 失败，最终 assistant 消息携带统一安全失败报告，在公开投影中显示用户友好提示，同时该模型立即从有效目录和持久化快照删除；不会触发一次无意义的即时刷新。

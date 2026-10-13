@@ -30,6 +30,7 @@ Chat 协议接受 runtime system 消息，状态按 `runtimeEventId` 保留同�
 
 ## 使用顺序
 
+已有 Session 页首在沙盒标识左侧通过展示插槽挂载独立 `features/server-metrics/`：CPU、内存和服务器网络收发速率按 Workspace 共享缓存与订阅，窄屏页首可换行。指标组件与 Chat/Terminal 请求解耦，Overview 卡片保持原样。入口、状态边界及移除方式见 [session-server-metrics.md](./session-server-metrics.md)。
 
 Chat 的 `UserDecisionPanel` 在输入框上方向上展开，显示模型的三条建议、推荐图标、自定义输入和跳过；建议选择或跳过自动进入下一题，最后一题完成后才显示提交，返回仍可修改，更多交互见 [user-decision.md](./user-decision.md)。`use-chat-runtime.ts` 将待审批、待决 REST 恢复与 Run SSE 合并到 `ChatRuntimeState`；切回 Session 后加载更早消息或合并压缩结果只更新消息，不丢弃已恢复的待审批和待决状态。关闭决策面板仅隐藏，可从输入框上方重新打开，不向后端提交跳过。普通工具记录以动作与目标组成紧凑单行，展开后显示完整参数和输出；失败线索直接可见，待审批操作保留完整说明和操作按钮。思考、压缩摘要与部署详情沿用各自的展开控件。
 
@@ -47,7 +48,7 @@ Chat 的 `UserDecisionPanel` 在输入框上方向上展开，显示模型的三
 | `/workspaces/:workspaceId` Workspace 控制台 | `app/workspaces/[workspaceId]/page.tsx` | `components/workspace-console.tsx`；在这里装配 Overview、Guard、Credential、SFTP Files 四个页签 |
 | `/workspaces/:workspaceId/chat/new` 新会话 | `app/workspaces/[workspaceId]/chat/new/page.tsx` | `features/session/components/new-session-chat.tsx` |
 | `/sessions/:sessionId` 真实会话 | `app/sessions/[sessionId]/page.tsx` | `features/chat/components/chat-console.tsx`；Terminal 也由该组件装配 |
-| 共用页首、内容标题与 Workspace Tab 导航 | `components/page-layout.tsx`、`components/page-layout.css` | `features/workspace/components/workspace-tab-navigation.tsx` 提供受控 Tab、键盘焦点和面板标识；`features/chat/components/chat-page-header.tsx` 组合聊天和沙盒状态 |
+| 共用页首、内容标题与 Workspace Tab 导航 | `components/page-layout.tsx`、`components/page-layout.css` | `features/workspace/components/workspace-tab-navigation.tsx` 提供受控 Tab、键盘焦点和面板标识；`features/chat/components/chat-page-header.tsx` 组合聊天/沙盒状态与服务器指标展示插槽 |
 | 全局 Workspace/Session 导航与管理入口 | `components/workspace-sidebar.tsx` | Workspace 创建、Session 重命名/删除、设置弹窗均从这里进入 |
 | 全局设置总入口 | `components/settings-dialog.tsx` | 外观、上下文压缩、Provider Credential 和自定义 Provider 的分类与多视图流程 |
 

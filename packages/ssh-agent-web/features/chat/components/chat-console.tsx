@@ -19,6 +19,7 @@ import { resolveConfiguredModel } from "@/features/llm-provider/api/llm-provider
 import { thinkingLevelForModel } from "@/features/llm-provider/model/llm-provider";
 import { sessionApi } from "@/features/session/api/session-api";
 import { ChatPageHeader } from "@/features/chat/components/chat-page-header";
+import { SessionServerMetrics } from "@/features/server-metrics/components/session-server-metrics";
 import { SessionSandboxStatus } from "@/features/session/components/session-sandbox-status";
 import { isSessionSandboxCommand } from "@/features/session/model/session-sandbox-command";
 import { useSessionSandbox } from "@/features/session/runtime/use-session-sandbox";
@@ -431,7 +432,8 @@ export function ChatConsole({ sessionId }: { sessionId: string }) {
 				style={{ "--terminal-panel-width": TERMINAL_UI_DEFAULTS.sidePanelWidth, "--terminal-panel-transition-ms": `${TERMINAL_UI_DEFAULTS.panelTransitionMs}ms` } as CSSProperties}
 			>
 				<div className="session-console-header min-w-0">
-					<ChatPageHeader title={item.session.displayName} sandboxEnabled={sandbox.enabled} active={active} runStatus={runtime.state.run?.status} connection={runtime.state.connection} queueCount={pendingQueue.length} />
+					<ChatPageHeader title={item.session.displayName} sandboxEnabled={sandbox.enabled} active={active} runStatus={runtime.state.run?.status} connection={runtime.state.connection} queueCount={pendingQueue.length}
+						serverMetrics={<SessionServerMetrics workspaceId={item.workspace.id} />} />
 					<SessionSandboxStatus pending={sandbox.pending} label={sandbox.statusLabel} error={sandbox.error} notice={sandbox.notice} onDismiss={sandbox.clearNotice} />
 					{terminalMode.error && !visibleTerminalFailure ? <button type="button" className="w-full border-b border-rose-200 bg-rose-50 px-4 py-2 text-left text-xs text-rose-700" onClick={() => terminalMode.setError(null)}>{terminalMode.error}</button> : null}
 					<TerminalSandboxNotice sandbox={terminalActive ? terminalMode.status?.terminal?.sandbox : null} />
