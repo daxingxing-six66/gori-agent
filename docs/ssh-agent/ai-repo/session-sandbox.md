@@ -12,6 +12,7 @@
 
 ## 策略所有权与执行
 
+Terminal 以稳定的 Session 功能身份接入任务容器；自动关闭/重开期间保留同一个 Tab，只更新底层实例与连接状态。已有 Tab 的定位可在沙盒切换期间进行，生命周期关闭继续禁用；详见 [任务容器](./task-container.md)。
 
 `sessionSandboxMode()` 是已加载 Session 的纯映射；`SessionSandboxPolicy` 负责读取当前可信配置。只有明确的 `sandboxEnabled=false` 映射为 `full_access`，缺省保持 `workspace_write`。应用服务使用同一个策略；模型参数、提示词和审计记录不能修改 Session 配置。
 

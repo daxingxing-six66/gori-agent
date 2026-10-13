@@ -32,7 +32,7 @@ export function TerminalOpenFailure({ failure, canRetry, canRequestInstallation,
 }) {
 	const intl = useIntl();
 	const bubblewrapMissing = failure.code === "sandbox_bubblewrap_not_installed";
-	return <section className="terminal-panel grid min-h-[250px] place-items-center overflow-y-auto bg-[var(--terminal-bg)] px-6 py-8 text-[var(--terminal-ink)]" role="alert" aria-live="assertive">
+	return <section className="terminal-open-failure grid min-h-[250px] place-items-center overflow-y-auto bg-[var(--terminal-bg)] px-6 py-8 text-[var(--terminal-ink)]" role="alert" aria-live="assertive">
 		<div className="w-full max-w-md rounded-2xl border border-[var(--terminal-line-strong)] bg-white/5 p-6 shadow-lg">
 			<AlertCircle size={24} className="text-amber-300" aria-hidden="true" />
 			<h2 className="mt-4 text-sm font-semibold">{intl.formatMessage({ id: "terminal.openFailure.title" })}</h2>

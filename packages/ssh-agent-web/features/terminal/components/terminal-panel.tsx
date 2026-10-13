@@ -31,15 +31,20 @@ import {
 	TerminalEventStream,
 } from "@/features/terminal/runtime/terminal-event-stream";
 import { TerminalObservationRangeTracker } from "@/features/terminal/runtime/terminal-observation-range-tracker";
+import { decodeTerminalBytes, TerminalEventQueue } from "@/features/terminal/runtime/terminal-event-queue";
+
+export type TerminalPanelPhase = "attaching" | "replaying" | "live";
 
 export function TerminalPanel({
 	sessionId,
 	status,
 	onTerminalStateChange,
+	onPhaseChange,
 }: {
 	sessionId: string;
 	status: TerminalStatusResponse;
 	onTerminalStateChange(): void;
+	onPhaseChange(phase: TerminalPanelPhase): void;
 }) {
 	const intl = useIntl();
 	const localizedErrorMessage = useLocalizedErrorMessage();
@@ -49,7 +54,7 @@ export function TerminalPanel({
 	const { resolvedTheme } = useTheme();
 	const resolvedThemeRef = useRef(resolvedTheme);
 	const [retry, setRetry] = useState(0);
-	const [phase, setPhase] = useState<"attaching" | "replaying" | "live">("attaching");
+	const [phase, setPhase] = useState<TerminalPanelPhase>("attaching");
 	const [owner, setOwner] = useState(false);
 	const [error, setError] = useState<string | null>(null);
 	const [observationMask, setObservationMask] = useState<ObservationMaskState | null>(null);
@@ -58,6 +63,8 @@ export function TerminalPanel({
 	const terminalSessionId = status.terminal?.id;
 	const terminalStatus = status.terminal?.status;
 	const { minRows, maxRows, minCols, maxCols } = status.capabilities;
+
+	useEffect(() => { onPhaseChange(phase); }, [onPhaseChange, phase]);
 
 	useEffect(() => {
 		resolvedThemeRef.current = resolvedTheme;
@@ -70,12 +77,11 @@ export function TerminalPanel({
 		let disposed = false;
 		const attachController = new AbortController();
 		let stream: TerminalEventStream | undefined;
+		let eventQueue: TerminalEventQueue | undefined;
 		let terminal: Terminal | undefined;
 		let attachmentId: string | undefined;
-		let lastSequence = 0;
 		let ownershipEpoch: number | null = null;
 		let live = false;
-		let writeTail: Promise<void> = Promise.resolve();
 		let resizeTimer: ReturnType<typeof setTimeout> | undefined;
 		let retryTimer: ReturnType<typeof setTimeout> | undefined;
 		let observationFinishDelayTimer: ReturnType<typeof setTimeout> | undefined;
@@ -193,6 +199,7 @@ export function TerminalPanel({
 			if (disposed || failureHandled) return;
 			failureHandled = true;
 			stream?.close();
+			eventQueue?.close();
 			setError(localizedErrorMessage(value));
 			void Promise.resolve(onTerminalStateChange()).catch(() => undefined);
 			if (shouldRetryTerminalConnection(value)) {
@@ -203,9 +210,13 @@ export function TerminalPanel({
 			}
 		};
 		const requestResize = (): void => {
-			if (!live || ownershipEpoch === null || !attachmentId || !terminal) return;
+			if (disposed || failureHandled || !live || ownershipEpoch === null || !attachmentId || !terminal) return;
+			// An inactive tab stays attached but must not resize the PTY to a hidden viewport.
+			if (container.clientWidth === 0 || container.clientHeight === 0) return;
 			if (resizeTimer !== undefined) clearTimeout(resizeTimer);
 			resizeTimer = setTimeout(() => {
+				if (disposed || failureHandled) return;
+				if (container.clientWidth === 0 || container.clientHeight === 0) return;
 				const proposed = fitAddon.proposeDimensions();
 				if (!proposed || ownershipEpoch === null || !attachmentId || !terminal) return;
 				const rows = clamp(proposed.rows, minRows, maxRows);
@@ -215,7 +226,7 @@ export function TerminalPanel({
 			}, TERMINAL_UI_DEFAULTS.resizeDebounceMs);
 		};
 		const updateFocus = (): void => {
-			if (!live || !attachmentId) return;
+			if (disposed || failureHandled || !live || !attachmentId) return;
 			const focused = document.visibilityState === "visible" && document.hasFocus();
 			void terminalApi.focus(sessionId, attachmentId, focused).then((result) => {
 				if (disposed) return;
@@ -231,7 +242,6 @@ export function TerminalPanel({
 				return;
 			}
 			attachmentId = bootstrap.attachmentId;
-			lastSequence = bootstrap.snapshot.sequence;
 			terminal = new Terminal({
 				cols: bootstrap.snapshot.cols,
 				rows: bootstrap.snapshot.rows,
@@ -248,7 +258,7 @@ export function TerminalPanel({
 			terminal.loadAddon(fitAddon);
 			terminal.open(container);
 			observationRangeTracker = new TerminalObservationRangeTracker(terminal);
-			await writeTerminal(terminal, decodeBase64(bootstrap.snapshot.data));
+			await writeTerminal(terminal, decodeTerminalBytes(bootstrap.snapshot.data));
 			if (disposed) return;
 			observationRangeTracker.recordCheckpoint(bootstrap.snapshot.sequence);
 			observationViewportSubscriptions.push(
@@ -270,44 +280,30 @@ export function TerminalPanel({
 				updateObservationPresentation();
 			}).catch(() => undefined);
 			setPhase("replaying");
-			stream = new TerminalEventStream(sessionId, bootstrap.attachmentId, bootstrap.snapshot.sequence, locale, () => {
-				fail(new Error("Terminal event stream disconnected"));
-			});
-			stream.subscribe((envelope) => {
-				const maskStateEvent = isObservationMaskStateEvent(envelope);
-				if (maskStateEvent) observationStateEventCount += 1;
-				if (envelope.type === "terminal.resync_required") {
-					applyObservationMaskEvent(envelope);
-					fail(new Error("Terminal stream gap requires a new snapshot"));
-					setRetry((value) => value + 1);
-					return;
-				}
-				if (envelope.type === "terminal.stream.ready") {
-					if (!isStreamReadyData(envelope.data)) return;
-					writeTail = writeTail.then(async () => {
-						if (!attachmentId) return;
-						if (lastSequence !== envelope.data.replayedThroughSequence) {
+			eventQueue = new TerminalEventQueue({
+				initialSequence: bootstrap.snapshot.sequence,
+				writeOutput: async (bytes, sequence) => {
+					if (disposed || failureHandled || !terminal) return;
+					await writeTerminal(terminal, bytes);
+					if (disposed || failureHandled) return;
+					observationRangeTracker?.recordCheckpoint(sequence);
+					updateObservationPresentation();
+				},
+				applyEvent: async (envelope, appliedSequence) => {
+					if (disposed || failureHandled || !terminal || !attachmentId) return;
+					if (envelope.type === "terminal.stream.ready") {
+						if (!isStreamReadyData(envelope.data) || appliedSequence !== envelope.data.replayedThroughSequence) {
 							throw new Error("Terminal replay did not reach the declared sequence");
 						}
-						await terminalApi.ready(sessionId, attachmentId, lastSequence);
+						await terminalApi.ready(sessionId, attachmentId, appliedSequence);
 						if (disposed || failureHandled) return;
 						live = true;
-						if (retryTimer !== undefined) {
-							clearTimeout(retryTimer);
-							retryTimer = undefined;
-						}
 						setError(null);
 						setPhase("live");
 						updateFocus();
-					});
-					void writeTail.catch(fail);
-					return;
-				}
-				if (envelope.sequence === null) return;
-				writeTail = writeTail.then(async () => {
-					if (!terminal || !attachmentId || envelope.sequence === null) return;
-					if (envelope.sequence <= lastSequence) return;
-					if (envelope.sequence !== lastSequence + 1) throw new Error("Terminal event sequence gap");
+						return;
+					}
+					if (envelope.sequence === null) return;
 					if (envelope.type === "terminal.input") {
 						const interactionId = stringData(envelope.data, "interactionId");
 						if (interactionId !== null) observationRangeTracker?.recordInput(interactionId);
@@ -322,15 +318,13 @@ export function TerminalPanel({
 							);
 							void loadObservationRange(observationId).catch(() => undefined);
 						}
-					} else if (envelope.type === "terminal.output") {
-						const bytes = stringData(envelope.data, "bytesBase64");
-						if (bytes === null) throw new Error("Invalid Terminal output event");
-						await writeTerminal(terminal, decodeBase64(bytes));
 					} else if (envelope.type === "terminal.resized") {
 						const rows = integerData(envelope.data, "rows");
 						const cols = integerData(envelope.data, "cols");
 						if (rows === null || cols === null) throw new Error("Invalid Terminal resize event");
 						terminal.resize(cols, rows);
+						observationRangeTracker?.recordCheckpoint(envelope.sequence);
+						updateObservationPresentation();
 					} else if (envelope.type === "terminal.resize_owner_changed") {
 						const ownerId = envelope.data.ownerAttachmentId;
 						const epoch = integerData(envelope.data, "ownershipEpoch");
@@ -339,16 +333,26 @@ export function TerminalPanel({
 						setOwner(isOwner);
 					} else if (envelope.type === "terminal.status") {
 						const nextStatus = stringData(envelope.data, "newStatus");
-						if (nextStatus === "closed" || nextStatus === "failed" || nextStatus === "lost") onTerminalStateChange();
+						if (nextStatus === "closed" || nextStatus === "failed" || nextStatus === "lost") {
+							void Promise.resolve(onTerminalStateChange()).catch(fail);
+						}
 					}
-					if (envelope.type === "terminal.output" || envelope.type === "terminal.resized") {
-						observationRangeTracker?.recordCheckpoint(envelope.sequence);
-						updateObservationPresentation();
-					}
-					if (maskStateEvent) applyObservationMaskEvent(envelope);
-					lastSequence = envelope.sequence;
-				});
-				void writeTail.catch(fail);
+					if (isObservationMaskStateEvent(envelope)) applyObservationMaskEvent(envelope);
+				},
+				onError: fail,
+			});
+			stream = new TerminalEventStream(sessionId, bootstrap.attachmentId, bootstrap.snapshot.sequence, locale, () => {
+				fail(new Error("Terminal event stream disconnected"));
+			});
+			stream.subscribe((envelope) => {
+				if (disposed || failureHandled) return;
+				if (isObservationMaskStateEvent(envelope)) observationStateEventCount += 1;
+				if (envelope.type === "terminal.resync_required") {
+					applyObservationMaskEvent(envelope);
+					fail(new Error("Terminal stream gap requires a new snapshot"));
+					return;
+				}
+				eventQueue?.push(envelope);
 			});
 		}).catch(fail);
 
@@ -373,6 +377,7 @@ export function TerminalPanel({
 			document.removeEventListener("visibilitychange", updateFocus);
 			window.removeEventListener("pageshow", updateFocus);
 			stream?.close();
+			eventQueue?.close();
 			if (terminalRef.current === terminal) terminalRef.current = null;
 			terminal?.dispose();
 			if (attachmentId) void terminalApi.detach(sessionId, attachmentId).catch(() => undefined);
@@ -380,11 +385,7 @@ export function TerminalPanel({
 	}, [locale, localizedErrorMessage, retry, sessionId, terminalSessionId, terminalStatus, minRows, maxRows, minCols, maxCols, onTerminalStateChange]);
 
 	return (
-		<section data-resize-owner={owner} className="terminal-panel terminal-panel-shell shrink-0 bg-[var(--terminal-bg)] text-[var(--terminal-ink)]">
-			<div className="terminal-workbench-header flex h-9 shrink-0 items-center justify-between gap-3 border-b border-[var(--workbench-line)] px-4">
-				<div className="terminal-workbench-heading flex items-center gap-2"><span className={`h-1.5 w-1.5 shrink-0 rounded-full ${phase === "live" ? "terminal-phase-live" : "terminal-phase-pending"}`} /><span>Terminal · {intl.formatMessage({ id: phase === "live" ? "terminal.panel.live" : phase === "replaying" ? "terminal.panel.replaying" : "terminal.panel.attaching" })}</span></div>
-				{error ? <button type="button" className="flex shrink-0 items-center gap-1 text-xs text-[var(--danger)]" onClick={() => setRetry((value) => value + 1)}><RefreshCw size={12} />{intl.formatMessage({ id: "terminal.panel.resync" })}</button> : null}
-			</div>
+		<section data-resize-owner={owner} className="terminal-task-viewport">
 			<div className="terminal-viewport relative min-h-0 p-2">
 				<div ref={containerRef} className="h-full w-full overflow-hidden" aria-label={intl.formatMessage({ id: "terminal.panel.readonly" })} />
 				<TerminalObservationMask
@@ -393,7 +394,9 @@ export function TerminalPanel({
 					capturedAt={observationCapturedAt}
 				/>
 				{phase !== "live" && !error ? <div className="pointer-events-none absolute inset-0 z-10 grid place-items-center bg-[color-mix(in_srgb,var(--terminal-bg)_70%,transparent)] text-[9px] text-[var(--terminal-muted)]"><span className="flex items-center gap-2"><LoaderCircle size={12} className="animate-spin" />{intl.formatMessage({ id: "terminal.panel.restoring" })}</span></div> : null}
-				{error ? <div className="absolute inset-x-3 bottom-3 z-20 rounded-lg border border-[var(--danger-line)] bg-[var(--danger-soft)] px-3 py-2 text-[9px] text-[var(--danger)]">{error}</div> : null}
+				{error ? <div className="absolute inset-x-3 bottom-3 z-20 rounded-lg border border-[var(--danger-line)] bg-[var(--danger-soft)] px-3 py-2 text-xs text-[var(--danger)]">{error}
+					<button type="button" className="terminal-task-resync" onClick={() => setRetry((value) => value + 1)}><RefreshCw size={12} />{intl.formatMessage({ id: "terminal.panel.resync" })}</button>
+				</div> : null}
 			</div>
 		</section>
 	);
@@ -401,11 +404,6 @@ export function TerminalPanel({
 
 function writeTerminal(terminal: Terminal, data: Uint8Array): Promise<void> {
 	return new Promise((resolve) => terminal.write(data, resolve));
-}
-
-function decodeBase64(value: string): Uint8Array {
-	const binary = atob(value);
-	return Uint8Array.from(binary, (character) => character.charCodeAt(0));
 }
 
 function clamp(value: number, minimum: number, maximum: number): number {

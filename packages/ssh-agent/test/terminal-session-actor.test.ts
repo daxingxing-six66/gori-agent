@@ -3,6 +3,9 @@ import { describe, expect, it, vi } from "vitest";
 import type { SessionUseLease } from "../src/application/services/session-lifecycle-coordinator.ts";
 import type { TerminalChannelExit, TerminalChannelHandle } from "../src/application/ssh-channel-broker.ts";
 import { TerminalSessionActor } from "../src/application/terminal/terminal-session-actor.ts";
+import { TerminalCanonicalState } from "../src/application/terminal/terminal-canonical-state.ts";
+import { TERMINAL_DEFAULTS } from "../src/application/terminal/terminal-defaults.ts";
+import type { TerminalSequencedEvent } from "../src/application/terminal/terminal-replay-ring.ts";
 import type { Clock, IdGenerator } from "../src/domain/ids.ts";
 import type { TerminalGeometry, TerminalSession } from "../src/domain/terminal.ts";
 import { applyMigrations } from "../src/infrastructure/sqlite/migrations.ts";
@@ -109,6 +112,57 @@ const sandbox = { mode: "workspace_write", backend: "landlock", enforcement: "fu
 	launcherVersion: "2", sandboxRoot: "/srv/test" } as const;
 
 describe("TerminalSessionActor", () => {
+	it("coalesces tiny SSH redraw fragments without losing ANSI, UTF-8 or canonical snapshot contents", async () => {
+		const database = createDatabase();
+		const reference = new TerminalCanonicalState(openingSession().geometry);
+		try {
+			const repository = new SqliteTerminalRepository(database);
+			const session = openingSession();
+			repository.insertSession(session);
+			const actor = new TerminalSessionActor({ session, repository, clock: { now: () => 10 }, ids: new SequentialIds(),
+				sessionLease: { release: () => undefined }, onDisposed: () => undefined });
+			await actor.activate(new FakeTerminalChannel(), sandbox);
+			const events: TerminalSequencedEvent[] = [];
+			actor.subscribe((event) => events.push(event));
+			const bytes = Buffer.from("\r\x1b[2K[arthas@1]$ 含video.merge容器=".repeat(2000) + "\r\nresult\r\nprompt$ ");
+			await reference.write(bytes);
+			for (let index = 0; index < bytes.length; index++) actor.acceptSshData(bytes.subarray(index, index + 1));
+			const capture = await actor.captureCanonical();
+			const output = events.filter((event) => event.type === "terminal.output");
+			expect(output.length).toBe(Math.ceil(bytes.length / TERMINAL_DEFAULTS.replay.outputBatchBytes));
+			expect(Buffer.concat(output.map((event) => Buffer.from(event.bytes)))).toEqual(bytes);
+			expect(capture.screenText).toBe(reference.currentScreenText());
+			expect(capture.allText).toBe(reference.allText());
+			const attachment = await actor.createAttachment("request", "attachment");
+			expect(attachment.snapshot.sequence).toBe(output.length);
+			await actor.close("user_requested");
+		} finally { reference.dispose(); database.close(); }
+	});
+
+	it("seals output batches at input and snapshot boundaries instead of moving later bytes ahead of them", async () => {
+		const database = createDatabase();
+		try {
+			const repository = new SqliteTerminalRepository(database);
+			const session = openingSession();
+			repository.insertSession(session);
+			const actor = new TerminalSessionActor({ session, repository, clock: { now: () => 10 }, ids: new SequentialIds(),
+				sessionLease: { release: () => undefined }, onDisposed: () => undefined });
+			await actor.activate(new FakeTerminalChannel(), sandbox);
+			const events: TerminalSequencedEvent[] = [];
+			actor.subscribe((event) => events.push(event));
+			actor.acceptSshData(Buffer.from("before"));
+			const input = actor.recordDurableEvent("terminal.input", { interactionId: "interaction" });
+			actor.acceptSshData(Buffer.from("after"));
+			const snapshot = actor.captureCanonical();
+			actor.acceptSshData(Buffer.from("later"));
+			expect(await input).toBe(2);
+			expect(await snapshot).toMatchObject({ sequence: 3, allText: "beforeafter" });
+			expect(await actor.captureCanonical()).toMatchObject({ sequence: 4, allText: "beforeafterlater" });
+			expect(events.map((event) => event.type)).toEqual(["terminal.output", "terminal.input", "terminal.output", "terminal.output"]);
+			await actor.close("user_requested");
+		} finally { database.close(); }
+	});
+
 	it("serializes canonical output, attachment replay, ownership, resize and close", async () => {
 		const database = createDatabase();
 		try {

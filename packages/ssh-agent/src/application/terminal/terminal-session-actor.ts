@@ -63,6 +63,7 @@ export class TerminalSessionActor {
 	#channel: TerminalChannelHandle | null = null;
 	#ownerAttachmentId: TerminalAttachmentId | null = null;
 	#tail: Promise<void> = Promise.resolve();
+	#pendingOutput: { chunks: Uint8Array[]; byteLength: number } | null = null;
 	#disposed = false;
 	#finalCapture: TerminalCanonicalCapture | null = null;
 	#runBindings = new Set<string>();
@@ -99,17 +100,33 @@ export class TerminalSessionActor {
 	}
 
 	acceptSshData(bytes: Uint8Array): void {
+		if (this.#disposed || bytes.byteLength === 0) return;
+		const pending = this.#pendingOutput;
+		if (pending && pending.byteLength + bytes.byteLength <= TERMINAL_DEFAULTS.replay.outputBatchBytes) {
+			pending.chunks.push(bytes.slice());
+			pending.byteLength += bytes.byteLength;
+			return;
+		}
+		const batch = { chunks: [bytes.slice()], byteLength: bytes.byteLength };
 		void this.#enqueue(async () => {
+			if (this.#pendingOutput === batch) this.#pendingOutput = null;
 			if (this.#disposed || this.#session.status !== "active") return;
-			await this.#canonical.write(bytes);
+			const output = new Uint8Array(batch.byteLength);
+			let offset = 0;
+			for (const chunk of batch.chunks) {
+				output.set(chunk, offset);
+				offset += chunk.byteLength;
+			}
+			await this.#canonical.write(output);
 			const event: TerminalSequencedEvent = {
 				sequence: this.#nextSequence(),
 				type: "terminal.output",
 				emittedAt: this.#clock.now(),
-				bytes,
+				bytes: output,
 			};
 			this.#publish(event);
 		}).catch((error: unknown) => this.#handleRuntimeFailure(error));
+		this.#pendingOutput = batch;
 	}
 
 	activate(channel: TerminalChannelHandle, sandbox: TerminalSandboxFacts): Promise<TerminalSession> {
@@ -699,6 +716,9 @@ export class TerminalSessionActor {
 	}
 
 	#enqueue<T>(operation: () => Promise<T>): Promise<T> {
+		// A snapshot, input, resize or lifecycle operation seals the preceding output batch.
+		// Only adjacent SSH output may share a canonical write and event sequence.
+		this.#pendingOutput = null;
 		const result = this.#tail.then(operation);
 		this.#tail = result.then(
 			() => undefined,

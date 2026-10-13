@@ -18,7 +18,7 @@ export function TerminalConnectionState({ phase }: { phase: TerminalModeTransiti
 
 	return (
 		<section
-			className={`terminal-panel terminal-connection-state terminal-connection-state-${phase}`}
+			className={`terminal-connection-state terminal-connection-state-${phase}`}
 			role="status"
 			aria-live="polite"
 			aria-label={title}

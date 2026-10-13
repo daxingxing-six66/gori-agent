@@ -1,0 +1,122 @@
+.task-container {
+	display: flex;
+	min-width: 0;
+	min-height: 0;
+	height: 100%;
+	flex-direction: column;
+	overflow: hidden;
+	background: var(--workbench-bg);
+	color: var(--workbench-ink);
+}
+
+.task-container-tabs {
+	display: flex;
+	flex: 0 0 var(--workspace-header-height, 44px);
+	min-width: 0;
+	overflow-x: auto;
+	overflow-y: hidden;
+	border-bottom: 1px solid var(--workbench-line);
+}
+
+.task-container-tab-item {
+	display: flex;
+	position: relative;
+	flex-shrink: 0;
+	align-items: center;
+	padding-right: 8px;
+	border-right: 1px solid var(--workbench-line);
+	color: var(--workbench-muted);
+}
+
+.task-container-tab-item[data-selected="true"] {
+	color: var(--workbench-ink);
+	box-shadow: inset 0 -2px var(--workbench-accent);
+}
+
+.task-container-tab {
+	display: flex;
+	height: 100%;
+	min-width: 0;
+	max-width: 300px;
+	align-items: center;
+	gap: 7px;
+	padding: 0 10px 0 16px;
+	border: 0;
+	background: transparent;
+	color: inherit;
+	font-size: 12px;
+	cursor: pointer;
+}
+
+.task-container-tab-title {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	font-weight: 500;
+}
+
+.task-container-tab-status {
+	flex-shrink: 0;
+	color: var(--workbench-muted);
+	font-size: 11px;
+}
+
+.task-container-status-dot {
+	width: 5px;
+	height: 5px;
+	flex-shrink: 0;
+	border-radius: 50%;
+	background: var(--workbench-muted);
+}
+
+.task-container-status-positive { background: var(--workbench-accent); }
+.task-container-status-warning { background: var(--warning); }
+.task-container-status-danger { background: var(--danger); }
+
+.task-container-close {
+	display: grid;
+	width: 24px;
+	height: 24px;
+	flex-shrink: 0;
+	place-items: center;
+	border: 0;
+	border-radius: var(--radius-tag, 5px);
+	background: transparent;
+	color: var(--workbench-muted);
+	cursor: pointer;
+}
+
+.task-container-close:hover:not(:disabled) {
+	background: color-mix(in srgb, var(--workbench-ink) 8%, transparent);
+	color: var(--workbench-ink);
+}
+
+.task-container-close:disabled { cursor: not-allowed; opacity: 0.4; }
+
+.task-container-tab:focus-visible,
+.task-container-close:focus-visible,
+.task-container-page:focus-visible {
+	outline: 2px solid var(--workbench-accent);
+	outline-offset: -2px;
+}
+
+.task-container-content,
+.task-container-page {
+	display: flex;
+	min-width: 0;
+	min-height: 0;
+	flex: 1;
+	flex-direction: column;
+	overflow: hidden;
+}
+
+.task-container-page[hidden] { display: none; }
+
+.task-container-sr-only {
+	position: absolute;
+	width: 1px;
+	height: 1px;
+	overflow: hidden;
+	clip-path: inset(50%);
+	white-space: nowrap;
+}

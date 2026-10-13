@@ -1,0 +1,27 @@
+/* The session owns placement; task pages only own their internal content. */
+.session-console-tasks-present {
+	grid-template-areas: "header" "tasks" "chat" "composer";
+	grid-template-rows: auto auto minmax(0, 1fr) auto;
+}
+
+.session-task-area {
+	grid-area: tasks;
+	min-width: 0;
+	min-height: 0;
+	height: calc(var(--workspace-header-height, 44px) + 250px);
+	overflow: hidden;
+	border-bottom: 1px solid var(--workbench-line);
+}
+
+@media (min-width: 1101px) {
+	.session-console.page-main-chat {
+		grid-template-areas: "header tasks" "chat tasks" "composer tasks";
+		grid-template-columns: minmax(0, 1fr) 0;
+		grid-template-rows: auto minmax(0, 1fr) auto;
+		transition: grid-template-columns var(--task-panel-transition-ms) cubic-bezier(0.22, 1, 0.36, 1);
+	}
+	.session-console.page-main-chat.session-console-tasks-active { grid-template-columns: minmax(0, 1fr) var(--task-panel-width); }
+	.session-task-area { height: 100%; border-bottom: 0; border-left: 1px solid var(--workbench-line); }
+}
+
+@media (prefers-reduced-motion: reduce) { .session-console { transition: none; } }

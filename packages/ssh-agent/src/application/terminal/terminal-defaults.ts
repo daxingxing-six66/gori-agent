@@ -13,6 +13,7 @@ export const TERMINAL_DEFAULTS = {
 		attachmentsPerTerminal: 4,
 	},
 	replay: {
+		outputBatchBytes: 64 * 1024,
 		outputBytes: 2 * 1024 * 1024,
 		frames: 4096,
 		subscriberPendingBytes: 512 * 1024,

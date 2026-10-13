@@ -23,16 +23,17 @@ import { SessionServerMetrics } from "@/features/server-metrics/components/sessi
 import { SessionSandboxStatus } from "@/features/session/components/session-sandbox-status";
 import { isSessionSandboxCommand } from "@/features/session/model/session-sandbox-command";
 import { useSessionSandbox } from "@/features/session/runtime/use-session-sandbox";
-import { TerminalConnectionState } from "@/features/terminal/components/terminal-connection-state";
-import { TerminalOpenFailure, terminalOpenFailureFromStatus } from "@/features/terminal/components/terminal-open-failure";
 import { TerminalSandboxNotice } from "@/features/terminal/components/terminal-sandbox-notice";
-import { TerminalPanel } from "@/features/terminal/components/terminal-panel";
-import { TERMINAL_UI_DEFAULTS } from "@/features/terminal/model/terminal-ui-defaults";
+import { TerminalTask } from "@/features/terminal/components/terminal-task";
 import { useTerminalMode } from "@/features/terminal/runtime/use-terminal-mode";
+import { useTerminalTask } from "@/features/terminal/runtime/use-terminal-task";
+import { TaskContainer, type TaskTab } from "@/features/task-container/components/task-container";
+import { TASK_CONTAINER_DEFAULTS } from "@/features/task-container/model/task-container-defaults";
 import { useWorkspaceTree } from "@/features/workspace/components/workspace-tree-context";
 import { ApiError } from "@/shared/errors/api-error";
 import { DeploymentPanel } from "@/features/deploy/components/deployment-panel";
 import { useDeployment } from "@/features/deploy/runtime/use-deployment";
+import "./chat-task-layout.css";
 
 export function ChatConsole({ sessionId }: { sessionId: string }) {
 	const intl = useIntl();
@@ -57,48 +58,17 @@ export function ChatConsole({ sessionId }: { sessionId: string }) {
 	const [hiddenDecisionId, setHiddenDecisionId] = useState<string | null>(null);
 	const planningRequestRef = useRef<{ sessionId: string } | null>(null);
 	const [planningSubmitting, setPlanningSubmitting] = useState(false);
-	const [dismissedTerminalFailureKey, setDismissedTerminalFailureKey] = useState<string | null>(null);
+	const [activeTaskTabId, setActiveTaskTabId] = useState<string | null>("terminal");
 	const active = activeChatRun(runtime.state.run);
 	const sandbox = useSessionSandbox({ sessionId, session: item?.session, refreshSessions: refresh,
 		refreshTerminal: terminalMode.refresh, disabled: active || runtime.submitting || runtime.compacting || autoAuditPending || planningSubmitting || deployment.busy || terminalMode.loading || terminalMode.mutating || terminalMode.status?.transitionInProgress === true });
 	const showActivity = waitingForChatResponse(runtime.state, runtime.loading, runtime.submitting);
 	const autoAuditChecked = autoAuditOverride ?? item?.session.autoAudit ?? false;
-	const terminalActive = terminalMode.status?.terminal?.status === "active";
-	const backendTerminalTransition = terminalMode.status?.transitionInProgress
-		? terminalMode.status.terminal?.status === "opening" ? "connecting" : "disconnecting"
-		: null;
-	const terminalTransition = terminalMode.transition ?? backendTerminalTransition;
-	const terminalFailure = terminalOpenFailureFromStatus(terminalMode.status, terminalMode.openError);
-	const visibleTerminalFailure = terminalTransition === null && terminalFailure &&
-		(terminalFailure.key === null || terminalFailure.key !== dismissedTerminalFailureKey) ? terminalFailure : null;
-	const terminalPresent = terminalActive || terminalTransition !== null || visibleTerminalFailure !== null;
-	const terminalExpanded = terminalActive || (terminalTransition !== null && terminalTransition !== "exiting") || visibleTerminalFailure !== null;
-	const terminalDisabledReason = sandbox.pending
-		? intl.formatMessage({ id: "session.sandbox.changing" })
-		: active
-		? intl.formatMessage({ id: "terminal.disabled.runActive" })
-		: terminalMode.loading
-			? intl.formatMessage({ id: "terminal.disabled.loading" })
-			: terminalTransition === "connecting"
-				? intl.formatMessage({ id: "terminal.disabled.connecting" })
-				: terminalTransition === "disconnecting"
-					? intl.formatMessage({ id: "terminal.disabled.disconnecting" })
-					: terminalTransition === "disconnected" || terminalTransition === "exiting"
-						? intl.formatMessage({ id: "terminal.disabled.exiting" })
-						: terminalMode.status === null
-							? intl.formatMessage({ id: "terminal.disabled.unavailable" })
-							: undefined;
-	const terminalStatus = terminalTransition === "connecting"
-		? { label: intl.formatMessage({ id: "terminal.status.starting" }), tone: "pending" as const }
-		: terminalTransition === "disconnecting" || terminalTransition === "disconnected" || terminalTransition === "exiting"
-			? { label: intl.formatMessage({ id: "terminal.status.closing" }), tone: "pending" as const }
-			: terminalMode.loading
-				? { label: intl.formatMessage({ id: "terminal.status.detecting" }), tone: "pending" as const }
-				: terminalMode.status === null
-					? { label: intl.formatMessage({ id: "terminal.status.unavailable" }), tone: "inactive" as const }
-					: terminalActive
-						? { label: intl.formatMessage({ id: "terminal.status.started" }), tone: "active" as const }
-						: { label: intl.formatMessage({ id: "terminal.status.stopped" }), tone: "inactive" as const };
+	const terminalTask = useTerminalTask({ sessionId, mode: terminalMode, runActive: active,
+		submitting: runtime.submitting, sandboxPending: sandbox.pending });
+	const terminalStatus = { label: terminalTask.label,
+		tone: terminalTask.tone === "positive" ? "active" as const
+			: terminalTask.tone === "warning" ? "pending" as const : "inactive" as const };
 	const compactionDisabledReason = sandbox.pending
 		? intl.formatMessage({ id: "session.sandbox.changing" })
 		: runtime.loading
@@ -123,11 +93,11 @@ export function ChatConsole({ sessionId }: { sessionId: string }) {
 			id: "terminal",
 			icon: "terminal",
 			name: "Terminal Mode",
-			description: intl.formatMessage({ id: terminalActive ? "terminal.tool.close.description" : "terminal.tool.open.description" }),
+			description: intl.formatMessage({ id: terminalTask.present ? "terminal.tool.reveal.description" : "terminal.tool.open.description" }),
 			keywords: ["terminal", "terminal mode", "终端", "pty"],
 			status: terminalStatus,
-			disabled: terminalDisabledReason !== undefined,
-			disabledReason: terminalDisabledReason,
+			disabled: terminalTask.menuDisabledReason !== undefined,
+			disabledReason: terminalTask.menuDisabledReason,
 		},
 		{
 			id: "compact",
@@ -163,7 +133,7 @@ export function ChatConsole({ sessionId }: { sessionId: string }) {
 		historyScrollRestoreRef.current = null;
 		setShowReturnToBottom(false);
 		setHiddenDecisionId(null);
-		setDismissedTerminalFailureKey(null);
+		setActiveTaskTabId("terminal");
 		scrolledDeploymentRef.current = null;
 	}, [sessionId]);
 
@@ -298,24 +268,27 @@ export function ChatConsole({ sessionId }: { sessionId: string }) {
 	};
 
 	const selectComposerTool = useCallback((toolId: string) => {
+		if (toolId === "terminal") {
+			if (terminalTask.menuDisabledReason === undefined) {
+				setActiveTaskTabId("terminal");
+				terminalTask.reveal();
+			}
+			return;
+		}
 		if (toolId === "sandbox") { void sandbox.execute("/sandbox"); return; }
 		if (sandbox.pending) return;
 		if (toolId === "deploy" && !active && !deployment.busy) { void deployment.show(); return; }
-		if (toolId === "terminal" && terminalDisabledReason === undefined) {
-			void (terminalActive ? terminalMode.close() : terminalMode.open());
-			return;
-		}
 		if (toolId === "compact" && compactionDisabledReason === undefined) void runtime.compact();
-	}, [active, compactionDisabledReason, deployment, runtime.compact, sandbox.execute, sandbox.pending, terminalActive, terminalDisabledReason, terminalMode.close, terminalMode.open]);
+	}, [active, compactionDisabledReason, deployment, runtime.compact, sandbox.execute, sandbox.pending, terminalTask.menuDisabledReason, terminalTask.reveal]);
 
 	const requestBubblewrapInstallation = useCallback(async () => {
 		if (!model || active || sandbox.pending || runtime.submitting || terminalMode.status?.effectiveServerInteractionMode !== "command") return;
 		try {
 			const run = await runtime.submit({ message: intl.formatMessage({ id: "terminal.openFailure.installPrompt" }),
 				attachments: [], model, thinkingLevel, behavior: "follow_up", serverInteractionMode: "command" });
-			if (run && terminalFailure?.key) setDismissedTerminalFailureKey(terminalFailure.key);
+			if (run) terminalTask.dismiss();
 		} catch { /* Chat composer shows the Run creation error. */ }
-	}, [active, intl, model, sandbox.pending, runtime.submit, runtime.submitting, terminalFailure?.key,
+	}, [active, intl, model, sandbox.pending, runtime.submit, runtime.submitting, terminalTask.dismiss,
 		terminalMode.status?.effectiveServerInteractionMode, thinkingLevel]);
 
 	const startDeploymentSetup = useCallback(async () => {
@@ -417,6 +390,16 @@ export function ChatConsole({ sessionId }: { sessionId: string }) {
 	const expandedDeploymentId = deployment.open && deployment.run && deployment.history.some((run) => run.id === deployment.run?.id)
 		? deployment.run.id : null;
 	const inlineDiscussion = deployment.open && !deployment.run ? deployment.selectedDiscussion : null;
+	const taskTabs: readonly TaskTab[] = terminalTask.present ? [{
+		id: "terminal", title: "Terminal", status: { label: terminalTask.label, tone: terminalTask.tone },
+		close: { label: intl.formatMessage({ id: "terminal.tab.close" }),
+			disabled: terminalTask.operationDisabledReason !== undefined,
+			disabledReason: terminalTask.operationDisabledReason,
+			busy: terminalTask.transition === "disconnecting", onRequestClose: terminalTask.requestClose },
+		content: <TerminalTask sessionId={sessionId} mode={terminalMode} task={terminalTask}
+			canRequestInstallation={Boolean(model && !active && !runtime.submitting && !sandbox.pending && terminalMode.status?.effectiveServerInteractionMode === "command")}
+			onRequestInstallation={() => { void requestBubblewrapInstallation(); }} />,
+	}] : [];
 
 	if (treeLoading && tree === null) return <div className="grid h-dvh place-items-center text-sm text-zinc-400">{intl.formatMessage({ id: "session.loading" })}</div>;
 	if (!item) return <div className="grid h-dvh place-items-center text-sm text-zinc-500">{intl.formatMessage({ id: "session.notFound" })}</div>;
@@ -428,25 +411,22 @@ export function ChatConsole({ sessionId }: { sessionId: string }) {
 			<WorkspaceSidebar activeWorkspaceId={item.workspace.id} activeSessionId={item.session.id}
 				onSessionUpdated={async (updatedId) => { if (updatedId === sessionId) await terminalMode.refresh(); }} />
 			<main
-				className={`session-console page-main page-main-chat ${terminalPresent ? "session-console-terminal-present" : ""} ${terminalExpanded ? "session-console-terminal-active" : ""}`}
-				style={{ "--terminal-panel-width": TERMINAL_UI_DEFAULTS.sidePanelWidth, "--terminal-panel-transition-ms": `${TERMINAL_UI_DEFAULTS.panelTransitionMs}ms` } as CSSProperties}
+				className={`session-console page-main page-main-chat ${taskTabs.length > 0 ? "session-console-tasks-present" : ""} ${terminalTask.expanded ? "session-console-tasks-active" : ""}`}
+				style={{ "--task-panel-width": TASK_CONTAINER_DEFAULTS.sidePanelWidth,
+					"--task-panel-transition-ms": `${TASK_CONTAINER_DEFAULTS.transitionMs}ms`,
+					"--terminal-panel-transition-ms": `${TASK_CONTAINER_DEFAULTS.transitionMs}ms` } as CSSProperties}
 			>
 				<div className="session-console-header min-w-0">
 					<ChatPageHeader title={item.session.displayName} sandboxEnabled={sandbox.enabled} active={active} runStatus={runtime.state.run?.status} connection={runtime.state.connection} queueCount={pendingQueue.length}
 						serverMetrics={<SessionServerMetrics workspaceId={item.workspace.id} />} />
 					<SessionSandboxStatus pending={sandbox.pending} label={sandbox.statusLabel} error={sandbox.error} notice={sandbox.notice} onDismiss={sandbox.clearNotice} />
-					{terminalMode.error && !visibleTerminalFailure ? <button type="button" className="w-full border-b border-rose-200 bg-rose-50 px-4 py-2 text-left text-xs text-rose-700" onClick={() => terminalMode.setError(null)}>{terminalMode.error}</button> : null}
-					<TerminalSandboxNotice sandbox={terminalActive ? terminalMode.status?.terminal?.sandbox : null} />
+					{terminalMode.error && !terminalTask.present ? <p role="alert" className="px-4 py-2 text-xs text-danger">{terminalMode.error}</p> : null}
+					<TerminalSandboxNotice sandbox={terminalTask.active ? terminalMode.status?.terminal?.sandbox : null} />
 				</div>
-				{terminalActive && !sandbox.pending && terminalMode.transition === null && terminalMode.status ? <TerminalPanel sessionId={sessionId} status={terminalMode.status} onTerminalStateChange={terminalMode.refresh} /> : null}
-				{terminalPresent && terminalTransition ? <TerminalConnectionState phase={terminalTransition} /> : null}
-				{visibleTerminalFailure ? <TerminalOpenFailure failure={visibleTerminalFailure}
-					canRetry={terminalDisabledReason === undefined}
-					canRequestInstallation={Boolean(model && !active && !runtime.submitting && !sandbox.pending && terminalMode.status?.effectiveServerInteractionMode === "command")}
-					onRetry={() => { setDismissedTerminalFailureKey(null); void terminalMode.open(); }}
-					onRequestInstallation={() => { void requestBubblewrapInstallation(); }}
-					onDismiss={() => { if (visibleTerminalFailure.key) setDismissedTerminalFailureKey(visibleTerminalFailure.key); else terminalMode.setOpenError(null); }}
-				/> : null}
+				{taskTabs.length > 0 ? <div className="session-task-area">
+					<TaskContainer key={sessionId} tabs={taskTabs} activeTabId={activeTaskTabId}
+						tabListLabel={intl.formatMessage({ id: "terminal.tabs.label" })} onSelect={setActiveTaskTabId} />
+				</div> : null}
 
 				<div className="session-console-chat relative min-h-0">
 					<div ref={scrollRef} className="app-scrollbar h-full overflow-y-auto" onScroll={handleChatScroll}>

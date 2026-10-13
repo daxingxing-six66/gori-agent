@@ -21,6 +21,11 @@ Gori（小猩）是一款面向个人开发者的轻量 SSH Agent。用自然语
 - 首页只保留工作区导航。不要擅自新增欢迎页、宣传区或模拟会话。
 - 本机支持目标为 macOS/Linux/Windows；远程操作主要面向 Linux。未实测的平台和真实服务调用不得宣称验证通过。
 
+## 已确认的专项开发约束
+
+- 涉及任务 Tab 容器、Terminal 页面重构及后续 Deploy/Monitor 接入前，阅读 [任务容器与 Terminal 重构约束](docs/ssh-agent/design/task-container-terminal-refactor.md)。该文档保存上下文压缩后仍需遵守的交互、职责和 UI 约束；Terminal 容器第一阶段已进入实现，后续仍需遵守已确认边界。
+- 本次重构以代码可读性与解耦为第一优先级：容器不承接功能模块的业务生命周期；`/` 打开或定位已有 Terminal Tab，标签页 `×` 复用现有关闭流程。完整范围及边界以上述文档为准。
+
 ## 开发规则
 
 - 交流简洁，向维护者解释必要的 TypeScript/前端知识，可使用 Java 类比。

@@ -46,6 +46,7 @@
 | Provider 请求前检查、上下文超限恢复、摘要消息、压缩 Setting 和手动压缩 | [context-compaction.md](./context-compaction.md) | `packages/ssh-agent/src/application/services/chat-context-service.ts`、`packages/agent/src/agent-loop.ts` |
 | Session 上下文占用查询、Turn/压缩完成快照与 SSE | [context-usage.md](./context-usage.md) | `packages/ssh-agent/src/application/chat-context.ts`、`packages/ssh-agent/src/application/services/chat-context-service.ts` |
 | 长周期 SSH PTY、Canonical State、打开/清理、输入策略/状态记录、Observation 和只读前端 | [terminal-interaction.md](./features/terminal-interaction.md) | `packages/ssh-agent/src/application/services/terminal-session-service.ts`、`packages/ssh-agent/src/application/services/terminal-interaction-service.ts`、`packages/ssh-agent/src/application/terminal/`、`packages/ssh-agent-web/features/terminal/` |
+| Session 通用任务 Tab 容器、标签关闭请求、页面保留与 Terminal 接入 | [task-container.md](./task-container.md) | `packages/ssh-agent-web/features/task-container/`、`packages/ssh-agent-web/features/chat/components/chat-task-layout.css` |
 | SSH Agent Web 页面、前端功能、客户端状态、API/SSE 和测试位置 | [ssh-agent-web.md](./ssh-agent-web.md) | `packages/ssh-agent-web/app/`、`packages/ssh-agent-web/components/`、`packages/ssh-agent-web/features/` |
 | Web 明亮、暗部、明暗分层实验、跟随系统主题及 Terminal 动态配色 | [theme.md](./theme.md) | `packages/ssh-agent-web/features/theme/`、`packages/ssh-agent-web/features/settings/`、`packages/ssh-agent-web/app/globals.css` |
 | Web 中英文界面、Locale 首屏恢复、类型化消息目录和语言切换 | [i18n.md](./i18n.md) | `packages/ssh-agent-web/features/i18n/`、`packages/ssh-agent-web/app/layout.tsx` |
@@ -57,6 +58,7 @@ Workspace/Credential 前端契约见 [workspace-credential-integration.md](../fr
 
 跨电脑接续这几轮沙箱与权限重构时，先按上表阅读当前功能文档；[计划与续写上下文](../design/sandbox-authorization-handoff-2026-10-09.md) 补充已完成阶段和剩余建议。续写文档记录阶段状态，当前职责与行为以功能文档和源码为准。
 
+涉及任务 Tab 容器、Terminal 页面重构及后续 Deploy/Monitor 接入时，先阅读 [任务容器与 Terminal 重构约束](../design/task-container-terminal-refactor.md)。这是已确认的开发约束，Terminal 容器第一阶段见 [功能路由](./task-container.md)，当前行为以功能文档和源码为准；上下文压缩后仍需恢复其中的职责分层、最终交互决定和 UI 边界。
 
 本地与远程联调约定见 [test-environments.md](../test-environments.md)。真实服务器资料不进入本仓库。
 
