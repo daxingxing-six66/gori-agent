@@ -1,4 +1,6 @@
 export const enUSGuardMessages = {
+	"guard.page.title": "Guard rules",
+	"guard.page.description": "Manage command blocking rules. Changes are saved automatically.",
 	"guard.rules.count": "{count, plural, one {# rule} other {# rules}}",
 	"guard.loading": "Loading Guard configuration…",
 	"guard.save.saving": "Saving",

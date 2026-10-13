@@ -3,6 +3,7 @@
 import { Check, CircleAlert, CircleCheck, CirclePlus, Clock3, Download, LoaderCircle, ShieldCheck, Trash2, X } from "lucide-react";
 import { useState } from "react";
 import { useIntl, type IntlShape } from "react-intl";
+import { PageHeading } from "@/components/page-layout";
 import { CustomSelect } from "@/components/custom-select";
 import { GuardRuleDialog } from "@/features/guard/components/guard-rule-dialog";
 import { GuardRulePackDialog } from "@/features/guard/components/guard-rule-pack-dialog";
@@ -11,7 +12,7 @@ import { type GuardSaveStatus, useGuardAutosave } from "@/features/guard/compone
 import type { GuardMatch, GuardRuleDraft, UpdateGuardRuleInput } from "@/features/guard/model/guard";
 import { validateGuardRule } from "@/features/guard/model/guard-editor-state";
 
-const inputClass = "h-10 w-full rounded-lg border border-[var(--line)] bg-white px-3 text-[11px] text-zinc-800 outline-none transition focus:border-[#7aa48e] focus:ring-2 focus:ring-[#397b5c]/10";
+const inputClass = "h-9 w-full rounded-lg border border-[var(--line)] bg-[var(--surface-strong)] px-3 text-[12px] text-[var(--ink)] outline-none transition focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent-soft)]";
 function SaveIndicator({ invalid, status }: { invalid: boolean; status: GuardSaveStatus }) {
 	const intl = useIntl();
 	if (status === "saving") return <span className="flex items-center gap-1.5 text-[10px] text-zinc-500"><LoaderCircle className="animate-spin" size={13} /> {intl.formatMessage({ id: "guard.save.saving" })}</span>;
@@ -44,16 +45,14 @@ export function GuardEditor({ workspaceId }: { workspaceId: string }) {
 
 	return (
 		<div className="space-y-6">
-			<div className="flex flex-wrap items-center justify-between gap-4">
-				<div className="flex items-center gap-3">
-					<span className="text-[11px] font-semibold text-zinc-700">{intl.formatMessage({ id: "guard.rules.count" }, { count: autosave.rules.length })}</span>
-					<span className="h-3 w-px bg-zinc-200" />
-					<SaveIndicator invalid={autosave.invalid} status={autosave.status} />
-				</div>
-				<div className="flex items-center gap-2">
-					<button type="button" className="flex h-9 items-center gap-2 rounded-lg border border-[var(--line)] bg-white px-4 text-[10px] font-semibold text-zinc-600 transition hover:border-[#a9c3b5] hover:bg-[#f8fbf9] hover:text-[#397b5c] disabled:cursor-not-allowed disabled:opacity-45" disabled={!autosave.guard || autosave.conflict !== null || autosave.importingRulePacks} onClick={() => setRulePackDialogOpen(true)}><Download size={13} /> {intl.formatMessage({ id: "guard.import.open" })}</button>
-					<button type="button" className="flex h-9 items-center gap-2 rounded-lg bg-[#397b5c] px-4 text-[10px] font-semibold text-white shadow-sm transition hover:bg-[#326e52] disabled:cursor-not-allowed disabled:opacity-45" disabled={!autosave.guard || autosave.conflict !== null || autosave.importingRulePacks} onClick={() => setAddDialogOpen(true)}><CirclePlus size={14} /> {intl.formatMessage({ id: "guard.rule.add" })}</button>
-				</div>
+			<PageHeading title={intl.formatMessage({ id: "guard.page.title" })} description={intl.formatMessage({ id: "guard.page.description" })} actions={<>
+				<button type="button" className="page-button" disabled={!autosave.guard || autosave.conflict !== null || autosave.importingRulePacks} onClick={() => setRulePackDialogOpen(true)}><Download size={13} />{intl.formatMessage({ id: "guard.import.open" })}</button>
+				<button type="button" className="page-button page-button-primary" disabled={!autosave.guard || autosave.conflict !== null || autosave.importingRulePacks} onClick={() => setAddDialogOpen(true)}><CirclePlus size={13} />{intl.formatMessage({ id: "guard.rule.add" })}</button>
+			</>} />
+			<div className="flex items-center gap-3 border-b border-[var(--line-soft)] pb-3">
+				<span className="text-[12px] font-medium text-[var(--text-secondary)]">{intl.formatMessage({ id: "guard.rules.count" }, { count: autosave.rules.length })}</span>
+				<span className="h-3 w-px bg-[var(--line)]" aria-hidden="true" />
+				<SaveIndicator invalid={autosave.invalid} status={autosave.status} />
 			</div>
 
 			{autosave.conflict ? (
@@ -115,10 +114,10 @@ function GuardRuleCard({ rule, conflicted, deleting, highlighted, switchPending,
 	const matchOptions = guardMatchOptions(intl);
 	const fallbackName = rule.displayName || intl.formatMessage({ id: "guard.rule.fallback" });
 	return (
-		<section className={`guard-rule-card rounded-[14px] border p-4 transition-all ${highlighted ? "guard-rule-card-created border-[#9bcbb4] bg-[#f1f8f4]" : rule.enabled ? "border-[var(--line-soft)] bg-white" : "border-zinc-200 bg-zinc-50/70 opacity-70"}`}>
+		<section className={`guard-rule-card rounded-[10px] border p-4 transition-colors ${highlighted ? "guard-rule-card-created border-[#9bcbb4] bg-[#f1f8f4]" : rule.enabled ? "border-[var(--line)] bg-[var(--surface-strong)]" : "border-[var(--line-soft)] bg-[var(--surface-muted)] opacity-70"}`}>
 			<div className="grid items-start gap-3 sm:grid-cols-[minmax(0,1fr)_auto]">
 				<label className="block">
-					<span className="mb-1.5 flex items-center gap-2 text-[9px] font-medium text-zinc-500">{intl.formatMessage({ id: "guard.rule.name" })}{rule.source === "builtin" ? <span className="rounded-full bg-[#eaf2ec] px-1.5 py-0.5 text-[8px] font-medium text-[#397b5c]">{intl.formatMessage({ id: "guard.rule.preset" })}</span> : null}</span>
+					<span className="mb-1.5 flex items-center gap-2 text-[11px] font-medium text-[var(--text-muted)]">{intl.formatMessage({ id: "guard.rule.name" })}{rule.source === "builtin" ? <span className="rounded-full bg-[#eaf2ec] px-1.5 py-0.5 text-[8px] font-medium text-[#397b5c]">{intl.formatMessage({ id: "guard.rule.preset" })}</span> : null}</span>
 					<input className={`${inputClass} text-[12px] font-semibold`} value={rule.displayName} onBlur={onBlur} onChange={(event) => onChange({ displayName: event.target.value })} />
 					{validation.displayName ? <span className="mt-1.5 block text-[9px] text-rose-600" role="alert">{intl.formatMessage({ id: "guard.rule.validation.nameRequired" })}</span> : null}
 				</label>
@@ -127,15 +126,15 @@ function GuardRuleCard({ rule, conflicted, deleting, highlighted, switchPending,
 					{deleting ? <span className="flex items-center gap-1 rounded-lg bg-rose-50 p-1"><button type="button" className="rounded-md p-1.5 text-rose-600 hover:bg-rose-100" aria-label={intl.formatMessage({ id: "guard.rule.delete.confirm" }, { name: fallbackName })} onClick={onConfirmDelete}><Check size={13} /></button><button type="button" className="rounded-md p-1.5 text-zinc-400 hover:bg-white" aria-label={intl.formatMessage({ id: "guard.rule.delete.cancel" })} onClick={onCancelDelete}><X size={13} /></button></span> : <button type="button" className="rounded-lg p-2 text-zinc-400 hover:bg-rose-50 hover:text-rose-600" aria-label={intl.formatMessage({ id: "guard.rule.delete" }, { name: fallbackName })} onClick={onRequestDelete}><Trash2 size={14} /></button>}
 				</div>
 			</div>
-			<div className="mt-4 grid gap-3 sm:grid-cols-[150px_minmax(0,1fr)]">
-				<label className="block"><span className="mb-1.5 block text-[9px] font-medium text-zinc-500">{intl.formatMessage({ id: "guard.rule.match" })}</span><CustomSelect ariaLabel={intl.formatMessage({ id: "guard.rule.match" })} compact value={rule.match} onChange={(value) => onChange({ match: value as GuardMatch }, true)} options={matchOptions} /></label>
+			<div className="mt-3 grid gap-3 sm:grid-cols-[150px_minmax(0,1fr)]">
+				<label className="block"><span className="mb-1.5 block text-[11px] font-medium text-[var(--text-muted)]">{intl.formatMessage({ id: "guard.rule.match" })}</span><CustomSelect ariaLabel={intl.formatMessage({ id: "guard.rule.match" })} compact value={rule.match} onChange={(value) => onChange({ match: value as GuardMatch }, true)} options={matchOptions} /></label>
 				<label className="block">
-					<span className="mb-1.5 block text-[9px] font-medium text-zinc-500">{intl.formatMessage({ id: "guard.rule.pattern" })}</span>
+					<span className="mb-1.5 block text-[11px] font-medium text-[var(--text-muted)]">{intl.formatMessage({ id: "guard.rule.pattern" })}</span>
 					<input className={`${inputClass} font-mono`} value={rule.pattern} onBlur={onBlur} onChange={(event) => onChange({ pattern: event.target.value })} />
 					{validation.pattern ? <span className="mt-1.5 block text-[9px] text-rose-600" role="alert">{intl.formatMessage({ id: validation.pattern === "invalid_regex" ? "guard.rule.validation.regexInvalid" : "guard.rule.validation.patternRequired" })}</span> : null}
 				</label>
 			</div>
-			<label className="mt-4 block"><span className="mb-1.5 block text-[9px] font-medium text-zinc-500">{intl.formatMessage({ id: "guard.rule.reason" })} <span className="font-normal text-zinc-400">{intl.formatMessage({ id: "common.optional" })}</span></span><input className={inputClass} value={rule.reason ?? ""} onBlur={onBlur} onChange={(event) => onChange({ reason: event.target.value || undefined })} /></label>
+			<label className="mt-3 block"><span className="mb-1.5 block text-[11px] font-medium text-[var(--text-muted)]">{intl.formatMessage({ id: "guard.rule.reason" })} <span className="font-normal text-zinc-400">{intl.formatMessage({ id: "common.optional" })}</span></span><input className={inputClass} value={rule.reason ?? ""} onBlur={onBlur} onChange={(event) => onChange({ reason: event.target.value || undefined })} /></label>
 		</section>
 	);
 }

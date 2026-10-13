@@ -1,4 +1,9 @@
 export const zhCNSftpMessages = {
+	"sftp.table.actions": "操作",
+	"overview.title": "运行概览",
+	"overview.description": "服务器资源、进程与连接状态",
+	"sftp.page.title": "SFTP 文件",
+	"sftp.page.description": "浏览远程目录，管理文件与传输任务",
 	"sftp.search": "搜索当前目录",
 	"sftp.search.clear": "清空搜索",
 	"sftp.filter": "过滤当前目录",

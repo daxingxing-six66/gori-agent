@@ -158,15 +158,11 @@ export function NewSessionChat({ workspaceId }: { workspaceId: string }) {
 			<main className="page-main page-main-chat flex flex-col">
 				<PageHeader title={intl.formatMessage({ id: "session.new" })} compact />
 
-				<div className="app-scrollbar min-h-0 flex-1 overflow-y-auto">
-					<div className="mx-auto flex min-h-full max-w-[820px] flex-col px-5 lg:px-8">
-						<div className="flex flex-1 items-center justify-center py-12">
-							<div className="text-center">
-								<span className="mx-auto grid h-11 w-11 place-items-center rounded-2xl border border-[#d8e5dc] bg-[#edf4f0] text-[#397b5c]"><Sparkles size={18} /></span>
-								<h2 className="mt-5 text-[20px] font-semibold tracking-[-0.025em] text-zinc-800">{intl.formatMessage({ id: "session.new.heading" }, { name: workspace.displayName })}</h2>
-								<p className="mt-2 text-[12px] leading-5 text-[var(--text-muted)]">{intl.formatMessage({ id: "session.new.description" })}</p>
-							</div>
-						</div>
+				<div className="app-scrollbar chat-empty-state overflow-y-auto">
+					<div className="chat-empty-state-inner">
+						<Sparkles size={20} className="text-[var(--accent)]" aria-hidden="true" />
+						<h2>{intl.formatMessage({ id: "session.new.heading" }, { name: workspace.displayName })}</h2>
+						<p>{intl.formatMessage({ id: "session.new.description" })}</p>
 					</div>
 				</div>
 

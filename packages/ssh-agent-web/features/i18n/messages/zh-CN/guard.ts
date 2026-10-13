@@ -1,4 +1,6 @@
 export const zhCNGuardMessages = {
+	"guard.page.title": "防护规则",
+	"guard.page.description": "管理命令拦截规则，更改将自动保存",
 	"guard.rules.count": "{count} 条规则",
 	"guard.loading": "正在加载 Guard 配置…",
 	"guard.save.saving": "保存中",

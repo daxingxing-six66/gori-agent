@@ -26,6 +26,8 @@
 - JSON 请求仍受 2 MiB 限制；上传内容和下载响应直接流式桥接。SSE 每 15 秒 heartbeat。
 - Metrics Collector 每 Workspace 唯一，基础数据 2 秒、Top 20 进程 3 秒；同一 Workspace 内探测串行。
 - 前端区分 SSE 首次连接、实时、重连和关闭状态；`monitor.error` 会替换无限等待状态，并在已有快照时保留最后一次成功数据。
+- 概览采用 Dashboard 布局：三个资源指标卡位于顶部，进程表为主区域，连接池与手动沙箱检测放在辅助区域，SSH 参数默认收起。窄屏自动改为单列，宽表在自身容器内横向滚动；展示仍只使用现有快照，不生成历史曲线或模拟指标。
+- SFTP 页面将上传放在内容标题操作区，目录路径、搜索和过滤组成紧凑工具栏；条目使用语义表格，名称可截断且保留完整悬停文本，窄屏仅表格局部横向滚动。传输队列在宽屏右侧、较窄屏幕下方；上传上下文及取消、覆盖确认和离开保护不随布局改变。
 - 前端上传任务由 Workspace 级上下文持有，切换 Tab 不会丢失 `File`、XHR、进度或取消能力；离开 Workspace 前会确认并中止活动上传。
 - 既有 Workspace 的非绝对默认目录不会直接发起 SFTP 请求，用户可显式从 `/` 浏览；`uncertain` Transfer 只允许刷新目录，不自动重试或覆盖。
 - 目录切换 loading 限定在 Remote files 卡片内并跟随当前视口；远程文件删除使用前端确认弹窗，删除期间禁止关闭或重复提交，失败保留弹窗错误。
@@ -50,6 +52,7 @@
 | HTTP/SSE 路由 | `packages/ssh-agent/src/api/http-handler.ts` |
 | Node 流式适配 | `packages/ssh-agent/src/server/node-http-server.ts` |
 | 前端 API 和页面 | `packages/ssh-agent-web/features/sftp/` |
+| 概览和文件页局部布局 | `packages/ssh-agent-web/features/sftp/components/overview-dashboard.css`、`sftp-files.css`、`sftp-directory-entries.tsx` |
 | Workspace 页面状态边界 | `packages/ssh-agent-web/components/workspace-console.tsx` |
 | 前端删除确认弹窗 | `packages/ssh-agent-web/features/sftp/components/sftp-delete-dialog.tsx` |
 | 前端 Workspace 级上传管理 | `packages/ssh-agent-web/features/sftp/components/sftp-transfer-provider.tsx` |

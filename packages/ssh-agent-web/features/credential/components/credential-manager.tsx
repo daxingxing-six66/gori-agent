@@ -3,6 +3,8 @@
 import { Check, CirclePlus, KeyRound, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { useIntl } from "react-intl";
+import { PageHeading } from "@/components/page-layout";
+import "./credential-manager.css";
 import { credentialApi } from "@/features/credential/api/credential-api";
 import { CredentialDialog } from "@/features/credential/components/credential-dialog";
 import type { Credential } from "@/features/credential/model/credential";
@@ -90,14 +92,31 @@ export function CredentialManager({ workspaceId }: { workspaceId: string }) {
 	};
 
 	return <div className="space-y-5">
-		<div className="flex items-center justify-between"><div><h2 className="text-[13px] font-semibold">{intl.formatMessage({ id: "credential.list.title" })}</h2><p className="mt-1 text-[10px] text-zinc-400">{intl.formatMessage({ id: "credential.list.description" })}</p></div><button className="flex h-8 items-center gap-1.5 rounded-lg bg-[#397b5c] px-3 text-[9px] font-semibold text-white" onClick={() => setDialogOpen(true)}><CirclePlus size={12} /> {intl.formatMessage({ id: "credential.create" })}</button></div>
+		<PageHeading title={intl.formatMessage({ id: "credential.list.title" })} description={intl.formatMessage({ id: "credential.list.description" })} actions={<button type="button" className="page-button page-button-primary" onClick={() => setDialogOpen(true)}><CirclePlus size={13} />{intl.formatMessage({ id: "credential.create" })}</button>} />
 		{error ? <div className="flex items-center justify-between gap-3 rounded-lg border border-rose-200 bg-rose-50 p-3 text-[10px] text-rose-700" role="alert"><span>{localizedErrorMessage(error)}</span><button className="shrink-0 font-semibold underline" onClick={() => void refreshAll()}>{intl.formatMessage({ id: "common.reload" })}</button></div> : null}
 		{loading ? <section className="ui-card p-5 text-[10px] text-zinc-400">{intl.formatMessage({ id: "credential.loading" })}</section> : null}
-		{!loading && credentials.map((credential) => <section key={credential.id} className="ui-card p-5">
-			<div className="flex flex-wrap items-start justify-between gap-4"><div className="flex items-center gap-4"><div className="grid h-11 w-11 place-items-center rounded-xl bg-[#eaf2ec] text-[#397b5c]"><KeyRound size={20} /></div><div><div className="flex items-center gap-2"><h3 className="text-[13px] font-semibold">{credential.displayName}</h3>{credential.id === activeCredentialId ? <span className="rounded-md bg-[#eaf2ec] px-2 py-1 text-[8px] font-semibold text-[#397b5c]">{intl.formatMessage({ id: "credential.current" })}</span> : null}</div><p className="mt-1 text-[10px] text-zinc-400">{credential.type === "private_key" ? `SSH ${intl.formatMessage({ id: "credential.field.privateKey" })}` : intl.formatMessage({ id: "credential.field.password" })} · {intl.formatMessage({ id: "credential.version" }, { revision: credential.revision })}</p></div></div><div className="flex items-center gap-2">{credential.id !== activeCredentialId ? <button className="flex h-8 items-center gap-1.5 rounded-lg border border-[#9bb9a8] px-3 text-[9px] font-semibold text-[#397b5c] hover:bg-[#f5f8f5] disabled:cursor-not-allowed disabled:opacity-50" disabled={actionCredentialId !== null} onClick={() => void activate(credential.id)}><Check size={12} />{intl.formatMessage({ id: actionCredentialId === credential.id ? "credential.switching" : "credential.setActive" })}</button> : null}<button className="rounded-lg p-2 text-zinc-400 hover:bg-rose-50 hover:text-rose-600 disabled:cursor-not-allowed disabled:opacity-35 disabled:hover:bg-transparent disabled:hover:text-zinc-400" disabled={credential.id === activeCredentialId || actionCredentialId !== null} title={intl.formatMessage({ id: credential.id === activeCredentialId ? "credential.delete.blocked" : "credential.delete" })} aria-label={intl.formatMessage({ id: "credential.delete.named" }, { name: credential.displayName })} onClick={() => void remove(credential)}><Trash2 size={15} /></button></div></div>
-			<div className="mt-5 grid gap-4 border-t border-zinc-100 pt-5 sm:grid-cols-3"><div><p className="text-[9px] uppercase tracking-[0.1em] text-zinc-400">{intl.formatMessage({ id: "credential.field.remoteUser" })}</p><p className="mt-1.5 font-mono text-[11px]">{credential.remoteUser}</p></div><div><p className="text-[9px] uppercase tracking-[0.1em] text-zinc-400">{intl.formatMessage({ id: "credential.field.authType" })}</p><p className="mt-1.5 font-mono text-[11px]">{intl.formatMessage({ id: credential.type === "private_key" ? "credential.field.privateKey" : "credential.field.password" })}</p></div><div><p className="text-[9px] uppercase tracking-[0.1em] text-zinc-400">{intl.formatMessage({ id: "credential.field.fingerprint" })}</p><p className="mt-1.5 truncate font-mono text-[11px]">{credential.type === "private_key" ? credential.publicKeyFingerprint ?? intl.formatMessage({ id: "credential.notProvided" }) : intl.formatMessage({ id: "credential.notApplicable" })}</p></div></div>
-		</section>)}
-		<section className="rounded-2xl border border-sky-200 bg-sky-50/60 p-4"><div className="flex items-start gap-3"><KeyRound size={16} className="mt-0.5 text-sky-700" /><div><p className="text-[11px] font-semibold text-sky-900">{intl.formatMessage({ id: "credential.secret.title" })}</p><p className="mt-1 text-[10px] leading-5 text-sky-800/70">{intl.formatMessage({ id: "credential.secret.description" })}</p></div></div></section>
+		{!loading ? <div className="ui-card credential-list">
+			{credentials.map((credential) => {
+				const active = credential.id === activeCredentialId;
+				const fingerprint = credential.type === "private_key" ? credential.publicKeyFingerprint ?? intl.formatMessage({ id: "credential.notProvided" }) : intl.formatMessage({ id: "credential.notApplicable" });
+				return <section key={credential.id} className="credential-row">
+					<KeyRound size={15} aria-hidden="true" className="credential-row-icon" />
+					<div className="credential-row-content">
+						<div className="credential-row-title"><h3>{credential.displayName}</h3>{active ? <span>{intl.formatMessage({ id: "credential.current" })}</span> : null}</div>
+						<dl className="credential-row-details">
+							<div><dt>{intl.formatMessage({ id: "credential.field.remoteUser" })}</dt><dd>{credential.remoteUser}</dd></div>
+							<div><dt>{intl.formatMessage({ id: "credential.field.authType" })}</dt><dd>{intl.formatMessage({ id: credential.type === "private_key" ? "credential.field.privateKey" : "credential.field.password" })} · {intl.formatMessage({ id: "credential.version" }, { revision: credential.revision })}</dd></div>
+						</dl>
+						<p className="credential-fingerprint" title={fingerprint}><span>{intl.formatMessage({ id: "credential.field.fingerprint" })}</span>{fingerprint}</p>
+					</div>
+					<div className="credential-row-actions">
+						{!active ? <button type="button" className="page-button" disabled={actionCredentialId !== null} onClick={() => void activate(credential.id)}><Check size={12} />{intl.formatMessage({ id: actionCredentialId === credential.id ? "credential.switching" : "credential.setActive" })}</button> : null}
+						<button type="button" className="page-icon-button page-icon-button-danger" disabled={active || actionCredentialId !== null} title={intl.formatMessage({ id: active ? "credential.delete.blocked" : "credential.delete" })} aria-label={intl.formatMessage({ id: "credential.delete.named" }, { name: credential.displayName })} onClick={() => void remove(credential)}><Trash2 size={14} /></button>
+					</div>
+				</section>;
+			})}
+		</div> : null}
+		<div className="page-muted-notice"><KeyRound size={13} aria-hidden="true" /><p><span className="font-medium">{intl.formatMessage({ id: "credential.secret.title" })}</span> · {intl.formatMessage({ id: "credential.secret.description" })}</p></div>
 		{dialogOpen ? <CredentialDialog mode="create" workspaceId={workspaceId} onClose={() => setDialogOpen(false)} onSubmitted={() => { setDialogOpen(false); void load(); }} /> : null}
 	</div>;
 }

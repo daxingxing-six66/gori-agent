@@ -8,7 +8,13 @@
 
 侧边栏的工作区展开状态由根布局中的 `WorkspaceTreeProvider` 按工作区 ID 独立保存，切换工作区或会话页面不会收起其他工作区。首次进入尚无展开记录的工作区时默认展开；手动收起（包括当前工作区）会保留到本次页面生命周期结束，刷新浏览器后重新初始化。
 
-聊天主视图复用 `components/page-layout.tsx` 的页首和 `page-layout.css` 的阅读列样式。Sidebar 品牌栏、Chat/新会话页首及 Terminal 顶栏统一为 44px；收起侧栏为 44px，设置区为 46px。移除 Logo 图标、聊天工作区/本地目录副标题、空闲“就绪”及 Terminal 顶栏审计细节与底部列表。活动、失败、取消、连接异常仍保留。窄屏仍通过原抽屉导航，聊天页首保持单行标题截断。Terminal 宽度变化继续由既有 ResizeObserver 测量并提交后端 resize，不改变 attachment 或响应式布局。
+桌面 `WorkspaceSidebar` 展开宽度保持 256px，收起宽度为 44px，展开与设置按钮居中。宽度变化由 Terminal 容器已有的 `ResizeObserver` 感知，owner 在防抖后测量、提交行列数，服务端确认事件再同步 xterm；布局样式不直接改 PTY geometry，也不重新建立 attachment。
+
+窄屏首页仍显示工作区导航；在 Workspace 与 Session 页面，`WorkspaceSidebar` 改为可从页首按钮打开的抽屉，支持关闭按钮、遮罩和 Escape，并在关闭后将焦点还给入口。Workspace 控制台将工作区上下文页首与 Tab 导航分为两层，Tab 支持方向键循环切换及 Home/End，活动面板通过 ARIA 关联。跨页面骨架使用 `components/page-layout.tsx` 的 PageHeader/PageHeading，布局位于 `page-layout.css`，颜色继续引用 `app/globals.css` 的主题变量；不改变 Workspace/Session 路由及审批状态归属。
+
+页面按用途组织：Dashboard 先展示 CPU/内存/磁盘指标和进程表，连接池与显式沙箱检测作为辅助区域，SSH 参数默认折叠；Guard、Credential、SFTP 使用统一内容标题及操作区，凭据和文件采用紧凑列表。Chat 与新会话在桌面使用 44px 单行页首和 820px 阅读列，页首不显示工作区/目录副标题，空闲“就绪”不展示，运行、重连、失败及取消状态仍保留。Sidebar 品牌栏与 Terminal 顶栏同高，品牌栏移除 Logo 图标，只显示 Gori，底部设置区由 69px 压缩为 46px，展开/收起共用高度；窄屏侧栏按钮为 28px，标题截断而不撑高页首。对话、提示和输入区对齐，窄屏输入区控件可换行；Terminal 继续保留原有顶栏、输出与恢复，底部活动列表不再挂载。侧边栏采用小图标与更紧凑的工作区/会话行。
+
+视觉精修沿用原主题系统：明暗分层实验主题使用深绿导航、近白对话及浅中性 Workbench 外壳，内部 Terminal 使用中性深灰绿；明亮与暗部保留各自配色，共用轻量组件样式。`globals.css` 集中提供 Sidebar/Workbench/Terminal/Code 与圆角语义变量，顶栏和活动记录不继承 Terminal 深底。正文 14px、代码 12px，聊天代码块随主题使用轻量表面；普通卡片去除装饰阴影，Composer 使用 12px 圆角、细中性边框和柔和绿色焦点环。父级服务器与当前会话通过底色重量、细指示条、字重和树线分层；Tool Call 继续使用紧凑行和原生展开控件。布局、输入、审批、模型选择、复制及 Terminal 的 attach/SSE/resize 行为不由样式接管。完整主题边界见 [theme.md](./theme.md)。
 
 创建工作区的默认工作目录通过 `LocalDirectoryPicker` 选择，复用新建聊天的 `GET /api/local-files` 本机目录浏览、筛选及面包屑。打开选择器时暂时卸载外层管理弹窗，取消/Escape 只返回草稿，确认后回填 `defaultCwd`；其余表单和连接测试结果保留。
 
@@ -24,12 +30,13 @@ Chat 协议接受 runtime system 消息，状态按 `runtimeEventId` 保留同�
 
 ## 使用顺序
 
+
 Chat 的 `UserDecisionPanel` 在输入框上方向上展开，显示模型的三条建议、推荐图标、自定义输入和跳过；建议选择或跳过自动进入下一题，最后一题完成后才显示提交，返回仍可修改，更多交互见 [user-decision.md](./user-decision.md)。`use-chat-runtime.ts` 将待审批、待决 REST 恢复与 Run SSE 合并到 `ChatRuntimeState`；切回 Session 后加载更早消息或合并压缩结果只更新消息，不丢弃已恢复的待审批和待决状态。关闭决策面板仅隐藏，可从输入框上方重新打开，不向后端提交跳过。普通工具记录以动作与目标组成紧凑单行，展开后显示完整参数和输出；失败线索直接可见，待审批操作保留完整说明和操作按钮。思考、压缩摘要与部署详情沿用各自的展开控件。
 
 1. 先从“页面与总装配”确定功能出现在哪个页面。
 2. 再从“功能路由”打开该功能的组件、运行时或状态入口。
 3. API 请求改动同时检查该 feature 的 `api/`、`model/` 和对应测试。
-4. 样式问题最后按组件类名定位 `app/globals.css`，不要从全局样式反推功能边界。
+4. 样式问题按组件类名定位共用或 feature 局部 CSS；主题变量在 `app/globals.css`，不要从全局样式反推功能边界。
 
 ## 页面与总装配
 
@@ -40,6 +47,7 @@ Chat 的 `UserDecisionPanel` 在输入框上方向上展开，显示模型的三
 | `/workspaces/:workspaceId` Workspace 控制台 | `app/workspaces/[workspaceId]/page.tsx` | `components/workspace-console.tsx`；在这里装配 Overview、Guard、Credential、SFTP Files 四个页签 |
 | `/workspaces/:workspaceId/chat/new` 新会话 | `app/workspaces/[workspaceId]/chat/new/page.tsx` | `features/session/components/new-session-chat.tsx` |
 | `/sessions/:sessionId` 真实会话 | `app/sessions/[sessionId]/page.tsx` | `features/chat/components/chat-console.tsx`；Terminal 也由该组件装配 |
+| 共用页首、内容标题与 Workspace Tab 导航 | `components/page-layout.tsx`、`components/page-layout.css` | `features/workspace/components/workspace-tab-navigation.tsx` 提供受控 Tab、键盘焦点和面板标识；`features/chat/components/chat-page-header.tsx` 组合聊天和沙盒状态 |
 | 全局 Workspace/Session 导航与管理入口 | `components/workspace-sidebar.tsx` | Workspace 创建、Session 重命名/删除、设置弹窗均从这里进入 |
 | 全局设置总入口 | `components/settings-dialog.tsx` | 外观、上下文压缩、Provider Credential 和自定义 Provider 的分类与多视图流程 |
 
@@ -49,7 +57,7 @@ Chat 的 `UserDecisionPanel` 在输入框上方向上展开，显示模型的三
 |---|---|---|---|
 | Workspace/Session 树加载与全局刷新 | `features/workspace/components/workspace-tree-provider.tsx` | `workspace-tree-context.ts`、`features/workspace/api/workspace-api.ts`、`features/workspace/model/workspace.ts` | `tests/api-clients.test.ts` |
 | Workspace 创建、编辑、删除和远端目录选择 | `features/workspace/components/workspace-dialog.tsx`、`features/workspace/components/workspace-edit-dialog.tsx`、`components/workspace-console.tsx` | `features/workspace/components/workspace-form.tsx`、`workspace-form.css`、`remote-directory-picker.tsx`、`name-dialog.tsx`、`features/workspace/api/workspace-api.ts`；创建时复用 Credential 草稿和临时 SFTP 浏览，编辑时使用工作区 SFTP API | `tests/workspace-connection-test.test.tsx`、`tests/workspace-edit-dialog.test.tsx`、`tests/api-clients.test.ts` |
-| SSH Credential 创建、列表、切换、删除 | `features/credential/components/credential-manager.tsx` | `credential-dialog.tsx`、`api/credential-api.ts`、`model/credential.ts` | `tests/api-clients.test.ts` |
+| SSH Credential 创建、列表、切换、删除 | `features/credential/components/credential-manager.tsx` | `credential-manager.css`、`credential-dialog.tsx`、`api/credential-api.ts`、`model/credential.ts` | `tests/api-clients.test.ts` |
 | Session 创建、首次发送前选择工作目录、命名、自动审批、重命名和删除 | `features/session/components/new-session-chat.tsx`、`components/workspace-sidebar.tsx` | `session-edit-dialog.tsx`、`session-dialog.tsx`、`session-delete-dialog.tsx`、`local-directory-picker.tsx`、`api/session-api.ts`、`model/session.ts`、`features/workspace/model/session-update.ts` | `tests/session-title.test.tsx`、`tests/session-directory-picker.test.tsx`、`tests/api-clients.test.ts` |
 | Session 单一沙盒模式命令、呼吸灯、页首标识、配置更新与 Terminal 自动重开 | `features/session/runtime/use-session-sandbox.ts` | `model/session-sandbox-command.ts`、`components/session-sandbox-badge.tsx`、`components/session-sandbox-status.tsx`、`features/chat/components/chat-console.tsx`、`features/i18n/messages/*/session.ts`；菜单单一标题“沙盒模式”/“sandbox”，介绍文件写入限制，状态以呼吸灯表示；页首运行状态左侧以图标和短文案显示已确认设置；详见 [session-sandbox.md](./session-sandbox.md) | `tests/use-session-sandbox.test.ts`、`tests/session-sandbox-command.test.tsx` |
 | Guard 规则编辑、开关、创建和删除 | `features/guard/components/guard-editor.tsx` | `guard-rule-dialog.tsx`、`guard-rule-switch.tsx`、`model/guard.ts`、`model/guard-editor-state.ts` | `tests/guard-editor-state.test.ts` |
@@ -68,14 +76,14 @@ Chat 的 `UserDecisionPanel` 在输入框上方向上展开，显示模型的三
 | `/deploy` 模块选择、跨轮讨论、提案确认、纵向流水线与历史回显 | `features/chat/components/chat-console.tsx`、`features/deploy/components/deployment-panel.tsx`、`features/deploy/components/deployment-module-picker.tsx` | 菜单按语言显示“部署”或“deploy”，每次主动唤起从空白模块选择开始。选中服务后创建 Discussion 并发送本轮规划提示；讨论卡按创建时间插入 Chat 时间线，先于后续讨论消息，同毫秒时也由卡片排在前面，切换 Session 后可重建顺序。模型可在普通聊天中多轮追问，尚无提案时不画空流水线。计划生成后用户核对命令和产物，并仅对需要沙盒例外的远端命令逐条批准 Full Access，再点击“开始部署”。失败时原卡片留在 `recovering`，可让模型分析，用户展开新旧方案并决定是否确认局部修订；确认后从失败阶段继续。卡片默认只展示阶段状态、进度与故障，命令、路径、日志及尝试历史展开查看。`use-deployment.ts` 独立订阅 `deployments` Workspace SSE、用 REST 恢复快照；规划、执行和诊断记录归入同一历史卡片，成功部署后的最终模型总结单独显示在主时间线。模型记录展开区最高 34rem。Chat SSE 解析保持独立。 | `tests/deployment-model.test.ts`、`tests/deployment-panel.test.tsx`、`tests/use-deployment-selection.test.ts`、`tests/use-deployment-races.test.ts` |
 | SFTP 目录浏览、筛选、下载和删除 | `features/sftp/components/sftp-files-tab.tsx` | `use-sftp-directory.ts`、`sftp-directory-entries.tsx`、`sftp-delete-dialog.tsx`、`api/sftp-api.ts` | `tests/sftp-api.test.ts`、`tests/sftp-state.test.ts` |
 | SFTP 上传、覆盖确认、取消、重试和离开页面保护 | `features/sftp/components/sftp-transfer-provider.tsx` | `sftp-transfer-queue.tsx`、`model/sftp-state.ts`、`model/sftp.ts`、`api/sftp-api.ts` | `tests/sftp-api.test.ts`、`tests/sftp-state.test.ts` |
-| Workspace SSE、服务器指标和 Connection Pool 快照 | `features/sftp/components/realtime-overview-tab.tsx` | `use-workspace-events.ts`、`model/sftp-state.ts`、`model/sftp.ts`；概览把 CPU、内存、磁盘并入同一指标区域，连接详情与 Pool 状态分组，沙箱能力和进程表仍独立展示；状态由原有 SSE 快照推导 | `tests/sftp-state.test.ts` |
+| Workspace SSE、服务器指标和 Connection Pool 快照 | `features/sftp/components/realtime-overview-tab.tsx` | `overview-dashboard.css`、`use-workspace-events.ts`、`model/sftp-state.ts`、`model/sftp.ts`；概览顶部为三个指标卡，主区域展示进程表，侧栏展示 Pool 与沙箱检测，SSH 详情可展开；状态由原有 SSE 快照推导，监控失败仍保留最后一次成功数据 | `tests/sftp-state.test.ts`、`tests/overview-i18n.test.tsx` |
 | Terminal Mode 单一 Composer 入口、启动失败与历史回退提示、状态标识、开关、过渡和状态轮询 | `features/chat/components/chat-console.tsx` | `features/terminal/components/terminal-open-failure.tsx`、`features/terminal/components/terminal-sandbox-notice.tsx`、`features/terminal/components/terminal-sandbox-label.ts`、`features/chat/components/chat-token-editor.tsx`、`features/chat/model/chat-composer-menu.ts`、`features/session/components/new-session-chat.tsx`、`features/terminal/runtime/use-terminal-mode.ts`、`features/terminal/api/terminal-api.ts`、`features/terminal/components/terminal-connection-state.tsx`、`features/terminal/model/terminal-ui-defaults.ts`；Session 开启沙盒时，新受限 Terminal 在后端不可用时失败关闭；主动关闭沙盒的 PTY 展示明确 Session 设置来源 | `tests/chat-composer-menu.test.ts`、`tests/terminal-client.test.ts`、`tests/terminal-open-failure.test.tsx`、`tests/terminal-sandbox-notice.test.tsx` |
 | 只读 xterm、主题动态配色、snapshot/replay/live 切换、focus ownership 和 resize | `features/terminal/components/terminal-panel.tsx` | `model/terminal-theme.ts`、`runtime/terminal-event-stream.ts`、`model/terminal.ts`、`api/terminal-api.ts` | `tests/terminal-client.test.ts`、`tests/terminal-theme.test.ts` |
 | Terminal Observation 遮罩、范围投影和恢复 | `features/terminal/components/terminal-observation-mask.tsx` | `model/terminal-observation-mask.ts`、`model/terminal-observation-range.ts`、`runtime/terminal-observation-range-tracker.ts` | `tests/terminal-observation-mask.test.ts`、`tests/terminal-observation-range.test.ts` |
 | Terminal 审计时间线与 Observation 恢复 | `features/terminal/components/terminal-panel.tsx` | `api/terminal-api.ts`、`model/terminal.ts`；面板继续读取时间线恢复 Observation，默认不展示底部列表；`terminal-timeline.tsx` 保留组件但不挂载 | `tests/terminal-client.test.ts`、`tests/terminal-observation-mask.test.ts` |
 | 所有后端 API 的基地址、JSON 请求和错误解析 | `shared/api/client.ts` | `shared/errors/api-error.ts`；文件上传例外在 `features/sftp/api/sftp-api.ts` 使用 XHR | `tests/api-clients.test.ts`、`tests/sftp-api.test.ts` |
 | 通用管理弹窗、Select、Switch | `components/management-dialog.tsx`、`components/custom-select.tsx`、`components/toggle-switch.tsx` | 使用方通常位于具体 feature 的 `components/` | 以各功能测试为主 |
-| 页面布局、颜色、Terminal/弹窗/编辑器样式 | `app/globals.css` | 先从具体组件 className 反查；不要在此文件判断业务状态归属 | 无独立样式测试 |
+| 页面布局、颜色、Terminal/弹窗/编辑器样式 | `components/page-layout.css`、`app/globals.css` | Dashboard、SFTP、凭据、沙箱检测和 Workspace 表单分别使用 feature 局部 CSS；先从具体组件 className 反查，不在样式文件判断业务状态归属 | 无独立样式测试 |
 
 命令详情由 `chat-tool-details.tsx` 的工具类型注册表选择独立渲染器：`chat-remote-command-details.tsx` 负责 SSH 请求及已有退出码/退出信号，`chat-terminal-interaction-details.tsx` 负责 submit/key/observe，并通过动作注册表选择输入或快捷键展示；卡片不显示操作（action）和观察预期（expectation）参数行，仅在展示层过滤，原请求、复制及 SSE 数据保持不变；观察结束不推断远端进程完成。两者复用 `chat-command-details.tsx` 与局部 CSS 的请求、参数和输出排版，参数标签/值格式化在 `chat-command-parameters.ts`，未知参数保留原值。只有已有字段才显示工作目录、超时、请求权限和截断标记，不补默认值或查询新数据。命令结果从已有 SSE Tool Result 的 `content` 或历史文本块读取，输出原文、空白及滚动能力保留；状态归约、复制及待审批分支沿用原链路。上传/下载独立入口与既有路径/进度投影移到 `chat-transfer-details.tsx`，默认工具使用通用渲染器。渲染器不订阅 SSE；Chat、Terminal、Workspace/Deploy 继续使用各自已有的解析和分发入口。回归见 `tests/chat-command-details.test.tsx` 和 `tests/chat-ui-hierarchy.test.tsx`。
 

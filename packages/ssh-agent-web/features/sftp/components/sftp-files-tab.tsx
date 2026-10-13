@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, Search, Upload, X } from "lucide-react";
 import { useIntl } from "react-intl";
+import { PageHeading } from "@/components/page-layout";
+import "./sftp-files.css";
 import { CustomSelect } from "@/components/custom-select";
 import { sftpApi } from "@/features/sftp/api/sftp-api";
 import { formatBytes, formatDate, SftpDirectoryEntries } from "@/features/sftp/components/sftp-directory-entries";
@@ -162,20 +164,22 @@ export function SftpFilesTab({ workspaceId, defaultCwd, hostLabel }: {
 
 	return (
 		<>
-			<div className="grid min-h-[500px] gap-5 xl:grid-cols-[minmax(0,1fr)_300px]">
-				<section className="ui-card relative overflow-hidden">
-					<header className="flex flex-col gap-3 border-b border-[var(--line-soft)] px-5 py-4 md:flex-row md:items-center md:justify-between">
-						<p className="min-w-0 truncate font-mono text-[9px] text-zinc-400">{hostLabel}:{directory.path}</p>
+			<PageHeading title={intl.formatMessage({ id: "sftp.page.title" })} description={intl.formatMessage({ id: "sftp.page.description" })} actions={<>
+				<input ref={fileInputRef} type="file" className="hidden" disabled={!directory.rootFallbackAccepted || directory.loading || uploadCreating} onChange={(event) => { const file = event.target.files?.[0]; if (file) void upload(file); event.target.value = ""; }} />
+				<button type="button" className="page-button page-button-primary" disabled={!directory.rootFallbackAccepted || directory.loading || uploadCreating} onClick={() => fileInputRef.current?.click()}><Upload size={13} />{intl.formatMessage({ id: uploadCreating ? "sftp.upload.preparing" : "sftp.upload" })}</button>
+			</>} />
+			<div className="sftp-files-layout">
+				<section className="ui-card sftp-files-browser">
+					<header className="sftp-files-toolbar">
+						<p className="sftp-host-path" title={`${hostLabel}:${directory.path}`}>{hostLabel}:{directory.path}</p>
 						<div className="flex flex-wrap items-center gap-2">
-							<div className="relative min-w-[180px] flex-1 md:w-[220px] md:flex-none"><Search size={13} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" /><input type="text" inputMode="search" aria-label={intl.formatMessage({ id: "sftp.search" })} value={directory.searchQuery} onChange={(event) => directory.setSearchQuery(event.target.value)} placeholder={intl.formatMessage({ id: "sftp.search" })} className="h-9 w-full rounded-lg border border-[var(--line)] bg-white pl-9 pr-8 text-[10px] text-zinc-700 outline-none transition placeholder:text-zinc-400 focus:border-[#7aa48e] focus:ring-2 focus:ring-[#397b5c]/10" />{directory.searchQuery ? <button type="button" className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600" aria-label={intl.formatMessage({ id: "sftp.search.clear" })} onClick={() => directory.setSearchQuery("")}><X size={11} /></button> : null}</div>
+							<div className="sftp-search"><Search size={13} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" /><input type="text" inputMode="search" aria-label={intl.formatMessage({ id: "sftp.search" })} value={directory.searchQuery} onChange={(event) => directory.setSearchQuery(event.target.value)} placeholder={intl.formatMessage({ id: "sftp.search" })} className="h-8 w-full rounded-lg border border-[var(--line)] bg-[var(--surface-strong)] pl-9 pr-8 text-[11px] text-[var(--ink)] outline-none transition placeholder:text-[var(--text-muted)] focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent-soft)]" />{directory.searchQuery ? <button type="button" className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600" aria-label={intl.formatMessage({ id: "sftp.search.clear" })} onClick={() => directory.setSearchQuery("")}><X size={11} /></button> : null}</div>
 							<div className="w-[112px]"><CustomSelect compact ariaLabel={intl.formatMessage({ id: "sftp.filter" })} value={directory.entryTypeFilter} options={entryTypeOptions} onChange={(value) => directory.setEntryTypeFilter(value as SftpEntryTypeFilter)} /></div>
-							<input ref={fileInputRef} type="file" className="hidden" disabled={!directory.rootFallbackAccepted || directory.loading || uploadCreating} onChange={(event) => { const file = event.target.files?.[0]; if (file) void upload(file); event.target.value = ""; }} />
-							<button className="flex h-9 items-center gap-1.5 rounded-lg bg-[#397b5c] px-3 text-[9px] font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50" disabled={!directory.rootFallbackAccepted || directory.loading || uploadCreating} onClick={() => fileInputRef.current?.click()}><Upload size={12} /> {intl.formatMessage({ id: uploadCreating ? "sftp.upload.preparing" : "sftp.upload" })}</button>
 						</div>
 					</header>
-					<div className="relative min-h-[420px]" aria-busy={directory.loading}>
+					<div className="relative min-h-[360px]" aria-busy={directory.loading}>
 						{directory.requiresRootFallback ? <div className="border-b border-amber-200 bg-amber-50 px-5 py-4"><div className="flex items-start gap-3"><AlertTriangle size={15} className="mt-0.5 shrink-0 text-amber-600" /><div><p className="text-[10px] font-semibold text-amber-800">{intl.formatMessage({ id: "sftp.root.invalid" }, { path: defaultCwd })}</p><p className="mt-1 text-[9px] leading-4 text-amber-700">{intl.formatMessage({ id: "sftp.root.description" })}</p><button className="mt-2 rounded-lg bg-amber-700 px-3 py-1.5 text-[9px] font-semibold text-white" onClick={directory.acceptRootFallback}>{intl.formatMessage({ id: "sftp.root.browse" })}</button></div></div></div> : null}
-						{directory.rootFallbackAccepted ? <div className="flex flex-wrap items-center gap-1 border-b border-zinc-100 bg-zinc-50/70 px-5 py-3 font-mono text-[10px] text-zinc-500"><button disabled={directory.loading} onClick={() => directory.navigate("/")}>/</button>{pathParts.map((part, index) => <span key={`${part}-${index}`} className="flex items-center gap-1"><span>/</span><button disabled={directory.loading} className={index === pathParts.length - 1 ? "font-semibold text-zinc-800" : ""} onClick={() => directory.navigate(`/${pathParts.slice(0, index + 1).join("/")}`)}>{part}</button></span>)}</div> : null}
+						{directory.rootFallbackAccepted ? <div className="flex flex-wrap items-center gap-1 border-b border-[var(--line-soft)] bg-[var(--surface-muted)] px-5 py-3 font-mono text-[11px] text-[var(--text-muted)]"><button disabled={directory.loading} onClick={() => directory.navigate("/")}>/</button>{pathParts.map((part, index) => <span key={`${part}-${index}`} className="flex items-center gap-1">{index > 0 ? <span>/</span> : null}<button disabled={directory.loading} className={index === pathParts.length - 1 ? "font-semibold text-[var(--ink)]" : ""} onClick={() => directory.navigate(`/${pathParts.slice(0, index + 1).join("/")}`)}>{part}</button></span>)}</div> : null}
 						{directory.error ? <div className="flex items-center justify-between bg-rose-50 px-5 py-2 text-[10px] text-rose-700"><span>{directory.error}</span><button className="font-semibold" onClick={() => void directory.reload()}>{intl.formatMessage({ id: "common.reload" })}</button></div> : null}
 						{localUploadError ? <button className="w-full bg-rose-50 px-5 py-2 text-left text-[10px] text-rose-700" onClick={() => setLocalUploadError(null)}>{localUploadError}</button> : null}
 						{directory.rootFallbackAccepted ? <SftpDirectoryEntries entries={directory.visibleEntries} busy={entryBusy} errors={entryErrors} emptyMessage={intl.formatMessage({ id: directory.filtering ? "sftp.directory.noMatch" : "sftp.directory.empty" })} onOpen={(entry) => directory.navigate(entry.path)} onDownload={(entry) => void download(entry)} onDelete={(entry) => { setDeleteTarget(entry); setDeleteError(null); }} /> : null}

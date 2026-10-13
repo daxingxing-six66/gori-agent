@@ -92,7 +92,7 @@ export function WorkspaceSidebar({ activeWorkspaceId, activeSessionId, homePage 
 		<>
 			{!homePage ? <button ref={mobileTriggerRef} type="button" className="mobile-sidebar-trigger" aria-label={intl.formatMessage({ id: "sidebar.expand" })} aria-controls="workspace-sidebar-nav" aria-expanded={mobileOpen} onClick={openMobileSidebar}><PanelLeftOpen size={20} /></button> : null}
 			{mobileOpen ? <button type="button" tabIndex={-1} className="mobile-sidebar-backdrop" aria-label={intl.formatMessage({ id: "sidebar.collapse" })} onClick={() => setMobileOpen(false)} /> : null}
-			<aside id="workspace-sidebar-nav" className={`workspace-sidebar flex min-h-0 shrink-0 flex-col overflow-hidden border-r border-[var(--line)] bg-[var(--sidebar)] text-[var(--ink)] transition-[width] duration-200 ease-out ${sidebarCollapsed ? "w-11" : "w-[292px]"} ${homePage ? "workspace-sidebar-home" : ""} ${mobileOpen ? "workspace-sidebar-mobile-open" : ""}`}>
+			<aside id="workspace-sidebar-nav" className={`workspace-sidebar flex min-h-0 shrink-0 flex-col overflow-hidden border-r border-[var(--line)] bg-[var(--sidebar)] text-[var(--ink)] transition-[width] duration-200 ease-out ${sidebarCollapsed ? "w-11" : "w-[256px]"} ${homePage ? "workspace-sidebar-home" : ""} ${mobileOpen ? "workspace-sidebar-mobile-open" : ""}`}>
 				{sidebarCollapsed ? (
 					<>
 						<div className="sidebar-brand-header flex w-full shrink-0 items-center justify-center border-b border-[var(--line)]">

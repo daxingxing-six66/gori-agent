@@ -1,4 +1,9 @@
 export const enUSSftpMessages = {
+	"sftp.table.actions": "Actions",
+	"overview.title": "Overview",
+	"overview.description": "Server resources, processes and connection status",
+	"sftp.page.title": "SFTP files",
+	"sftp.page.description": "Browse remote directories and manage file transfers",
 	"sftp.search": "Search current directory",
 	"sftp.search.clear": "Clear search",
 	"sftp.filter": "Filter current directory",

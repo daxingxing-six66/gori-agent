@@ -1,8 +1,10 @@
 "use client";
 
+import { PageHeading } from "@/components/page-layout";
+import "./overview-dashboard.css";
 import { RemoteSandboxPanel } from "@/features/workspace/components/remote-sandbox-panel";
 import { useState } from "react";
-import { AlertTriangle, Cpu, HardDrive, MemoryStick, RefreshCw } from "lucide-react";
+import { AlertTriangle, ChevronDown, Cpu, HardDrive, MemoryStick, RefreshCw } from "lucide-react";
 import { useIntl } from "react-intl";
 import type { Workspace } from "@/features/workspace/model/workspace";
 import { applyMonitorError, applyMonitorSnapshot, type MonitoringState } from "../model/sftp-state";
@@ -37,105 +39,77 @@ export function RealtimeOverviewTab({ workspace }: { workspace: Workspace }) {
 	];
 
 	return (
-		<div className="space-y-5">
+		<div className="overview-dashboard">
+			<PageHeading title={intl.formatMessage({ id: "overview.title" })} description={intl.formatMessage({ id: "overview.description" })} actions={<OverviewStatus streamState={streamState} hasMetrics={metrics !== undefined} hasError={monitoring.error !== undefined} />} />
 			{monitoring.error ? (
-				<div className="flex items-start gap-3 rounded-xl border border-[var(--warning-line)] bg-[var(--warning-soft)] px-4 py-3 text-[var(--warning)]" role="status">
-					<AlertTriangle size={16} className="mt-0.5 shrink-0" />
-					<div className="min-w-0">
-						<p className="text-[12px] font-semibold">{intl.formatMessage({ id: metrics ? "overview.monitor.paused" : "overview.monitor.failed" })}</p>
-						<p className="mt-1 break-words text-[12px] leading-5">{monitoring.error.message} · {formatDateTime(monitoring.error.sampledAt, intl.locale)}</p>
-					</div>
+				<div className="dashboard-monitor-error" role="status">
+					<AlertTriangle size={14} aria-hidden="true" />
+					<div><p className="font-medium">{intl.formatMessage({ id: metrics ? "overview.monitor.paused" : "overview.monitor.failed" })}</p><p className="mt-1 break-words">{monitoring.error.message} · {formatDateTime(monitoring.error.sampledAt, intl.locale)}</p></div>
 				</div>
 			) : null}
-			<section className="ui-card overflow-hidden">
-				<header className="flex items-center justify-between gap-4 border-b border-[var(--line-soft)] px-5 py-4">
-					<h2 className="text-[14px] font-semibold text-[var(--ink)]">{intl.formatMessage({ id: "workspace.tabs.overview" })}</h2>
-					<OverviewStatus streamState={streamState} hasMetrics={metrics !== undefined} hasError={monitoring.error !== undefined} />
-				</header>
-				<div className="grid md:grid-cols-3">
-					{cards.map((card) => {
-						const Icon = card.icon;
-						return (
-							<div key={card.label} className="overview-metric px-5 py-4">
-								<div className="flex items-center gap-2 text-[var(--text-muted)]">
-									<Icon size={16} strokeWidth={1.8} aria-hidden="true" />
-									<p className="text-[12px] font-medium">{card.label}</p>
-								</div>
-								<p className="mt-3 text-[25px] font-semibold leading-none tracking-[-0.03em] tabular-nums text-[var(--ink)]">{card.value}</p>
-								<p className="mt-2 min-h-5 text-[12px] leading-5 text-[var(--text-muted)]">{card.detail}</p>
-								<div className="mt-4 h-1 overflow-hidden rounded-full bg-[var(--surface-hover)]" aria-hidden="true">
-									<div className="h-full rounded-full bg-[var(--accent)] transition-[width]" style={{ width: Math.min(100, card.usage) + "%" }} />
-								</div>
-							</div>
-						);
-					})}
-				</div>
-			</section>
-			<div className="grid gap-5 xl:grid-cols-[1.15fr_0.85fr]">
-				<section className="ui-card p-5">
-					<h2 className="text-[14px] font-semibold text-[var(--ink)]">{intl.formatMessage({ id: "overview.connection.title" })}</h2>
-					<dl className="mt-5 grid gap-x-8 gap-y-4 sm:grid-cols-2">
-						{connectionDetails.map(([label, value]) => (
-							<div key={label} className="min-w-0">
-								<dt className="text-[12px] text-[var(--text-muted)]">{label}</dt>
-								<dd className="mt-1 break-all font-mono text-[12px] leading-5 text-[var(--text-secondary)]" title={value}>{value}</dd>
-							</div>
-						))}
-					</dl>
-				</section>
-				<section className="ui-card p-5">
-					<div className="flex items-start justify-between gap-3">
-						<div>
-							<h2 className="text-[14px] font-semibold text-[var(--ink)]">{intl.formatMessage({ id: "overview.pool.title" })}</h2>
-							<p className="mt-1 text-[12px] leading-5 text-[var(--text-muted)]">{intl.formatMessage({ id: "overview.pool.description" })}</p>
-						</div>
-						<RefreshCw size={15} className={streamState === "reconnecting" ? "mt-0.5 shrink-0 animate-spin text-[var(--warning)]" : "mt-0.5 shrink-0 text-[var(--text-faint)]"} aria-hidden="true" />
-					</div>
-					<div className="mt-5 flex items-center justify-between gap-3 border-y border-[var(--line-soft)] py-3">
-						<span className="font-mono text-[12px] text-[var(--text-muted)]">{intl.formatMessage({ id: "overview.pool.generation" }, { count: connection?.generation ?? 0 })}</span>
-						<span className={"text-[12px] font-medium " + (connection?.state === "failed" ? "text-[var(--danger)]" : "text-[var(--accent-ink)]")}>{intl.formatMessage({ id: `overview.pool.state.${connection?.state ?? "idle"}`, defaultMessage: connection?.state ?? "idle" })}</span>
-					</div>
-					<div className="mt-5 grid grid-cols-3 gap-3 text-center">
-						<Stat value={connection?.activeChannels ?? 0} label={intl.formatMessage({ id: "overview.pool.active" })} />
-						<Stat value={connection?.waitingChannels ?? 0} label={intl.formatMessage({ id: "overview.pool.waiting" })} />
-						<Stat value={connection?.connectedAt ? elapsed(connection.connectedAt) : "—"} label={intl.formatMessage({ id: "overview.pool.uptime" })} />
-					</div>
-					{connection?.lastError ? <p className="mt-4 break-words text-[12px] leading-5 text-[var(--danger)]">{connection.lastError.message}</p> : null}
-				</section>
+			<div className="dashboard-metrics">
+				{cards.map((card) => {
+					const Icon = card.icon;
+					return <section key={card.label} className="ui-card dashboard-metric">
+						<h3><Icon size={14} aria-hidden="true" />{card.label}</h3>
+						<p className="dashboard-metric-value">{card.value}</p>
+						<p className="dashboard-metric-detail">{card.detail}</p>
+						<div className="dashboard-meter" aria-hidden="true"><div style={{ width: Math.max(0, Math.min(100, card.usage)) + "%" }} /></div>
+					</section>;
+				})}
 			</div>
-			<RemoteSandboxPanel key={workspace.id + ":" + workspace.revision} workspace={workspace} />
-			<section className="ui-card overflow-hidden">
-				<header className="border-b border-[var(--line-soft)] px-5 py-4">
-					<h2 className="text-[14px] font-semibold text-[var(--ink)]">{intl.formatMessage({ id: "overview.processes.title" })}</h2>
-					<p className="mt-1 text-[12px] leading-5 text-[var(--text-muted)]">{intl.formatMessage({ id: "overview.processes.description" })}</p>
-				</header>
-				{metrics ? (
-					<div className="overflow-x-auto">
-						<table className="w-full min-w-[640px] text-left text-[12px]">
-							<thead className="bg-[var(--surface-muted)] text-[var(--text-muted)]"><tr>
-								<th className="px-5 py-3 font-medium">PID</th>
-								<th className="py-3 font-medium">{intl.formatMessage({ id: "overview.processes.user" })}</th>
-								<th className="py-3 font-medium">CPU</th>
-								<th className="py-3 font-medium">{intl.formatMessage({ id: "overview.memory" })}</th>
-								<th className="py-3 font-medium">RSS</th>
-								<th className="py-3 pr-5 font-medium">{intl.formatMessage({ id: "overview.processes.command" })}</th>
-							</tr></thead>
-							<tbody>{metrics.processes.map((process) => (
-								<tr key={process.pid} className="border-t border-[var(--line-soft)] text-[var(--text-secondary)]">
-									<td className="px-5 py-3 font-mono tabular-nums">{process.pid}</td>
-									<td>{process.user}</td>
-									<td className="tabular-nums">{process.cpuPercent}%</td>
-									<td className="tabular-nums">{process.memoryPercent}%</td>
-									<td className="tabular-nums">{formatBytes(process.residentBytes)}</td>
-									<td className="max-w-[520px] truncate pr-5 font-mono" title={process.command}>{process.command}</td>
-								</tr>
-							))}</tbody>
-						</table>
-					</div>
-				) : (
-					<p className="px-5 py-10 text-center text-[12px] text-[var(--text-muted)]">{intl.formatMessage({ id: monitoring.error ? "overview.monitor.processUnavailable" : streamState === "reconnecting" ? "overview.monitor.recovering" : "overview.monitor.processLoading" })}</p>
-				)}
-			</section>
+			<div className="dashboard-body">
+				<section className="ui-card dashboard-processes">
+					<header className="page-section-header"><div>
+						<h3>{intl.formatMessage({ id: "overview.processes.title" })}</h3>
+						<p>{intl.formatMessage({ id: "overview.processes.description" })}</p>
+					</div></header>
+					{metrics ? (
+						<div className="overflow-x-auto">
+							<table className="dashboard-process-table">
+								<thead className="bg-[var(--surface-muted)] text-[var(--text-muted)]"><tr>
+									<th className="px-5 py-2.5 font-medium">PID</th>
+									<th className="py-2.5 font-medium">{intl.formatMessage({ id: "overview.processes.user" })}</th>
+									<th className="py-2.5 font-medium">CPU</th>
+									<th className="py-2.5 font-medium">{intl.formatMessage({ id: "overview.memory" })}</th>
+									<th className="py-2.5 font-medium">RSS</th>
+									<th className="py-2.5 pr-5 font-medium">{intl.formatMessage({ id: "overview.processes.command" })}</th>
+								</tr></thead>
+								<tbody>{metrics.processes.map((process) => (
+									<tr key={process.pid} className="border-t border-[var(--line-soft)] text-[var(--text-secondary)]">
+										<td className="px-5 py-2.5 font-mono tabular-nums">{process.pid}</td>
+										<td className="truncate" title={process.user}>{process.user}</td>
+										<td className="tabular-nums">{process.cpuPercent}%</td>
+										<td className="tabular-nums">{process.memoryPercent}%</td>
+										<td className="tabular-nums">{formatBytes(process.residentBytes)}</td>
+										<td className="max-w-[520px] truncate pr-5 font-mono" title={process.command}>{process.command}</td>
+									</tr>
+								))}</tbody>
+							</table>
+						</div>
+					) : (
+						<p className="px-5 py-10 text-center text-[12px] text-[var(--text-muted)]">{intl.formatMessage({ id: monitoring.error ? "overview.monitor.processUnavailable" : streamState === "reconnecting" ? "overview.monitor.recovering" : "overview.monitor.processLoading" })}</p>
+					)}
+				</section>
+				<aside className="dashboard-diagnostics">
+					<section className="ui-card dashboard-pool">
+						<div className="flex items-center justify-between gap-3"><h3>{intl.formatMessage({ id: "overview.pool.title" })}</h3><RefreshCw size={13} className={streamState === "reconnecting" ? "animate-spin text-[var(--warning)]" : "text-[var(--text-faint)]"} aria-hidden="true" /></div>
+						<div className="dashboard-pool-state" data-state={connection?.state ?? "idle"}><span>{intl.formatMessage({ id: `overview.pool.state.${connection?.state ?? "idle"}`, defaultMessage: connection?.state ?? "idle" })}</span><span>{intl.formatMessage({ id: "overview.pool.generation" }, { count: connection?.generation ?? 0 })}</span></div>
+						<div className="dashboard-pool-stats">
+							<Stat value={connection?.activeChannels ?? 0} label={intl.formatMessage({ id: "overview.pool.active" })} />
+							<Stat value={connection?.waitingChannels ?? 0} label={intl.formatMessage({ id: "overview.pool.waiting" })} />
+							<Stat value={connection?.connectedAt ? elapsed(connection.connectedAt) : "—"} label={intl.formatMessage({ id: "overview.pool.uptime" })} />
+						</div>
+						<p className="dashboard-pool-description">{intl.formatMessage({ id: "overview.pool.description" })}</p>
+						{connection?.lastError ? <p className="mt-3 break-words text-[12px] text-[var(--danger)]">{connection.lastError.message}</p> : null}
+					</section>
+					<RemoteSandboxPanel key={workspace.id + ":" + workspace.revision} workspace={workspace} />
+				</aside>
+			</div>
+			<details className="ui-card dashboard-connection">
+				<summary><span>{intl.formatMessage({ id: "overview.connection.title" })}</span><span className="dashboard-connection-host">{workspace.host.hostname}:{workspace.host.port}</span><ChevronDown size={14} aria-hidden="true" /></summary>
+				<dl>{connectionDetails.map(([label, value]) => <div key={label}><dt>{label}</dt><dd title={value}>{value}</dd></div>)}</dl>
+			</details>
 		</div>
 	);
 }
@@ -144,7 +118,7 @@ function OverviewStatus({ streamState, hasMetrics, hasError }: { streamState: Wo
 	const intl = useIntl();
 	const label = intl.formatMessage({ id: hasError ? (hasMetrics ? "overview.status.paused" : "overview.status.failed") : streamState === "connected" ? (hasMetrics ? "overview.status.live" : "overview.status.loading") : streamState === "reconnecting" ? "overview.status.reconnecting" : streamState === "closed" ? "overview.status.disconnected" : "overview.status.connecting" });
 	const className = hasError ? "bg-[var(--warning-soft)] text-[var(--warning)]" : streamState === "connected" && hasMetrics ? "bg-[var(--accent-soft)] text-[var(--accent-ink)]" : "bg-[var(--surface-muted)] text-[var(--text-muted)]";
-	return <span className={`rounded-full px-2.5 py-1 text-[11px] font-medium ${className}`}>{label}</span>;
+	return <span className={`dashboard-live-status ${className}`}><span aria-hidden="true" />{label}</span>;
 }
 
 function emptyMetricDetail(streamState: WorkspaceEventStreamState, hasError: boolean): string {

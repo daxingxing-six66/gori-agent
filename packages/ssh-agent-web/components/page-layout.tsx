@@ -24,3 +24,22 @@ export function PageHeader({ title, subtitle, compact = false, leading, meta, ac
 		</header>
 	);
 }
+
+interface PageHeadingProps {
+	title: string;
+	description: string;
+	actions?: ReactNode;
+}
+
+/** A content title and its related actions, distinct from persistent context. */
+export function PageHeading({ title, description, actions }: PageHeadingProps) {
+	return (
+		<div className="page-heading">
+			<div className="min-w-0">
+				<h2>{title}</h2>
+				<p>{description}</p>
+			</div>
+			{actions ? <div className="page-heading-actions">{actions}</div> : null}
+		</div>
+	);
+}
