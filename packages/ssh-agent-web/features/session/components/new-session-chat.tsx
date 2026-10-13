@@ -4,6 +4,7 @@ import { FolderOpen, LoaderCircle, Send, ShieldCheck, Sparkles, X } from "lucide
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useIntl } from "react-intl";
+import { PageHeader } from "@/components/page-layout";
 import { WorkspaceSidebar } from "@/components/workspace-sidebar";
 import { ToggleSwitch } from "@/components/toggle-switch";
 import { chatApi } from "@/features/chat/api/chat-api";
@@ -141,7 +142,7 @@ export function NewSessionChat({ workspaceId }: { workspaceId: string }) {
 
 	if (!workspace) {
 		return (
-			<div className="flex h-dvh min-h-[640px] overflow-hidden bg-[var(--canvas)]">
+			<div className="app-layout">
 				<WorkspaceSidebar activeWorkspaceId={workspaceId} />
 				<main className="grid min-w-0 flex-1 place-items-center bg-[var(--panel)] px-6 text-center">
 					<div><p className="text-[14px] font-semibold text-zinc-700">{intl.formatMessage({ id: "workspace.notFound" })}</p><p className="mt-2 text-[10px] text-zinc-400">{treeError ? localizedErrorMessage(treeError) : intl.formatMessage({ id: "workspace.possiblyDeleted" })}</p></div>
@@ -152,12 +153,10 @@ export function NewSessionChat({ workspaceId }: { workspaceId: string }) {
 
 	return (
 		<>
-			<div className="flex h-dvh min-h-[640px] overflow-hidden bg-[var(--canvas)]">
+			<div className="app-layout">
 			<WorkspaceSidebar activeWorkspaceId={workspace.id} />
-			<main className="flex min-w-0 flex-1 flex-col bg-[var(--panel)]">
-				<header className="new-session-header flex h-16 shrink-0 items-center border-b border-[var(--line-soft)] bg-[var(--surface)] px-6">
-					<div className="min-w-0"><h1 className="truncate text-[15px] font-semibold tracking-[-0.01em]">{intl.formatMessage({ id: "session.new" })}</h1><p className="mt-0.5 truncate text-[12px] text-[var(--text-muted)]">{workspace.displayName} · {workspace.host.hostname}:{workspace.host.port}</p></div>
-				</header>
+			<main className="page-main page-main-chat flex flex-col">
+				<PageHeader title={intl.formatMessage({ id: "session.new" })} compact />
 
 				<div className="app-scrollbar min-h-0 flex-1 overflow-y-auto">
 					<div className="mx-auto flex min-h-full max-w-[820px] flex-col px-5 lg:px-8">
@@ -171,8 +170,8 @@ export function NewSessionChat({ workspaceId }: { workspaceId: string }) {
 					</div>
 				</div>
 
-				<div className="z-20 shrink-0 bg-[linear-gradient(to_bottom,transparent_0%,var(--panel)_26%)] px-5 pb-5 pt-8 lg:px-8">
-					<div className="mx-auto w-full max-w-[756px]">
+				<div className="chat-composer-dock z-20 shrink-0 bg-[linear-gradient(to_bottom,transparent_0%,var(--panel)_26%)]">
+					<div className="chat-composer-content">
 						<div className="chat-composer-shell rounded-[18px] border border-[var(--line)] bg-[var(--surface-strong)] px-3 pb-3 pt-2.5 shadow-[0_16px_48px_rgb(24_26_23/7%)] transition focus-within:border-[#b4c0b8] focus-within:shadow-[0_18px_52px_rgb(24_26_23/9%)]">
 							{submitError ? <button type="button" className="mb-1 w-full rounded-lg bg-rose-50 px-3 py-2 text-left text-[9px] leading-4 text-rose-700" onClick={() => setSubmitError(null)}>{submitError}{createdSession ? <span className="mt-1 block text-rose-500">{intl.formatMessage({ id: "session.new.createdRetry" })}</span> : null}</button> : null}
 							<ChatTokenEditor ref={editorRef} value={draft} disabled={submitting} autoFocus placeholder={intl.formatMessage({ id: "session.new.composer.placeholder" })} tools={composerTools} onChange={setDraft} onSubmit={() => void submit()} />

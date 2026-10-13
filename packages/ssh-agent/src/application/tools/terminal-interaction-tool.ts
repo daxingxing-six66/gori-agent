@@ -24,8 +24,12 @@ export const terminalInteractionParameters = Type.Object(
 		action: Type.Union([Type.Literal("submit"), Type.Literal("key"), Type.Literal("observe")], {
 			description: "submit writes complete input and Enter; key sends CTRL_C; observe writes nothing",
 		}),
-		input: Type.Optional(Type.String({ minLength: 1, description: "Required for submit; omit the final Enter key" })),
-		key: Type.Optional(Type.Literal("CTRL_C", { description: "Required when action is key" })),
+		input: Type.Optional(Type.String({
+			minLength: 1, description: "Required only for submit; omit for key and observe; omit the final Enter key",
+		})),
+		key: Type.Optional(Type.Literal("CTRL_C", {
+			description: "Required only when action is key; omit for submit and observe",
+		})),
 		expectation,
 	},
 	{ additionalProperties: false },
@@ -145,16 +149,38 @@ export function createTerminalInteractionTool(options: {
 
 export function terminalInteractionAction(params: TerminalInteractionParameters): TerminalInteractionRequestAction {
 	if (params.action === "submit") {
+		if (params.key !== undefined) {
+			throw toolRequestError(
+				'Contradictory terminal_interaction parameters: action="submit" does not accept key. ' +
+				'To submit input, omit key. No terminal input was sent. Regenerate the tool call.',
+			);
+		}
 		if (typeof params.input !== "string" || params.input.length === 0) {
 			throw toolRequestError("Terminal submit requires a non-empty input");
 		}
 		return { type: "submit", input: params.input };
 	}
 	if (params.action === "key") {
+		if (params.input !== undefined) {
+			throw toolRequestError(
+				'Contradictory terminal_interaction parameters: action="key" does not accept input. ' +
+				'To submit input, use action="submit" and omit key; to send CTRL_C, omit input. ' +
+				'No terminal input was sent. Regenerate the tool call.',
+			);
+		}
 		if (params.key !== "CTRL_C") throw toolRequestError("Terminal key action requires key CTRL_C");
 		return { type: "key", key: params.key };
 	}
-	if (params.action === "observe") return { type: "observe" };
+	if (params.action === "observe") {
+		if (params.input !== undefined || params.key !== undefined) {
+			throw toolRequestError(
+				'Contradictory terminal_interaction parameters: action="observe" does not accept input or key. ' +
+				'To observe output, omit both; to submit input, use action="submit" and omit key; ' +
+				'to send CTRL_C, use action="key" and omit input. No terminal input was sent. Regenerate the tool call.',
+			);
+		}
+		return { type: "observe" };
+	}
 	throw toolRequestError("terminal_interaction parameters are invalid");
 }
 

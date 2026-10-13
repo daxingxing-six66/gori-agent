@@ -41,7 +41,7 @@
 | Session 上下文占用查询、Turn/压缩完成快照与 SSE | [context-usage.md](./context-usage.md) | `packages/ssh-agent/src/application/chat-context.ts`、`packages/ssh-agent/src/application/services/chat-context-service.ts` |
 | 长周期 SSH PTY、Canonical Terminal State、Agent Terminal Tool、只读前端和审计时间线 | [terminal-interaction.md](./features/terminal-interaction.md) | `packages/ssh-agent/src/application/terminal/`、`packages/ssh-agent-web/features/terminal/` |
 | SSH Agent Web 页面、前端功能、客户端状态、API/SSE 和测试位置 | [ssh-agent-web.md](./ssh-agent-web.md) | `packages/ssh-agent-web/app/`、`packages/ssh-agent-web/components/`、`packages/ssh-agent-web/features/` |
-| Web 明亮、暗部、跟随系统主题及 Terminal 动态配色 | [theme.md](./theme.md) | `packages/ssh-agent-web/features/theme/`、`packages/ssh-agent-web/features/settings/`、`packages/ssh-agent-web/app/globals.css` |
+| Web 明亮、暗部、明暗分层实验、跟随系统主题及 Terminal 动态配色 | [theme.md](./theme.md) | `packages/ssh-agent-web/features/theme/`、`packages/ssh-agent-web/features/settings/`、`packages/ssh-agent-web/app/globals.css` |
 | Web 中英文界面、Locale 首屏恢复、类型化消息目录和语言切换 | [i18n.md](./i18n.md) | `packages/ssh-agent-web/features/i18n/`、`packages/ssh-agent-web/app/layout.tsx` |
 | 后端公开异常、静态提示、REST/SSE Locale 协商和按订阅者投影 | [backend-i18n.md](./backend-i18n.md) | `packages/ssh-agent/src/i18n/`、`packages/ssh-agent/src/api/http-handler.ts` |
 

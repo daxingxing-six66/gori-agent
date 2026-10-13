@@ -20,7 +20,8 @@ import { RemoteSandboxApprovalStore } from "../src/application/services/remote-s
 import type { CommandOperationResult, SubmitCommandInput } from "../src/application/services/command-operation-service.ts";
 import { sandboxFailure } from "../src/domain/remote-sandbox.ts";
 import type { SshTargetSnapshot } from "../src/domain/ssh-target.ts";
-import { terminalInteractionDefinition } from "../src/application/tools/terminal-interaction-tool.ts";
+import { createTerminalInteractionTool, terminalInteractionDefinition } from "../src/application/tools/terminal-interaction-tool.ts";
+import type { TerminalInteractionService } from "../src/application/services/terminal-interaction-service.ts";
 import type { AgentDeploymentService } from "../src/application/tools/deployment-agent-tool.ts";
 import type { Session } from "../src/domain/session.ts";
 import type { ChatRun } from "../src/domain/chat.ts";
@@ -206,6 +207,70 @@ describe("ChatAgentRuntimeFactory", () => {
 			expect(runtime.publicFailure).toBeUndefined();
 			expect(context.getAgent()?.state.messages.at(-1)).toMatchObject({ role: "assistant", stopReason: "stop",
 				content: [{ type: "text", text: "Recovered using the current terminal." }] });
+		} finally {
+			await runtime.dispose();
+		}
+	});
+
+	it.each([false, true])("lets the model regenerate contradictory Terminal arguments without sending CTRL_C, autoAudit=%s", async (autoAudit) => {
+		const interactions = {
+			preflightSubmit: vi.fn(async () => ({ allowed: true })), approve: vi.fn(), reject: vi.fn(),
+			execute: vi.fn(async () => ({
+				interaction: { id: "interaction-1", expectation: "finite" },
+				observation: { id: "observation-1", terminalSessionId: "terminal-1", agentViewText: "/srv/app",
+					kind: "transcript", boundaryReason: "quiet", startSequence: 1, endSequence: 2, truncated: false },
+			})),
+			markDelivered: vi.fn(async () => undefined),
+		};
+		const authorization = new ChatToolAuthorizationPolicy({
+			sessions: { findById: vi.fn(async () => ({ ...session, autoAudit })) },
+			terminalInteractions: interactions,
+			preflightRemoteGuard: vi.fn(async () => ({ allowed: true })),
+		});
+		const approvals = { request: vi.fn(async () => ({ approved: true as const, source: "user" as const })) };
+		const context = createContext({ toolCalls: new ChatToolCallCoordinator({ authorization, approvals }) });
+		context.createTerminalTool.mockReturnValue(createTerminalInteractionTool({
+			sessionId: "session-1", terminalSessionId: "terminal-1", agentRunId: "run-1",
+			interactions: interactions as unknown as TerminalInteractionService,
+			sandbox: { mode: "full_access", backend: "none", enforcement: "none", source: "session_setting", configuredAt: 1 },
+		}));
+		const runtime = await context.factory.create({
+			run: { ...commandRun, serverInteractionMode: "terminal", terminalSessionId: "terminal-1" },
+			model: context.model, workDir: process.cwd(), history: [], systemPrompt: "terminal mode",
+		});
+		context.faux.setResponses([
+			fauxAssistantMessage(fauxToolCall("terminal_interaction", {
+				action: "key", key: "CTRL_C", input: "pwd", expectation: "finite",
+			}, { id: "conflicting" }), { stopReason: "toolUse" }),
+			(providerContext) => {
+				expect(providerContext.messages.at(-1)).toMatchObject({ role: "toolResult", toolCallId: "conflicting", isError: true,
+					content: [{ type: "text", text: expect.stringContaining('action="key" does not accept input') }] });
+				expect(JSON.stringify(providerContext.messages.at(-1))).toContain("Regenerate the tool call");
+				expect(interactions.execute).not.toHaveBeenCalled();
+				expect(interactions.preflightSubmit).not.toHaveBeenCalled();
+				expect(approvals.request).not.toHaveBeenCalled();
+				return fauxAssistantMessage(fauxToolCall("terminal_interaction", {
+					action: "submit", input: "pwd", expectation: "finite",
+				}, { id: "corrected" }), { stopReason: "toolUse" });
+			},
+			(providerContext) => {
+				expect(providerContext.messages.at(-1)).toMatchObject({ role: "toolResult", toolCallId: "corrected", isError: false });
+				return fauxAssistantMessage("Command submitted successfully.");
+			},
+		]);
+		try {
+			await runtime.prompt({ role: "user", content: "Run pwd", timestamp: 1 });
+			expect(context.faux.state.callCount).toBe(3);
+			expect(interactions.execute).toHaveBeenCalledOnce();
+			expect(interactions.execute).toHaveBeenCalledWith(expect.objectContaining({
+				toolCallId: "corrected", action: { type: "submit", input: "pwd" },
+			}), expect.any(AbortSignal));
+			expect(interactions.preflightSubmit).toHaveBeenCalledOnce();
+			expect(interactions.approve).toHaveBeenCalledWith("run-1", "corrected");
+			expect(interactions.markDelivered).toHaveBeenCalledOnce();
+			expect(approvals.request).toHaveBeenCalledOnce();
+			expect(approvals.request).toHaveBeenCalledWith(expect.objectContaining({ autoApprove: autoAudit }), expect.any(AbortSignal));
+			expect(runtime.publicFailure).toBeUndefined();
 		} finally {
 			await runtime.dispose();
 		}

@@ -5,10 +5,11 @@ import { memo, useId, useMemo, useState } from "react";
 import { useIntl, type IntlShape } from "react-intl";
 import { ChatImagePreviewDialog, formatImageMetadata, type ImageDimensions } from "@/features/chat/components/chat-image-preview-dialog";
 import { ChatFailureDetails } from "@/features/chat/components/chat-failure-details";
+import { toolDetailsPresentation } from "@/features/chat/components/chat-tool-details";
 import { ChatMarkdown } from "@/features/chat/components/chat-markdown";
 import { ChatComposerMessage } from "@/features/chat/components/chat-reference";
-import { approvalForTool, toolResultText, type ChatTimelineEntry } from "@/features/chat/model/chat-runtime-state";
-import type { ChatToolExecution, ThinkingContent, ToolApproval, ToolCallContent, ToolUpdate } from "@/features/chat/model/chat";
+import { approvalForTool, type ChatTimelineEntry } from "@/features/chat/model/chat-runtime-state";
+import { type ChatToolExecution, type ThinkingContent, type ToolApproval, type ToolCallContent, type ToolUpdate } from "@/features/chat/model/chat";
 import type { SessionAttachment } from "@/features/session/api/session-attachment-api";
 import { apiUrl } from "@/shared/api/client";
 
@@ -58,7 +59,7 @@ export const ChatMessageRow = memo(function ChatMessageRow({
 					if (part.type === "thinking") return <ThinkingBlock key={`thinking:${index}:${entry.final}:${hasText}`} content={part} streaming={!entry.final} hasText={hasText} />;
 					return <ToolCard key={`${part.id}:${tools[part.id]?.status ?? "waiting"}`} call={part} execution={tools[part.id]} approval={approvalForTool(approvals, part.id)} approvalBusy={approvalMutationId === approvalForTool(approvals, part.id)?.id} targetHost={targetHost} onResolveApproval={onResolveApproval} />;
 				})}
-				{!hideFailure && (message.failure || message.errorMessage) ? <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-[10px] leading-5 text-rose-700"><ChatFailureDetails failure={message.failure} fallback={message.errorMessage ?? ""} /></div> : null}
+				{!hideFailure && (message.failure || message.errorMessage) ? <div className="rounded-lg border border-[var(--danger-line)] bg-danger-soft px-3 py-2 text-xs leading-5 text-danger"><ChatFailureDetails failure={message.failure} fallback={message.errorMessage ?? ""} /></div> : null}
 				{!entry.final ? <span className="chat-streaming-dots" aria-label={intl.formatMessage({ id: "chat.message.generating" })}><i /><i /><i /></span> : null}
 		</div>
 	);
@@ -82,7 +83,7 @@ function UserMessageBubble({ message, attachments, final }: { message: string; a
 		<div className={`flex min-w-0 flex-col items-end gap-2 ${final ? "" : "opacity-70"}`}>
 			{imageAttachments.length > 0 ? <div className="w-1/2 min-w-0"><SentImageAttachments attachments={imageAttachments} /></div> : null}
 			{message ? <div className="w-fit min-w-0 max-w-[78%]">
-				<div className="rounded-[14px] rounded-br-[5px] border border-[#dbe3dd] bg-[#edf2ee] px-3 py-3 text-[12px] leading-6 text-zinc-700">
+				<div className="chat-user-bubble border border-line-soft bg-surface-muted px-3 py-3 text-[14px] leading-6 text-ink">
 					<ChatComposerMessage message={message} />
 				</div>
 				{message ? <div className="mt-1 flex justify-end">
@@ -155,13 +156,17 @@ function ToolCard({ call, execution, approval, approvalBusy, targetHost, onResol
 	const approvalDescriptionId = useId();
 	const failed = execution?.status === "failed";
 	const [copyStatus, setCopyStatus] = useState<"idle" | "copied" | "failed">("idle");
-	const output = toolResultText(execution?.result ?? (execution?.latestUpdate?.type === "text" ? execution.latestUpdate.detail.content : undefined));
+	const presentation = toolDetailsPresentation(call.name);
+	const output = presentation.result(execution);
 	const failurePreview = failed ? output.trim().split("\n").filter(Boolean).at(-1)?.slice(0, 180) : null;
 	const state = toolState(execution, approval);
 	const approvalActions = approvalActionLabels(intl, call.name, approval?.toolName);
 	const target = toolTarget(intl, call);
 	const compactTarget = call.name === "read" || call.name === "write" ? target.split("/").at(-1) || target : target;
 	const argumentsText = toolRequestArguments(call);
+	const Details = presentation.Component;
+	const update = presentation.update(execution);
+	const progressLabel = presentation.progressLabel ? intl.formatMessage({ id: presentation.progressLabel }) : undefined;
 	const copyArguments = async () => {
 		try {
 			await navigator.clipboard.writeText(argumentsText);
@@ -181,9 +186,9 @@ function ToolCard({ call, execution, approval, approvalBusy, targetHost, onResol
 				<ChevronDown size={14} className="shrink-0 transition-transform group-open:rotate-180" aria-hidden="true" />
 			</summary>
 			{failurePreview ? <p role="alert" className="ml-7 line-clamp-1 break-words text-[11px] leading-5 text-danger group-open:hidden">{failurePreview}</p> : null}
-			{state === "running" ? <ToolUpdateView update={execution?.latestUpdate} failed={failed} /> : null}
-			<div className="ml-6 mt-2 min-w-0 rounded-xl border border-line bg-surface-muted px-3 py-2.5">
-				<div className="flex items-center gap-2 text-xs text-secondary">
+			{state === "running" ? <ToolUpdateView update={update} failed={failed} progressLabel={progressLabel} /> : null}
+			<div className={`chat-tool-details ml-6 mt-2 min-w-0 border border-line-soft bg-surface-muted px-3 py-2.5 ${presentation.className}`}>
+				<div className={`flex items-center gap-2 text-xs text-secondary ${presentation.headerClassName}`}>
 					<span className="font-medium">{toolDetailLabel(intl, call.name)}</span>
 					<span className="ml-auto">{state !== "running" ? <ToolStatus state={state} /> : null}</span>
 					{execution?.startedAt && execution.finishedAt ? <span className="shrink-0 tabular-nums text-muted">{Math.max(0, execution.finishedAt - execution.startedAt)} ms</span> : null}
@@ -191,9 +196,9 @@ function ToolCard({ call, execution, approval, approvalBusy, targetHost, onResol
 						{copyStatus === "copied" ? <Check size={13} /> : copyStatus === "failed" ? <CircleAlert size={13} /> : <Copy size={13} />}
 					</button>
 				</div>
-				<pre className="app-scrollbar mt-2 max-h-48 overflow-auto whitespace-pre-wrap break-words font-mono text-xs leading-5 text-ink">{argumentsText}</pre>
-				{state !== "running" ? <ToolUpdateView update={execution?.latestUpdate} failed={failed} /> : null}
-				{output ? <pre className={`app-scrollbar mt-3 max-h-64 overflow-auto border-t border-line-soft pt-3 font-mono text-[11px] leading-5 ${failed ? "text-danger" : "text-secondary"}`}>{output}</pre> : null}
+				<Details call={call} execution={execution} argumentsText={argumentsText} output={output} failed={failed}>
+					{state !== "running" ? <ToolUpdateView update={update} failed={failed} progressLabel={progressLabel} /> : null}
+				</Details>
 				<span className="sr-only" aria-live="polite">{copyStatus === "copied" ? intl.formatMessage({ id: "chat.code.copied" }) : copyStatus === "failed" ? intl.formatMessage({ id: "chat.tool.arguments.copyFailed" }) : ""}</span>
 			</div>
 		</details>
@@ -264,16 +269,17 @@ function toolDetailLabel(intl: IntlShape, name: string): string {
 	return toolLabel(intl, name);
 }
 
-function ToolUpdateView({ update, failed }: { update?: ToolUpdate; failed: boolean }) {
+function ToolUpdateView({ update, failed, progressLabel }: { update?: ToolUpdate; failed: boolean; progressLabel?: string }) {
 	const intl = useIntl();
 	if (!update || update.type === "text") return null;
 	if (update.type === "status") {
 		return <div className="flex items-center gap-2 px-3.5 pb-3 text-xs text-secondary"><span className="h-1.5 w-1.5 shrink-0 rounded-full bg-accent" />{update.detail.message}</div>;
 	}
 	const percent = update.detail.total === 0 ? 100 : Math.min(100, update.detail.current / update.detail.total * 100);
+	const label = progressLabel ?? update.detail.message ?? intl.formatMessage({ id: update.detail.unit === "bytes" ? "chat.tool.progress.transfer" : "chat.tool.progress.processing" });
 	return (
-		<div className="px-3.5 pb-3" role="progressbar" aria-label={update.detail.message ?? intl.formatMessage({ id: "chat.tool.progress" })} aria-valuemin={0} aria-valuemax={update.detail.total} aria-valuenow={update.detail.current}>
-			<div className="mb-1.5 flex items-center justify-between gap-3 text-xs"><span className="min-w-0 truncate font-medium text-secondary">{update.detail.message ?? intl.formatMessage({ id: update.detail.unit === "bytes" ? "chat.tool.progress.transfer" : "chat.tool.progress.processing" })}</span><span className="shrink-0 font-semibold tabular-nums text-muted">{Math.round(percent)}%</span></div>
+		<div className="px-3.5 pb-3" role="progressbar" aria-label={progressLabel ?? update.detail.message ?? intl.formatMessage({ id: "chat.tool.progress" })} aria-valuemin={0} aria-valuemax={update.detail.total} aria-valuenow={update.detail.current}>
+			<div className="mb-1.5 flex items-center justify-between gap-3 text-xs"><span className="min-w-0 truncate font-medium text-secondary">{label}</span><span className="shrink-0 font-semibold tabular-nums text-muted">{Math.round(percent)}%</span></div>
 			<div className="h-1.5 overflow-hidden rounded-full bg-line"><div className={`h-full rounded-full transition-[width] duration-300 ease-out ${failed ? "bg-danger" : "bg-accent"}`} style={{ width: `${percent}%` }} /></div>
 			<p className="mt-1.5 text-right text-[11px] tabular-nums text-muted">{formatProgress(intl, update)}</p>
 		</div>

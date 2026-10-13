@@ -75,6 +75,7 @@ export interface ToolResultMessage {
 	toolCallId: string;
 	toolName: string;
 	content: Array<TextContent | ImageContent>;
+	details?: unknown;
 	isError: boolean;
 	timestamp: number;
 }
@@ -192,6 +193,7 @@ export interface ChatToolExecution {
 	args?: unknown;
 	latestUpdate?: ToolUpdate;
 	result?: unknown;
+	details?: unknown;
 	isError?: boolean;
 	startedAt?: number;
 	finishedAt?: number;

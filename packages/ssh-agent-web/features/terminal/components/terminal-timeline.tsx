@@ -27,12 +27,12 @@ export function TerminalTimeline({ sessionId }: { sessionId: string }) {
 
 	if (events.length === 0) return null;
 	return (
-		<div className="app-scrollbar flex max-h-[92px] flex-col gap-1 overflow-y-auto border-t border-[var(--terminal-line)] px-3 py-2">
+		<div className="terminal-workbench-timeline app-scrollbar flex max-h-[92px] shrink-0 flex-col gap-1 overflow-y-auto border-t border-[var(--workbench-line)] px-3 py-2">
 			{events.map((event) => (
 				<div key={event.id} className="flex items-center gap-2 text-[9px] leading-4 text-[var(--terminal-muted)]">
 					<span className={`h-1.5 w-1.5 shrink-0 rounded-full ${event.type === "observation.processing" ? "animate-pulse bg-[var(--terminal-accent)]" : "bg-[var(--terminal-line-strong)]"}`} />
 					<span className="shrink-0 font-mono text-[var(--terminal-muted)]">{new Date(event.createdAt).toLocaleTimeString([], { hour12: false })}</span>
-					<span className={event.type === "observation.processing" ? "text-[var(--terminal-accent)]" : "text-[var(--terminal-ink)]"}>{timelineLabel(intl, event.type)}{terminalSandboxLabel(intl, terminalSandboxFromTimelineEvent(event))}</span>
+					<span title={`${timelineLabel(intl, event.type)}${terminalSandboxLabel(intl, terminalSandboxFromTimelineEvent(event))}`} className={event.type === "observation.processing" ? "text-[var(--terminal-accent)]" : "text-[var(--terminal-ink)]"}>{timelineLabel(intl, event.type)}{terminalSandboxLabel(intl, terminalSandboxFromTimelineEvent(event))}</span>
 				</div>
 			))}
 		</div>

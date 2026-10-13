@@ -124,6 +124,23 @@ describe("ChatToolAuthorizationPolicy", () => {
 		expect(context.findById).not.toHaveBeenCalled();
 	});
 
+	it.each([
+		{ action: "submit", input: "pwd", key: "CTRL_C", expectation: "finite" },
+		{ action: "key", input: "pwd", key: "CTRL_C", expectation: "finite" },
+		{ action: "observe", input: "pwd", expectation: "finite" },
+		{ action: "observe", key: "CTRL_C", expectation: "finite" },
+		{ action: "observe", input: "pwd", key: "CTRL_C", expectation: "finite" },
+	])("rejects contradictory Terminal arguments before preflight or authorization: %j", async (args) => {
+		const context = createPolicy({ autoAudit: true });
+		await expect(context.policy.prepare({ run, toolCallId: "conflicting", toolName: "terminal_interaction", args }))
+			.resolves.toMatchObject({ kind: "block", block: true, terminate: false,
+				reason: expect.stringContaining("Regenerate the tool call") });
+		expect(context.preflightSubmit).not.toHaveBeenCalled();
+		expect(context.findById).not.toHaveBeenCalled();
+		expect(context.approve).not.toHaveBeenCalled();
+		expect(context.reject).not.toHaveBeenCalled();
+	});
+
 	it("lets the model correct a missing Full Access reason while still requiring human approval", async () => {
 		const context = createPolicy({ autoAudit: true });
 		const commandRun = { ...run, serverInteractionMode: "command" as const, terminalSessionId: null };

@@ -6,7 +6,7 @@
 
 侧边栏的工作区展开状态由根布局中的 `WorkspaceTreeProvider` 按工作区 ID 独立保存，切换工作区或会话页面不会收起其他工作区。首次进入尚无展开记录的工作区时默认展开；手动收起（包括当前工作区）会保留到本次页面生命周期结束，刷新浏览器后重新初始化。
 
-窄屏首页仍显示工作区导航；在 Workspace 与 Session 页面，`WorkspaceSidebar` 改为可从页首按钮打开的抽屉，支持关闭按钮、遮罩和 Escape，并在关闭后将焦点还给入口。Workspace 控制台页首显示工作区名称与主机，窄屏时页签换到第二行；Chat 与新会话标题、输入区辅助文字沿用同一字号层级。布局和颜色集中于 `app/globals.css`，不改变 Workspace/Session 路由及审批状态归属。
+聊天主视图复用 `components/page-layout.tsx` 的页首和 `page-layout.css` 的阅读列样式。Sidebar 品牌栏、Chat/新会话页首及 Terminal 顶栏统一为 44px；收起侧栏为 44px，设置区为 46px。移除 Logo 图标、聊天工作区/本地目录副标题、空闲“就绪”及 Terminal 顶栏审计细节与底部列表。活动、失败、取消、连接异常仍保留。窄屏仍通过原抽屉导航，聊天页首保持单行标题截断。Terminal 宽度变化继续由既有 ResizeObserver 测量并提交后端 resize，不改变 attachment 或响应式布局。
 
 创建工作区的默认工作目录通过 `LocalDirectoryPicker` 选择，复用新建聊天的 `GET /api/local-files` 本机目录浏览、筛选及面包屑。打开选择器时暂时卸载外层管理弹窗，取消/Escape 只返回草稿，确认后回填 `defaultCwd`；其余表单和连接测试结果保留。
 
@@ -55,7 +55,7 @@ Chat 的 `UserDecisionPanel` 在输入框上方向上展开，显示模型的三
 | Guard 规则包浏览和导入 | `features/guard/components/guard-rule-pack-dialog.tsx` | `model/guard-rule-pack-state.ts`、`api/guard-api.ts` | `tests/guard-rule-pack-state.test.tsx` |
 | Provider 全局目录状态 | `features/llm-provider/components/llm-provider-provider.tsx` | `llm-provider-context.ts`、`api/llm-provider-api.ts` | `tests/llm-provider-state.test.ts`、`tests/api-clients.test.ts` |
 | 自动上下文压缩全局设置 | `features/context-compaction/components/context-compaction-settings.tsx` | `api/context-compaction-settings-api.ts`、`model/context-compaction-settings.ts`、`features/llm-provider/components/model-selector.tsx` | `tests/context-compaction-settings.test.ts`、`tests/api-clients.test.ts` |
-| 明亮、暗部、跟随系统主题和设置分类 | `features/theme/components/theme-provider.tsx` | `features/settings/`、`features/theme/model/theme.ts`、`app/layout.tsx`、`app/globals.css` | `tests/theme-state.test.tsx` |
+| 明亮、暗部、明暗分层实验、跟随系统主题和设置分类 | `features/theme/components/theme-provider.tsx` | `features/settings/`、`features/theme/model/theme.ts`、`app/layout.tsx`、`app/globals.css`；导航语义色独立，服务器/子会话有不同选中样式，Terminal 保留原有布局和对齐 | `tests/theme-state.test.tsx` |
 | Provider Credential 配置、轮换和删除 | `components/settings-dialog.tsx` | `features/llm-provider/api/llm-provider-api.ts`、`model/llm-provider.ts` | `tests/llm-provider-state.test.ts`、`tests/api-clients.test.ts` |
 | 自定义 Provider、静态模型目录和浏览器模型发现 | `features/llm-provider/components/custom-provider-editor.tsx` | `model/custom-provider-model-discovery.ts`、`api/llm-provider-api.ts`、`model/llm-provider.ts` | `tests/custom-provider-model-discovery.test.ts`、`tests/api-clients.test.ts` |
 | 模型和 Thinking 等级选择 | `features/llm-provider/components/model-thinking-selector.tsx` | `model-selector.tsx`、`thinking-level-selector.tsx`、`thinking-level-slider.tsx`、`model/llm-provider.ts` | `tests/llm-provider-state.test.ts` |
@@ -70,10 +70,12 @@ Chat 的 `UserDecisionPanel` 在输入框上方向上展开，显示模型的三
 | Terminal Mode 单一 Composer 入口、启动失败与历史回退提示、状态标识、开关、过渡和状态轮询 | `features/chat/components/chat-console.tsx` | `features/terminal/components/terminal-open-failure.tsx`、`features/terminal/components/terminal-sandbox-notice.tsx`、`features/terminal/components/terminal-sandbox-label.ts`、`features/chat/components/chat-token-editor.tsx`、`features/chat/model/chat-composer-menu.ts`、`features/session/components/new-session-chat.tsx`、`features/terminal/runtime/use-terminal-mode.ts`、`features/terminal/api/terminal-api.ts`、`features/terminal/components/terminal-connection-state.tsx`、`features/terminal/model/terminal-ui-defaults.ts`；Session 开启沙盒时，新受限 Terminal 在后端不可用时失败关闭；主动关闭沙盒的 PTY 展示明确 Session 设置来源 | `tests/chat-composer-menu.test.ts`、`tests/terminal-client.test.ts`、`tests/terminal-open-failure.test.tsx`、`tests/terminal-sandbox-notice.test.tsx` |
 | 只读 xterm、主题动态配色、snapshot/replay/live 切换、focus ownership 和 resize | `features/terminal/components/terminal-panel.tsx` | `model/terminal-theme.ts`、`runtime/terminal-event-stream.ts`、`model/terminal.ts`、`api/terminal-api.ts` | `tests/terminal-client.test.ts`、`tests/terminal-theme.test.ts` |
 | Terminal Observation 遮罩、范围投影和恢复 | `features/terminal/components/terminal-observation-mask.tsx` | `model/terminal-observation-mask.ts`、`model/terminal-observation-range.ts`、`runtime/terminal-observation-range-tracker.ts` | `tests/terminal-observation-mask.test.ts`、`tests/terminal-observation-range.test.ts` |
-| Terminal 审计时间线 | `features/terminal/components/terminal-timeline.tsx` | `api/terminal-api.ts`、`model/terminal.ts` | `tests/terminal-client.test.ts` |
+| Terminal 审计时间线与 Observation 恢复 | `features/terminal/components/terminal-panel.tsx` | `api/terminal-api.ts`、`model/terminal.ts`；面板继续读取时间线恢复 Observation，默认不展示底部列表；`terminal-timeline.tsx` 保留组件但不挂载 | `tests/terminal-client.test.ts`、`tests/terminal-observation-mask.test.ts` |
 | 所有后端 API 的基地址、JSON 请求和错误解析 | `shared/api/client.ts` | `shared/errors/api-error.ts`；文件上传例外在 `features/sftp/api/sftp-api.ts` 使用 XHR | `tests/api-clients.test.ts`、`tests/sftp-api.test.ts` |
 | 通用管理弹窗、Select、Switch | `components/management-dialog.tsx`、`components/custom-select.tsx`、`components/toggle-switch.tsx` | 使用方通常位于具体 feature 的 `components/` | 以各功能测试为主 |
 | 页面布局、颜色、Terminal/弹窗/编辑器样式 | `app/globals.css` | 先从具体组件 className 反查；不要在此文件判断业务状态归属 | 无独立样式测试 |
+
+命令详情由 `chat-tool-details.tsx` 的工具类型注册表选择独立渲染器：`chat-remote-command-details.tsx` 负责 SSH 请求及已有退出码/退出信号，`chat-terminal-interaction-details.tsx` 负责 submit/key/observe，并通过动作注册表选择输入或快捷键展示；卡片不显示操作（action）和观察预期（expectation）参数行，仅在展示层过滤，原请求、复制及 SSE 数据保持不变；观察结束不推断远端进程完成。两者复用 `chat-command-details.tsx` 与局部 CSS 的请求、参数和输出排版，参数标签/值格式化在 `chat-command-parameters.ts`，未知参数保留原值。只有已有字段才显示工作目录、超时、请求权限和截断标记，不补默认值或查询新数据。命令结果从已有 SSE Tool Result 的 `content` 或历史文本块读取，输出原文、空白及滚动能力保留；状态归约、复制及待审批分支沿用原链路。上传/下载独立入口与既有路径/进度投影移到 `chat-transfer-details.tsx`，默认工具使用通用渲染器。渲染器不订阅 SSE；Chat、Terminal、Workspace/Deploy 继续使用各自已有的解析和分发入口。回归见 `tests/chat-command-details.test.tsx` 和 `tests/chat-ui-hierarchy.test.tsx`。
 
 ## 目录职责
 
@@ -89,7 +91,7 @@ Chat 错误展示复用 `features/chat/components/chat-failure-details.tsx`，�
 
 上下文占用入口为 `features/chat/components/chat-context-usage-indicator.tsx`，由 Composer 在模型选择器旁展示圆环及中英文悬浮详情。`runtime/use-chat-runtime.ts` 复用 Run SSE 的 `context.updated`，通过 `runtime/chat-context-usage-store.ts` 接收查询及手动压缩快照；每个 Session 独立存储，查询取消和更新计数避免旧结果覆盖新快照。空数据隐藏，进度视觉上限为 100%，详情保留实际占用；使用统计快照中的模型，不按草稿模型选择预估。测试见 `tests/chat-context-usage.test.tsx`，协议见 [context-usage-integration.md](../frontend/context-usage-integration.md)。
 
-`chat-message.tsx` 的普通工具记录使用原生 `details`：收起时只显示动作、截断的目标和状态线索，展开后可查看完整参数、输出、耗时并复制参数。连续的纯工具消息在 `chat-timeline.tsx` 中缩小垂直间距。待审批记录使用紧凑的行内确认区：命令预览可滚动，完整参数可展开，后端权限说明、已知远端主机与具体批准动作直接可见；批准或拒绝按钮在请求处理中禁用而不消失。主机从当前 Workspace 只读传入，不改变审批对象或后端权限判断。
+`chat-message.tsx` 的普通工具记录使用原生 `details`：收起时只显示动作、截断的目标和状态线索，展开后可查看完整参数、输出、耗时并复制参数。上传/下载详情共用路径排版：下载显示“远程文件 / 本地路径”（未得到落地文件路径时为“本地目录”），上传显示“本地文件 / 远程路径”（未得到目标文件路径时为“远程目录”）；优先使用结果中的实际路径，长路径自然换行，不直接展示参数键名。两者保留进度条、百分比和已传输/总字节，完成或失败后从既有结果 `details` 恢复，正常传输去除底部重复结果说明，错误、结果不确定说明及原参数复制仍保留。`chat-runtime-state.ts` 保存已有 Tool Result 的可选详情供 UI 使用，不扩展 HTTP/SSE 协议。连续的纯工具消息在 `chat-timeline.tsx` 中缩小垂直间距。待审批记录使用紧凑的行内确认区：命令预览可滚动，完整参数可展开，后端权限说明、已知远端主机与具体批准动作直接可见；批准或拒绝按钮在请求处理中禁用而不消失。主机从当前 Workspace 只读传入，不改变审批对象或后端权限判断。
 
 | 目录 | 用途 |
 |---|---|

@@ -2,10 +2,10 @@ import type { ITheme } from "@xterm/xterm";
 import type { ResolvedTheme } from "@/features/theme/model/theme";
 
 const LIGHT_TERMINAL_THEME: Readonly<ITheme> = {
-	background: "#f5f4f0",
-	foreground: "#303631",
+	background: "#edf1e7",
+	foreground: "#2e3c31",
 	cursor: "#397b5c",
-	cursorAccent: "#f5f4f0",
+	cursorAccent: "#edf1e7",
 	selectionBackground: "#cfe2d7",
 	selectionForeground: "#1e3027",
 	selectionInactiveBackground: "#dde6e0",
@@ -31,10 +31,10 @@ const LIGHT_TERMINAL_THEME: Readonly<ITheme> = {
 };
 
 const DARK_TERMINAL_THEME: Readonly<ITheme> = {
-	background: "#151815",
-	foreground: "#d4d8d3",
+	background: "#101b1a",
+	foreground: "#d6e3dc",
 	cursor: "#74b995",
-	cursorAccent: "#151815",
+	cursorAccent: "#101b1a",
 	selectionBackground: "#355f49",
 	selectionForeground: "#edf3ef",
 	selectionInactiveBackground: "#2a4436",
@@ -59,7 +59,18 @@ const DARK_TERMINAL_THEME: Readonly<ITheme> = {
 	brightWhite: "#f2f5f2",
 };
 
+const CONTRAST_TERMINAL_THEME: Readonly<ITheme> = {
+	...DARK_TERMINAL_THEME,
+	background: "#252c29",
+	foreground: "#dae3dd",
+	cursor: "#92bea3",
+	cursorAccent: "#252c29",
+	selectionBackground: "#425e4d",
+	selectionInactiveBackground: "#36453c",
+};
+
 export function terminalTheme(theme: ResolvedTheme): Readonly<ITheme> {
+	if (theme === "contrast") return CONTRAST_TERMINAL_THEME;
 	return theme === "dark" ? DARK_TERMINAL_THEME : LIGHT_TERMINAL_THEME;
 }
 

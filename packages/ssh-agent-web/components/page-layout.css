@@ -1,0 +1,70 @@
+.app-layout {
+	--workspace-header-height: 44px;
+	display: flex;
+	height: 100dvh;
+	min-width: 320px;
+	overflow: hidden;
+	background: var(--canvas);
+}
+
+.page-main { min-width: 0; flex: 1; background: var(--panel); }
+.page-header {
+	display: flex;
+	min-height: 64px;
+	flex-shrink: 0;
+	align-items: center;
+	gap: 12px;
+	padding: 12px 28px;
+	border-bottom: 1px solid var(--line-soft);
+	background: var(--surface);
+}
+.page-header-identity { min-width: 0; }
+.page-header-identity h1 { overflow: hidden; font-size: 15px; font-weight: 600; line-height: 20px; text-overflow: ellipsis; white-space: nowrap; }
+.page-header-identity p { overflow: hidden; margin-top: 2px; color: var(--text-muted); font-size: 12px; line-height: 16px; text-overflow: ellipsis; white-space: nowrap; }
+.page-header [role="status"] { border-radius: var(--radius-tag); font-size: 12px; }
+.page-header-meta { margin-left: 4px; color: var(--text-muted); font-size: 11px; }
+.page-header-actions { display: flex; flex-shrink: 0; align-items: center; gap: 10px; margin-left: auto; }
+.page-header-compact {
+	height: var(--workspace-header-height, 44px);
+	min-height: var(--workspace-header-height, 44px);
+	padding-block: 8px;
+}
+.sidebar-brand-header,
+.terminal-workbench-header { height: var(--workspace-header-height, 44px); }
+.sidebar-settings-footer { display: flex; height: 46px; flex-shrink: 0; align-items: center; padding: 4px 16px; }
+.sidebar-settings-footer-collapsed { justify-content: center; padding-inline: 0; }
+/* Chat keeps a single reading column; the terminal retains its own grid area. */
+.page-main-chat { --chat-content-width: 820px; }
+.chat-timeline { width: 100%; max-width: calc(var(--chat-content-width) + 48px); margin-inline: auto; padding: 32px 24px; }
+.chat-composer-content { width: 100%; max-width: var(--chat-content-width); margin-inline: auto; }
+.chat-composer-dock { padding: 16px 24px 18px; background: var(--panel); }
+.page-main-chat .chat-composer-shell { border-color: var(--line); border-radius: var(--radius-composer); box-shadow: none; }
+.page-main-chat .chat-composer-shell:focus-within { border-color: var(--accent-line); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 12%, transparent); }
+.chat-composer-controls { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; padding-top: 4px; }
+.chat-composer-controls > div:first-child { font-size: 12px; }
+.chat-composer-actions { display: flex; align-items: center; gap: 8px; }
+.chat-composer-action { display: grid; width: 32px; height: 32px; place-items: center; border-radius: 50%; background: var(--ink); color: var(--surface-strong); }
+.chat-composer-action:hover:not(:disabled) { background: var(--text-secondary); }
+.chat-composer-action:disabled { cursor: not-allowed; background: var(--surface-muted); color: var(--text-faint); }
+.model-thinking-selector-composer { border-radius: var(--radius-control); box-shadow: none; }
+.chat-empty-state { display: flex; min-height: 0; flex: 1; align-items: center; justify-content: center; padding: 32px 24px; }
+.chat-empty-state-inner { width: 100%; max-width: var(--chat-content-width); }
+.chat-empty-state h2 { margin-top: 16px; color: var(--ink); font-size: 24px; font-weight: 600; line-height: 32px; letter-spacing: -.035em; }
+.chat-empty-state p { max-width: 440px; margin-top: 8px; color: var(--text-muted); font-size: 13px; line-height: 22px; }
+
+@media (max-width: 1000px) {
+	.page-header { padding-inline: 22px; }
+}
+@media (max-width: 760px) {
+	.page-header { min-height: 64px; padding: 12px 16px 12px 64px; gap: 8px; }
+	.page-header-meta { display: none; }
+	.page-header-actions { gap: 5px; }
+	.chat-timeline { padding: 24px 16px; }
+	.chat-composer-dock { padding: 12px 16px; }
+	.chat-empty-state { padding-inline: 24px; }
+	.page-main-chat .page-header-compact { min-height: var(--workspace-header-height, 44px); padding-block: 8px; padding-left: 48px; flex-wrap: nowrap; }
+	.page-main-chat .page-header-actions { max-width: 100%; justify-content: flex-end; }
+	.page-header-compact .page-header-identity h1 { font-size: 14px; }
+	.page-header-compact [role="status"] { gap: 4px; padding-inline: 6px; font-size: 11px; }
+	.app-layout:has(.page-main-chat) .mobile-sidebar-trigger { top: calc((var(--workspace-header-height, 44px) - 28px) / 2); width: 28px; height: 28px; border-radius: 6px; box-shadow: none; }
+}

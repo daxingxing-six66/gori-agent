@@ -44,6 +44,7 @@ export const enUSTerminalMessages = {
 	"terminal.observation.announcement.processing": "Agent is processing the Terminal Observation",
 	"terminal.observation.announcement.finished": "Agent completed the Terminal Observation",
 	"terminal.panel.liveOwner": "Live · resize owner",
+	"terminal.panel.live": "Live",
 	"terminal.panel.liveFollower": "Live · read-only follower",
 	"terminal.panel.replaying": "Synchronizing",
 	"terminal.panel.attaching": "Attaching",

@@ -18,7 +18,7 @@ import { useChatRuntime } from "@/features/chat/runtime/use-chat-runtime";
 import { resolveConfiguredModel } from "@/features/llm-provider/api/llm-provider-api";
 import { thinkingLevelForModel } from "@/features/llm-provider/model/llm-provider";
 import { sessionApi } from "@/features/session/api/session-api";
-import { SessionSandboxBadge } from "@/features/session/components/session-sandbox-badge";
+import { ChatPageHeader } from "@/features/chat/components/chat-page-header";
 import { SessionSandboxStatus } from "@/features/session/components/session-sandbox-status";
 import { isSessionSandboxCommand } from "@/features/session/model/session-sandbox-command";
 import { useSessionSandbox } from "@/features/session/runtime/use-session-sandbox";
@@ -423,20 +423,14 @@ export function ChatConsole({ sessionId }: { sessionId: string }) {
 	const targetHost = `${sshHostname}:${item.workspace.host.port}`;
 
 	return (
-		<div className="flex h-dvh min-h-[640px] overflow-hidden bg-[var(--canvas)]">
+		<div className="app-layout">
 			<WorkspaceSidebar activeWorkspaceId={item.workspace.id} activeSessionId={item.session.id} />
 			<main
-				className={`session-console min-w-0 flex-1 bg-[var(--panel)] ${terminalPresent ? "session-console-terminal-present" : ""} ${terminalExpanded ? "session-console-terminal-active" : ""}`}
+				className={`session-console page-main page-main-chat ${terminalPresent ? "session-console-terminal-present" : ""} ${terminalExpanded ? "session-console-terminal-active" : ""}`}
 				style={{ "--terminal-panel-width": TERMINAL_UI_DEFAULTS.sidePanelWidth, "--terminal-panel-transition-ms": `${TERMINAL_UI_DEFAULTS.panelTransitionMs}ms` } as CSSProperties}
 			>
 				<div className="session-console-header min-w-0">
-					<header className="flex h-16 shrink-0 items-center justify-between border-b border-[var(--line-soft)] bg-[var(--surface)] px-6">
-						<div className="min-w-0"><h1 className="truncate text-[15px] font-semibold tracking-[-0.01em]">{item.session.displayName}</h1><p className="mt-0.5 truncate text-[12px] text-[var(--text-muted)]">{item.workspace.displayName} · local {item.session.workDir ?? intl.formatMessage({ id: "session.workDir.systemDefault.short" })}</p></div>
-						<div className="ml-4 flex shrink-0 items-center gap-2">
-							<SessionSandboxBadge enabled={sandbox.enabled} />
-							<ChatStatus active={active} runStatus={runtime.state.run?.status} connection={runtime.state.connection} queueCount={pendingQueue.length} />
-						</div>
-					</header>
+					<ChatPageHeader title={item.session.displayName} sandboxEnabled={sandbox.enabled} active={active} runStatus={runtime.state.run?.status} connection={runtime.state.connection} queueCount={pendingQueue.length} />
 					<SessionSandboxStatus pending={sandbox.pending} label={sandbox.statusLabel} error={sandbox.error} notice={sandbox.notice} onDismiss={sandbox.clearNotice} />
 					{terminalMode.error && !visibleTerminalFailure ? <button type="button" className="w-full border-b border-rose-200 bg-rose-50 px-4 py-2 text-left text-xs text-rose-700" onClick={() => terminalMode.setError(null)}>{terminalMode.error}</button> : null}
 					<TerminalSandboxNotice sandbox={terminalActive ? terminalMode.status?.terminal?.sandbox : null} />
@@ -503,11 +497,4 @@ export function ChatConsole({ sessionId }: { sessionId: string }) {
 			</main>
 		</div>
 	);
-}
-
-function ChatStatus({ active, runStatus, connection, queueCount }: { active: boolean; runStatus?: string; connection: string; queueCount: number }) {
-	const intl = useIntl();
-	const reconnecting = active && connection === "reconnecting";
-	const label = intl.formatMessage({ id: reconnecting ? "chat.status.reconnecting" : active ? queueCount > 0 ? "chat.status.runningQueued" : "chat.status.running" : runStatus === "failed" ? "chat.status.failed" : runStatus === "cancelled" ? "chat.status.cancelled" : "chat.status.ready" }, { count: queueCount });
-	return <span className={`inline-flex items-center gap-2 rounded-full px-2.5 py-1 text-[11px] font-medium ${reconnecting ? "bg-warning-soft text-warning" : active ? "bg-success-soft text-accent" : runStatus === "failed" ? "bg-danger-soft text-danger" : "bg-surface-muted text-secondary"}`}><span className={`h-1.5 w-1.5 rounded-full ${reconnecting ? "bg-warning" : active ? "bg-accent" : runStatus === "failed" ? "bg-danger" : "bg-faint"}`} />{label}</span>;
 }

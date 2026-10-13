@@ -1,0 +1,17 @@
+.chat-tool-details.chat-command-card { overflow: hidden; padding: 0; background: var(--surface); }
+.chat-command-header { flex-wrap: wrap; padding: 8px 12px; border-bottom: 1px solid var(--line-soft); }
+.chat-command-request { padding: 10px 12px 12px; background: var(--code-bg); }
+.chat-command-label { color: var(--text-muted); font-size: 11px; font-weight: 500; line-height: 18px; }
+.chat-command-request pre { max-height: 192px; overflow: auto; margin-top: 5px; color: var(--ink); font-size: 12px; line-height: 1.7; white-space: pre-wrap; overflow-wrap: anywhere; tab-size: 4; }
+.chat-command-request code { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
+.chat-command-parameters { display: grid; gap: 6px; padding: 10px 12px; font-size: 11px; line-height: 18px; }
+.chat-command-parameters > div { display: grid; grid-template-columns: minmax(0, 88px) minmax(0, 1fr); gap: 12px; }
+.chat-command-parameters dt { color: var(--text-muted); overflow-wrap: anywhere; }
+.chat-command-parameters dd { min-width: 0; color: var(--text-secondary); font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
+.chat-command-output { padding: 10px 12px 12px; border-top: 1px solid var(--line-soft); }
+.chat-command-output-heading { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; }
+.chat-command-outcome { display: flex; flex-wrap: wrap; gap: 6px 12px; margin-left: auto; color: var(--text-muted); font-size: 11px; line-height: 18px; }
+.chat-command-outcome > div { display: flex; gap: 6px; }
+.chat-command-outcome dd { color: var(--text-secondary); font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.chat-command-truncated { color: var(--warning); font-size: 11px; line-height: 18px; }
+.chat-command-output pre { max-height: 256px; overflow: auto; margin-top: 6px; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 12px; line-height: 1.7; white-space: pre; tab-size: 4; }

@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, Monitor, Moon, Sun, type LucideIcon } from "lucide-react";
+import { Check, Contrast, Monitor, Moon, Sun, type LucideIcon } from "lucide-react";
 import { useIntl } from "react-intl";
 import type { MessageId } from "@/features/i18n/messages/zh-CN";
 import { useTheme } from "@/features/theme/components/theme-context";
@@ -9,13 +9,13 @@ import type { ResolvedTheme, ThemePreference } from "@/features/theme/model/them
 interface ThemeOption {
 	value: ThemePreference;
 	labelId: MessageId;
-	descriptionId: MessageId;
 	Icon: LucideIcon;
 }
 const THEME_OPTIONS: readonly ThemeOption[] = [
-	{ value: "light", labelId: "theme.light.label", descriptionId: "theme.light.description", Icon: Sun },
-	{ value: "dark", labelId: "theme.dark.label", descriptionId: "theme.dark.description", Icon: Moon },
-	{ value: "system", labelId: "theme.system.label", descriptionId: "theme.system.description", Icon: Monitor },
+	{ value: "light", labelId: "theme.light.label", Icon: Sun },
+	{ value: "dark", labelId: "theme.dark.label", Icon: Moon },
+	{ value: "contrast", labelId: "theme.contrast.label", Icon: Contrast },
+	{ value: "system", labelId: "theme.system.label", Icon: Monitor },
 ];
 
 export function ThemeSelector() {
@@ -46,7 +46,7 @@ export function ThemePreferenceControl({
 				<p className="mt-1.5 text-[10px] leading-5 text-[var(--text-muted)]">{intl.formatMessage({ id: "theme.description" })}</p>
 			</div>
 			<fieldset className="theme-options" aria-label={intl.formatMessage({ id: "theme.title" })}>
-				{THEME_OPTIONS.map(({ value, labelId, descriptionId, Icon }) => {
+				{THEME_OPTIONS.map(({ value, labelId, Icon }) => {
 					const selected = preference === value;
 					const label = intl.formatMessage({ id: labelId });
 					return (
@@ -58,12 +58,11 @@ export function ThemePreferenceControl({
 								checked={selected}
 								onChange={() => onChange(value)}
 							/>
-							<span className="theme-option-preview" data-preview={value === "system" ? resolvedTheme : value}>
-								<span /><span /><span />
+							<span className="theme-option-preview" data-preview={value === "system" ? resolvedTheme === "dark" ? "dark" : "light" : value}>
+								<span /><span /><span /><span />
 							</span>
 							<span className="theme-option-copy">
 								<span className="theme-option-title"><Icon size={14} />{label}{selected ? <Check size={13} className="theme-option-check" /> : null}</span>
-								<span className="theme-option-description">{intl.formatMessage({ id: descriptionId })}</span>
 								{value === "system" ? <span className="theme-option-resolution">{intl.formatMessage({ id: "theme.system.resolved" }, { theme: intl.formatMessage({ id: resolvedTheme === "dark" ? "theme.dark.label" : "theme.light.label" }) })}</span> : null}
 							</span>
 						</label>

@@ -10,8 +10,6 @@ import { useLocale } from "@/features/i18n/components/locale-context";
 import { useTheme } from "@/features/theme/components/theme-context";
 import { terminalApi } from "@/features/terminal/api/terminal-api";
 import { TerminalObservationMask } from "@/features/terminal/components/terminal-observation-mask";
-import { terminalSandboxLabel } from "@/features/terminal/components/terminal-sandbox-label";
-import { TerminalTimeline } from "@/features/terminal/components/terminal-timeline";
 import { TERMINAL_UI_DEFAULTS } from "@/features/terminal/model/terminal-ui-defaults";
 import { shouldRetryTerminalConnection } from "@/features/terminal/model/terminal-retry";
 import type { TerminalSseEnvelope, TerminalStatusResponse } from "@/features/terminal/model/terminal";
@@ -59,7 +57,6 @@ export function TerminalPanel({
 	const [observationCapturedAt, setObservationCapturedAt] = useState<number | null>(null);
 	const terminalSessionId = status.terminal?.id;
 	const terminalStatus = status.terminal?.status;
-	const sandbox = status.terminal?.sandbox;
 	const { minRows, maxRows, minCols, maxCols } = status.capabilities;
 
 	useEffect(() => {
@@ -383,10 +380,10 @@ export function TerminalPanel({
 	}, [locale, localizedErrorMessage, retry, sessionId, terminalSessionId, terminalStatus, minRows, maxRows, minCols, maxCols, onTerminalStateChange]);
 
 	return (
-		<section className="terminal-panel terminal-panel-shell shrink-0 bg-[var(--terminal-bg)] text-[var(--terminal-ink)]">
-			<div className="flex h-9 items-center justify-between border-b border-[var(--terminal-line)] px-4">
-				<div className="flex items-center gap-2 text-[9px] font-semibold"><span className={`h-1.5 w-1.5 rounded-full ${phase === "live" ? "bg-emerald-400" : "bg-amber-400"}`} />Terminal · {intl.formatMessage({ id: phase === "live" ? owner ? "terminal.panel.liveOwner" : "terminal.panel.liveFollower" : phase === "replaying" ? "terminal.panel.replaying" : "terminal.panel.attaching" })}{terminalSandboxLabel(intl, sandbox)}</div>
-				{error ? <button type="button" className="flex items-center gap-1 text-[9px] text-rose-300" onClick={() => setRetry((value) => value + 1)}><RefreshCw size={10} />{intl.formatMessage({ id: "terminal.panel.resync" })}</button> : null}
+		<section data-resize-owner={owner} className="terminal-panel terminal-panel-shell shrink-0 bg-[var(--terminal-bg)] text-[var(--terminal-ink)]">
+			<div className="terminal-workbench-header flex h-9 shrink-0 items-center justify-between gap-3 border-b border-[var(--workbench-line)] px-4">
+				<div className="terminal-workbench-heading flex items-center gap-2"><span className={`h-1.5 w-1.5 shrink-0 rounded-full ${phase === "live" ? "terminal-phase-live" : "terminal-phase-pending"}`} /><span>Terminal · {intl.formatMessage({ id: phase === "live" ? "terminal.panel.live" : phase === "replaying" ? "terminal.panel.replaying" : "terminal.panel.attaching" })}</span></div>
+				{error ? <button type="button" className="flex shrink-0 items-center gap-1 text-xs text-[var(--danger)]" onClick={() => setRetry((value) => value + 1)}><RefreshCw size={12} />{intl.formatMessage({ id: "terminal.panel.resync" })}</button> : null}
 			</div>
 			<div className="terminal-viewport relative min-h-0 p-2">
 				<div ref={containerRef} className="h-full w-full overflow-hidden" aria-label={intl.formatMessage({ id: "terminal.panel.readonly" })} />
@@ -398,7 +395,6 @@ export function TerminalPanel({
 				{phase !== "live" && !error ? <div className="pointer-events-none absolute inset-0 z-10 grid place-items-center bg-[color-mix(in_srgb,var(--terminal-bg)_70%,transparent)] text-[9px] text-[var(--terminal-muted)]"><span className="flex items-center gap-2"><LoaderCircle size={12} className="animate-spin" />{intl.formatMessage({ id: "terminal.panel.restoring" })}</span></div> : null}
 				{error ? <div className="absolute inset-x-3 bottom-3 z-20 rounded-lg border border-[var(--danger-line)] bg-[var(--danger-soft)] px-3 py-2 text-[9px] text-[var(--danger)]">{error}</div> : null}
 			</div>
-			<TerminalTimeline sessionId={sessionId} />
 		</section>
 	);
 }

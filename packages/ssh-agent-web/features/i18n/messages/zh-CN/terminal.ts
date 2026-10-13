@@ -44,6 +44,7 @@ export const zhCNTerminalMessages = {
 	"terminal.observation.announcement.processing": "Agent 正在处理 Terminal Observation",
 	"terminal.observation.announcement.finished": "Agent 已完成 Terminal Observation",
 	"terminal.panel.liveOwner": "Live · resize owner",
+	"terminal.panel.live": "Live",
 	"terminal.panel.liveFollower": "Live · read-only follower",
 	"terminal.panel.replaying": "正在同步",
 	"terminal.panel.attaching": "正在附着",

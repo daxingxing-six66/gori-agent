@@ -27,7 +27,7 @@ export function ModelThinkingSelector({
 	const levels = selectedModel?.supportedThinkingLevels ?? ["off"];
 	const composerAppearance = appearance === "composer";
 	return (
-		<div className={`inline-flex items-center transition ${composerAppearance ? `h-8 rounded-xl border px-0.5 shadow-[0_1px_2px_rgb(24_24_27/3%)] ${attention ? "border-[var(--warning-line)] bg-[var(--warning-soft)]" : "border-transparent bg-[var(--surface-muted)] hover:border-[var(--line-strong)] hover:bg-[var(--surface-hover)]"}` : `h-7 rounded-md ring-1 ${attention ? "bg-amber-50/80 ring-amber-300/80" : "ring-transparent hover:bg-black/[0.018] hover:ring-black/[0.055]"}`}`}>
+		<div className={`inline-flex items-center transition ${composerAppearance ? `model-thinking-selector-composer h-8 border px-0.5 ${attention ? "border-[var(--warning-line)] bg-[var(--warning-soft)]" : "border-transparent bg-[var(--surface-muted)] hover:border-[var(--line-strong)] hover:bg-[var(--surface-hover)]"}` : `h-7 rounded-md ring-1 ${attention ? "bg-amber-50/80 ring-amber-300/80" : "ring-transparent hover:bg-black/[0.018] hover:ring-black/[0.055]"}`}`}>
 			<ModelSelector
 				selectedModel={selectedModel}
 				onSelect={(model) => {

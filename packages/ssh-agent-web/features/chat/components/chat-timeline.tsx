@@ -64,7 +64,7 @@ export const ChatTimeline = memo(function ChatTimeline({
 	const runInsideDeployment = Boolean(run && deployments?.some((deployment) =>
 		deployment.agentRunId === run.id || deployment.planningAgentRunId === run.id));
 	return (
-		<div className="mx-auto min-h-full max-w-[820px] px-5 pb-10 pt-10 [&>*+*]:mt-8 [&>.chat-tool-only+.chat-tool-only]:mt-1 lg:px-8">
+		<div className="chat-timeline min-h-full [&>*+*]:mt-8 [&>.chat-tool-only+.chat-tool-only]:mt-1">
 			{loading ? <div className="flex justify-center py-16 text-zinc-400"><LoaderCircle size={18} className="animate-spin" /></div> : null}
 			{hasOlderDeployments ? <button type="button" disabled={loadingOlderDeployments} onClick={onLoadOlderDeployments} className="mx-auto block rounded-lg border border-line px-3 py-1.5 text-xs text-secondary hover:bg-surface-hover disabled:opacity-50">{intl.formatMessage({ id: loadingOlderDeployments ? "deploy.history.loadingOlder" : "deploy.history.loadOlder" })}</button> : null}
 			{loadingOlderMessages ? <div className="flex justify-center py-1.5 text-zinc-400" role="status" aria-label={intl.formatMessage({ id: "chat.history.loadingOlder" })}><LoaderCircle size={14} className="animate-spin" /></div> : null}

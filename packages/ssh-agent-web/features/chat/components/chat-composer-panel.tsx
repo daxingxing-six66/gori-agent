@@ -249,8 +249,8 @@ export const ChatComposerPanel = forwardRef<ChatComposerPanelHandle, {
 	};
 
 	return (
-		<div className="session-console-composer z-20 shrink-0 bg-[linear-gradient(to_bottom,transparent_0%,var(--panel)_26%)] px-5 pb-5 pt-8 lg:px-8">
-			<div className="mx-auto w-full max-w-[756px]">
+		<div className="session-console-composer chat-composer-dock z-20 shrink-0">
+			<div className="chat-composer-content">
 				<ChatComposerNotices
 					runtimeError={runtimeError}
 					autoAuditError={autoAuditError}
@@ -260,24 +260,24 @@ export const ChatComposerPanel = forwardRef<ChatComposerPanelHandle, {
 					onClearAutoAuditError={onClearAutoAuditError}
 					onClearManualCompactionResult={onClearManualCompactionResult}
 				/>
-				<div className="chat-composer-shell rounded-[18px] border border-[var(--line)] bg-[var(--surface-strong)] px-3 pb-3 pt-2.5 shadow-[0_16px_48px_rgb(24_26_23/7%)] transition focus-within:border-[#b4c0b8] focus-within:shadow-[0_18px_52px_rgb(24_26_23/9%)]">
+				<div className="chat-composer-shell border border-[var(--line)] bg-[var(--surface-strong)] px-3 pb-3 pt-2.5 transition">
 					{decisionPanel}
 					{modelSelectionError ? <div className="mb-1 flex w-full items-center justify-between gap-3 rounded-lg bg-[var(--warning-soft)] px-3 py-2 text-[11px] leading-5 text-[var(--warning)]"><span>{modelSelectionError}</span>{modelSelectionRetryable ? <button type="button" className="shrink-0 font-semibold underline underline-offset-2" onClick={onRetryModelSelection}>{intl.formatMessage({ id: "chat.model.reload" })}</button> : null}</div> : null}
 					{queue.length > 0 ? <QueuePreview items={queue} active={active} mutationId={queueMutationId} onCancel={onCancelQueued} onPromote={onPromoteQueued} /> : null}
 					{imageUploads.length > 0 ? <ImageAttachmentUploads uploads={imageUploads} onDismiss={dismissImageUpload} /> : null}
 					<ChatTokenEditor ref={editorRef} sessionId={sessionId} value={draft} placeholder={intl.formatMessage({ id: "session.new.composer.placeholder" })} tools={composerTools} onChange={setDraft} onSubmit={() => void submit()} onToolSelect={onToolSelect} onFiles={uploadFiles} />
-					<div className="flex items-center justify-between pt-1">
+					<div className="chat-composer-controls">
 						<div className="flex items-center gap-2 px-2 text-[11px] font-medium text-[var(--text-muted)]" title={intl.formatMessage({ id: active ? "chat.autoApproval.locked" : "chat.autoApproval.hint" })}>
 							<ShieldCheck size={14} className={autoAuditChecked ? "text-[var(--accent)]" : "text-[var(--text-muted)]"} />
 							<span>{intl.formatMessage({ id: "session.new.autoApproval" })}</span>
 							<ToggleSwitch checked={autoAuditChecked} disabled={active} label={intl.formatMessage({ id: "session.new.autoApproval.label" })} pending={autoAuditPending} onChange={onUpdateAutoAudit} />
 						</div>
-						<div className="flex items-center gap-1.5">
+						<div className="chat-composer-actions">
 							{active && hasSubmittableContent ? <button type="button" disabled={!canSubmit} className="grid h-8 w-8 place-items-center rounded-full text-[var(--accent)] transition hover:bg-[var(--accent-soft)] disabled:opacity-40" onClick={() => void submit()} aria-label={intl.formatMessage({ id: "chat.send" })} title={intl.formatMessage({ id: "chat.send" })}>{submitting ? <LoaderCircle size={13} className="animate-spin" /> : <Send size={13} />}</button> : null}
 							{modelRequired ? <span className="pr-0.5 text-[11px] font-medium text-[var(--warning)]">{intl.formatMessage({ id: "chat.model.selectBeforeSend" })}</span> : null}
 							<ChatContextUsageIndicator usage={contextUsage} />
 							<ModelThinkingSelector selectedModel={model} thinkingLevel={thinkingLevel} disabled={active || modelSelectionLoading} attention={modelRequired} modelLabel={modelSelectionLoading ? intl.formatMessage({ id: "chat.model.restoring" }) : modelLabel} appearance="composer" onSelectModel={onSelectModel} onSelectThinkingLevel={onSelectThinkingLevel} />
-							{active ? <button type="button" className="grid h-8 w-8 place-items-center rounded-full bg-[#282b28] text-white transition hover:bg-[#171a17] disabled:cursor-not-allowed disabled:bg-zinc-300" disabled={cancelling} onClick={onCancel} aria-label={intl.formatMessage({ id: "chat.stop" })} title={intl.formatMessage({ id: "chat.stop" })}>{cancelling ? <LoaderCircle size={13} className="animate-spin" /> : <Square size={11} fill="currentColor" />}</button> : <button type="button" className="grid h-8 w-8 place-items-center rounded-full bg-[#282b28] text-white transition hover:bg-[#171a17] disabled:cursor-not-allowed disabled:bg-zinc-200 disabled:text-zinc-400" aria-label={intl.formatMessage({ id: "chat.send" })} disabled={!hasSubmittableContent || !canSubmit} onClick={() => void submit()}>{submitting ? <LoaderCircle size={13} className="animate-spin" /> : <Send size={13} />}</button>}
+							{active ? <button type="button" className="chat-composer-action transition" disabled={cancelling} onClick={onCancel} aria-label={intl.formatMessage({ id: "chat.stop" })} title={intl.formatMessage({ id: "chat.stop" })}>{cancelling ? <LoaderCircle size={13} className="animate-spin" /> : <Square size={11} fill="currentColor" />}</button> : <button type="button" className="chat-composer-action transition" aria-label={intl.formatMessage({ id: "chat.send" })} disabled={!hasSubmittableContent || !canSubmit} onClick={() => void submit()}>{submitting ? <LoaderCircle size={13} className="animate-spin" /> : <Send size={13} />}</button>}
 						</div>
 					</div>
 				</div>

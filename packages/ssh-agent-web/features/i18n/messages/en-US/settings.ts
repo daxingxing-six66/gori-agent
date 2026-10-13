@@ -58,6 +58,7 @@ export const enUSSettingsMessages = {
 	"theme.light.description": "Keep the current soft off-white interface",
 	"theme.dark.label": "Dark",
 	"theme.dark.description": "Use a low-contrast frosted charcoal interface",
+	"theme.contrast.label": "Split tone · Experimental",
 	"theme.system.label": "System",
 	"theme.system.description": "Switch automatically with the system appearance",
 	"theme.system.resolved": "Currently using {theme}",

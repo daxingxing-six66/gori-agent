@@ -12,6 +12,7 @@ import type {
 } from "@/features/chat/model/chat";
 import type { SessionAttachment } from "@/features/session/api/session-attachment-api";
 import type { UserDecision } from "@/features/chat/model/user-decision";
+import { isRecord } from "@/features/chat/model/chat";
 
 export interface ChatTimelineEntry {
 	key: string;
@@ -214,6 +215,7 @@ function reduceEvent(state: ChatRuntimeState, event: ChatStreamEvent): ChatRunti
 					}),
 					status: event.data.isError ? "failed" : "completed",
 					result: event.data.result,
+					...(isRecord(event.data.result) && event.data.result.details !== undefined ? { details: event.data.result.details } : {}),
 					isError: event.data.isError,
 					finishedAt: Date.now(),
 				},
@@ -295,6 +297,7 @@ function applyToolResult(tools: Record<string, ChatToolExecution>, message: Tool
 			...(tools[message.toolCallId] ?? { toolCallId: message.toolCallId, toolName: message.toolName }),
 			status: message.isError ? "failed" : "completed",
 			result: message.content,
+			...(message.details === undefined ? {} : { details: message.details }),
 			isError: message.isError,
 			finishedAt: message.timestamp,
 		},
