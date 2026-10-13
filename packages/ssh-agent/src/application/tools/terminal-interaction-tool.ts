@@ -1,3 +1,4 @@
+import { sandboxFactRoots } from "../../domain/sandbox-writable-roots.ts";
 import { type AgentTool, AgentToolError } from "@earendil-works/pi-agent-core";
 import { type Static, Type } from "typebox";
 import { SshAgentError } from "../../domain/ssh-failure.ts";
@@ -214,8 +215,8 @@ function toolResult(result: TerminalInteractionResult, sandbox: TerminalSandboxF
 
 function sandboxSummary(sandbox: TerminalSandboxFacts): string {
 	if (sandbox.mode === "workspace_write") return sandbox.backend === "landlock"
-		? `Terminal sandbox: Landlock ABI ${sandbox.abi}; writable root ${sandbox.sandboxRoot}.`
-		: `Terminal sandbox: Bubblewrap ${sandbox.bubblewrapVersion}; writable root ${sandbox.sandboxRoot}.`;
+		? `Terminal sandbox: Landlock ABI ${sandbox.abi}; writable roots ${sandboxFactRoots(sandbox).join(", ")}.`
+		: `Terminal sandbox: Bubblewrap ${sandbox.bubblewrapVersion}; writable roots ${sandboxFactRoots(sandbox).join(", ")}.`;
 	return "source" in sandbox
 		? sandbox.source === "session_setting"
 			? "Terminal sandbox: disabled by the user for this Session; SSH account permissions apply without filesystem confinement."

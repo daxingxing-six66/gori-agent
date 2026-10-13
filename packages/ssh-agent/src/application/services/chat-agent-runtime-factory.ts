@@ -65,7 +65,7 @@ export interface ChatAgentRuntimeFactoryOptions {
 	decisions: Pick<ChatUserDecisionService, "request">;
 	deployments?: AgentDeploymentService;
 	bubblewrapInstallations?: BubblewrapInstallationService;
-	sandboxPolicy?: Pick<SessionSandboxPolicy, "mode">;
+	sandboxPolicy?: Pick<SessionSandboxPolicy, "mode"> & Partial<Pick<SessionSandboxPolicy, "instructions">>;
 	createRemoteTool(sessionId: string, abortRun?: () => void, agentRunId?: string): AgentTool;
 	createTerminalTool(input: { sessionId: string; terminalSessionId: string; agentRunId: string }): AgentTool;
 	createSftpTool(input: {
@@ -143,7 +143,9 @@ export class ChatAgentRuntimeFactory {
 		let runtime: ChatRunRuntime | undefined;
 		try {
 			const systemPrompt = this.#sandboxPolicy
-				? `${input.systemPrompt}\n\n${sessionSandboxInstructions(await this.#sandboxPolicy.mode(input.run.sessionId))}`
+				? `${input.systemPrompt}\n\n${this.#sandboxPolicy.instructions
+					? await this.#sandboxPolicy.instructions(input.run.sessionId)
+					: sessionSandboxInstructions(await this.#sandboxPolicy.mode(input.run.sessionId))}`
 				: input.systemPrompt;
 			const requireRuntime = (): ChatRunRuntime => {
 				if (!runtime) throw new Error("Chat Runtime is unavailable during Agent callback");

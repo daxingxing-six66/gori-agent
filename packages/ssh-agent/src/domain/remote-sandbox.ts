@@ -18,7 +18,9 @@ export interface RemoteSandboxFacts {
 	launcherVersion?: string;
 	/** Installed Bubblewrap version, when Bubblewrap was selected. */
 	bubblewrapVersion?: string;
+	/** First root retained for compatibility with historical audit consumers. */
 	sandboxRoot?: string;
+	sandboxRoots?: string[];
 	/** A stderr hint, never proof of a kernel denial. */
 	denialSuspected?: boolean;
 	commandMayHaveRun?: boolean;

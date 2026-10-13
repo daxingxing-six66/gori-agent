@@ -1,11 +1,12 @@
 export const zhCNSessionMessages = {
+	"session.sandbox.settings": "设置沙盒可写目录",
 	"session.sandbox.on": "沙盒已开启",
 	"session.sandbox.off": "沙盒已关闭",
 	"session.sandbox.changing": "正在切换沙盒模式…",
 	"session.sandbox.enabledDescription": "远端命令和 Terminal 使用文件系统沙箱，Full Access 例外需要单独审批。",
 	"session.sandbox.disabledDescription": "此 Session 已关闭沙箱。远端命令和 Terminal 使用 SSH 账号权限执行，Guard 和常规审批继续生效。",
 	"session.sandbox.command.name": "沙盒模式",
-	"session.sandbox.command.description": "限制远端进程仅在工作区和临时目录内写入文件",
+	"session.sandbox.command.description": "限制远端进程仅在所选目录和临时目录内写入文件",
 	"session.sandbox.restarting": "已有 Terminal 会自动关闭并重开，Shell 内状态将丢失",
 	"session.sandbox.usage": "使用 /sandbox 切换模式，也可输入 /sandbox on、off 或 status，且不附带附件。",
 	"session.new": "新会话",

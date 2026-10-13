@@ -93,7 +93,7 @@ describe("Bubblewrap remote sandbox", () => {
 		const signal = new AbortController().signal;
 		const prepared = await sandbox.prepare({ target, cwd: "/srv/app", command: "echo ready", signal });
 		expect(prepared.sandbox).toEqual({ mode: "workspace_write", backend: "bubblewrap", enforcement: "full",
-			bubblewrapVersion: "0.12.0", sandboxRoot: "/srv/app" });
+			bubblewrapVersion: "0.12.0", sandboxRoot: "/srv/app", sandboxRoots: ["/srv/app"] });
 		expect(prepared.command).toContain("'--ro-bind' '/' '/'");
 		expect(prepared.command).toContain("'--bind' '/srv/app' '/srv/app'");
 		expect(prepared.command).toContain("'--ro-bind' '/proc' '/proc'");

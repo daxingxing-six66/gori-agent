@@ -224,7 +224,9 @@ describe("TerminalInteractionService", () => {
 	it("warns and returns retained text when replay has overflowed", async () => {
 		const context = await setup(new Decisions([]));
 		try {
-			for (let i = 0; i < 4100; i++) context.broker.handle!.emit(`line-${i}\r\n`);
+			// Adjacent fragments now coalesce; overflow the retained byte budget, not the old per-fragment count.
+			const padding = "x".repeat(600);
+			for (let i = 0; i < 4100; i++) context.broker.handle!.emit(`line-${i}${padding}\r\n`);
 			await context.terminals.getActor("session-1")!.captureCanonical();
 			const result = await context.interactions.execute({ sessionId: "session-1", terminalSessionId: context.terminal.id, agentRunId: "run-1", toolCallId: "overflow", expectation: "finite", action: { type: "observe" } });
 			expect(result.observation.truncated).toBe(true);

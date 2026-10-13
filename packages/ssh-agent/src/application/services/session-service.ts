@@ -4,6 +4,8 @@ import { isAbsolute, join } from "node:path";
 import { ManagementError } from "../../domain/errors.ts";
 import type { Clock, IdGenerator, SessionId, WorkspaceId } from "../../domain/ids.ts";
 import type { CreateSessionInput, DeleteSessionInput, Session, UpdateSessionInput } from "../../domain/session.ts";
+import { defaultSandboxWritableRoots, sameSandboxWritableRoots } from "../../domain/sandbox-writable-roots.ts";
+import { requireSandboxWritableRoots } from "../sandbox-writable-roots.ts";
 import type { CommandOperationRepository } from "../repositories/command-operation-repository.ts";
 import type { SessionRepository } from "../repositories/session-repository.ts";
 import type { WorkspaceRepository } from "../repositories/workspace-repository.ts";
@@ -72,6 +74,9 @@ export class DefaultSessionService implements SessionService {
 			workDir: await normalizeWorkDir(input.workDir ?? workspace.defaultCwd),
 			autoAudit: input.autoAudit ?? false,
 			sandboxEnabled: input.sandboxEnabled ?? true,
+			sandboxWritableRoots: input.sandboxWritableRoots === undefined
+				? [...(workspace.sandboxWritableRoots ?? defaultSandboxWritableRoots(workspace.remoteDefaultCwd ?? "/"))]
+				: requireSandboxWritableRoots(input.sandboxWritableRoots),
 			terminalContextCursor: 0,
 			revision: 1,
 			createdAt: now,
@@ -100,10 +105,11 @@ export class DefaultSessionService implements SessionService {
 	}
 
 	async update(input: UpdateSessionInput): Promise<Session> {
-		const lease = this.lifecycle?.acquireUse(input.id, input.sandboxEnabled === undefined ? "session_update" : "sandbox_update");
+		const changesSandbox = input.sandboxEnabled !== undefined || input.sandboxWritableRoots !== undefined;
+		const lease = this.lifecycle?.acquireUse(input.id, changesSandbox ? "sandbox_update" : "session_update");
 		try {
 			requirePositiveRevision(input.expectedRevision);
-			if (input.displayName === undefined && input.workDir === undefined && input.autoAudit === undefined && input.sandboxEnabled === undefined) {
+			if (input.displayName === undefined && input.workDir === undefined && input.autoAudit === undefined && !changesSandbox) {
 				throw new ManagementError("validation_error", "Session update must contain a mutable field", "body");
 			}
 			const current = await this.get(input.id);
@@ -111,12 +117,17 @@ export class DefaultSessionService implements SessionService {
 				throw new ManagementError("revision_conflict", "Session was modified by another request");
 			}
 			if (
-				(input.workDir !== undefined || input.autoAudit !== undefined || input.sandboxEnabled !== undefined) &&
+				(input.workDir !== undefined || input.autoAudit !== undefined || changesSandbox) &&
 				(await this.hasActiveChatRun?.(input.id)) === true
 			) {
 				throw new ManagementError("session_has_active_chat_run", "Session has an active Chat Run");
 			}
-			const sandboxChanged = input.sandboxEnabled !== undefined && input.sandboxEnabled !== current.sandboxEnabled;
+			const sandboxWritableRoots = input.sandboxWritableRoots === undefined
+				? current.sandboxWritableRoots : requireSandboxWritableRoots(input.sandboxWritableRoots);
+			const rootsChanged = sandboxWritableRoots !== undefined &&
+				!sameSandboxWritableRoots(sandboxWritableRoots, current.sandboxWritableRoots ?? []);
+			const sandboxChanged = (input.sandboxEnabled !== undefined && input.sandboxEnabled !== current.sandboxEnabled) ||
+				(rootsChanged && current.sandboxEnabled !== false);
 			if (sandboxChanged && this.operations && await this.operations.countActiveBySessionId(input.id) > 0) {
 				throw new ManagementError("session_has_active_operations", "Session still contains active command Operations");
 			}
@@ -131,6 +142,7 @@ export class DefaultSessionService implements SessionService {
 							: await normalizeWorkDir(input.workDir),
 				autoAudit: input.autoAudit ?? current.autoAudit,
 				sandboxEnabled: input.sandboxEnabled ?? current.sandboxEnabled,
+				sandboxWritableRoots,
 				revision: current.revision + 1,
 				updatedAt: this.clock.now(),
 			};

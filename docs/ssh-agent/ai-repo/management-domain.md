@@ -4,7 +4,7 @@
 
 - 工作区创建与草稿连接测试共用 `application/workspace-connection.ts` 的地址/连接参数校验，以及 `credential-factory.ts` 的 Credential 校验。草稿测试不创建任何领域实体，见 [connection-test.md](./connection-test.md)。
 
-Workspace 的 `defaultCwd` 明确为新 Session 继承的本地目录；`remoteDefaultCwd` 同时是 SSH/SFTP 默认目录与 Landlock 可写根。创建时旧 API 客户端省略远端目录仍得到 `/`，但受限写入不能使用 `/`；显式值必须是非 `/` 的绝对路径、无 NUL/换行且不超过 4096 字符。PATCH 省略时保留，改名和 Credential 切换均保留。
+Workspace 的 `defaultCwd` 明确为新 Session 继承的本地目录；`remoteDefaultCwd` 只作为 SSH/SFTP 默认目录；`sandboxWritableRoots` 单独保存沙盒可写目录默认列表。创建时旧 API 客户端省略远端目录仍得到 `/`，但受限写入不能使用 `/`；显式默认目录必须是绝对路径（允许 `/`）、无 NUL/换行且不超过 4096 字符。PATCH 省略时保留，改名和 Credential 切换均保留。
 
 v21 将旧独立可写根优先迁到 `remoteDefaultCwd` 并删除旧列，避免升级时扩大写入边界。没有旧根的记录保留原远端目录，`/` 仍无法作为沙箱可写根。见 [remote-sandbox.md](./remote-sandbox.md)。
 
@@ -12,8 +12,8 @@ v21 将旧独立可写根优先迁到 `remoteDefaultCwd` 并删除旧列，避�
 
 - 新会话首条消息可异步生成标题，使用 Session revision 条件更新避免覆盖手动编辑，成功后通过 Workspace SSE 通知前端。见 [session-title.md](./session-title.md)。
 
-- Workspace 保存服务器静态信息、活动 Credential 引用、本地/远端默认工作目录和连接参数；普通编辑允许修改 `displayName` 和可选 `defaultCwd/remoteDefaultCwd`，省略目录时保留旧值；SQLite 更新通过 revision 防止覆盖并发修改。创建时 `hostKey` 为 `null`，首次 Tool 调用后从 Workspace 所有的 Host Trust 记录水合。
-- Session 固定绑定一个 Workspace；可编辑 `displayName`、本地 `workDir`、`autoAudit` 和 `sandboxEnabled`。创建时未传 `workDir` 则继承 Workspace `defaultCwd` 并规范化、持久化；显式路径优先。继承与显式工作目录都必须存在且为目录，活动 Chat Run 期间不能修改后三项。沙盒默认开启，只属于 Session；切换持有配置 lease，阻止活动执行和并发更新，已有 active Terminal 会自动关闭并按新设置重开。见 [session-sandbox.md](./session-sandbox.md)。
+- Workspace 保存服务器静态信息、活动 Credential 引用、本地/远端默认工作目录和连接参数；普通编辑允许修改 `displayName` 和可选 `defaultCwd/remoteDefaultCwd/sandboxWritableRoots`，省略目录时保留旧值；SQLite 更新通过 revision 防止覆盖并发修改。创建时 `hostKey` 为 `null`，首次 Tool 调用后从 Workspace 所有的 Host Trust 记录水合。
+- Session 固定绑定一个 Workspace；可编辑 `displayName`、本地 `workDir`、`autoAudit`、`sandboxEnabled` 和 `sandboxWritableRoots`。新 Session 复制 Workspace 可写目录默认列表，创建时可显式覆盖；已有 Session 保留独立列表。创建时未传 `workDir` 则继承 Workspace `defaultCwd` 并规范化、持久化；显式路径优先。继承与显式工作目录都必须存在且为目录，活动 Chat Run 期间不能修改工作目录、审批及沙盒配置。沙盒默认开启，只属于 Session；切换持有配置 lease，阻止活动执行和并发更新，已有 active Terminal 会自动关闭并按新设置重开。见 [session-sandbox.md](./session-sandbox.md)。
 - 单 Session 详情响应会组合 Chat 领域的最近模型选择投影；该字段不是 Session 实体，也不进入 Workspace + Session Tree。
 - Session 删除使用进程内 deletion barrier 阻止新的 Chat Run、Command Operation、Attachment upload、Terminal open 和 Session update。活动 Chat Run、Command Operation 或 Attachment upload 阻止删除；仅有 TerminalSession 时由 Terminal Service 先关闭资源再删除。数据库删除成功后只清理该 Session 的附件目录，清理失败记录日志但不回滚已经完成的删除。
 - Credential 只能属于一个 Workspace；一个 Workspace 可以有多个 Credential，但通过 `activeCredentialId` 同时只使用一个。认证材料通过独立的 Secret Store 写入，当前提供 Workspace 范围的创建、读取、列表和删除，没有编辑接口。
@@ -41,3 +41,5 @@ v21 将旧独立可写根优先迁到 `remoteDefaultCwd` 并删除旧列，避�
 | Session 附件生命周期 | [attachment-service.ts](../../../packages/ssh-agent/src/application/services/attachment-service.ts)、[attachments.md](./attachments.md) |
 
 设计新行为时先修改领域类型和 Service 约束，再扩展 Repository/适配器。不要让 HTTP 或 SQLite 类型反向进入领域层。Credential 的归属必须通过 Workspace 范围接口校验，不能恢复全局 Credential 列表。
+
+v28 将旧单根范围迁为 Workspace 和已有 Session 的独立目录列表，不修改 revision 或历史。显式列表为 1–16 条不重复的绝对非根路径，每条最多 4096 字符，无 NUL/换行；配置保留路径原文，真实存在性及符号链接由远端准备校验。`domain/sandbox-writable-roots.ts` 负责纯约束，`application/sandbox-writable-roots.ts` 负责管理字段错误，Service 统一调用。Workspace 更新只改变后续新会话的默认范围；修改默认 cwd 不自动改权限。Session 目录更新沿用沙盒 lifecycle barrier，开启状态的 active PTY 自动重开并保留 geometry。回归见 `sandbox-writable-roots.test.ts` 与 `session-sandbox.test.ts`。

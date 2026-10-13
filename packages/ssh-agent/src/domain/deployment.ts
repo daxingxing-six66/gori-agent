@@ -75,7 +75,7 @@ interface DeploymentPlanBase {
 	remoteAccess: DeploymentRemoteAccess;
 	project: string;
 	target: { host: string; name?: string };
-	targetBinding: { workspaceRevision?: number; port: number; hostKeyAlgorithm?: string; hostKeyFingerprint: string; credentialId: string; credentialAuthVersion: number; remoteUser: string; writableRoot: string };
+	targetBinding: { workspaceRevision?: number; port: number; hostKeyAlgorithm?: string; hostKeyFingerprint: string; credentialId: string; credentialAuthVersion: number; remoteUser: string; writableRoot: string; sandboxWritableRoots?: string[] };
 	module: { id: string; name: string };
 	restart: DeploymentRemoteCommand;
 	verify?: DeploymentRemoteCommand;
@@ -184,6 +184,7 @@ export interface DeploymentDiscussion {
 		credentialAuthVersion: number;
 		remoteUser: string;
 		writableRoot: string;
+		sandboxWritableRoots?: string[];
 	};
 	createdAt: number;
 	updatedAt: number;

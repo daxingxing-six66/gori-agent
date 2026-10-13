@@ -4,6 +4,8 @@
 
 创建工作区弹窗底部左侧提供可选“测试连接”，测试当前草稿，无需工作区名称或有效默认目录；结果复用 NoticeCard，在操作栏上方显示。ManagementDialog 增加可选 footerLeading/footerNotice 插槽，取消和创建保持右侧一组。测试期间禁用重复测试与创建，编辑连接字段、进入凭据配置或关闭时取消并清除结果；请求序号避免旧结果回写。实现、契约与测试见 [connection-test.md](./connection-test.md)。
 
+工作区创建/编辑弹窗使用 `workspace-form.tsx` 共用分区、紧凑凭据行和目录控件，局部样式集中于 `workspace-form.css`，通过 `workspace-management-dialog` 限定作用范围。桌面端采用左侧说明、右侧表单，600px 以下改为单列；凭据仅展示名称、用户与类型，说明位于控件下方并关联无障碍描述。本地/远端目录使用不同的小图标和截断路径，标签位于控件上方；目录、凭据控件与输入框保持相同高度，不使用图标底座和大面积强调底色。创建时高级连接参数默认收起，字段发生原生或服务端校验错误时自动展开；编辑弹窗标题下显示主机、端口和环境。ManagementDialog 的可选 className/headerIcon 支持这类扩展，其余管理弹窗保留默认外观。
+
 侧边栏的工作区展开状态由根布局中的 `WorkspaceTreeProvider` 按工作区 ID 独立保存，切换工作区或会话页面不会收起其他工作区。首次进入尚无展开记录的工作区时默认展开；手动收起（包括当前工作区）会保留到本次页面生命周期结束，刷新浏览器后重新初始化。
 
 聊天主视图复用 `components/page-layout.tsx` 的页首和 `page-layout.css` 的阅读列样式。Sidebar 品牌栏、Chat/新会话页首及 Terminal 顶栏统一为 44px；收起侧栏为 44px，设置区为 46px。移除 Logo 图标、聊天工作区/本地目录副标题、空闲“就绪”及 Terminal 顶栏审计细节与底部列表。活动、失败、取消、连接异常仍保留。窄屏仍通过原抽屉导航，聊天页首保持单行标题截断。Terminal 宽度变化继续由既有 ResizeObserver 测量并提交后端 resize，不改变 attachment 或响应式布局。
@@ -15,10 +17,10 @@
 Chat 协议接受 runtime system 消息，状态按 `runtimeEventId` 保留同毫秒内的不同切换。时间线不把模式协议显示为 Assistant 气泡，也不因仅有模式记录而隐藏空会话提示。回归见 `tests/chat-system-messages.test.tsx`。
 
 
-工作区创建/编辑表单区分“默认本地工作目录”与“默认远端工作目录”：本地沿用 LocalDirectoryPicker，远端由 RemoteDirectoryPicker 通过 SFTP 选择，初始浏览路径 `/`。创建时使用尚未保存的主机/凭据临时连接，配置完整后才可打开；编辑时使用当前工作区的 SFTP API。选择器只列目录，显示面包屑、搜索、加载和失败重试；`/` 可浏览但不可选为工作区可写根，确认后回填规范化路径。远端目录同时决定受限命令沙箱的可写根，概览分别显示本地与远端目录；新会话仍继承本地 `defaultCwd`。
+工作区创建/编辑表单区分“默认本地工作目录”与“默认远端工作目录”：本地沿用 LocalDirectoryPicker，远端由 RemoteDirectoryPicker 通过 SFTP 选择，初始浏览路径 `/`。创建时使用尚未保存的主机/凭据临时连接，配置完整后才可打开；编辑时使用当前工作区的 SFTP API。选择器只列目录，显示面包屑、搜索、加载和失败重试；默认 cwd 可选择 `/`，独立多选器禁止将 `/` 加入可写列表，确认后回填远端规范路径。沙盒可写范围通过 `sandboxWritableRoots` 单独设置，概览分别显示本地与远端目录；新会话仍继承本地 `defaultCwd`。
 
 
-工作区表单只保留一个远端目录字段。Overview 通过 `remote-sandbox-panel.tsx` 显示尚未验证、显式检测后的 ABI/规范根或失败原因和时间，初始不宣称已开启。检测响应在 Workspace model 边界验证模式、后端、完整约束、ABI 与根路径后才展示为成功；畸形响应进入错误状态。检测请求可取消，状态按 Workspace ID/revision 隔离。见 [remote-sandbox.md](./remote-sandbox.md) 与 `tests/remote-sandbox.test.tsx`。
+工作区表单分别提供单个默认远端目录与紧凑的沙盒可写目录列表。多选 `RemoteDirectoryPicker` 通过勾选跨目录保留选择，显示可移除标签、数量和批量确认，最多 16 条；列表字段共用 `sandbox-writable-roots-field.tsx` 与局部 CSS。Overview 通过 `remote-sandbox-panel.tsx` 显示尚未验证、显式检测后的 ABI/规范根或失败原因和时间，初始不宣称已开启。检测响应在 Workspace model 边界验证模式、后端、完整约束、ABI 与完整根列表及首根兼容字段后才展示为成功；畸形响应进入错误状态。检测请求可取消，状态按 Workspace ID/revision 隔离。见 [remote-sandbox.md](./remote-sandbox.md) 与 `tests/remote-sandbox.test.tsx`。
 
 ## 使用顺序
 
@@ -46,9 +48,9 @@ Chat 的 `UserDecisionPanel` 在输入框上方向上展开，显示模型的三
 | 要修改的前端功能 | 首要文件 | 状态、协议和辅助文件 | 对应测试 |
 |---|---|---|---|
 | Workspace/Session 树加载与全局刷新 | `features/workspace/components/workspace-tree-provider.tsx` | `workspace-tree-context.ts`、`features/workspace/api/workspace-api.ts`、`features/workspace/model/workspace.ts` | `tests/api-clients.test.ts` |
-| Workspace 创建、重命名、删除和远端目录选择 | `features/workspace/components/workspace-dialog.tsx`、`features/workspace/components/workspace-edit-dialog.tsx`、`components/workspace-console.tsx` | `features/workspace/components/remote-directory-picker.tsx`、`features/workspace/components/name-dialog.tsx`、`features/workspace/api/workspace-api.ts`；创建时复用 Credential 草稿和临时 SFTP 浏览，编辑时使用工作区 SFTP API | `tests/workspace-connection-test.test.tsx`、`tests/api-clients.test.ts` |
+| Workspace 创建、编辑、删除和远端目录选择 | `features/workspace/components/workspace-dialog.tsx`、`features/workspace/components/workspace-edit-dialog.tsx`、`components/workspace-console.tsx` | `features/workspace/components/workspace-form.tsx`、`workspace-form.css`、`remote-directory-picker.tsx`、`name-dialog.tsx`、`features/workspace/api/workspace-api.ts`；创建时复用 Credential 草稿和临时 SFTP 浏览，编辑时使用工作区 SFTP API | `tests/workspace-connection-test.test.tsx`、`tests/workspace-edit-dialog.test.tsx`、`tests/api-clients.test.ts` |
 | SSH Credential 创建、列表、切换、删除 | `features/credential/components/credential-manager.tsx` | `credential-dialog.tsx`、`api/credential-api.ts`、`model/credential.ts` | `tests/api-clients.test.ts` |
-| Session 创建、首次发送前选择工作目录、命名、自动审批、重命名和删除 | `features/session/components/new-session-chat.tsx`、`components/workspace-sidebar.tsx` | `session-dialog.tsx`、`session-delete-dialog.tsx`、`local-directory-picker.tsx`、`api/session-api.ts`、`model/session.ts`、`features/workspace/model/session-update.ts` | `tests/session-title.test.tsx`、`tests/session-directory-picker.test.tsx`、`tests/api-clients.test.ts` |
+| Session 创建、首次发送前选择工作目录、命名、自动审批、重命名和删除 | `features/session/components/new-session-chat.tsx`、`components/workspace-sidebar.tsx` | `session-edit-dialog.tsx`、`session-dialog.tsx`、`session-delete-dialog.tsx`、`local-directory-picker.tsx`、`api/session-api.ts`、`model/session.ts`、`features/workspace/model/session-update.ts` | `tests/session-title.test.tsx`、`tests/session-directory-picker.test.tsx`、`tests/api-clients.test.ts` |
 | Session 单一沙盒模式命令、呼吸灯、页首标识、配置更新与 Terminal 自动重开 | `features/session/runtime/use-session-sandbox.ts` | `model/session-sandbox-command.ts`、`components/session-sandbox-badge.tsx`、`components/session-sandbox-status.tsx`、`features/chat/components/chat-console.tsx`、`features/i18n/messages/*/session.ts`；菜单单一标题“沙盒模式”/“sandbox”，介绍文件写入限制，状态以呼吸灯表示；页首运行状态左侧以图标和短文案显示已确认设置；详见 [session-sandbox.md](./session-sandbox.md) | `tests/use-session-sandbox.test.ts`、`tests/session-sandbox-command.test.tsx` |
 | Guard 规则编辑、开关、创建和删除 | `features/guard/components/guard-editor.tsx` | `guard-rule-dialog.tsx`、`guard-rule-switch.tsx`、`model/guard.ts`、`model/guard-editor-state.ts` | `tests/guard-editor-state.test.ts` |
 | Guard 自动保存、冲突恢复和 optimistic 开关回滚 | `features/guard/components/use-guard-autosave.ts` | `api/guard-api.ts`、`model/guard-editor-state.ts` | `tests/guard-editor-state.test.ts`、`tests/api-clients.test.ts` |
@@ -117,4 +119,6 @@ Chat 错误展示复用 `features/chat/components/chat-failure-details.tsx`，�
 
 模型选择器仅在用户切换 Provider/Model 时，将标识写入浏览器全局 `localStorage`（`gori:last-model-selection:v1`），同模型不重复写入；不缓存凭据、模型能力或思考强度。新会话挂载时读取并通过 `resolveConfiguredModel` 校验可用性后预选，存储损坏、不可用模型和目录查询失败均保留手动选择入口；手选及卸载会取消恢复，迟到响应不覆盖用户选择。已有会话继续使用自身模型记录，自动恢复和发送消息不写全局缓存。缓存跨工作区、刷新和同源标签页共享，不跨浏览器同步。
 
-工作区控制台铅笔入口使用 `workspace-edit-dialog.tsx` 编辑名称和默认目录，分别使用 `LocalDirectoryPicker` 和 `RemoteDirectoryPicker` 浏览本机与远端目录；保存通过 Workspace PATCH 携带 `displayName/defaultCwd/remoteDefaultCwd/expectedRevision`，成功后刷新共享树。取消目录选择保留草稿，保存失败保留弹窗与路径。已有 Session 目录不随 Workspace 默认值变更。
+工作区控制台铅笔入口使用 `workspace-edit-dialog.tsx` 编辑名称、默认目录及沙盒可写默认列表，分别使用 `LocalDirectoryPicker` 和 `RemoteDirectoryPicker` 浏览本机与远端目录；保存通过 Workspace PATCH 携带 `displayName/defaultCwd/remoteDefaultCwd/sandboxWritableRoots/expectedRevision`，成功后刷新共享树。取消目录选择保留草稿，保存失败保留弹窗与路径。已有 Session 目录不随 Workspace 默认值变更。
+
+新 Session 创建时复制 Workspace 的可写目录列表，之后独立保存；Workspace 更新不覆盖已有 Session。侧边栏每个 Session 的铅笔入口打开 `features/session/components/session-edit-dialog.tsx`：先读取权威 Session，再在 `session-dialog.tsx` 一起编辑名称、本地目录、自动审批及多目录，允许显式复制最新 Workspace 默认列表。提交沿用编辑时 revision，冲突不能自动覆盖；目录未变时省略字段，一次保存携带编辑快照 revision；保存成功或可能已提交的 PTY 重开失败都会刷新树及当前 Terminal。页首沙盒标识恢复为只读图标与短文案，`use-session-sandbox.ts` 只负责 `/sandbox` 切换。前端纯校验及新旧审计解析位于 `features/workspace/model/sandbox-writable-roots.ts`，回归见 `tests/sandbox-writable-roots.test.tsx`、`tests/session-edit-dialog.test.tsx` 和 `tests/use-session-sandbox.test.ts`。

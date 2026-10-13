@@ -32,7 +32,8 @@ export class RemoteCommandExecutionPlan {
 		this.toolCallId = options.toolCallId;
 		this.request = snapshotRemoteCommandRequest(options.request);
 		this.access = Object.freeze({ ...options.access });
-		this.expectedTarget = options.expectedTarget === undefined ? undefined : Object.freeze({ ...options.expectedTarget });
+		this.expectedTarget = options.expectedTarget === undefined ? undefined : Object.freeze({ ...options.expectedTarget,
+			...(options.expectedTarget.sandboxWritableRoots === undefined ? {} : { sandboxWritableRoots: Object.freeze([...options.expectedTarget.sandboxWritableRoots]) }) });
 		Object.freeze(this);
 	}
 

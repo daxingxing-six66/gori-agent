@@ -19,10 +19,14 @@
 | LLM Provider/Model 目录、Provider Credential 和 pi-ai 接入 | [llm-provider.md](./llm-provider.md) | `packages/ssh-agent/src/domain/llm-provider.ts`、`packages/ssh-agent/src/application/services/llm-provider-service.ts` |
 | 创建工作区前测试地址与草稿凭据、临时 SSH 认证和取消 | [connection-test.md](./connection-test.md) | `packages/ssh-agent/src/application/services/connection-test-service.ts`、`packages/ssh-agent-web/features/workspace/components/workspace-dialog.tsx` |
 | SSH Connection Key、连接复用、Channel、主机校验、保活和重连 | [connection-runtime.md](./connection-runtime.md) | `packages/ssh-agent/src/infrastructure/ssh/ssh2-connection-pool.ts` |
-| Session 命令 FIFO、进程并发限制、Operation、Guard 执行校验、Tool、失败和事件 | [command-execution.md](./command-execution.md) | `packages/ssh-agent/src/application/services/session-command-scheduler.ts`、`packages/ssh-agent/src/application/services/command-operation-service.ts` |
+| Session 命令 FIFO、进程并发限制与排队超时 | [command-execution.md](./command-execution.md) | `packages/ssh-agent/src/application/services/session-command-scheduler.ts` |
+| Operation 执行编排、执行期策略、状态/输出记录和失败分类 | [command-execution.md](./command-execution.md) | `packages/ssh-agent/src/application/services/command-operation-service.ts`、`packages/ssh-agent/src/application/services/command-execution-policy.ts`、`packages/ssh-agent/src/application/services/command-operation-recorder.ts` |
+| 普通远端命令的授权计划、executionContext 交接、调用绑定和一次性 grant | [command-execution.md](./command-execution.md)、[remote-sandbox.md](./remote-sandbox.md) | `packages/ssh-agent/src/application/tools/remote-command-execution-plan.ts`、`packages/ssh-agent/src/application/services/chat-tool-call-coordinator.ts`、`packages/ssh-agent/src/application/services/remote-sandbox-approval-store.ts` |
 | 远端 Linux Landlock/Bubblewrap、可写根、安装审批、Full Access 与审计 | [remote-sandbox.md](./remote-sandbox.md) | `packages/ssh-agent/src/infrastructure/sandbox/`、`packages/ssh-agent/src/application/services/bubblewrap-installation-service.ts` |
 | Session 沙盒模式、单一 Composer 命令、执行绕过与 Terminal 自动重开 | [session-sandbox.md](./session-sandbox.md) | `packages/ssh-agent/src/application/services/session-sandbox-policy.ts`、`session-service.ts`、`packages/ssh-agent-web/features/session/runtime/use-session-sandbox.ts` |
+| 沙箱能力查询/强制刷新、连接代际缓存、准备诊断和共同文件规则 | [remote-sandbox.md](./remote-sandbox.md) | `packages/ssh-agent/src/application/services/remote-sandbox-provider.ts`、`packages/ssh-agent/src/infrastructure/sandbox/remote-sandbox-coordinator.ts`、`packages/ssh-agent/src/infrastructure/sandbox/sandbox-capability-cache.ts`、`packages/ssh-agent/src/infrastructure/sandbox/sandbox-command-runner.ts` |
 | SQLite schema、migration、Repository、Credential 加密和运行时装配 | [sqlite-persistence.md](./sqlite-persistence.md) | `packages/ssh-agent/src/infrastructure/sqlite/` |
+| Command/Terminal 沙箱事实解码、旧 Full Access/null 记录和状态约束 | [sqlite-persistence.md](./sqlite-persistence.md) | `packages/ssh-agent/src/infrastructure/sqlite/stored-command-sandbox.ts`、`packages/ssh-agent/src/infrastructure/sqlite/stored-terminal-sandbox.ts` |
 | HTTP 路由、请求校验、CORS、环境变量、进程启动和关闭 | [http-server.md](./http-server.md) | `packages/ssh-agent/src/api/`、`packages/ssh-agent/src/server/` |
 | 本地日志、按日与大小滚动、异常栈 | [logging.md](./logging.md) | `packages/ssh-agent/src/server/file-logger.ts` |
 | Chat 统一异常、cause/errorId、Run 终态提交与恢复 | [chat-failures.md](./chat-failures.md) | `packages/ssh-agent/src/application/failure-policy.ts`、`packages/ssh-agent/src/application/services/chat-run-executor.ts` |
@@ -35,11 +39,12 @@
 | 新会话首条消息自动标题、模型命名和 SSE 更新 | [session-title.md](./session-title.md) | `packages/ssh-agent/src/application/services/session-title-service.ts` |
 | 首次 Run 固定头部、环境快照、模式 system 消息与缓存边界 | [session-prompt.md](./session-prompt.md) | `packages/ssh-agent/src/application/services/chat-prompt-service.ts`、`packages/ssh-agent/src/application/chat-context.ts` |
 | Session Chat、Pi Agent 事件、本地工具、审批、队列和压缩 | [chat-runtime.md](./chat-runtime.md) | `packages/ssh-agent/src/application/services/chat-service.ts`、`packages/agent/src/harness/agent-harness.ts` |
+| Tool 错误是否终止模型、模式/工作流门禁和工具自有审批准备 | [chat-runtime.md](./chat-runtime.md) | `packages/ssh-agent/src/application/tools/tool-authorization.ts`、`packages/ssh-agent/src/application/services/chat-tool-authorization-policy.ts`、`packages/ssh-agent/src/application/services/chat-agent-runtime-factory.ts` |
 | Agent 用户决策工具、等待持久化、恢复与输入框上方的面板 | [user-decision.md](./user-decision.md) | `packages/ssh-agent/src/application/services/chat-user-decision-service.ts`、`packages/ssh-agent-web/features/chat/components/user-decision-panel.tsx` |
 | `/deploy` 模型驱动阶段、Profile、首次配置 Skill、部署历史与阶段 UI | [deployment.md](./deployment.md) | `packages/ssh-agent/src/application/services/deployment-service.ts`、`packages/ssh-agent/src/application/tools/deployment-agent-tool.ts`、`packages/ssh-agent-web/features/deploy/` |
 | Provider 请求前检查、上下文超限恢复、摘要消息、压缩 Setting 和手动压缩 | [context-compaction.md](./context-compaction.md) | `packages/ssh-agent/src/application/services/chat-context-service.ts`、`packages/agent/src/agent-loop.ts` |
 | Session 上下文占用查询、Turn/压缩完成快照与 SSE | [context-usage.md](./context-usage.md) | `packages/ssh-agent/src/application/chat-context.ts`、`packages/ssh-agent/src/application/services/chat-context-service.ts` |
-| 长周期 SSH PTY、Canonical Terminal State、Agent Terminal Tool、只读前端和审计时间线 | [terminal-interaction.md](./features/terminal-interaction.md) | `packages/ssh-agent/src/application/terminal/`、`packages/ssh-agent-web/features/terminal/` |
+| 长周期 SSH PTY、Canonical State、打开/清理、输入策略/状态记录、Observation 和只读前端 | [terminal-interaction.md](./features/terminal-interaction.md) | `packages/ssh-agent/src/application/services/terminal-session-service.ts`、`packages/ssh-agent/src/application/services/terminal-interaction-service.ts`、`packages/ssh-agent/src/application/terminal/`、`packages/ssh-agent-web/features/terminal/` |
 | SSH Agent Web 页面、前端功能、客户端状态、API/SSE 和测试位置 | [ssh-agent-web.md](./ssh-agent-web.md) | `packages/ssh-agent-web/app/`、`packages/ssh-agent-web/components/`、`packages/ssh-agent-web/features/` |
 | Web 明亮、暗部、明暗分层实验、跟随系统主题及 Terminal 动态配色 | [theme.md](./theme.md) | `packages/ssh-agent-web/features/theme/`、`packages/ssh-agent-web/features/settings/`、`packages/ssh-agent-web/app/globals.css` |
 | Web 中英文界面、Locale 首屏恢复、类型化消息目录和语言切换 | [i18n.md](./i18n.md) | `packages/ssh-agent-web/features/i18n/`、`packages/ssh-agent-web/app/layout.tsx` |
@@ -48,6 +53,9 @@
 Workspace/Credential 前端契约见 [workspace-credential-integration.md](../frontend/workspace-credential-integration.md)，SFTP/Overview 实时联调见 [sftp-overview-realtime-integration.md](../frontend/sftp-overview-realtime-integration.md)，LLM Provider 前端契约见 [llm-provider-integration.md](../frontend/llm-provider-integration.md)，SSH 命令事件契约见 [ssh-command-events-integration.md](../frontend/ssh-command-events-integration.md)，Connection Pool 与命令执行的完整设计说明见 [ssh-connection-pool-and-command-execution.md](../design/ssh-connection-pool-and-command-execution.md)，其余请求体和响应体契约见 [frontend-integration.md](../frontend-integration.md)。
 
 远端沙箱的双后端选择、安装审批和验证边界见 [多后端设计](../design/remote-sandbox-backends.md)。
+
+跨电脑接续这几轮沙箱与权限重构时，先按上表阅读当前功能文档；[计划与续写上下文](../design/sandbox-authorization-handoff-2026-10-09.md) 补充已完成阶段和剩余建议。续写文档记录阶段状态，当前职责与行为以功能文档和源码为准。
+
 
 本地与远程联调约定见 [test-environments.md](../test-environments.md)。真实服务器资料不进入本仓库。
 

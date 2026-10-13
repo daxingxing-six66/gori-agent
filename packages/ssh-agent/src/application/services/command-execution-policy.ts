@@ -1,3 +1,4 @@
+import { defaultSandboxWritableRoots, sameSandboxWritableRoots } from "../../domain/sandbox-writable-roots.ts";
 import type { CommandOperation } from "../../domain/command-operation.ts";
 import type { Clock } from "../../domain/ids.ts";
 import { sandboxFailure } from "../../domain/remote-sandbox.ts";
@@ -97,7 +98,9 @@ function sameExecutionTarget(actual: SshTargetSnapshot, expected: SshTargetSnaps
 		actual.hostname === expected.hostname && actual.port === expected.port &&
 		actual.hostKeyAlgorithm === expected.hostKeyAlgorithm && actual.hostKeyFingerprint === expected.hostKeyFingerprint &&
 		actual.credentialId === expected.credentialId && actual.credentialAuthVersion === expected.credentialAuthVersion &&
-		actual.remoteUser === expected.remoteUser && actual.defaultCwd === expected.defaultCwd;
+		actual.remoteUser === expected.remoteUser && actual.defaultCwd === expected.defaultCwd &&
+		sameSandboxWritableRoots(actual.sandboxWritableRoots ?? defaultSandboxWritableRoots(actual.defaultCwd),
+			expected.sandboxWritableRoots ?? defaultSandboxWritableRoots(expected.defaultCwd));
 }
 
 function requireCwd(value: string): string {

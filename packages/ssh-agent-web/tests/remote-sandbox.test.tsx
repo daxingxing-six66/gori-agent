@@ -7,7 +7,13 @@ import { RemoteSandboxPanel } from "../features/workspace/components/remote-sand
 import { WorkspaceEditDialog } from "../features/workspace/components/workspace-edit-dialog";
 import { isRemoteSandboxRoot, type Workspace } from "../features/workspace/model/workspace";
 
-const workspace = { id: "remote /host", displayName: "test", defaultCwd: "/local", remoteDefaultCwd: "/opt/app" } as Workspace;
+const workspace: Workspace = {
+	id: "remote /host", displayName: "test", environment: "development",
+	host: { hostname: "example.test", port: 22, hostKey: null },
+	activeCredentialId: "credential", defaultCwd: "/local", remoteDefaultCwd: "/opt/app",
+	connection: { connectTimeoutMs: 10000, keepaliveIntervalMs: 15000, keepaliveMaxCount: 3 },
+	revision: 1, createdAt: 0, updatedAt: 0,
+};
 describe("remote sandbox configuration", () => {
 	it.each(["/", "/opt/..", "/./", "", "relative", "~", "/app\0x", "/app\nx"])("rejects %s as a writable root", (root) => {
 		expect(isRemoteSandboxRoot(root)).toBe(false);
@@ -24,13 +30,13 @@ describe("remote sandbox configuration", () => {
 		expect(html).toContain("/opt/app");
 		expect(html).toContain(messages["workspace.sandbox.scope"]);
 	});
-	it("requires a non-root remote directory for legacy workspaces", () => {
+	it("requires writable directories independently of the default cwd for legacy workspaces", () => {
 		const legacy = { ...workspace, remoteDefaultCwd: "/" };
 		const messages = messagesByLocale["en-US"];
 		const panel = renderToStaticMarkup(<IntlProvider locale="en-US" messages={messages}><RemoteSandboxPanel workspace={legacy} /></IntlProvider>);
 		expect(panel).toMatch(/<button[^>]*disabled=""/);
 		const edit = renderToStaticMarkup(<IntlProvider locale="en-US" messages={messages}><WorkspaceEditDialog workspace={legacy} onClose={() => {}} onSubmit={async () => {}} /></IntlProvider>);
-		expect(edit).toContain(messages["workspace.remoteDefaultCwd.invalid"]);
+		expect(edit).toContain(messages["sandbox.roots.invalid"]);
 		expect(edit).toMatch(/<button type="submit"[^>]*disabled=""/);
 	});
 	it("sends an abortable explicit probe without a command body", async () => {

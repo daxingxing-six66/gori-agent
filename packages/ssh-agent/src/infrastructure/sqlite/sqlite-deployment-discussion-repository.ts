@@ -1,3 +1,4 @@
+import { validSandboxWritableRoots } from "../../domain/sandbox-writable-roots.ts";
 import type { DatabaseSync } from "node:sqlite";
 import { isAbsolute, normalize, posix } from "node:path";
 import type {
@@ -93,13 +94,14 @@ function parseRow(value: unknown): DeploymentDiscussion {
 		!/^[a-z0-9][a-z0-9_-]*$/u.test(module.id) || !text(module.name, 200)) throw corrupt();
 	const target = record(discussion.targetBinding);
 	if (!exactKeys(target, ["hostname", "port", "workspaceRevision", "hostKeyAlgorithm", "hostKeyFingerprint",
-		"credentialId", "credentialAuthVersion", "remoteUser", "writableRoot"]) ||
+		"credentialId", "credentialAuthVersion", "remoteUser", "writableRoot"], ["sandboxWritableRoots"]) ||
 		!text(target.hostname, 255) || !positiveInteger(target.port) || Number(target.port) > 65535 ||
 		!positiveInteger(target.workspaceRevision) || !text(target.hostKeyAlgorithm, 200) ||
 		!text(target.hostKeyFingerprint, 500) || !validId(target.credentialId) ||
 		!positiveInteger(target.credentialAuthVersion) || !text(target.remoteUser, 200) ||
 		!text(target.writableRoot, 2048) || !posix.isAbsolute(target.writableRoot) ||
-		posix.normalize(target.writableRoot) !== target.writableRoot) throw corrupt();
+		posix.normalize(target.writableRoot) !== target.writableRoot ||
+		(target.sandboxWritableRoots !== undefined && !validSandboxWritableRoots(target.sandboxWritableRoots, true))) throw corrupt();
 	if (discussion.status === "proposed") {
 		if (!validId(discussion.deploymentRunId)) throw corrupt();
 	} else if (discussion.deploymentRunId !== undefined) throw corrupt();

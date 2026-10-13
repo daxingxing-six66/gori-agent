@@ -1,4 +1,5 @@
-import { canonicalRemoteSandboxRoot, GORI_MIN_LANDLOCK_ABI } from "../../domain/remote-sandbox.ts";
+import { validSandboxFactRoots } from "../../domain/sandbox-writable-roots.ts";
+import { GORI_MIN_LANDLOCK_ABI } from "../../domain/remote-sandbox.ts";
 import type { TerminalSandboxFacts, TerminalSandboxMode } from "../../domain/terminal.ts";
 
 /** Old formats are readable audit facts, never permission to open a new Terminal. */
@@ -31,7 +32,7 @@ function readFacts(value: unknown): TerminalSandboxFacts | null {
 	const fact = parsed as Record<string, unknown>;
 	if (fact.mode === "full_access") return readFullAccess(fact);
 	if (fact.mode !== "workspace_write" || fact.enforcement !== "full" ||
-		typeof fact.sandboxRoot !== "string" || !canonicalRemoteSandboxRoot(fact.sandboxRoot)) throw invalidFacts();
+		typeof fact.sandboxRoot !== "string" || !validSandboxFactRoots(fact)) throw invalidFacts();
 	if (fact.backend === "landlock") return readLandlock(fact, fact.sandboxRoot);
 	if (fact.backend === "bubblewrap") return readBubblewrap(fact, fact.sandboxRoot);
 	throw invalidFacts();
@@ -39,14 +40,14 @@ function readFacts(value: unknown): TerminalSandboxFacts | null {
 
 function readLandlock(fact: Record<string, unknown>, sandboxRoot: string): TerminalSandboxFacts {
 	if (typeof fact.abi !== "number" || !Number.isSafeInteger(fact.abi) || fact.abi < GORI_MIN_LANDLOCK_ABI ||
-		typeof fact.launcherVersion !== "string" || !/^[1-9]\d*$/.test(fact.launcherVersion) || Object.keys(fact).length !== 6) throw invalidFacts();
+		typeof fact.launcherVersion !== "string" || !/^[1-9]\d*$/.test(fact.launcherVersion) || Object.keys(fact).length !== (fact.sandboxRoots === undefined ? 6 : 7)) throw invalidFacts();
 	return { mode: "workspace_write", backend: "landlock", enforcement: "full", abi: fact.abi,
-		launcherVersion: fact.launcherVersion, sandboxRoot };
+		launcherVersion: fact.launcherVersion, sandboxRoot, ...(fact.sandboxRoots === undefined ? {} : { sandboxRoots: fact.sandboxRoots as string[] }) };
 }
 
 function readBubblewrap(fact: Record<string, unknown>, sandboxRoot: string): TerminalSandboxFacts {
-	if (typeof fact.bubblewrapVersion !== "string" || !/^\d+\.\d+\.\d+$/.test(fact.bubblewrapVersion) || Object.keys(fact).length !== 5) throw invalidFacts();
-	return { mode: "workspace_write", backend: "bubblewrap", enforcement: "full", bubblewrapVersion: fact.bubblewrapVersion, sandboxRoot };
+	if (typeof fact.bubblewrapVersion !== "string" || !/^\d+\.\d+\.\d+$/.test(fact.bubblewrapVersion) || Object.keys(fact).length !== (fact.sandboxRoots === undefined ? 5 : 6)) throw invalidFacts();
+	return { mode: "workspace_write", backend: "bubblewrap", enforcement: "full", bubblewrapVersion: fact.bubblewrapVersion, sandboxRoot, ...(fact.sandboxRoots === undefined ? {} : { sandboxRoots: fact.sandboxRoots as string[] }) };
 }
 
 function readFullAccess(fact: Record<string, unknown>): TerminalSandboxFacts {

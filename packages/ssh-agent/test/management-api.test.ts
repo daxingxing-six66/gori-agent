@@ -39,7 +39,7 @@ describe("SQLite management HTTP API", () => {
 			expect(JSON.stringify(failed.body)).not.toContain("private host details");
 		} finally { probe.mockRestore(); backend.close(); }
 	});
-	it("uses the remote working directory as the sandbox root and preserves it on rename", async () => {
+	it("initializes legacy writable defaults from cwd and preserves them on rename and cwd edits", async () => {
 		const backend = createBackend();
 		try {
 			const created = await createWorkspace(backend.handleRequest, { remoteDefaultCwd: "/opt/app" });
@@ -48,7 +48,7 @@ describe("SQLite management HTTP API", () => {
 			expect(renamed).toMatchObject({ status: 200, body: { remoteDefaultCwd: "/opt/app" } });
 			const updated = await request(backend.handleRequest, "PATCH", "/api/workspaces/id-1", { displayName: "renamed", remoteDefaultCwd: "/srv/app", expectedRevision: 2 });
 			expect(updated).toMatchObject({ status: 200, body: { remoteDefaultCwd: "/srv/app" } });
-			const invalid = await request(backend.handleRequest, "PATCH", "/api/workspaces/id-1", { displayName: "renamed", remoteDefaultCwd: "/opt/..", expectedRevision: 3 });
+			const invalid = await request(backend.handleRequest, "PATCH", "/api/workspaces/id-1", { displayName: "renamed", sandboxWritableRoots: ["/opt/.."], expectedRevision: 3 });
 			expect(invalid.status).toBe(400);
 			expect((await request(backend.handleRequest, "PATCH", "/api/workspaces/id-1", { displayName: "renamed", remoteSandboxRoot: "/tmp", expectedRevision: 3 })).status).toBe(400);
 			expect(backend.database.prepare("SELECT remote_default_cwd FROM workspaces WHERE id='id-1'").get()?.remote_default_cwd).toBe("/srv/app");
@@ -57,7 +57,7 @@ describe("SQLite management HTTP API", () => {
 	it("rejects root-wide write access and keeps old omitted directories inert", async () => {
 		const backend = createBackend();
 		try {
-			expect((await createWorkspace(backend.handleRequest, { remoteDefaultCwd: "/" })).status).toBe(400);
+			expect((await createWorkspace(backend.handleRequest, { remoteDefaultCwd: "/", sandboxWritableRoots: ["/"] })).status).toBe(400);
 			await createWorkspace(backend.handleRequest);
 			expect(backend.database.prepare("SELECT remote_default_cwd FROM workspaces").get()?.remote_default_cwd).toBe("/");
 		} finally { backend.close(); }
@@ -593,6 +593,7 @@ function createBackend(databasePath = ":memory:") {
 }
 
 interface CreateWorkspaceOptions {
+	sandboxWritableRoots?: string[];
 	remoteDefaultCwd?: string;
 	displayName?: string;
 	credentialDisplayName?: string;
@@ -618,6 +619,7 @@ function createWorkspace(
 		},
 		defaultCwd: "/tmp",
 		remoteDefaultCwd: options.remoteDefaultCwd,
+		sandboxWritableRoots: options.sandboxWritableRoots,
 	});
 }
 

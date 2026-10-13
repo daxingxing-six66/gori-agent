@@ -17,41 +17,42 @@ export function useSessionSandbox(options: {
 	const intl = useIntl();
 	const { sessionId, session, disabled, refreshSessions, refreshTerminal } = options;
 	const currentSessionId = useRef(sessionId);
-	currentSessionId.current = sessionId;
 	const mutation = useRef<AbortController | null>(null);
-	const [pending, setPending] = useState(false);
+	const [pendingSessionId, setPendingSessionId] = useState<string | null>(null);
+	const pending = pendingSessionId === sessionId;
 	const [confirmed, setConfirmed] = useState<Session | null>(null);
-	const [error, setError] = useState<unknown>(null);
-	const [notice, setNotice] = useState<string | null>(null);
+	const [sessionError, setSessionError] = useState<{ sessionId: string; value: unknown } | null>(null);
+	const [sessionNotice, setSessionNotice] = useState<{ sessionId: string; value: string } | null>(null);
+	const error = sessionError?.sessionId === sessionId ? sessionError.value : null;
+	const notice = sessionNotice?.sessionId === sessionId ? sessionNotice.value : null;
+	const setError = useCallback((value: unknown) => setSessionError(value === null ? null : { sessionId, value }), [sessionId]);
+	const setNotice = useCallback((value: string | null) => setSessionNotice(value === null ? null : { sessionId, value }), [sessionId]);
 	const latest = confirmed?.id === sessionId && confirmed.revision >= (session?.revision ?? 0) ? confirmed : session;
 	const enabled = latest?.sandboxEnabled !== false;
 	const statusLabel = intl.formatMessage({ id: pending ? "session.sandbox.changing" : enabled ? "session.sandbox.on" : "session.sandbox.off" });
 
 	useEffect(() => {
+		currentSessionId.current = sessionId;
 		mutation.current?.abort();
 		mutation.current = null;
-		setPending(false);
-		setConfirmed(null);
-		setError(null);
-		setNotice(null);
 		return () => {
 			mutation.current?.abort();
 			mutation.current = null;
 		};
 	}, [sessionId]);
 
-	const update = useCallback(async (requestedEnabled?: boolean): Promise<boolean> => {
+	const update = useCallback(async (enabled?: boolean): Promise<boolean> => {
 		if (disabled || mutation.current || !session) return false;
 		const request = new AbortController();
 		mutation.current = request;
-		const isCurrent = () => currentSessionId.current === sessionId && mutation.current === request;
-		setPending(true);
+		const isCurrent = () => currentSessionId.current === sessionId && mutation.current === request && !request.signal.aborted;
+		setPendingSessionId(sessionId);
 		setError(null);
 		setNotice(null);
 		try {
 			const current = await sessionApi.get(sessionId, request.signal);
 			if (!isCurrent()) return false;
-			const sandboxEnabled = requestedEnabled ?? !current.sandboxEnabled;
+			const sandboxEnabled = enabled ?? current.sandboxEnabled === false;
 			const updated = current.sandboxEnabled === sandboxEnabled ? current
 				: await sessionApi.update(sessionId, { sandboxEnabled, expectedRevision: current.revision });
 			if (!isCurrent()) return false;
@@ -74,10 +75,10 @@ export function useSessionSandbox(options: {
 		} finally {
 			if (mutation.current === request) {
 				mutation.current = null;
-				setPending(false);
+				setPendingSessionId(null);
 			}
 		}
-	}, [disabled, refreshSessions, refreshTerminal, session, sessionId]);
+	}, [disabled, refreshSessions, refreshTerminal, session, sessionId, setError, setNotice]);
 
 	const execute = useCallback(async (message: string, hasAttachments = false): Promise<boolean | null> => {
 		const command = parseSessionSandboxCommand(message);
@@ -91,7 +92,7 @@ export function useSessionSandbox(options: {
 		setError(null);
 		setNotice(intl.formatMessage({ id: enabled ? "session.sandbox.enabledDescription" : "session.sandbox.disabledDescription" }));
 		return true;
-	}, [enabled, intl, update]);
+	}, [enabled, intl, update, setError, setNotice]);
 
 	const tools: ChatComposerTool[] = [{
 		id: "sandbox", icon: "shield", name: intl.formatMessage({ id: "session.sandbox.command.name" }),
@@ -100,5 +101,6 @@ export function useSessionSandbox(options: {
 		status: { label: statusLabel, tone: pending ? "pending" : enabled ? "active" : "inactive" },
 		disabled: disabled || pending || !session,
 	}];
-	return { enabled, pending, statusLabel, tools, error, notice, execute, clearNotice: () => { setError(null); setNotice(null); } };
+	return { enabled, pending, disabled, statusLabel, tools, error, notice, execute,
+		clearNotice: () => { setError(null); setNotice(null); } };
 }

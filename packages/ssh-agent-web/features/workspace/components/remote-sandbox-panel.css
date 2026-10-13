@@ -1,0 +1,10 @@
+.remote-sandbox-panel { padding: 17px 18px; border-radius: 10px; }
+.remote-sandbox-panel h3 { display: flex; align-items: center; gap: 7px; font-size: 13px; font-weight: 600; }
+.remote-sandbox-panel h3 svg { color: var(--text-muted); }
+.remote-sandbox-status { margin-top: 12px; font-size: 12px; }
+.remote-sandbox-path { margin-top: 5px; overflow-wrap: anywhere; color: var(--text-muted); font-family: var(--font-mono), monospace; font-size: 11px; line-height: 18px; }
+.remote-sandbox-scope { margin-top: 14px; border-top: 1px solid var(--line-soft); }
+.remote-sandbox-scope summary { display: flex; cursor: pointer; align-items: center; justify-content: space-between; gap: 8px; padding-top: 11px; color: var(--text-muted); list-style: none; font-size: 11px; }
+.remote-sandbox-scope summary::-webkit-details-marker { display: none; }
+.remote-sandbox-scope[open] summary svg { transform: rotate(180deg); }
+.remote-sandbox-scope p { margin-top: 8px; color: var(--text-muted); font-size: 11px; line-height: 19px; }

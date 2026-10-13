@@ -100,10 +100,10 @@ describe("Terminal interaction Tool schema", () => {
 		const result = await tool.execute("tool-1", { action: "observe", expectation: "finite" });
 		expect(result.content).toEqual([
 			{ type: "text", text: "No terminal text was observed before this observation boundary." },
-			{ type: "text", text: "Terminal sandbox: Landlock ABI 8; writable root /srv/test." },
+			{ type: "text", text: "Terminal sandbox: Landlock ABI 8; writable roots /srv/test." },
 		]);
 		expect(localizePublicValue(result, "zh-CN")).toMatchObject({
-			content: [{ type: "text", text: "在本次观察边界前未检测到终端文本。\nTerminal sandbox: Landlock ABI 8; writable root /srv/test." }],
+			content: [{ type: "text", text: "在本次观察边界前未检测到终端文本。\nTerminal sandbox: Landlock ABI 8; writable roots /srv/test." }],
 		});
 	});
 });

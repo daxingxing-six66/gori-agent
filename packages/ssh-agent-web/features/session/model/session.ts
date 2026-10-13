@@ -7,6 +7,7 @@ export interface Session {
 	workDir: string | null;
 	autoAudit: boolean;
 	sandboxEnabled: boolean;
+	sandboxWritableRoots?: string[];
 	terminalContextCursor: number;
 	revision: number;
 	createdAt: number;

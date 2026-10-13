@@ -1,5 +1,6 @@
+import { sandboxFactRoots, validSandboxFactRoots } from "../../domain/sandbox-writable-roots.ts";
 import { posix } from "node:path";
-import { canonicalRemoteSandboxRoot, sandboxFailure } from "../../domain/remote-sandbox.ts";
+import { sandboxFailure } from "../../domain/remote-sandbox.ts";
 import { SshAgentError } from "../../domain/ssh-failure.ts";
 import type { SshTargetSnapshot } from "../../domain/ssh-target.ts";
 import type { PreparedSandboxedExecution, RemoteSandboxCapabilityProvider } from "./remote-sandbox-provider.ts";
@@ -50,12 +51,12 @@ export async function evaluateRemoteSandboxRoute(input: {
 	if (facts.mode !== "workspace_write" || facts.enforcement !== "full" || facts.backend === "none") {
 		throw sandboxFailure("sandbox_probe_failed", "Remote sandbox probe did not confirm full confinement");
 	}
-	const root = facts.sandboxRoot;
-	if (!root || !canonicalRemoteSandboxRoot(root)) {
+	const roots = sandboxFactRoots(facts);
+	if (!validSandboxFactRoots(facts)) {
 		throw sandboxFailure("sandbox_probe_failed", "Remote sandbox probe did not return a canonical writable root");
 	}
 	for (const { originalPath, path } of declaredPaths) {
-		if (!isWithin(path, root) && !isWithin(path, "/tmp") && path !== "/dev/null") return {
+		if (!roots.some((root) => isWithin(path, root)) && !isWithin(path, "/tmp") && path !== "/dev/null") return {
 			mode: "full_access", reason: "write_path_outside_sandbox",
 			details: `Declared write path ${originalPath} is outside the sandbox writable roots`,
 		};

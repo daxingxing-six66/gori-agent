@@ -1,6 +1,6 @@
 # 沙箱与工具授权重构：计划和续写上下文
 
-记录日期：2026-10-09（Asia/Shanghai）。本文件与这一轮代码改动一起提交，供另一台电脑继续开发。它记录已完成工作与后续建议；当前行为以源码和 [AI 代码路由](../ai-repo/index.md) 为准。旧的 [ChatService 拆分计划](./chat-service-refactoring-plan.md) 是历史结构规划，不能替代本轮代码核对。
+初始记录日期：2026-10-09；最近核对日期：2026-10-10（Asia/Shanghai）。本文件供另一台电脑继续开发，记录已完成阶段与剩余建议；当前行为以源码和 [AI 代码路由](../ai-repo/index.md) 为准。旧的 [ChatService 拆分计划](./chat-service-refactoring-plan.md) 是历史结构规划，不能替代当前代码核对。
 
 ## 1. 用户目标与设计约定
 
@@ -10,6 +10,8 @@
 2. `ChatToolAuthorizationPolicy.prepare()` 不应集中持有每个工具的模式冲突检查、参数解析和具体审批逻辑。工具相关规则由工具模块持有，策略类保留分发和公共协调职责。
 3. 授权阶段已经决定执行权限，执行阶段应直接收到本次调用的计划；不能通过共享 Store 中是否存在审批理由，再重新推导权限。
 4. `approvedJustification()` 名称和职责不清晰。优化应消除“理由字符串存在就选择 Full Access”的隐含约定，而不是只重命名。
+5. 拆分命令和 Terminal 的重型编排方法，使执行期策略、状态修改、资源准备与真正执行分别有明确所有者。
+6. 区分沙箱能力查询与主动刷新，提取共同探测逻辑和诊断，并将历史兼容收敛到持久化读取边界。
 
 必须保持的约定：
 
@@ -20,7 +22,15 @@
 - Terminal 的沙箱在开启长周期 PTY 时安装，不能把普通命令的一次性 Full Access 机制直接套到运行中的 PTY。
 - 通用 Agent Core 不依赖 SSH、沙箱或应用审批类型。
 
-## 2. 已完成的三个阶段
+## 2. 已完成的六个阶段
+
+阶段 A–C 随 `410342a` 完成；阶段 D–F 分别随以下三笔提交完成，均已推送到 `origin/dev`。不要把阶段 D–F 当作剩余重构任务重复实现。
+
+| 阶段 | 提交 | 职责 |
+|---|---|---|
+| D | `d5bd533` | 命令执行策略与状态记录拆分 |
+| E | `b72c15c` | Terminal 输入策略、状态记录与通道启动拆分 |
+| F | `3be0c9a` | 沙箱能力查询/刷新、共同诊断与历史事实读取 |
 
 ### 阶段 A：统一可修正错误反馈
 
@@ -92,12 +102,46 @@ Agent 参数准备和 schema 校验
 - Store 保留 grant 签名和目标签名，负责一次性验证、消费及 Run 清理。授权已消费或清理后，旧 Full Access 计划仍执行失败，不隐式降回沙箱。
 - `expectedTarget` 随计划传入命令服务，受限命令同样复核授权阶段确定的目标。Workspace 身份、凭据、用户、默认目录等被比较字段变化时拒绝派发。
 
+### 阶段 D：拆分命令执行编排
+
+状态：已完成。
+
+- `CommandOperationService.executePending()` 保留步骤顺序、超时/取消管理、Broker 调用与结果分类。
+- `CommandExecutionPolicy` 负责排队复检、执行期 Guard、一次性 grant 消费以及目标/cwd 校验，不修改 Operation 状态或派发命令。
+- 每次调用的 `CommandOperationRecorder` 负责状态转换、时间、输出限额、事件、沙箱确认事实和重启恢复，不决定权限。
+- 保留调度后读取记录期间的取消/超时复检、准备前后的两次 Guard 及 grant/expectedTarget 两种绑定检查；这些检查覆盖不同等待边界，不能当作重复条件删除。
+
+当前流程和定位见 [命令执行](../ai-repo/command-execution.md) 与 [Guard](../ai-repo/guard.md)。
+
+### 阶段 E：拆分 Terminal 编排与通道启动
+
+状态：已完成。
+
+- `TerminalInteractionPolicy` 负责 Actor 绑定、审批已结束检查、输入规范化、Guard 和取消检查；`TerminalInteractionRecorder` 负责 Interaction/Input/Observation 的持久化状态和审计事件。
+- `TerminalInteractionService` 保留幂等结果、互斥槽、交付游标、PTY 写入和 Observation 编排。执行使用已保存的输入，不按重试参数替换已审批 bytes；写入不确定时不自动重放。
+- `TerminalSessionService` 保留幂等打开、前置检查和资源所有权交接；Actor 负责激活或失败落库。`TerminalChannelOpener` 负责目标解析、沙箱准备、PTY 打开及覆盖全流程的 deadline、取消与迟到通道清理。
+- Terminal 仍只开启受限 PTY；这次职责拆分没有引入 Full Access 入口，也没有把 submit 改为普通远端命令的执行计划。
+
+当前流程和定位见 [Terminal](../ai-repo/features/terminal-interaction.md)。
+
+### 阶段 F：整理沙箱查询、刷新、诊断与历史兼容
+
+状态：已完成。
+
+- `RemoteSandboxCapabilityProvider` 用 `getCapabilities()` 表达普通查询，用 `refreshCapabilities()` 表达主动重新发现，替代含义混杂的 `probe()` 端口。查询直接生成校验后的能力事实，不构造虚拟 `true` 命令或执行确认 nonce。
+- `SandboxCapabilityCache` 只缓存成功的后端元数据，按完整 Connection Key 与 generation 隔离，并合并发现/刷新等待；目录、设备和 Bubblewrap 实际约束仍逐次检查。能力事实不是命令已经受约束执行的证明。
+- `RemoteSandboxRules` 共用文件规则检查；`SandboxCommandRunner` 共用准备命令与限长诊断，保留检查阶段、退出码/信号、stderr、原始 cause 和已有 SSH 失败语义。公开 HTTP/SSE 继续通过稳定 code 本地化。
+- `stored-command-sandbox.ts` 和 `stored-terminal-sandbox.ts` 在 SQLite 读取边界校验新旧事实。历史 `approvedAt`、`source/detectedAt` 与 null 格式不参与新调用的权限选择；没有新增 schema migration。
+- Chat/部署预检与安装必要性检查使用查询；Overview 手动检测及安装完成后的验证使用强制刷新。
+
+当前流程和定位见 [远端沙箱](../ai-repo/remote-sandbox.md)、[SQLite 持久化](../ai-repo/sqlite-persistence.md) 与 [多后端设计](./remote-sandbox-backends.md)。
+
 ## 3. 当前边界：哪些还没有迁移
 
-以下不是本轮已实现能力：
+截至最近核对，以下仍不是已实现能力：
 
 - `bubblewrap_install` 还没有使用 `RemoteCommandExecutionPlan` 交接。审批阶段生成准确安装命令并记录 grant；安装服务执行时仍按安装参数生成命令并重新检查安装条件。grant 绑定命令和审批时目标，命令服务继续验证，不是无授权执行。
-- Terminal submit 仍由 `preflightSubmit()`、`onDecision` 和 `TerminalInteractionService` 管理 Interaction 状态，未迁移到统一的执行计划类型。
+- Terminal submit 仍以 `preflightSubmit()`、`onDecision` 和已保存的 Interaction/Input 完成审批与执行交接；策略和记录职责已拆分，但未迁移到统一的执行计划类型。
 - 部署 RESTART/VERIFY 继续使用部署计划、部署专属审批和 `fullAccessApprovalScopeId`，不与普通 Chat Tool grant 混用。
 - SFTP 覆盖审批仍在 Tool 内发生，Coordinator 保存调用与 assistant message 的关联。SFTP 不经过命令沙箱。
 - 本轮没有新增 Terminal Full Access 请求工具，也没有修改 Terminal 开启策略。
@@ -117,8 +161,14 @@ Agent 参数准备和 schema 校验
 | 5 | `packages/ssh-agent/src/application/services/chat-tool-call-coordinator.ts` | 等待审批、批准来源检查和计划交接 |
 | 6 | `packages/agent/src/types.ts`、`packages/agent/src/agent-loop.ts` | 通用 executionContext 传递及批次行为 |
 | 7 | `packages/ssh-agent/src/application/services/remote-sandbox-approval-store.ts` | 准确一次性 grant 的验证/消费/清理 |
-| 8 | `packages/ssh-agent/src/application/services/command-operation-service.ts` | 排队、派发前检查、沙箱准备与执行审计 |
-| 9 | `packages/ssh-agent/src/application/services/chat-agent-runtime-factory.ts`、`packages/ssh-agent/src/runtime/create-sqlite-management-backend.ts` | 可用性和共享组件装配 |
+| 8 | `packages/ssh-agent/src/application/services/command-operation-service.ts` | 排队后的执行编排、超时/取消与结果分类 |
+| 9 | `packages/ssh-agent/src/application/services/command-execution-policy.ts`、`packages/ssh-agent/src/application/services/command-operation-recorder.ts` | 执行期策略与逐次状态/输出/审计记录 |
+| 10 | `packages/ssh-agent/src/application/services/terminal-session-service.ts`、`packages/ssh-agent/src/application/services/terminal-interaction-service.ts` | Terminal 资源创建、幂等、PTY 写入和 Observation 编排 |
+| 11 | `packages/ssh-agent/src/application/terminal/terminal-interaction-policy.ts`、`packages/ssh-agent/src/application/terminal/terminal-interaction-recorder.ts`、`packages/ssh-agent/src/application/terminal/terminal-channel-opener.ts` | 输入检查、持久化记录与通道准备/清理 |
+| 12 | `packages/ssh-agent/src/application/services/remote-sandbox-provider.ts`、`packages/ssh-agent/src/infrastructure/sandbox/remote-sandbox-coordinator.ts` | 查询/刷新端口及后端选择 |
+| 13 | `packages/ssh-agent/src/infrastructure/sandbox/sandbox-capability-cache.ts`、`packages/ssh-agent/src/infrastructure/sandbox/sandbox-command-runner.ts`、`packages/ssh-agent/src/infrastructure/sandbox/remote-sandbox-rules.ts` | 元数据发现、限长诊断和逐次文件规则检查 |
+| 14 | `packages/ssh-agent/src/infrastructure/sqlite/stored-command-sandbox.ts`、`packages/ssh-agent/src/infrastructure/sqlite/stored-terminal-sandbox.ts` | 新旧审计事实解码与状态约束 |
+| 15 | `packages/ssh-agent/src/application/services/chat-agent-runtime-factory.ts`、`packages/ssh-agent/src/runtime/create-sqlite-management-backend.ts` | 可用性和共享组件装配 |
 
 后续评估安装、Terminal、部署时，再完整阅读各自工具和服务；不要仅根据字段名或本文件推断流程。
 
@@ -126,7 +176,7 @@ Agent 参数准备和 schema 校验
 
 ## 5. 后续计划建议
 
-下面是续写建议，不表示本轮已经实现，也不要求一次完成全部工具改造。
+下面是尚未完成的评估建议，不要求一次完成全部工具改造。命令/Terminal 的职责拆分、查询与刷新解耦、共同诊断和历史读取边界已在阶段 D–F 完成。
 
 ### 下一步 1：先审查交接方案的边界
 
@@ -148,7 +198,7 @@ Agent 参数准备和 schema 校验
 
 ### 下一步 3：分别评估 Terminal 和部署
 
-- Terminal：先明确 Interaction 持久化状态与执行上下文的职责，再决定是否需要显式 submit 计划。长周期 PTY 的权限不能靠单条输入临时取消。
+- Terminal：基于已拆分的 Policy/Recorder 和持久化 Input，评估是否还有需要显式 submit 计划解决的交接问题；不要重复拆分现有编排。长周期 PTY 的权限不能靠单条输入临时取消。
 - 部署：已有冻结计划、阶段状态和专属授权范围，优先复用已有职责；先检查是否真的存在断开的数据交接，再做改动。
 - SFTP：覆盖审批发生于执行途中，有自己的文件身份和并发边界，不必强行套用命令计划。
 
@@ -156,7 +206,7 @@ Agent 参数准备和 schema 校验
 
 ## 6. 已完成验证与复现命令
 
-本轮提交准备前的定向验证为 13 个测试文件、237 个测试：Agent Core 2 文件 / 30 测试，SSH Agent 11 文件 / 207 测试。使用模拟 Provider/Broker 和本地测试环境，没有真实服务器凭据或付费模型调用。
+阶段 A–C 提交准备时的验证记录为 13 个测试文件、237 个测试：Agent Core 2 文件 / 30 测试，SSH Agent 11 文件 / 207 测试。阶段 D–F 分批提交时，各批快照分别通过 `npm run check`；定向测试分别为 20、38 和 177 个，共 14 个文件、235 个测试。以下是对应阶段的验证记录与复现入口，不能代替后续修改后的重新验证。使用模拟 Provider/Broker 和本地测试环境，没有真实服务器凭据或付费模型调用。
 
 仓库根执行：
 
@@ -192,11 +242,13 @@ node ../../node_modules/vitest/dist/cli.js --run \
 
 覆盖重点：模型收到错误后修正调用、冲突检查在审批前生效、人工 Full Access 来源检查、计划传递、请求/调用身份变化、SSH 目标变化、grant 一次性消费、拒绝与取消、顺序/并行上下文隔离和不进入消息/事件。
 
+阶段 D–F 的专项回归入口包括 `terminal-interaction-service.test.ts`、`terminal-session-service.test.ts`、`terminal-node-runtime.test.ts`、`sandbox-capability-cache.test.ts`、`sandbox-command-runner.test.ts`、`bubblewrap-remote-sandbox.test.ts`、`remote-sandbox-coordinator.test.ts`、`sqlite-terminal-repository.test.ts` 和 `management-api.test.ts`，均位于 `packages/ssh-agent/test/`。它们覆盖执行顺序、取消/资源清理、不重放输入、并发刷新、诊断与历史事实读取；按修改范围选择相关测试。
+
 `.gitignore` 已精确放行新增的 Agent Core 测试，避免本机 `.git/info/exclude` 的测试忽略规则将其隐藏。
 
 ## 7. 在另一台电脑接续
 
-当前任务交付分支为 `dev`；这份文档与代码位于同一次提交。新克隆可执行：
+当前任务交付分支为 `dev`；阶段 A–C 位于 `410342a`，阶段 D–F 的三个提交见第 2 节。接续时先确认本地分支已包含这些提交。新克隆可执行：
 
 ```sh
 git clone --branch dev https://github.com/daxingxing-six66/gori-agent.git
@@ -218,4 +270,4 @@ git switch --track origin/dev
 
 可复制给下一次开发会话的接续提示：
 
-> 请阅读 agent.md 和 docs/ssh-agent/design/sandbox-authorization-handoff-2026-10-09.md，核对当前 dev 分支源码。可修正错误契约、工具自有审批准备和普通 remote_server_call 的执行计划交接已经完成，不要重复实现。先审查现有交接边界，再评估 Bubblewrap 安装是否需要直接传递审批时的执行方案；Terminal 与部署按各自生命周期单独评估。任何行为变化明确说明，并保留 Guard、人工 Full Access、一次性授权消费、目标复核和可修正错误反馈。
+> 请阅读 agent.md、docs/ssh-agent/ai-repo/index.md 和 docs/ssh-agent/design/sandbox-authorization-handoff-2026-10-09.md，核对当前 dev 分支源码。阶段 A–F 已完成：可修正错误契约、工具自有审批准备、普通 remote_server_call 的执行计划交接、命令/Terminal 编排拆分、沙箱查询/刷新解耦、共同诊断与历史事实读取。不要重复实现这些重构。先审查现有交接边界，再评估 Bubblewrap 安装是否需要直接传递审批时的执行方案；Terminal 与部署按各自生命周期单独评估。保留 Guard、人工 Full Access、一次性授权消费、目标复核、逐次文件规则检查和可修正错误反馈。

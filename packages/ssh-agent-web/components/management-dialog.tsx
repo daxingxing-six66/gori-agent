@@ -15,6 +15,8 @@ export function ManagementDialog({
 	submitDisabled = false,
 	footerLeading,
 	footerNotice,
+	className,
+	headerIcon,
 }: {
 	title: string;
 	description?: string;
@@ -26,6 +28,8 @@ export function ManagementDialog({
 	submitDisabled?: boolean;
 	footerLeading?: ReactNode;
 	footerNotice?: ReactNode;
+	className?: string;
+	headerIcon?: ReactNode;
 }) {
 	const intl = useIntl();
 	useEffect(() => {
@@ -38,19 +42,22 @@ export function ManagementDialog({
 
 	return (
 		<div className="management-dialog-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
-			<form className="management-dialog" role="dialog" aria-modal="true" aria-label={title} onSubmit={onSubmit}>
-				<header className="flex items-start justify-between gap-4 border-b border-[var(--line-soft)] px-5 py-4">
-					<div><h2 className="text-[14px] font-semibold">{title}</h2>{description ? <p className="mt-1 text-[10px] leading-5 text-zinc-500">{description}</p> : null}</div>
-					<button type="button" className="rounded-lg p-2 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700" onClick={onClose} aria-label={intl.formatMessage({ id: "common.close" })}><X size={16} /></button>
+			<form className={`management-dialog${className ? ` ${className}` : ""}`} role="dialog" aria-modal="true" aria-label={title} onSubmit={onSubmit}>
+				<header className="management-dialog-header flex items-start justify-between gap-4 border-b border-[var(--line-soft)] px-5 py-4">
+					<div className="flex min-w-0 items-center gap-3">
+						{headerIcon ? <span className="management-dialog-header-icon shrink-0" aria-hidden="true">{headerIcon}</span> : null}
+						<div className="min-w-0"><h2 className="text-[14px] font-semibold">{title}</h2>{description ? <p className="management-dialog-description mt-1 text-[10px] leading-5 text-zinc-500">{description}</p> : null}</div>
+					</div>
+					<button type="button" className="management-dialog-close rounded-lg p-2 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700" onClick={onClose} aria-label={intl.formatMessage({ id: "common.close" })}><X size={16} /></button>
 				</header>
-				<div className="app-scrollbar min-h-0 flex-1 space-y-4 overflow-y-auto px-5 py-5">{children}</div>
-				<footer className="shrink-0 border-t border-[var(--line-soft)] px-5 py-4">
+				<div className="management-dialog-body app-scrollbar min-h-0 flex-1 space-y-4 overflow-y-auto px-5 py-5">{children}</div>
+				<footer className="management-dialog-footer shrink-0 border-t border-[var(--line-soft)] px-5 py-4">
 					{footerNotice ? <div className="mb-3">{footerNotice}</div> : null}
 					<div className="flex flex-wrap items-center justify-end gap-2">
 						{footerLeading ? <div className="mr-auto">{footerLeading}</div> : null}
 						<div className="ml-auto flex items-center gap-2">
-							<button type="button" className="h-9 rounded-lg border border-[var(--line)] px-4 text-[10px] font-semibold text-zinc-600 hover:bg-zinc-50" onClick={onClose}>{intl.formatMessage({ id: "common.cancel" })}</button>
-							<button type="submit" className="h-9 rounded-lg bg-[#397b5c] px-4 text-[10px] font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50" disabled={submitting || submitDisabled}>{submitting ? intl.formatMessage({ id: "common.submitting" }) : submitLabel}</button>
+							<button type="button" className="management-dialog-cancel h-9 rounded-lg border border-[var(--line)] px-4 text-[10px] font-semibold text-zinc-600 hover:bg-zinc-50" onClick={onClose}>{intl.formatMessage({ id: "common.cancel" })}</button>
+							<button type="submit" className="management-dialog-submit h-9 rounded-lg bg-[#397b5c] px-4 text-[10px] font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50" disabled={submitting || submitDisabled}>{submitting ? intl.formatMessage({ id: "common.submitting" }) : submitLabel}</button>
 						</div>
 					</div>
 				</footer>

@@ -33,6 +33,11 @@
 .terminal-workbench-header { height: var(--workspace-header-height, 44px); }
 .sidebar-settings-footer { display: flex; height: 46px; flex-shrink: 0; align-items: center; padding: 4px 16px; }
 .sidebar-settings-footer-collapsed { justify-content: center; padding-inline: 0; }
+.page-button { display: inline-flex; min-height: 32px; align-items: center; justify-content: center; gap: 6px; padding: 6px 11px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface-strong); color: var(--text-secondary); font-size: 11px; font-weight: 500; }
+.page-button:hover:not(:disabled) { background: var(--surface-hover); }
+.page-button:disabled { cursor: not-allowed; opacity: .5; }
+.page-button-primary { border-color: var(--accent); background: var(--accent); color: var(--text-inverse); }
+.page-button-primary:hover:not(:disabled) { border-color: var(--accent-hover); background: var(--accent-hover); }
 /* Chat keeps a single reading column; the terminal retains its own grid area. */
 .page-main-chat { --chat-content-width: 820px; }
 .chat-timeline { width: 100%; max-width: calc(var(--chat-content-width) + 48px); margin-inline: auto; padding: 32px 24px; }

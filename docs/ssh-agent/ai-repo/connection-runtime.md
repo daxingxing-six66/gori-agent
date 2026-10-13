@@ -8,7 +8,7 @@
 目标解析器只将 Workspace `remoteDefaultCwd`（旧适配器省略时默认 `/`）写入 SSH Target 的 `defaultCwd`，禁止回退到 Workspace 的本地 `defaultCwd`。目录不参与 Connection Key，后续请求读取最新配置，既有 PTY 不迁移当前目录。
 
 
-SSH Target 的 `defaultCwd` 同时供默认命令目录和 Landlock 可写根使用，不参与 Connection Key。Landlock Provider 按连接身份及 generation 缓存成功能力探针；重连重新验证，目录本身仍逐次规范化与校验。启动器准备使用共享 Broker，不改变物理连接/Channel 的所有权。见 [remote-sandbox.md](./remote-sandbox.md)。
+SSH Target 的 `defaultCwd` 仅供命令/PTY 的默认启动目录；可写范围由 readonly `sandboxWritableRoots` 独立快照提供。Workspace Resolver 读取默认列表，Session Resolver 以自身列表覆盖。二者均不参与 Connection Key，改变范围无需断开共享物理连接。Landlock Provider 按连接身份及 generation 缓存成功能力探针；重连重新验证，目录本身仍逐次规范化与校验。启动器准备使用共享 Broker，不改变物理连接/Channel 的所有权。见 [remote-sandbox.md](./remote-sandbox.md)。
 
 ## 当前边界
 

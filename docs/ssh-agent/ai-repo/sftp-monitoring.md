@@ -57,3 +57,5 @@
 | 联调契约 | `docs/ssh-agent/frontend/sftp-overview-realtime-integration.md` |
 
 修改 Transfer 状态时必须保持六状态边界，不能把 Channel 排队或 rename 阶段暴露为新状态。修改覆盖流程时必须保持“不确定结果不自动重放”和“无原子扩展不覆盖”。
+
+Workspace 目录浏览也供沙盒多选器使用：跨目录勾选保留已选路径，按目录 realpath 回填列表，最多 16 条，`/` 只可浏览。SFTP 默认 cwd 仍为单个目录，不由 Session 可写范围替换。Overview 显式沙箱检测校验并展示 Workspace 默认列表的全部规范根，不代表某个 Session 的当前覆盖配置；它不改变 Session 开关或现有 PTY。

@@ -208,12 +208,13 @@ function parseCredential(value: unknown, prefix: string): CreateCredentialInput 
 
 export function parseCreateWorkspace(value: unknown): CreateWorkspaceInput {
 	const body = object(value, "body");
-	exactKeys(body, ["displayName", "environment", "host", "credential", "defaultCwd", "remoteDefaultCwd", "connection"]);
+	exactKeys(body, ["displayName", "environment", "host", "credential", "defaultCwd", "remoteDefaultCwd", "sandboxWritableRoots", "connection"]);
 	return {
 		displayName: string(body, "displayName"),
 		environment: parseEnvironment(string(body, "environment")),
 		defaultCwd: string(body, "defaultCwd"),
 		remoteDefaultCwd: optionalString(body, "remoteDefaultCwd"),
+		sandboxWritableRoots: optionalStringArray(body, "sandboxWritableRoots"),
 		...parseWorkspaceConnectionFields(body),
 	};
 }
@@ -265,16 +266,17 @@ export function parseActivateCredential(value: unknown): { credentialId: string;
 	};
 }
 
-export function parseUpdateWorkspace(value: unknown): { displayName: string; defaultCwd?: string; remoteDefaultCwd?: string; expectedRevision: number } {
+export function parseUpdateWorkspace(value: unknown): { displayName: string; defaultCwd?: string; remoteDefaultCwd?: string; sandboxWritableRoots?: string[]; expectedRevision: number } {
 	const body = object(value, "body");
-	exactKeys(body, ["displayName", "defaultCwd", "remoteDefaultCwd", "expectedRevision"]);
+	exactKeys(body, ["displayName", "defaultCwd", "remoteDefaultCwd", "sandboxWritableRoots", "expectedRevision"]);
 	return { displayName: string(body, "displayName"), defaultCwd: optionalString(body, "defaultCwd"), remoteDefaultCwd: optionalString(body, "remoteDefaultCwd"),
+		sandboxWritableRoots: optionalStringArray(body, "sandboxWritableRoots"),
 		expectedRevision: number(body, "expectedRevision") };
 }
 
-export function parseCreateSession(value: unknown): { displayName: string; workDir?: string; autoAudit?: boolean; sandboxEnabled?: boolean } {
+export function parseCreateSession(value: unknown): { displayName: string; workDir?: string; autoAudit?: boolean; sandboxEnabled?: boolean; sandboxWritableRoots?: string[] } {
 	const body = object(value, "body");
-	exactKeys(body, ["displayName", "workDir", "autoAudit", "sandboxEnabled"]);
+	exactKeys(body, ["displayName", "workDir", "autoAudit", "sandboxEnabled", "sandboxWritableRoots"]);
 	const workDir = optionalString(body, "workDir");
 	if (body.autoAudit !== undefined && typeof body.autoAudit !== "boolean")
 		invalid("autoAudit must be a boolean", "autoAudit");
@@ -285,6 +287,7 @@ export function parseCreateSession(value: unknown): { displayName: string; workD
 		...(workDir === undefined ? {} : { workDir }),
 		...(body.autoAudit === undefined ? {} : { autoAudit: body.autoAudit as boolean }),
 		...(body.sandboxEnabled === undefined ? {} : { sandboxEnabled: body.sandboxEnabled as boolean }),
+		sandboxWritableRoots: optionalStringArray(body, "sandboxWritableRoots"),
 	};
 }
 
@@ -293,10 +296,11 @@ export function parseUpdateSession(value: unknown): {
 	workDir?: string | null;
 	autoAudit?: boolean;
 	sandboxEnabled?: boolean;
+	sandboxWritableRoots?: string[];
 	expectedRevision: number;
 } {
 	const body = object(value, "body");
-	exactKeys(body, ["displayName", "workDir", "autoAudit", "sandboxEnabled", "expectedRevision"]);
+	exactKeys(body, ["displayName", "workDir", "autoAudit", "sandboxEnabled", "sandboxWritableRoots", "expectedRevision"]);
 	if (body.workDir !== undefined && body.workDir !== null && typeof body.workDir !== "string")
 		invalid("workDir must be a string or null", "workDir");
 	if (body.autoAudit !== undefined && typeof body.autoAudit !== "boolean")
@@ -308,6 +312,7 @@ export function parseUpdateSession(value: unknown): {
 		...(body.workDir === undefined ? {} : { workDir: body.workDir as string | null }),
 		...(body.autoAudit === undefined ? {} : { autoAudit: body.autoAudit as boolean }),
 		...(body.sandboxEnabled === undefined ? {} : { sandboxEnabled: body.sandboxEnabled as boolean }),
+		sandboxWritableRoots: optionalStringArray(body, "sandboxWritableRoots"),
 		expectedRevision: number(body, "expectedRevision"),
 	};
 }
@@ -498,6 +503,15 @@ function optionalString(source: JsonObject, field: string, errorField = field): 
 	const value = source[field];
 	if (value === undefined) return undefined;
 	if (typeof value !== "string") invalid(`${field} must be a string`, errorField);
+	return value;
+}
+
+function optionalStringArray(source: JsonObject, field: string): string[] | undefined {
+	const value = source[field];
+	if (value === undefined) return undefined;
+	if (!Array.isArray(value) || !value.every((entry) => typeof entry === "string")) {
+		invalid(`${field} must be an array of strings`, field);
+	}
 	return value;
 }
 

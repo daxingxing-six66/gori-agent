@@ -1,3 +1,4 @@
+import { defaultSandboxWritableRoots, sameSandboxWritableRoots } from "../../domain/sandbox-writable-roots.ts";
 import { createHash, randomUUID } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { lstat, readFile, readdir, realpath, stat } from "node:fs/promises";
@@ -389,7 +390,7 @@ export class DeploymentService {
 				project: profile.project, target: { ...profile.target },
 				targetBinding: { workspaceRevision: target.workspaceRevision, port: target.port, hostKeyAlgorithm: target.hostKeyAlgorithm,
 					hostKeyFingerprint: target.hostKeyFingerprint, credentialId: target.credentialId,
-					credentialAuthVersion: target.credentialAuthVersion, remoteUser: target.remoteUser, writableRoot: target.defaultCwd },
+					credentialAuthVersion: target.credentialAuthVersion, remoteUser: target.remoteUser, writableRoot: target.defaultCwd, sandboxWritableRoots: targetSandboxRoots(target) },
 				module: { id: module.id, name: module.name }, buildSteps, artifacts,
 				restart,
 				...(verify ? { verify } : {}),
@@ -489,7 +490,7 @@ export class DeploymentService {
 			targetBinding: {
 				workspaceRevision: target.workspaceRevision, port: target.port,
 				hostKeyAlgorithm: target.hostKeyAlgorithm, hostKeyFingerprint: target.hostKeyFingerprint, credentialId: target.credentialId,
-				credentialAuthVersion: target.credentialAuthVersion, remoteUser: target.remoteUser, writableRoot: target.defaultCwd,
+				credentialAuthVersion: target.credentialAuthVersion, remoteUser: target.remoteUser, writableRoot: target.defaultCwd, sandboxWritableRoots: targetSandboxRoots(target),
 			},
 			module: { id: module.id, name: module.name },
 			build: { cwd: cwdReal, command: module.build.command, artifact },
@@ -1045,6 +1046,10 @@ export class DeploymentService {
 	private async requireBoundTarget(run: DeploymentRun): Promise<SshTargetSnapshot> {
 		const target = await this.options.targets.resolve(run.sessionId);
 		this.assertBoundTarget(run, target);
+		const bound = run.plan.targetBinding;
+		if (!sameSandboxWritableRoots(targetSandboxRoots(target), bound.sandboxWritableRoots ?? defaultSandboxWritableRoots(bound.writableRoot))) {
+			throw new DeploymentError("deployment_sandbox_route_changed", "Session writable directories changed; review a new deployment plan", 409);
+		}
 		return target;
 	}
 
@@ -1347,7 +1352,7 @@ function discussionTarget(target: SshTargetSnapshot): DeploymentDiscussion["targ
 		hostname: target.hostname, port: target.port, workspaceRevision: target.workspaceRevision,
 		hostKeyAlgorithm: target.hostKeyAlgorithm, hostKeyFingerprint: target.hostKeyFingerprint,
 		credentialId: target.credentialId, credentialAuthVersion: target.credentialAuthVersion,
-		remoteUser: target.remoteUser, writableRoot: target.defaultCwd,
+		remoteUser: target.remoteUser, writableRoot: target.defaultCwd, sandboxWritableRoots: targetSandboxRoots(target),
 	};
 }
 
@@ -1356,7 +1361,12 @@ function sameDiscussionTarget(bound: DeploymentDiscussion["targetBinding"], targ
 		bound.workspaceRevision === target.workspaceRevision && bound.hostKeyAlgorithm === target.hostKeyAlgorithm &&
 		bound.hostKeyFingerprint === target.hostKeyFingerprint && bound.credentialId === target.credentialId &&
 		bound.credentialAuthVersion === target.credentialAuthVersion && bound.remoteUser === target.remoteUser &&
-		bound.writableRoot === target.defaultCwd;
+		bound.writableRoot === target.defaultCwd &&
+		sameSandboxWritableRoots(bound.sandboxWritableRoots ?? defaultSandboxWritableRoots(bound.writableRoot), targetSandboxRoots(target));
+}
+
+function targetSandboxRoots(target: SshTargetSnapshot): string[] {
+	return [...(target.sandboxWritableRoots ?? defaultSandboxWritableRoots(target.defaultCwd))];
 }
 
 function discussionConflict(): DeploymentError {

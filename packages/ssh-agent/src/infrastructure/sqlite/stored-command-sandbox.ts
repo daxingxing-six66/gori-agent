@@ -1,4 +1,5 @@
-import { canonicalRemoteSandboxRoot, GORI_MIN_LANDLOCK_ABI, type RemoteSandboxFacts, type RemoteSandboxMode } from "../../domain/remote-sandbox.ts";
+import { validSandboxFactRoots } from "../../domain/sandbox-writable-roots.ts";
+import { GORI_MIN_LANDLOCK_ABI, type RemoteSandboxFacts, type RemoteSandboxMode } from "../../domain/remote-sandbox.ts";
 
 /** Decodes persisted execution evidence, including pre-backend and pre-confirmation records. */
 export function readStoredCommandSandbox(json: string): RemoteSandboxFacts {
@@ -33,11 +34,12 @@ function readWithoutBackend(facts: Record<string, unknown>, state: ExecutionStat
 
 function readPreparedBackend(facts: Record<string, unknown>, state: ExecutionState): RemoteSandboxFacts {
 	const { mode, enforcement, commandMayHaveRun, denialSuspected } = state;
-	if (mode !== "workspace_write" || typeof facts.sandboxRoot !== "string" || !canonicalRemoteSandboxRoot(facts.sandboxRoot) ||
+	if (mode !== "workspace_write" || !validSandboxFactRoots(facts) ||
 		(enforcement === "full" && !commandMayHaveRun) || (enforcement === "none" && denialSuspected !== undefined) ||
-		!onlyKeys(facts, ["mode", "backend", "enforcement", "abi", "launcherVersion", "bubblewrapVersion", "sandboxRoot", "commandMayHaveRun", "denialSuspected"])) throw invalidFacts();
+		!onlyKeys(facts, ["mode", "backend", "enforcement", "abi", "launcherVersion", "bubblewrapVersion", "sandboxRoot", "sandboxRoots", "commandMayHaveRun", "denialSuspected"])) throw invalidFacts();
 	const backend = readBackendMetadata(facts);
-	return { ...state, ...backend, sandboxRoot: facts.sandboxRoot };
+	return { ...state, ...backend, sandboxRoot: facts.sandboxRoot as string,
+		...(facts.sandboxRoots === undefined ? {} : { sandboxRoots: facts.sandboxRoots as string[] }) };
 }
 
 function readBackendMetadata(facts: Record<string, unknown>): Pick<RemoteSandboxFacts, "backend" | "abi" | "launcherVersion" | "bubblewrapVersion"> {

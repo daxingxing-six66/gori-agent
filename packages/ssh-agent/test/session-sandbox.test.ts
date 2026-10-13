@@ -55,7 +55,7 @@ function fixture(options: { commandSandbox?: boolean } = {}) {
 	let nextId = 0;
 	const ids = { next: () => `test-${++nextId}` };
 	const clock = { now: () => Date.now() };
-	const targets = { resolve: vi.fn(async () => target) };
+	const targets = { resolve: vi.fn(async (sessionId: string) => ({ ...target, sandboxWritableRoots: (await sessions.findById(sessionId))?.sandboxWritableRoots })) };
 	const guards = { evaluate: vi.fn(async () => ({ allowed: true })) };
 	const prepare = vi.fn(async (input: { cwd: string; command: string }) => ({ command: `confined:${wrapRemoteCommand(input.cwd, input.command)}`,
 		confirmation: "test: confined", sandbox: { mode: "workspace_write" as const, backend: "landlock" as const,
@@ -126,6 +126,21 @@ describe("Session sandbox execution policy", () => {
 		await expect(f.commandService.submit({ ...command, sandboxPermissions: "full_access" })).rejects.toMatchObject({ failure: { code: "invalid_request" } });
 	});
 
+	it("rejects command authorization when only the writable directory list changes", async () => {
+		const f = fixture();
+		await f.sessionService.update({ id: "session", sandboxWritableRoots: ["/srv/app", "/var/log/app"], expectedRevision: 1 });
+		const result = await f.commandService.submit({ ...command, expectedTarget: { ...target, sandboxWritableRoots: ["/srv/app"] } });
+		expect(result.operation.failure?.code).toBe("invalid_request");
+		expect(f.prepare).not.toHaveBeenCalled(); expect(f.execute).not.toHaveBeenCalled();
+	});
+
+	it.each(["chat_run", "command_operation", "deployment_run", "terminal_open"] as const)("blocks directory changes during %s", async (kind) => {
+		const f = fixture(); const lease = f.lifecycle.acquireUse("session", kind);
+		await expect(f.sessionService.update({ id: "session", sandboxWritableRoots: ["/srv/app", "/etc/app"], expectedRevision: 1 }))
+			.rejects.toMatchObject({ code: kind === "chat_run" ? "session_has_active_chat_run" : "session_has_active_operations" });
+		lease.release();
+	});
+
 	it("still blocks Guard denials, invalid cwd and changed SSH targets when disabled", async () => {
 		const f = fixture(); await f.change(false);
 		f.guards.evaluate.mockResolvedValueOnce({ allowed: false });
@@ -178,6 +193,45 @@ describe("Session sandbox Terminal reconfiguration", () => {
 		await f.change(true); const confined = await activeTerminal(f);
 		expect(confined).toMatchObject({ requestedSandboxMode: "workspace_write", sandbox: { enforcement: "full" }, geometry: first.geometry });
 		expect(f.prepareTerminal).toHaveBeenCalledTimes(2); expect(f.open).toHaveBeenCalledTimes(3);
+	});
+
+	it("automatically replaces a confined PTY when writable directories change, preserving geometry and other Sessions", async () => {
+		const f = fixture();
+		await f.terminalService.open({ sessionId: "session", requestId: "first", rows: 40, cols: 100 });
+		const first = await activeTerminal(f);
+		const roots = ["/srv/app", "/var/log/app"];
+		await f.sessionService.update({ id: "session", sandboxWritableRoots: roots, expectedRevision: 1 });
+		const reopened = await activeTerminal(f);
+		expect(reopened.id).not.toBe(first.id);
+		expect(reopened.geometry).toEqual(first.geometry);
+		expect(f.prepareTerminal).toHaveBeenLastCalledWith(expect.objectContaining({ target: expect.objectContaining({ sandboxWritableRoots: roots }) }));
+		expect((await f.sessions.findById("other"))?.sandboxWritableRoots).toBeUndefined();
+		await f.sessionService.update({ id: "session", sandboxWritableRoots: roots, expectedRevision: 2 });
+		expect(f.open).toHaveBeenCalledTimes(2);
+	});
+
+	it("validates the whole list before closing a live PTY and keeps new settings when reopen fails", async () => {
+		const f = fixture();
+		await f.terminalService.open({ sessionId: "session", requestId: "first" });
+		const first = await activeTerminal(f);
+		await expect(f.sessionService.update({ id: "session", sandboxWritableRoots: ["/srv/app", "/"], expectedRevision: 1 }))
+			.rejects.toMatchObject({ code: "validation_error" });
+		expect(f.terminalService.get("session")?.id).toBe(first.id);
+		expect(f.terminalService.get("session")?.status).toBe("active");
+		f.prepareTerminal.mockRejectedValueOnce(new Error("second writable directory missing"));
+		await f.sessionService.update({ id: "session", sandboxWritableRoots: ["/srv/app", "/missing"], expectedRevision: 1 });
+		await vi.waitFor(() => expect(f.terminalService.get("session")?.status).toBe("failed"));
+		expect((await f.sessions.findById("session"))?.sandboxWritableRoots).toEqual(["/srv/app", "/missing"]);
+		expect(f.open).toHaveBeenCalledOnce();
+	});
+
+	it("does not restart an unconfined PTY for a future confined directory setting", async () => {
+		const f = fixture(); await f.change(false);
+		await f.terminalService.open({ sessionId: "session", requestId: "first" });
+		const first = await activeTerminal(f);
+		await f.sessionService.update({ id: "session", sandboxWritableRoots: ["/srv/app", "/etc/app"], expectedRevision: 2 });
+		expect(f.terminalService.get("session")?.id).toBe(first.id);
+		expect(f.prepareTerminal).not.toHaveBeenCalled();
 	});
 
 	it("does not open Terminal unless already active; a later open uses the current policy", async () => {

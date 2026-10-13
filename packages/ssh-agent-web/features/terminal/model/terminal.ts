@@ -1,11 +1,11 @@
-import { isCanonicalRemoteSandboxRoot } from "@/features/workspace/model/workspace";
+import { validSandboxFactRoots } from "@/features/workspace/model/sandbox-writable-roots";
 
 export type TerminalSessionStatus = "opening" | "active" | "closing" | "closed" | "failed" | "lost";
 export type ServerInteractionMode = "command" | "terminal";
 export type TerminalSandboxFacts =
 	| { mode: "full_access"; backend: "none"; enforcement: "none"; source: "session_setting"; configuredAt: number }
-	| { mode: "workspace_write"; backend: "landlock"; enforcement: "full"; abi: number; launcherVersion: string; sandboxRoot: string }
-	| { mode: "workspace_write"; backend: "bubblewrap"; enforcement: "full"; bubblewrapVersion: string; sandboxRoot: string }
+	| { mode: "workspace_write"; backend: "landlock"; enforcement: "full"; abi: number; launcherVersion: string; sandboxRoot: string; sandboxRoots?: string[] }
+	| { mode: "workspace_write"; backend: "bubblewrap"; enforcement: "full"; bubblewrapVersion: string; sandboxRoot: string; sandboxRoots?: string[] }
 	| { mode: "full_access"; backend: "none"; enforcement: "none"; source: "sandbox_unavailable" | "landlock_unavailable"; detectedAt: number }
 	| { mode: "full_access"; backend: "none"; enforcement: "none"; approvedAt: number };
 
@@ -236,12 +236,12 @@ function isSandboxFacts(value: unknown): value is TerminalSandboxFacts | null {
 		(isPositiveSafeInteger(value.approvedAt) && Object.keys(value).length === 4)
 	);
 	if (value.mode !== "workspace_write" || value.enforcement !== "full" ||
-		typeof value.sandboxRoot !== "string" || !isCanonicalRemoteSandboxRoot(value.sandboxRoot)) return false;
+		!validSandboxFactRoots(value)) return false;
 	if (value.backend === "landlock") return isPositiveSafeInteger(value.abi) && value.abi >= 5 &&
 		typeof value.launcherVersion === "string" && /^[1-9]\d*$/.test(value.launcherVersion) &&
-		Object.keys(value).length === 6;
+		Object.keys(value).length === (value.sandboxRoots === undefined ? 6 : 7);
 	return value.backend === "bubblewrap" && typeof value.bubblewrapVersion === "string" &&
-		/^[0-9]+\.[0-9]+\.[0-9]+$/.test(value.bubblewrapVersion) && Object.keys(value).length === 5;
+		/^[0-9]+\.[0-9]+\.[0-9]+$/.test(value.bubblewrapVersion) && Object.keys(value).length === (value.sandboxRoots === undefined ? 5 : 6);
 }
 
 function isSnapshot(value: unknown): value is TerminalSnapshotV1 {

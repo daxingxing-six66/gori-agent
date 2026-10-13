@@ -1,3 +1,4 @@
+import { validSandboxWritableRoots } from "../../domain/sandbox-writable-roots.ts";
 import type { DatabaseSync } from "node:sqlite";
 import { randomUUID } from "node:crypto";
 import { isAbsolute, normalize, posix } from "node:path";
@@ -218,6 +219,7 @@ function validatePlan(run: Record<string, unknown>): Record<string, unknown> {
 	if (binding.workspaceRevision !== undefined && !Number.isSafeInteger(binding.workspaceRevision)) throw corrupt();
 	if (binding.hostKeyAlgorithm !== undefined) string(binding.hostKeyAlgorithm);
 	for (const key of ["hostKeyFingerprint", "credentialId", "remoteUser", "writableRoot"]) string(binding[key]);
+	if (binding.sandboxWritableRoots !== undefined && !validSandboxWritableRoots(binding.sandboxWritableRoots, true)) throw corrupt();
 	const module = record(plan.module);
 	string(module.id); string(module.name);
 	if (plan.version === 2) {

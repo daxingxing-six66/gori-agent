@@ -2,6 +2,7 @@ import type { Credential } from "../../domain/credential.ts";
 import type { CommandGuardRule, Guard } from "../../domain/guard.ts";
 import type { Session } from "../../domain/session.ts";
 import type { Workspace } from "../../domain/workspace.ts";
+import { readStoredSandboxWritableRoots } from "./stored-sandbox-writable-roots.ts";
 
 export interface CredentialRow {
 	id: string;
@@ -51,6 +52,7 @@ export interface WorkspaceRow {
 	active_credential_id: string;
 	default_cwd: string;
 	remote_default_cwd: string;
+	sandbox_writable_roots_json: string | null;
 	connect_timeout_ms: number;
 	keepalive_interval_ms: number;
 	keepalive_max_count: number;
@@ -76,6 +78,7 @@ export function workspaceFromRow(row: WorkspaceRow): Workspace {
 		activeCredentialId: row.active_credential_id,
 		defaultCwd: row.default_cwd,
 		remoteDefaultCwd: row.remote_default_cwd,
+		sandboxWritableRoots: readStoredSandboxWritableRoots(row.sandbox_writable_roots_json),
 		connection: {
 			connectTimeoutMs: row.connect_timeout_ms,
 			keepaliveIntervalMs: row.keepalive_interval_ms,
@@ -105,6 +108,7 @@ export interface SessionRow {
 	work_dir: string | null;
 	auto_audit: number;
 	sandbox_enabled: number;
+	sandbox_writable_roots_json: string | null;
 	terminal_context_cursor: number;
 	revision: number;
 	created_at: number;
@@ -119,6 +123,7 @@ export function sessionFromRow(row: SessionRow): Session {
 		workDir: row.work_dir,
 		autoAudit: row.auto_audit === 1,
 		sandboxEnabled: row.sandbox_enabled === 1,
+		sandboxWritableRoots: readStoredSandboxWritableRoots(row.sandbox_writable_roots_json),
 		terminalContextCursor: row.terminal_context_cursor,
 		revision: row.revision,
 		createdAt: row.created_at,

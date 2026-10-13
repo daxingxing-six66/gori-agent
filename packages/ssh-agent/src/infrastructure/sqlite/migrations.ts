@@ -824,6 +824,20 @@ const MIGRATIONS = [
 		sql: `ALTER TABLE sessions ADD COLUMN sandbox_enabled INTEGER NOT NULL DEFAULT 1
 			CHECK (sandbox_enabled IN (0, 1));`,
 	},
+	{
+		version: 28,
+		sql: `
+			ALTER TABLE workspaces ADD COLUMN sandbox_writable_roots_json TEXT
+				CHECK (sandbox_writable_roots_json IS NULL OR (json_valid(sandbox_writable_roots_json) AND json_type(sandbox_writable_roots_json) = 'array'));
+			ALTER TABLE sessions ADD COLUMN sandbox_writable_roots_json TEXT
+				CHECK (sandbox_writable_roots_json IS NULL OR (json_valid(sandbox_writable_roots_json) AND json_type(sandbox_writable_roots_json) = 'array'));
+			UPDATE workspaces SET sandbox_writable_roots_json = CASE
+				WHEN remote_default_cwd = '/' THEN '[]' ELSE json_array(remote_default_cwd) END;
+			UPDATE sessions SET sandbox_writable_roots_json = (
+				SELECT sandbox_writable_roots_json FROM workspaces WHERE workspaces.id = sessions.workspace_id
+			);
+		`,
+	},
 ] as const;
 
 export function applyMigrations(database: DatabaseSync): void {

@@ -1,3 +1,5 @@
+import { validSandboxWritableRoots } from "@/features/workspace/model/sandbox-writable-roots";
+
 export const DEPLOY_STAGES = ["prepare", "build", "upload", "restart", "verify"] as const;
 export type DeployStage = typeof DEPLOY_STAGES[number];
 export type DeployStatus = "preparing" | "running" | "recovering" | "success" | "failed" | "cancelled";
@@ -37,7 +39,7 @@ interface DeploymentPlanBase {
 	remoteAccess: DeploymentRemoteAccess;
 	project: string;
 	target: { host: string; name?: string };
-	targetBinding: { workspaceRevision?: number; port: number; hostKeyAlgorithm?: string; hostKeyFingerprint: string; credentialId: string; credentialAuthVersion: number; remoteUser: string; writableRoot: string };
+	targetBinding: { workspaceRevision?: number; port: number; hostKeyAlgorithm?: string; hostKeyFingerprint: string; credentialId: string; credentialAuthVersion: number; remoteUser: string; writableRoot: string; sandboxWritableRoots?: string[] };
 	module: { id: string; name: string };
 	restart: DeploymentRemoteCommand;
 	verify?: DeploymentRemoteCommand;
@@ -127,6 +129,7 @@ export interface DeploymentDiscussion {
 		credentialAuthVersion: number;
 		remoteUser: string;
 		writableRoot: string;
+		sandboxWritableRoots?: string[];
 	};
 	createdAt: number;
 	updatedAt: number;
@@ -252,14 +255,15 @@ function isDiscussionModule(value: unknown): value is DeploymentDiscussion["modu
 }
 
 function isDiscussionTarget(value: unknown): value is DeploymentDiscussion["targetBinding"] {
-	return isRecord(value) && exactKeys(value,
+	return isRecord(value) && keysMatch(value,
 		["hostname", "port", "workspaceRevision", "hostKeyAlgorithm", "hostKeyFingerprint", "credentialId",
-			"credentialAuthVersion", "remoteUser", "writableRoot"]) &&
+			"credentialAuthVersion", "remoteUser", "writableRoot"], ["sandboxWritableRoots"]) &&
 		boundedText(value.hostname, 255) && positiveInteger(value.port) && value.port <= 65535 &&
 		positiveInteger(value.workspaceRevision) && boundedText(value.hostKeyAlgorithm, 200) &&
 		boundedText(value.hostKeyFingerprint, 500) && validAgentRunId(value.credentialId) &&
 		positiveInteger(value.credentialAuthVersion) && boundedText(value.remoteUser, 200) &&
-		absoluteRemoteDirectory(value.writableRoot);
+		absoluteRemoteDirectory(value.writableRoot) &&
+		(value.sandboxWritableRoots === undefined || validSandboxWritableRoots(value.sandboxWritableRoots, true));
 }
 
 function keysMatch(value: Record<string, unknown>, required: readonly string[], optional: readonly string[] = []): boolean {
@@ -299,6 +303,7 @@ function isPlan(value: unknown): value is DeploymentRun["plan"] {
 		(value.targetBinding.hostKeyAlgorithm !== undefined && typeof value.targetBinding.hostKeyAlgorithm !== "string") ||
 		!nonEmptyString(value.targetBinding.remoteUser) || !nonEmptyString(value.targetBinding.hostKeyFingerprint) ||
 		!nonEmptyString(value.targetBinding.credentialId) || !nonEmptyString(value.targetBinding.writableRoot) ||
+		(value.targetBinding.sandboxWritableRoots !== undefined && !validSandboxWritableRoots(value.targetBinding.sandboxWritableRoots, true)) ||
 		!validRemoteCommand(value.restart) ||
 		(value.verify !== undefined && !validRemoteCommand(value.verify))) return false;
 	if (!isRemoteAccess(value.remoteAccess)) return false;

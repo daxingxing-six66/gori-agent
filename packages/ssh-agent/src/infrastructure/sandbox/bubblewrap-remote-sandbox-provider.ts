@@ -11,9 +11,9 @@ import { quoteShell, shellArgv, wrapRemoteCommand } from "./shell-command.ts";
 
 type Broker = RemoteCommandBroker & Partial<Pick<SshConnectionPoolControl, "snapshotWorkspace">>;
 interface Runner { path: string; version: string; }
-interface Rules { runner: Runner; sandboxRoot: string; }
+interface Rules { runner: Runner; sandboxRoots: string[]; }
 interface HostNamespaces { pid: string; network: string; }
-interface ProbeFiles { outside: string; writable: string; }
+interface ProbeFiles { outside: string; writable: string[]; }
 
 /** Uses an installed, unprivileged Bubblewrap. No package operation occurs here. */
 export class BubblewrapRemoteSandboxProvider implements RemoteSandboxBackend {
@@ -42,7 +42,7 @@ export class BubblewrapRemoteSandboxProvider implements RemoteSandboxBackend {
 		const marker = `gori-bubblewrap: confined version=${rules.runner.version} token=${randomBytes(16).toString("hex")}\n`;
 		const script = `printf %s ${quoteShell(marker)} >&2; ${wrapRemoteCommand(input.cwd, input.command)}`;
 		return {
-			command: shellArgv([...sandboxArgs(rules.runner.path, rules.sandboxRoot), "--", "/bin/bash", "--noprofile", "--norc", "-c", script]),
+			command: shellArgv([...sandboxArgs(rules.runner.path, rules.sandboxRoots), "--", "/bin/bash", "--noprofile", "--norc", "-c", script]),
 			sandbox: sandboxFacts(rules), confirmation: marker,
 		};
 	}
@@ -52,7 +52,7 @@ export class BubblewrapRemoteSandboxProvider implements RemoteSandboxBackend {
 		const marker = `gori-bubblewrap: confined version=${rules.runner.version} token=${randomBytes(16).toString("hex")}`;
 		const script = `printf '%s\\n' ${quoteShell(marker)} >&2; exec /bin/bash --login -i`;
 		return {
-			command: `cd -- ${quoteShell(rules.sandboxRoot)} && exec ${shellArgv([...sandboxArgs(rules.runner.path, rules.sandboxRoot), "--", "/bin/bash", "--noprofile", "--norc", "-c", script])}`,
+			command: `cd -- ${quoteShell(input.target.defaultCwd)} && exec ${shellArgv([...sandboxArgs(rules.runner.path, rules.sandboxRoots), "--", "/bin/bash", "--noprofile", "--norc", "-c", script])}`,
 			sandbox: sandboxFacts(rules), confirmation: marker,
 		};
 	}
@@ -61,24 +61,24 @@ export class BubblewrapRemoteSandboxProvider implements RemoteSandboxBackend {
 		const signal = preparationSignal(inputSignal);
 		// Availability comes first, retaining the distinct missing-installation verdict.
 		const runner = await this.#runners.get(target, signal);
-		const sandboxRoot = await this.#rules.writableRoot(target, signal);
+		const sandboxRoots = await this.#rules.writableRoots(target, signal);
 		await this.#rules.requireRuntimePaths(target, signal);
-		requireProtectedExecutable(runner.path, sandboxRoot, "the Bubblewrap executable");
-		await this.#verifyConfinement(target, signal, runner, sandboxRoot);
-		return { runner, sandboxRoot };
+		requireProtectedExecutable(runner.path, sandboxRoots, "the Bubblewrap executable");
+		await this.#verifyConfinement(target, signal, runner, sandboxRoots);
+		return { runner, sandboxRoots };
 	}
 
-	async #verifyConfinement(target: SshTargetSnapshot, signal: AbortSignal, runner: Runner, root: string): Promise<void> {
+	async #verifyConfinement(target: SshTargetSnapshot, signal: AbortSignal, runner: Runner, roots: string[]): Promise<void> {
 		const namespaces = await this.#hostNamespaces(target, signal);
-		const files = await this.#createProbeFiles(target, signal, root);
+		const files = await this.#createProbeFiles(target, signal, roots);
 		try {
 			const probe = await this.#commands.capture({ target, signal, stage: "Bubblewrap confinement",
-				command: confinementProbeCommand(runner.path, root, namespaces, files) });
+				command: confinementProbeCommand(runner.path, roots, namespaces, files) });
 			if (probe.exitCode !== 0 || probe.exitSignal || probe.stdout !== "gori-bubblewrap-probe")
 				throw sandboxCommandFailure({ stage: "Bubblewrap confinement (host PID/network access and filesystem writes)", code: "sandbox_unavailable" }, probe);
 		} finally {
 			await this.#commands.capture({ target, signal: AbortSignal.timeout(1_000), stage: "Bubblewrap probe cleanup",
-				command: `rm -f -- ${quoteShell(files.outside)} ${quoteShell(files.writable)}` }).catch(() => {});
+				command: `rm -f -- ${quoteShell(files.outside)} ${shellArgv(files.writable)}` }).catch(() => {});
 		}
 	}
 
@@ -90,15 +90,15 @@ export class BubblewrapRemoteSandboxProvider implements RemoteSandboxBackend {
 		return { pid, network };
 	}
 
-	async #createProbeFiles(target: SshTargetSnapshot, signal: AbortSignal, root: string): Promise<ProbeFiles> {
+	async #createProbeFiles(target: SshTargetSnapshot, signal: AbortSignal, roots: string[]): Promise<ProbeFiles> {
 		const candidates = await this.#commands.checked({ target, signal, stage: "outside writable probe directory",
 			command: 'for candidate in /var/tmp "$HOME" "/run/user/$(id -u)"; do if test -d "$candidate" && test -w "$candidate"; then realpath -e -- "$candidate"; fi; done' });
 		const outside = candidates.replace(/\n$/, "").split("\n").find((candidate) =>
-			canonicalRemoteSandboxRoot(candidate) && !isWithinSandboxRoot(candidate, root) && !isWithinSandboxRoot(candidate, "/tmp"));
+			canonicalRemoteSandboxRoot(candidate) && !roots.some((root) => isWithinSandboxRoot(candidate, root)) && !isWithinSandboxRoot(candidate, "/tmp"));
 		if (!outside) throw sandboxFailure("sandbox_probe_failed",
 			"No host-writable path outside the sandbox roots was available to verify Bubblewrap confinement. The command was not executed.");
 		const files = { outside: posix.join(outside, `.gori-bwrap-probe-${randomBytes(16).toString("hex")}`),
-			writable: posix.join(root, `.gori-bwrap-write-probe-${randomBytes(16).toString("hex")}`) };
+			writable: roots.map((root) => posix.join(root, `.gori-bwrap-write-probe-${randomBytes(16).toString("hex")}`)) };
 		await this.#commands.checked({ target, signal, stage: "outside writable probe file",
 			command: `umask 077 && (set -C; : > ${quoteShell(files.outside)})` });
 		return files;
@@ -140,24 +140,27 @@ function protectedFileMode(line: string): boolean {
 	return match !== null && match[1] === "0" && (Number.parseInt(match[2], 8) & 0o4022) === 0;
 }
 
-function confinementProbeCommand(path: string, root: string, namespaces: HostNamespaces, files: ProbeFiles): string {
+function confinementProbeCommand(path: string, roots: string[], namespaces: HostNamespaces, files: ProbeFiles): string {
 	const checks = [
 		`test "$(readlink /proc/self/ns/pid)" = ${quoteShell(namespaces.pid)}`,
 		`test "$(readlink /proc/self/ns/net)" = ${quoteShell(namespaces.network)}`,
 		'test -n "$GORI_HOST_PROBE_PID" && test -r "/proc/$GORI_HOST_PROBE_PID/stat" && kill -0 "$GORI_HOST_PROBE_PID"',
-		`test -w ${quoteShell(root)} && test -w /tmp && test -c /dev/null && test -e ${quoteShell(files.outside)}`,
-		`(set -C; : > ${quoteShell(files.writable)}) && rm -f -- ${quoteShell(files.writable)} && (: > /dev/null)`,
+		`test -w /tmp && test -c /dev/null && test -e ${quoteShell(files.outside)}`,
+		...files.writable.map((file) => `(set -C; : > ${quoteShell(file)}) && rm -f -- ${quoteShell(file)}`),
+		"(: > /dev/null)",
 		`{ if (: >> ${quoteShell(files.outside)}) 2>/dev/null; then exit 2; fi; printf gori-bubblewrap-probe; }`,
 	];
 	const script = `umask 077; ${checks.join(" && ")}`;
-	return `GORI_HOST_PROBE_PID=$$ ${shellArgv([...sandboxArgs(path, root), "--", "/bin/bash", "--noprofile", "--norc", "-c", script])}; exit $?`;
+	return `GORI_HOST_PROBE_PID=$$ ${shellArgv([...sandboxArgs(path, roots), "--", "/bin/bash", "--noprofile", "--norc", "-c", script])}; exit $?`;
 }
 
-function sandboxFacts({ runner, sandboxRoot }: Rules): PreparedRemoteTerminal["sandbox"] & { backend: "bubblewrap" } {
-	return { mode: "workspace_write", backend: "bubblewrap", enforcement: "full", bubblewrapVersion: runner.version, sandboxRoot };
+function sandboxFacts({ runner, sandboxRoots }: Rules): PreparedRemoteTerminal["sandbox"] & { backend: "bubblewrap" } {
+	return { mode: "workspace_write", backend: "bubblewrap", enforcement: "full", bubblewrapVersion: runner.version, sandboxRoot: sandboxRoots[0], sandboxRoots };
 }
 
-function sandboxArgs(path: string, root: string): string[] {
-	return [path, "--new-session", "--ro-bind", "/", "/", "--bind", root, root, "--bind", "/tmp", "/tmp",
+function sandboxArgs(path: string, roots: readonly string[]): string[] {
+	// Parent mounts precede nested mounts so every selected directory keeps its writable binding.
+	const mounts = [...roots].sort((a, b) => a.split("/").length - b.split("/").length);
+	return [path, "--new-session", "--ro-bind", "/", "/", ...mounts.flatMap((root) => ["--bind", root, root]), "--bind", "/tmp", "/tmp",
 		"--tmpfs", "/dev", "--dev-bind", "/dev/null", "/dev/null", "--ro-bind", "/proc", "/proc"];
 }

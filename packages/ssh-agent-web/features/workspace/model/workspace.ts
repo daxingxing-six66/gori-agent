@@ -1,3 +1,5 @@
+import { validSandboxFactRoots } from "./sandbox-writable-roots";
+export { isRemoteSandboxRoot, isCanonicalRemoteSandboxRoot } from "./sandbox-writable-roots";
 import type { Session } from "@/features/session/model/session";
 import type { CreateCredentialInput, Credential } from "@/features/credential/model/credential";
 
@@ -22,8 +24,9 @@ export interface Workspace {
 	activeCredentialId: string;
 	/** Local default inherited by new sessions. */
 	defaultCwd: string;
-	/** Remote SSH/SFTP default directory and sandbox writable root. */
+	/** Remote SSH/SFTP default directory. */
 	remoteDefaultCwd?: string;
+	sandboxWritableRoots?: string[];
 	connection: {
 		connectTimeoutMs: number;
 		keepaliveIntervalMs: number;
@@ -50,8 +53,9 @@ export interface CreateWorkspaceInput {
 	credential: CreateCredentialInput;
 	/** Local default inherited by new sessions. */
 	defaultCwd: string;
-	/** Remote SSH/SFTP default directory and sandbox writable root. */
+	/** Remote SSH/SFTP default directory. */
 	remoteDefaultCwd?: string;
+	sandboxWritableRoots?: string[];
 	connection?: Partial<Workspace["connection"]>;
 }
 
@@ -69,39 +73,26 @@ export type TestWorkspaceConnectionInput = Pick<CreateWorkspaceInput, "host" | "
 export interface TestWorkspaceConnectionResult { success: true; }
 
 export type RemoteSandboxProbe =
-	| { mode: "workspace_write"; backend: "landlock"; enforcement: "full"; abi: number; sandboxRoot: string }
-	| { mode: "workspace_write"; backend: "bubblewrap"; enforcement: "full"; bubblewrapVersion: string; sandboxRoot: string };
+	| { mode: "workspace_write"; backend: "landlock"; enforcement: "full"; abi: number; sandboxRoot: string; sandboxRoots?: string[] }
+	| { mode: "workspace_write"; backend: "bubblewrap"; enforcement: "full"; bubblewrapVersion: string; sandboxRoot: string; sandboxRoots?: string[] };
 
 export function parseRemoteSandboxProbe(value: unknown): RemoteSandboxProbe {
 	if (value === null || typeof value !== "object" || Array.isArray(value)) throw new Error("Invalid remote sandbox probe response");
 	const facts = value as Record<string, unknown>;
 	if (facts.mode !== "workspace_write" || facts.enforcement !== "full" ||
-		typeof facts.sandboxRoot !== "string" || !isCanonicalRemoteSandboxRoot(facts.sandboxRoot)) {
+		typeof facts.sandboxRoot !== "string" || !validSandboxFactRoots(facts)) {
 		throw new Error("Invalid remote sandbox probe response");
 	}
 	if (facts.backend === "landlock" && facts.bubblewrapVersion === undefined && typeof facts.abi === "number" &&
 		Number.isSafeInteger(facts.abi) && facts.abi >= 5)
 		return { mode: "workspace_write", backend: "landlock", enforcement: "full",
-			abi: facts.abi, sandboxRoot: facts.sandboxRoot };
+			abi: facts.abi, sandboxRoot: facts.sandboxRoot,
+			...(facts.sandboxRoots === undefined ? {} : { sandboxRoots: facts.sandboxRoots as string[] }) };
 	if (facts.backend === "bubblewrap" && facts.abi === undefined && facts.launcherVersion === undefined &&
 		typeof facts.bubblewrapVersion === "string" &&
 		/^[0-9]+\.[0-9]+\.[0-9]+$/.test(facts.bubblewrapVersion))
 		return { mode: "workspace_write", backend: "bubblewrap", enforcement: "full",
-			bubblewrapVersion: facts.bubblewrapVersion, sandboxRoot: facts.sandboxRoot };
+			bubblewrapVersion: facts.bubblewrapVersion, sandboxRoot: facts.sandboxRoot,
+			...(facts.sandboxRoots === undefined ? {} : { sandboxRoots: facts.sandboxRoots as string[] }) };
 	throw new Error("Invalid remote sandbox probe response");
-}
-
-export function isRemoteSandboxRoot(path: string): boolean {
-	if (!path.startsWith("/") || path.includes("\0") || path.includes("\n") || path.length > 4096) return false;
-	const segments: string[] = [];
-	for (const part of path.split("/")) {
-		if (part === "..") segments.pop();
-		else if (part !== "" && part !== ".") segments.push(part);
-	}
-	return segments.length > 0;
-}
-
-/** Runtime facts must contain a canonical path, unlike an unselected input path. */
-export function isCanonicalRemoteSandboxRoot(path: string): boolean {
-	return isRemoteSandboxRoot(path) && path.slice(1).split("/").every((part) => part !== "" && part !== "." && part !== "..");
 }

@@ -30,3 +30,5 @@ Composer 的发送/停止主操作按钮共用 32px 圆形外观，各主题的�
 | 共用页面骨架与聊天阅读宽度 | `packages/ssh-agent-web/components/page-layout.tsx`、`page-layout.css` |
 | xterm palette 与运行时更新 | `packages/ssh-agent-web/features/terminal/model/terminal-theme.ts`、`packages/ssh-agent-web/features/terminal/components/terminal-panel.tsx` |
 | 状态与 Terminal 配色测试 | `packages/ssh-agent-web/tests/theme-state.test.tsx`、`packages/ssh-agent-web/tests/terminal-theme.test.ts` |
+
+多目录字段及远端多选器使用 `features/workspace/components/sandbox-writable-roots.css` 的局部样式与主题变量，目录列表保持紧凑行高、小图标及文字操作，选中路径以可移除标签呈现；窄屏操作区换行，列表文本截断并保留完整 title。Session 编辑弹窗复用同一字段及 `ManagementDialog` 的主题、滚动和操作区，不另建明暗配色；页首沙盒标识保留只读标签样式。

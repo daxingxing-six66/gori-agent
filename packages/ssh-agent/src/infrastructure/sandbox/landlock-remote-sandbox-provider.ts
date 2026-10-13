@@ -5,14 +5,14 @@ import type { PreparedRemoteTerminal, PreparedSandboxedExecution, RemoteSandboxB
 import type { RemoteCommandBroker, SftpFileBroker, SshConnectionPoolControl } from "../../application/ssh-channel-broker.ts";
 import { GORI_LANDLOCK_LAUNCHER_VERSION, GORI_MIN_LANDLOCK_ABI, sandboxFailure } from "../../domain/remote-sandbox.ts";
 import type { SshTargetSnapshot } from "../../domain/ssh-target.ts";
-import { RemoteSandboxRules, requireProtectedExecutable, requireSandboxRoot } from "./remote-sandbox-rules.ts";
+import { RemoteSandboxRules, requireProtectedExecutable, requireSandboxRoots } from "./remote-sandbox-rules.ts";
 import { SandboxCapabilityCache } from "./sandbox-capability-cache.ts";
 import { SandboxCommandRunner, sandboxPreparationFailure } from "./sandbox-command-runner.ts";
 import { quoteShell, shellArgv, wrapRemoteCommand } from "./shell-command.ts";
 
 type Broker = RemoteCommandBroker & Pick<SftpFileBroker, "upload" | "deleteFile"> & Partial<Pick<SshConnectionPoolControl, "snapshotWorkspace">>;
 interface Launcher { path: string; abi: number; }
-interface Rules { launcher: Launcher; sandboxRoot: string; }
+interface Rules { launcher: Launcher; sandboxRoots: string[]; }
 
 export class LandlockRemoteSandboxProvider implements RemoteSandboxBackend {
 	readonly #broker: Broker;
@@ -37,7 +37,7 @@ export class LandlockRemoteSandboxProvider implements RemoteSandboxBackend {
 	async refreshCapabilities(target: SshTargetSnapshot, inputSignal: AbortSignal): Promise<PreparedSandboxedExecution["sandbox"]> {
 		const signal = preparationSignal(inputSignal);
 		signal.throwIfAborted();
-		requireSandboxRoot(target.defaultCwd);
+		requireSandboxRoots(target);
 		await this.#launchers.refresh(target, signal);
 		return this.getCapabilities(target, signal);
 	}
@@ -58,7 +58,7 @@ export class LandlockRemoteSandboxProvider implements RemoteSandboxBackend {
 		const rules = await this.#prepareRules(input.target, input.signal);
 		const token = randomBytes(16).toString("hex");
 		return {
-			command: `cd -- ${quoteShell(rules.sandboxRoot)} && exec ${shellArgv([...launcherArgs(rules, token), "--", "--terminal"])}`,
+			command: `cd -- ${quoteShell(input.target.defaultCwd)} && exec ${shellArgv([...launcherArgs(rules, token), "--", "--terminal"])}`,
 			sandbox: sandboxFacts(rules),
 			confirmation: `gori-landlock: confined abi=${rules.launcher.abi} token=${token}`,
 		};
@@ -66,11 +66,11 @@ export class LandlockRemoteSandboxProvider implements RemoteSandboxBackend {
 
 	async #prepareRules(target: SshTargetSnapshot, inputSignal: AbortSignal): Promise<Rules> {
 		const signal = preparationSignal(inputSignal);
-		const sandboxRoot = await this.#rules.writableRoot(target, signal);
+		const sandboxRoots = await this.#rules.writableRoots(target, signal);
 		const launcher = await this.#launchers.get(target, signal);
 		await this.#rules.requireRuntimePaths(target, signal);
-		requireProtectedExecutable(launcher.path, sandboxRoot, "the Gori launcher cache");
-		return { launcher, sandboxRoot };
+		requireProtectedExecutable(launcher.path, sandboxRoots, "the Gori launcher cache");
+		return { launcher, sandboxRoots };
 	}
 
 	async #deploy(target: SshTargetSnapshot, signal: AbortSignal): Promise<Launcher> {
@@ -138,11 +138,11 @@ function requireLandlockAbi(probe: string): number {
 	return abi;
 }
 
-function sandboxFacts({ launcher, sandboxRoot }: Rules): PreparedRemoteTerminal["sandbox"] & { backend: "landlock" } {
+function sandboxFacts({ launcher, sandboxRoots }: Rules): PreparedRemoteTerminal["sandbox"] & { backend: "landlock" } {
 	return { mode: "workspace_write", backend: "landlock", enforcement: "full", abi: launcher.abi,
-		launcherVersion: GORI_LANDLOCK_LAUNCHER_VERSION, sandboxRoot };
+		launcherVersion: GORI_LANDLOCK_LAUNCHER_VERSION, sandboxRoot: sandboxRoots[0], sandboxRoots };
 }
 
-function launcherArgs({ launcher, sandboxRoot }: Rules, token: string): string[] {
-	return [launcher.path, "--confirm-token", token, "--ro", "/", "--rw", "/dev/null", "--rw", "/tmp", "--rw", sandboxRoot];
+function launcherArgs({ launcher, sandboxRoots }: Rules, token: string): string[] {
+	return [launcher.path, "--confirm-token", token, "--ro", "/", "--rw", "/dev/null", "--rw", "/tmp", ...sandboxRoots.flatMap((root) => ["--rw", root])];
 }

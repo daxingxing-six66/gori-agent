@@ -424,7 +424,8 @@ export function ChatConsole({ sessionId }: { sessionId: string }) {
 
 	return (
 		<div className="app-layout">
-			<WorkspaceSidebar activeWorkspaceId={item.workspace.id} activeSessionId={item.session.id} />
+			<WorkspaceSidebar activeWorkspaceId={item.workspace.id} activeSessionId={item.session.id}
+				onSessionUpdated={async (updatedId) => { if (updatedId === sessionId) await terminalMode.refresh(); }} />
 			<main
 				className={`session-console page-main page-main-chat ${terminalPresent ? "session-console-terminal-present" : ""} ${terminalExpanded ? "session-console-terminal-active" : ""}`}
 				style={{ "--terminal-panel-width": TERMINAL_UI_DEFAULTS.sidePanelWidth, "--terminal-panel-transition-ms": `${TERMINAL_UI_DEFAULTS.panelTransitionMs}ms` } as CSSProperties}
