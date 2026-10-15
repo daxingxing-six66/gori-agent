@@ -1,4 +1,6 @@
 /* The session owns placement; task pages only own their internal content. */
+.session-console.page-main-chat { position: relative; }
+
 .session-console-tasks-present {
 	grid-template-areas: "header" "tasks" "chat" "composer";
 	grid-template-rows: auto auto minmax(0, 1fr) auto;
@@ -13,6 +15,21 @@
 	border-bottom: 1px solid var(--workbench-line);
 }
 
+.session-task-area[data-display="collapsed"] { height: var(--workspace-header-height, 44px); }
+
+.session-task-area[data-display="fullscreen"] {
+	position: absolute;
+	grid-area: auto;
+	inset: 0;
+	z-index: 50;
+	width: 100%;
+	height: 100%;
+	border: 0;
+}
+
+/* Fill the viewport even on narrow screens; the PTY still owns its logical grid. */
+.session-task-area[data-display="fullscreen"] .terminal-viewport { height: auto; min-height: 0; flex: 1; }
+
 @media (min-width: 1101px) {
 	.session-console.page-main-chat {
 		grid-template-areas: "header tasks" "chat tasks" "composer tasks";
@@ -22,6 +39,14 @@
 	}
 	.session-console.page-main-chat.session-console-tasks-active { grid-template-columns: minmax(0, 1fr) var(--task-panel-width); }
 	.session-task-area { height: 100%; border-bottom: 0; border-left: 1px solid var(--workbench-line); }
+	.session-console.page-main-chat[data-task-display="collapsed"] { grid-template-columns: minmax(0, 1fr) var(--task-collapsed-width); }
+	.session-task-area[data-display="collapsed"] { height: 100%; }
+	.session-task-area[data-display="fullscreen"] { height: 100%; border: 0; }
 }
 
 @media (prefers-reduced-motion: reduce) { .session-console { transition: none; } }
+
+/* The mobile server-navigation trigger remains above the enlarged task header. */
+@media (max-width: 760px) {
+	.session-task-area[data-display="fullscreen"] .task-container-tabs { padding-left: 40px; }
+}

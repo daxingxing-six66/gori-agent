@@ -29,6 +29,7 @@ import { useTerminalMode } from "@/features/terminal/runtime/use-terminal-mode";
 import { useTerminalTask } from "@/features/terminal/runtime/use-terminal-task";
 import { TaskContainer, type TaskTab } from "@/features/task-container/components/task-container";
 import { TASK_CONTAINER_DEFAULTS } from "@/features/task-container/model/task-container-defaults";
+import { useTaskContainerDisplay } from "@/features/task-container/runtime/use-task-container-display";
 import { useWorkspaceTree } from "@/features/workspace/components/workspace-tree-context";
 import { ApiError } from "@/shared/errors/api-error";
 import { DeploymentPanel } from "@/features/deploy/components/deployment-panel";
@@ -66,6 +67,7 @@ export function ChatConsole({ sessionId }: { sessionId: string }) {
 	const autoAuditChecked = autoAuditOverride ?? item?.session.autoAudit ?? false;
 	const terminalTask = useTerminalTask({ sessionId, mode: terminalMode, runActive: active,
 		submitting: runtime.submitting, sandboxPending: sandbox.pending });
+	const taskDisplay = useTaskContainerDisplay(sessionId, terminalTask.present);
 	const terminalStatus = { label: terminalTask.label,
 		tone: terminalTask.tone === "positive" ? "active" as const
 			: terminalTask.tone === "warning" ? "pending" as const : "inactive" as const };
@@ -271,6 +273,7 @@ export function ChatConsole({ sessionId }: { sessionId: string }) {
 		if (toolId === "terminal") {
 			if (terminalTask.menuDisabledReason === undefined) {
 				setActiveTaskTabId("terminal");
+				taskDisplay.reveal();
 				terminalTask.reveal();
 			}
 			return;
@@ -279,7 +282,7 @@ export function ChatConsole({ sessionId }: { sessionId: string }) {
 		if (sandbox.pending) return;
 		if (toolId === "deploy" && !active && !deployment.busy) { void deployment.show(); return; }
 		if (toolId === "compact" && compactionDisabledReason === undefined) void runtime.compact();
-	}, [active, compactionDisabledReason, deployment, runtime.compact, sandbox.execute, sandbox.pending, terminalTask.menuDisabledReason, terminalTask.reveal]);
+	}, [active, compactionDisabledReason, deployment, runtime.compact, sandbox.execute, sandbox.pending, taskDisplay.reveal, terminalTask.menuDisabledReason, terminalTask.reveal]);
 
 	const requestBubblewrapInstallation = useCallback(async () => {
 		if (!model || active || sandbox.pending || runtime.submitting || terminalMode.status?.effectiveServerInteractionMode !== "command") return;
@@ -411,8 +414,11 @@ export function ChatConsole({ sessionId }: { sessionId: string }) {
 			<WorkspaceSidebar activeWorkspaceId={item.workspace.id} activeSessionId={item.session.id}
 				onSessionUpdated={async (updatedId) => { if (updatedId === sessionId) await terminalMode.refresh(); }} />
 			<main
-				className={`session-console page-main page-main-chat ${taskTabs.length > 0 ? "session-console-tasks-present" : ""} ${terminalTask.expanded ? "session-console-tasks-active" : ""}`}
+				className={`session-console page-main page-main-chat ${taskTabs.length > 0 ? "session-console-tasks-present" : ""} ${terminalTask.expanded && taskDisplay.mode === "docked" ? "session-console-tasks-active" : ""}`}
+				data-task-display={taskDisplay.mode}
+				data-task-container-scope
 				style={{ "--task-panel-width": TASK_CONTAINER_DEFAULTS.sidePanelWidth,
+					"--task-collapsed-width": TASK_CONTAINER_DEFAULTS.collapsedPanelWidth,
 					"--task-panel-transition-ms": `${TASK_CONTAINER_DEFAULTS.transitionMs}ms`,
 					"--terminal-panel-transition-ms": `${TASK_CONTAINER_DEFAULTS.transitionMs}ms` } as CSSProperties}
 			>
@@ -423,9 +429,14 @@ export function ChatConsole({ sessionId }: { sessionId: string }) {
 					{terminalMode.error && !terminalTask.present ? <p role="alert" className="px-4 py-2 text-xs text-danger">{terminalMode.error}</p> : null}
 					<TerminalSandboxNotice sandbox={terminalTask.active ? terminalMode.status?.terminal?.sandbox : null} />
 				</div>
-				{taskTabs.length > 0 ? <div className="session-task-area">
+				{taskTabs.length > 0 ? <div className="session-task-area" data-display={taskDisplay.mode}>
 					<TaskContainer key={sessionId} tabs={taskTabs} activeTabId={activeTaskTabId}
-						tabListLabel={intl.formatMessage({ id: "terminal.tabs.label" })} onSelect={setActiveTaskTabId} />
+						tabListLabel={intl.formatMessage({ id: "terminal.tabs.label" })} onSelect={setActiveTaskTabId}
+						display={{ mode: taskDisplay.mode, onModeChange: taskDisplay.changeMode,
+							fullscreenLabel: intl.formatMessage({ id: "taskContainer.fullscreen" }),
+							exitFullscreenLabel: intl.formatMessage({ id: "taskContainer.exitFullscreen" }),
+							collapseLabel: intl.formatMessage({ id: "taskContainer.collapse" }),
+							expandLabel: intl.formatMessage({ id: "taskContainer.expand" }) }} />
 				</div> : null}
 
 				<div className="session-console-chat relative min-h-0">

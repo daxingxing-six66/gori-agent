@@ -32,6 +32,7 @@ import {
 } from "@/features/terminal/runtime/terminal-event-stream";
 import { TerminalObservationRangeTracker } from "@/features/terminal/runtime/terminal-observation-range-tracker";
 import { decodeTerminalBytes, TerminalEventQueue } from "@/features/terminal/runtime/terminal-event-queue";
+import { TerminalViewportSync } from "@/features/terminal/runtime/terminal-viewport-sync";
 
 export type TerminalPanelPhase = "attaching" | "replaying" | "live";
 
@@ -80,9 +81,7 @@ export function TerminalPanel({
 		let eventQueue: TerminalEventQueue | undefined;
 		let terminal: Terminal | undefined;
 		let attachmentId: string | undefined;
-		let ownershipEpoch: number | null = null;
-		let live = false;
-		let resizeTimer: ReturnType<typeof setTimeout> | undefined;
+		let viewportSync: TerminalViewportSync | undefined;
 		let retryTimer: ReturnType<typeof setTimeout> | undefined;
 		let observationFinishDelayTimer: ReturnType<typeof setTimeout> | undefined;
 		let observationFinishedTimer: ReturnType<typeof setTimeout> | undefined;
@@ -200,6 +199,7 @@ export function TerminalPanel({
 			failureHandled = true;
 			stream?.close();
 			eventQueue?.close();
+			viewportSync?.dispose();
 			setError(localizedErrorMessage(value));
 			void Promise.resolve(onTerminalStateChange()).catch(() => undefined);
 			if (shouldRetryTerminalConnection(value)) {
@@ -209,32 +209,7 @@ export function TerminalPanel({
 				}, TERMINAL_UI_DEFAULTS.reconnectRetryMs);
 			}
 		};
-		const requestResize = (): void => {
-			if (disposed || failureHandled || !live || ownershipEpoch === null || !attachmentId || !terminal) return;
-			// An inactive tab stays attached but must not resize the PTY to a hidden viewport.
-			if (container.clientWidth === 0 || container.clientHeight === 0) return;
-			if (resizeTimer !== undefined) clearTimeout(resizeTimer);
-			resizeTimer = setTimeout(() => {
-				if (disposed || failureHandled) return;
-				if (container.clientWidth === 0 || container.clientHeight === 0) return;
-				const proposed = fitAddon.proposeDimensions();
-				if (!proposed || ownershipEpoch === null || !attachmentId || !terminal) return;
-				const rows = clamp(proposed.rows, minRows, maxRows);
-				const cols = clamp(proposed.cols, minCols, maxCols);
-				if (rows === terminal.rows && cols === terminal.cols) return;
-				void terminalApi.resize(sessionId, attachmentId, ownershipEpoch, rows, cols).catch(fail);
-			}, TERMINAL_UI_DEFAULTS.resizeDebounceMs);
-		};
-		const updateFocus = (): void => {
-			if (disposed || failureHandled || !live || !attachmentId) return;
-			const focused = document.visibilityState === "visible" && document.hasFocus();
-			void terminalApi.focus(sessionId, attachmentId, focused).then((result) => {
-				if (disposed) return;
-				ownershipEpoch = result.owner ? result.ownershipEpoch : null;
-				setOwner(result.owner);
-				if (result.owner) requestResize();
-			}).catch(fail);
-		};
+		const updateViewport = (): void => viewportSync?.refresh();
 
 		void terminalApi.attach(sessionId, crypto.randomUUID(), attachController.signal).then(async (bootstrap) => {
 			if (disposed) {
@@ -257,6 +232,17 @@ export function TerminalPanel({
 			terminalRef.current = terminal;
 			terminal.loadAddon(fitAddon);
 			terminal.open(container);
+			const attachedTerminal = terminal;
+			const attachedId = attachmentId;
+			viewportSync = new TerminalViewportSync({
+				viewport: container, bounds: { minRows, maxRows, minCols, maxCols },
+				measure: () => fitAddon.proposeDimensions(),
+				geometry: () => ({ rows: attachedTerminal.rows, cols: attachedTerminal.cols }),
+				isDocumentFocused: () => document.visibilityState === "visible" && document.hasFocus(),
+				focus: (focused) => terminalApi.focus(sessionId, attachedId, focused),
+				resize: (epoch, geometry) => terminalApi.resize(sessionId, attachedId, epoch, geometry.rows, geometry.cols),
+				onOwnerChange: setOwner, onError: fail,
+			});
 			observationRangeTracker = new TerminalObservationRangeTracker(terminal);
 			await writeTerminal(terminal, decodeTerminalBytes(bootstrap.snapshot.data));
 			if (disposed) return;
@@ -297,10 +283,9 @@ export function TerminalPanel({
 						}
 						await terminalApi.ready(sessionId, attachmentId, appliedSequence);
 						if (disposed || failureHandled) return;
-						live = true;
 						setError(null);
 						setPhase("live");
-						updateFocus();
+						viewportSync?.ready();
 						return;
 					}
 					if (envelope.sequence === null) return;
@@ -323,14 +308,14 @@ export function TerminalPanel({
 						const cols = integerData(envelope.data, "cols");
 						if (rows === null || cols === null) throw new Error("Invalid Terminal resize event");
 						terminal.resize(cols, rows);
+						viewportSync?.geometryChanged();
 						observationRangeTracker?.recordCheckpoint(envelope.sequence);
 						updateObservationPresentation();
 					} else if (envelope.type === "terminal.resize_owner_changed") {
 						const ownerId = envelope.data.ownerAttachmentId;
 						const epoch = integerData(envelope.data, "ownershipEpoch");
 						const isOwner = ownerId === attachmentId && epoch !== null;
-						ownershipEpoch = isOwner ? epoch : null;
-						setOwner(isOwner);
+						viewportSync?.ownerChanged(isOwner ? epoch : null);
 					} else if (envelope.type === "terminal.status") {
 						const nextStatus = stringData(envelope.data, "newStatus");
 						if (nextStatus === "closed" || nextStatus === "failed" || nextStatus === "lost") {
@@ -356,26 +341,26 @@ export function TerminalPanel({
 			});
 		}).catch(fail);
 
-		const resizeObserver = new ResizeObserver(requestResize);
+		const resizeObserver = new ResizeObserver(updateViewport);
 		resizeObserver.observe(container);
-		window.addEventListener("focus", updateFocus);
-		window.addEventListener("blur", updateFocus);
-		document.addEventListener("visibilitychange", updateFocus);
-		window.addEventListener("pageshow", updateFocus);
+		window.addEventListener("focus", updateViewport);
+		window.addEventListener("blur", updateViewport);
+		document.addEventListener("visibilitychange", updateViewport);
+		window.addEventListener("pageshow", updateViewport);
 		return () => {
 			disposed = true;
 			attachController.abort();
-			if (resizeTimer !== undefined) clearTimeout(resizeTimer);
+			viewportSync?.dispose();
 			if (retryTimer !== undefined) clearTimeout(retryTimer);
 			if (observationFinishDelayTimer !== undefined) clearTimeout(observationFinishDelayTimer);
 			if (observationFinishedTimer !== undefined) clearTimeout(observationFinishedTimer);
 			for (const subscription of observationViewportSubscriptions) subscription.dispose();
 			observationRangeTracker?.dispose();
 			resizeObserver.disconnect();
-			window.removeEventListener("focus", updateFocus);
-			window.removeEventListener("blur", updateFocus);
-			document.removeEventListener("visibilitychange", updateFocus);
-			window.removeEventListener("pageshow", updateFocus);
+			window.removeEventListener("focus", updateViewport);
+			window.removeEventListener("blur", updateViewport);
+			document.removeEventListener("visibilitychange", updateViewport);
+			window.removeEventListener("pageshow", updateViewport);
 			stream?.close();
 			eventQueue?.close();
 			if (terminalRef.current === terminal) terminalRef.current = null;
@@ -404,8 +389,4 @@ export function TerminalPanel({
 
 function writeTerminal(terminal: Terminal, data: Uint8Array): Promise<void> {
 	return new Promise((resolve) => terminal.write(data, resolve));
-}
-
-function clamp(value: number, minimum: number, maximum: number): number {
-	return Math.max(minimum, Math.min(maximum, value));
 }

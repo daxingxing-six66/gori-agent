@@ -10,6 +10,7 @@ vi.mock("react", async (importOriginal) => ({
 	...await importOriginal<typeof import("react")>(),
 	useId: () => "task-container-test",
 	useRef: (initial: unknown) => ({ current: initial }),
+	useEffect: () => undefined,
 }));
 
 function elements(node: ReactNode): ReactElement<{ children?: ReactNode }>[] {
@@ -125,5 +126,34 @@ describe("task container", () => {
 		const html = renderToStaticMarkup(<TaskContainer tabs={tabs()} activeTabId="removed-task" tabListLabel="Open tasks" onSelect={vi.fn()} />);
 		expect(html).toContain('id="task-container-test-task-a-tab" aria-selected="true"');
 		expect(TaskContainer({ tabs: [], activeTabId: null, tabListLabel: "Open tasks", onSelect: vi.fn() })).toBeNull();
+	});
+
+	it.each(["docked", "fullscreen", "collapsed"] as const)("retains task pages in %s display mode without requesting business closure", (mode) => {
+		const onRequestClose = vi.fn();
+		const task = { ...tabs()[0]!, close: { label: "Close Task A", onRequestClose } };
+		const html = renderToStaticMarkup(<TaskContainer tabs={[task]} activeTabId={task.id} tabListLabel="Open tasks" onSelect={vi.fn()}
+			display={{ mode, fullscreenLabel: "Fullscreen", exitFullscreenLabel: "Restore", collapseLabel: "Collapse", expandLabel: "Expand", onModeChange: vi.fn() }} />);
+		expect(html).toContain(`data-display="${mode}"`);
+		expect(html).toContain("First task content");
+		expect(html).toContain('role="tabpanel"');
+		expect(html).toContain(mode === "collapsed" ? 'id="task-container-test-content" hidden=""' : 'id="task-container-test-content"');
+		expect(html).not.toContain('aria-modal="true"'); // The server navigation stays usable when enlarged.
+		expect(onRequestClose).not.toHaveBeenCalled();
+	});
+
+	it.each([
+		["docked", "Fullscreen", "fullscreen"], ["fullscreen", "Restore", "docked"],
+		["fullscreen", "Collapse", "collapsed"], ["collapsed", "Expand", "docked"],
+	] as const)("%s display control %s requests %s without selecting or closing a task", (mode, label, target) => {
+		const onModeChange = vi.fn();
+		const onSelect = vi.fn();
+		const onRequestClose = vi.fn();
+		const task = { ...tabs()[0]!, close: { label: "Close Task A", onRequestClose } };
+		const view = TaskContainer({ tabs: [task], activeTabId: task.id, tabListLabel: "Open tasks", onSelect,
+			display: { mode, fullscreenLabel: "Fullscreen", exitFullscreenLabel: "Restore", collapseLabel: "Collapse", expandLabel: "Expand", onModeChange } });
+		buttons(view).find((button) => button.props["aria-label"] === label)!.props.onClick?.({} as MouseEvent<HTMLButtonElement>);
+		expect(onModeChange).toHaveBeenCalledExactlyOnceWith(target);
+		expect(onSelect).not.toHaveBeenCalled();
+		expect(onRequestClose).not.toHaveBeenCalled();
 	});
 });

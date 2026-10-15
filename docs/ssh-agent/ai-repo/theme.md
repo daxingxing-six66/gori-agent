@@ -15,6 +15,8 @@
 
 桌面侧栏展开宽度为 256px，收起宽度为 44px，展开与设置按钮在收起栏内居中。侧栏宽度过渡改变 Terminal 的实际容器尺寸，仍由既有 `ResizeObserver` 和 `FitAddon.proposeDimensions()` 测量行列数；拥有 resize 权限的 attachment 在防抖后通过原接口提交，仅在行列数变化时请求，并以服务端 `terminal.resized` 事件更新 xterm。
 
+任务容器的放大/退出与收起按钮位于标签栏右侧，沿用 Workbench 语义色。放大仅覆盖 Session 主体中的 Agent 对话区，左侧服务器导航保持可见与可操作；没有全局遮罩或原生浏览器全屏。收起后桌面保留 40px 右栏，窄屏保留 44px 恢复行，当前任务页隐藏但不卸载。放大视口在窄屏也填充主体高度，实际尺寸变化由 Terminal 的独立视口同步控制器处理；样式不自行调整逻辑行列数。详见 [task-container.md](./task-container.md)。
+
 Composer 的发送/停止主操作按钮共用 32px 圆形外观，各主题的配色、禁用及加载状态沿用原样式。
 
 命令详情使用 `chat-command-details.css` 的局部样式，统一引用 Surface/Code、文字和分割线变量：单一外框内区分请求、次级参数和输出，不嵌套卡片或新增装饰色。SSH 与 Terminal 共用外观，窄屏参数可换行，原始输出保留横纵滚动。

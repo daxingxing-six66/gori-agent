@@ -9,6 +9,7 @@ import { enUSProviderMessages } from "@/features/i18n/messages/en-US/provider";
 import { enUSSftpMessages } from "@/features/i18n/messages/en-US/sftp";
 import { enUSTerminalMessages } from "@/features/i18n/messages/en-US/terminal";
 import { enUSServerMetricsMessages } from "@/features/i18n/messages/en-US/server-metrics";
+import { enUSTaskContainerMessages } from "@/features/i18n/messages/en-US/task-container";
 
 export const enUSMessages = {
 	...enUSCommonMessages,
@@ -21,4 +22,5 @@ export const enUSMessages = {
 	...enUSSftpMessages,
 	...enUSTerminalMessages,
 	...enUSServerMetricsMessages,
+	...enUSTaskContainerMessages,
 } satisfies Record<MessageId, string>;
