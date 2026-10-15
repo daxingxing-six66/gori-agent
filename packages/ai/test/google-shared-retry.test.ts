@@ -16,7 +16,7 @@ describe("google request retries", () => {
 		const request = vi.fn<() => Promise<string>>().mockRejectedValueOnce(googleApiError(429)).mockResolvedValue("ok");
 
 		const result = retryGoogleRequest(request, { maxRetries: 1 });
-		await vi.advanceTimersByTimeAsync(500);
+		await vi.advanceTimersByTimeAsync(2000);
 
 		await expect(result).resolves.toBe("ok");
 		expect(request).toHaveBeenCalledTimes(2);

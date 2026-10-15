@@ -19,6 +19,7 @@ import { ChatError, type ChatRun } from "../../domain/chat.ts";
 import type { ChatCompactionSettings } from "../../domain/context-compaction.ts";
 import { type BackendMessageDescriptor, backendMessage } from "../../i18n/message.ts";
 import { ChatRunRuntime } from "../chat-run-runtime.ts";
+import { DEFAULT_CHAT_PROVIDER_MAX_RETRIES } from "../chat-runtime-defaults.ts";
 import { runFailure } from "../failure-policy.ts";
 import { reportFailure } from "../failure-reporter.ts";
 import { type ProviderFailureMessage, providerFailureStream } from "../provider-failure.ts";
@@ -287,9 +288,11 @@ export class ChatAgentRuntimeFactory {
 							this.#models.streamSimple(
 								selectedModel,
 								providerContext,
-								headers === options?.headers
-									? options
-									: { ...options, sessionId: input.run.sessionId, headers },
+								{
+									...options,
+									maxRetries: DEFAULT_CHAT_PROVIDER_MAX_RETRIES,
+									...(headers === options?.headers ? {} : { sessionId: input.run.sessionId, headers }),
+								},
 							),
 						options?.signal,
 						{

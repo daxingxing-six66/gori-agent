@@ -32,6 +32,7 @@ import { AssistantMessageEventStream } from "../utils/event-stream.ts";
 import { headersToRecord } from "../utils/headers.ts";
 import { resolveHttpProxyUrlForTarget } from "../utils/node-http-proxy.ts";
 import { getPiUserAgent } from "../utils/pi-user-agent.ts";
+import { DEFAULT_PROVIDER_RETRY_BASE_DELAY_MS } from "../utils/provider-retry.ts";
 import { uuidv7 } from "../utils/uuid.ts";
 import { createGrammarToolInputProperties } from "./constrained-sampling.ts";
 import { clampOpenAIPromptCacheKey } from "./openai-prompt-cache.ts";
@@ -45,7 +46,6 @@ import { buildBaseOptions } from "./simple-options.ts";
 const DEFAULT_CODEX_BASE_URL = "https://chatgpt.com/backend-api";
 const JWT_CLAIM_PATH = "https://api.openai.com/auth" as const;
 const DEFAULT_MAX_RETRIES = 0;
-const BASE_DELAY_MS = 1000;
 const DEFAULT_MAX_RETRY_DELAY_MS = 60_000;
 const DEFAULT_WEBSOCKET_CONNECT_TIMEOUT_MS = 15_000;
 // The Codex backend accepts zstd-compressed request bodies on the SSE responses
@@ -417,7 +417,7 @@ export const stream: StreamFunction<"openai-codex-responses", OpenAICodexRespons
 						const retryAfterDelayMs = getRetryAfterDelayMs(response.headers);
 						const delayMs =
 							retryAfterDelayMs === undefined
-								? BASE_DELAY_MS * 2 ** attempt
+								? DEFAULT_PROVIDER_RETRY_BASE_DELAY_MS * 2 ** attempt
 								: validateRetryDelayMs(retryAfterDelayMs, options);
 
 						await sleep(delayMs, options?.signal);
@@ -444,7 +444,7 @@ export const stream: StreamFunction<"openai-codex-responses", OpenAICodexRespons
 						!(lastError instanceof RetryDelayExceededError) &&
 						!lastError.message.includes("usage limit")
 					) {
-						const delayMs = BASE_DELAY_MS * 2 ** attempt;
+						const delayMs = DEFAULT_PROVIDER_RETRY_BASE_DELAY_MS * 2 ** attempt;
 						await sleep(delayMs, options?.signal);
 						continue;
 					}

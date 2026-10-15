@@ -20,6 +20,7 @@ Runtime Factory 将 Run ID 绑定到远端 Tool。Full Access grant 绑定完整
 - 新会话首个 Run 可通过 `generateTitle: true` 启用同模型异步命名；标题任务独立于聊天，不进入消息历史，通过 Workspace SSE 推送。见 [session-title.md](./session-title.md)。
 
 - 每次模型流请求经过包内 Provider 错误边界，附件水合与模型同步异常分别处理。安全原因使用描述符贯穿消息、Run failure、HTTP/SSE；原始文本供超限判断与日志使用，未知内部错误不公开。见 [provider-failures.md](./provider-failures.md)。
+- 主聊天在每次模型请求中设置 `maxRetries=3`，复用 pi-ai Adapter 的 HTTP 指数退避机制处理 429、5xx 和网络异常；初次请求外最多重试三次，没有厂商等待响应头时以 2、4、8 秒为等待基准，沿用 Adapter 的随机抖动、状态码与响应头策略。Run 取消信号贯穿请求和退避等待。此配置覆盖首次、Tool 后续和队列消息请求，不重放工具或已开始输出的流；上下文压缩摘要与异步标题保持原有配置。实现边界及确定性 HTTP 回归见 [provider-failures.md](./provider-failures.md) 与 `packages/ssh-agent/test/chat-provider-retry.test.ts`。
 
 - 上下文占用在每次 `turn_end` 和自动压缩保存摘要后推送 `context.updated`；刷新通过独立查询恢复，手动压缩返回 `contextUsage`。头部组装纯函数位于 `application/chat-context.ts`，工具共享静态定义；有效消息按 compact 边界加载，不能把 Agent 完整 transcript 当作压缩后 Context。见 [context-usage.md](./context-usage.md)。
 
@@ -29,7 +30,7 @@ Runtime Factory 将 Run ID 绑定到远端 Tool。Full Access grant 绑定完整
 - Session 详情从最近一次 `chat_runs` 记录投影 `chatModelSelection`；首次 Run 显式选模型，后续 Run 可继承，模型与 thinking level 变化按当前 `pi-ai` 目录重新校验。
 - 模型选择从 SSH Agent 的有效目录读取。上游明确返回所选模型不再受支持时，Run 以 `chat_model_not_supported` 失败，最终 assistant 消息携带统一安全失败报告，在公开投影中显示用户友好提示，同时该模型立即从有效目录和持久化快照删除；不会触发一次无意义的即时刷新。
 - `ChatService` 保留 Chat use case、活动 Run 与初始化互斥、创建顺序和资源归属，`chat-run-executor.ts` 负责执行与清理。`ChatPromptService` 在首次 Run 组装并持久化不可变头部；后续 Run 复用基础头部，并临时附加当前可信 Session 沙盒开关及完整可写目录指引。模式切换以真实 system 消息追加到历史，头部只解释标签及首次环境；两个远端 Tool schema 保持稳定，由运行时门禁限制可用入口。完整边界见 [session-prompt.md](./session-prompt.md)。
-- Chat 与上下文压缩请求只在模型 `provider` 精确为 `opencode-go` 时附加稳定的 `x-opencode-session=<Session ID>` 和 `x-opencode-client=pi`，满足 OpenCode Go 的会话路由要求；其他 Provider 的请求选项和 Header 保持不变。
+- Chat 与上下文压缩请求只在模型 `provider` 精确为 `opencode-go` 时附加稳定的 `x-opencode-session=<Session ID>` 和 `x-opencode-client=pi`，满足 OpenCode Go 的会话路由要求；其他 Provider 不增加这两个 Header。
 - Approval、Tool Call 协调、Queue、AgentEvent 投影、Context 压缩和 Run SSE 分别由 `ChatApprovalService`、`ChatToolCallCoordinator`、`ChatQueueService`、`ChatAgentEventHandler`、`ChatContextService` 和 `ChatRunEventHub` 持有。`ChatContextService` 在每次 Provider 请求前估算完整 payload，必要时用 PI compaction 生成摘要；Provider 尚未输出有效内容就返回上下文超限时，同一扩展点强制压缩并只重试一次。`ChatToolAuthorizationPolicy.prepare()` 只分发 Tool 自有的审批准备函数，并统一转换可修正请求错误；它不执行工具，也不再集中检查模式或部署冲突。远端命令、Terminal、Bubblewrap 安装和部署阶段各自生成审批方案（含 Guard 预检、沙箱路由和场景描述）。策略类共享读取 `autoAudit`、管理逐次 Full Access grant；Terminal 工具通过方案内的 `onDecision` 回写 Interaction 状态。持久化继续通过 `ChatRepository` 端口隔离。
 - Chat Run 从创建持久化前到执行 finally 持有 Session lifecycle lease；删除屏障建立时拒绝新 Run。Run 冻结 `serverInteractionMode`，Terminal Mode 绑定当前 TerminalSession；模式变化不会重写头部，Provider 请求前复核最新持久化模式，失效时停止当前 Run。
 - `read` 无审批；普通 Chat Run 的 `write`/`bash`/默认 `remote_server_call`/Terminal submit 受 `autoAudit` 控制。Session 开启沙盒且有效后端存在、已声明写入路径在范围内时，开启自动审批直接在沙箱内执行，关闭时逐条请求人工批准后仍在沙箱内执行。明确无后端或已知路径越界时，远端命令使用 `remote_sandbox_exception` 名称请求一次性人工 Full Access 授权。Session 开启时，显式 `full_access` 远端调用无论 `autoAudit` 设置如何都强制人工审批，非空理由进入描述，批准来源必须为 user；只传理由却未设置 `sandbox_permissions: "full_access"`，审批前返回可修正的 Tool 错误。远端命令和 Terminal submit 无论是否自动审批，都先执行 Guard 预检查并在派发前复检。部署规划、执行和修复 Run 的普通本地 `write`/`bash`、远端命令与 Terminal submit 同样服从 `autoAudit`；远端操作按当前 Session 策略执行，关闭时跳过沙箱路由与准备但保留普通审批，本地 `bash` 不受远端沙箱约束。SFTP Tool 与 Terminal 控制键在部署 Run 内不可用，observe 可读。部署受限的 RESTART/VERIFY 阶段也服从 `autoAudit`，Full Access 例外保留专用逐命令人工审批。普通 Run 的 `sftp_upload` 和 `sftp_download` 分别在远端、本地检查同名文件，仅覆盖时在 Tool 执行中读取当前 Session 的 `autoAudit`：开启则自动批准并记录 `source="auto"`，关闭则等待人工审批。并发同名冲突使用同一策略，非普通文件仍拒绝覆盖。所有 Approval 都携带后端生成并持久化的场景描述，SFTP 描述明确指出本地或远程文件覆盖。
@@ -82,7 +83,7 @@ Runtime Factory 将 Run ID 绑定到远端 Tool。Full Access grant 绑定完整
 | Chat 持久化端口和 SQLite 实现 | `packages/ssh-agent/src/application/repositories/chat-repository.ts`、`packages/ssh-agent/src/infrastructure/sqlite/sqlite-chat-repository.ts` |
 | Run SSE cache、进程内重放和 heartbeat 生命周期 | `packages/ssh-agent/src/application/chat-run-event-hub.ts`、`packages/ssh-agent/src/application/chat-run-event-stream.ts` |
 | 后端静态消息本地化和公开投影 | `packages/ssh-agent/src/i18n/` |
-| Chat 默认 timeout、cache 和 compaction 上限 | `packages/ssh-agent/src/application/chat-runtime-defaults.ts` |
+| Chat 默认 timeout、HTTP 重试次数、cache 和 compaction 上限 | `packages/ssh-agent/src/application/chat-runtime-defaults.ts` |
 | HTTP 路由和校验 | `packages/ssh-agent/src/api/http-handler.ts`、`packages/ssh-agent/src/api/request-validation.ts` |
 | Session 字段和目录校验 | `packages/ssh-agent/src/domain/session.ts`、`packages/ssh-agent/src/application/services/session-service.ts` |
 | SQLite schema | `packages/ssh-agent/src/infrastructure/sqlite/migrations.ts` |

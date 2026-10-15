@@ -2599,7 +2599,7 @@ describe("openai-codex streaming", () => {
 		const retryTimeoutDelays = () =>
 			setTimeoutSpy.mock.calls
 				.map((call) => call[1])
-				.filter((delay): delay is number => delay === 1000 || delay === 2000 || delay === 4000);
+				.filter((delay): delay is number => delay === 2000 || delay === 4000 || delay === 8000);
 
 		const resultPromise = streamOpenAICodexResponses(model, context, {
 			apiKey: token,
@@ -2607,13 +2607,13 @@ describe("openai-codex streaming", () => {
 			maxRetries: 3,
 		}).result();
 		await vi.advanceTimersByTimeAsync(0);
-		expect(retryTimeoutDelays()).toEqual([1000]);
+		expect(retryTimeoutDelays()).toEqual([2000]);
 
 		await vi.advanceTimersToNextTimerAsync();
-		expect(retryTimeoutDelays()).toEqual([1000, 2000]);
+		expect(retryTimeoutDelays()).toEqual([2000, 4000]);
 
 		await vi.advanceTimersToNextTimerAsync();
-		expect(retryTimeoutDelays()).toEqual([1000, 2000, 4000]);
+		expect(retryTimeoutDelays()).toEqual([2000, 4000, 8000]);
 
 		await vi.advanceTimersToNextTimerAsync();
 		const result = await resultPromise;

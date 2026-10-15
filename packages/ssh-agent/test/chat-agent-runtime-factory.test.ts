@@ -534,6 +534,7 @@ describe("ChatAgentRuntimeFactory", () => {
 
 		expect(streamSimple).toHaveBeenCalledWith(context.model, providerContext, {
 			...requestOptions,
+			maxRetries: 3,
 			sessionId: "session-1",
 			headers: {
 				"x-existing-header": "preserved",
@@ -544,7 +545,7 @@ describe("ChatAgentRuntimeFactory", () => {
 		await runtime.dispose();
 	});
 
-	it("does not change request options for other providers", async () => {
+	it("enables bounded retries while preserving request options for other providers", async () => {
 		const context = createContext();
 		const runtime = await context.factory.create({
 			run: commandRun,
@@ -555,13 +556,17 @@ describe("ChatAgentRuntimeFactory", () => {
 		});
 		const streamSimple = vi.spyOn(context.models, "streamSimple");
 		const providerContext: Context = { messages: [] };
-		const requestOptions: SimpleStreamOptions = { headers: { "x-existing-header": "preserved" } };
+		const signal = new AbortController().signal;
+		const requestOptions: SimpleStreamOptions = {
+			headers: { "x-existing-header": "preserved" }, signal, maxRetries: 10, maxRetryDelayMs: 5_000,
+		};
 		const streamFn = context.getAgentOptions()?.streamFn;
 		if (!streamFn) throw new Error("Agent stream function was not configured");
 
 		await streamFn(context.model, providerContext, requestOptions);
 
-		expect(streamSimple).toHaveBeenCalledWith(context.model, providerContext, requestOptions);
+		expect(streamSimple).toHaveBeenCalledWith(context.model, providerContext, { ...requestOptions, maxRetries: 3 });
+		expect(requestOptions.maxRetries).toBe(10);
 		await runtime.dispose();
 	});
 

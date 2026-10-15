@@ -1,4 +1,5 @@
 const DEFAULT_MAX_RETRY_DELAY_MS = 60_000;
+export const DEFAULT_PROVIDER_RETRY_BASE_DELAY_MS = 2_000;
 
 interface ProviderRetryOptions {
 	maxRetries?: number;
@@ -62,7 +63,7 @@ function getRetryDelayMs(error: ProviderError, retryIndex: number, maxRetryDelay
 		return validateServerRetryDelayMs(delayMs, maxRetryDelayMs, error.message);
 	}
 
-	const exponentialDelay = Math.min(0.5 * 2 ** retryIndex, 8) * 1000;
+	const exponentialDelay = Math.min(DEFAULT_PROVIDER_RETRY_BASE_DELAY_MS * 2 ** retryIndex, 8_000);
 	return exponentialDelay * (1 - Math.random() * 0.25);
 }
 
@@ -95,8 +96,8 @@ function abortableSleep(ms: number, signal?: AbortSignal): Promise<void> {
 }
 
 /**
- * Reproduce the retry behavior used by the OpenAI and Anthropic SDKs while making
- * their backoff sleep interruptible. Their built-in retry timers ignore the
+ * Retry OpenAI and Anthropic SDK requests with interruptible exponential backoff
+ * starting at 2 seconds. Their built-in retry timers ignore the
  * request AbortSignal, so callers must invoke the SDK with `maxRetries: 0` and
  * wrap the request with this helper. Provider-requested delays above
  * `maxRetryDelayMs` fail immediately (60 seconds by default); set it to zero to
