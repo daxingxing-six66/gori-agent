@@ -10,7 +10,10 @@ import { THEME_BOOTSTRAP_SCRIPT } from "@/features/theme/model/theme-bootstrap";
 import { WorkspaceTreeProvider } from "@/features/workspace/components/workspace-tree-provider";
 import "./globals.css";
 
-const FAVICON_URL = "/favicon.png?v=3";
+const FAVICON_URL = "/favicon.png?v=4";
+const FAVICON_16_URL = "/favicon-16.png?v=4";
+const FAVICON_32_URL = "/favicon-32.png?v=4";
+const APPLE_ICON_URL = "/apple-touch-icon.png?v=4";
 
 export async function generateMetadata(): Promise<Metadata> {
 	const locale = await requestLocale();
@@ -18,9 +21,13 @@ export async function generateMetadata(): Promise<Metadata> {
 		title: "Gori（小猩）",
 		description: messagesByLocale[locale]["app.description"],
 		icons: {
-			icon: [{ url: FAVICON_URL, type: "image/png", sizes: "1254x1254" }],
-			shortcut: [{ url: FAVICON_URL, type: "image/png" }],
-			apple: [{ url: FAVICON_URL, type: "image/png", sizes: "1254x1254" }],
+			icon: [
+				{ url: FAVICON_16_URL, type: "image/png", sizes: "16x16" },
+				{ url: FAVICON_32_URL, type: "image/png", sizes: "32x32" },
+				{ url: FAVICON_URL, type: "image/png", sizes: "256x256" },
+			],
+			shortcut: [{ url: FAVICON_32_URL, type: "image/png" }],
+			apple: [{ url: APPLE_ICON_URL, type: "image/png", sizes: "180x180" }],
 		},
 	};
 }
@@ -30,9 +37,11 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
 	return (
 		<html lang={locale} dir={localeDirection(locale)} data-locale={locale} suppressHydrationWarning>
 			<head>
-				<link rel="icon" href={FAVICON_URL} type="image/png" sizes="1254x1254" />
-				<link rel="shortcut icon" href={FAVICON_URL} type="image/png" />
-				<link rel="apple-touch-icon" href={FAVICON_URL} sizes="1254x1254" />
+				<link rel="icon" href={FAVICON_16_URL} type="image/png" sizes="16x16" />
+				<link rel="icon" href={FAVICON_32_URL} type="image/png" sizes="32x32" />
+				<link rel="icon" href={FAVICON_URL} type="image/png" sizes="256x256" />
+				<link rel="shortcut icon" href={FAVICON_32_URL} type="image/png" />
+				<link rel="apple-touch-icon" href={APPLE_ICON_URL} sizes="180x180" />
 				<script dangerouslySetInnerHTML={{ __html: THEME_BOOTSTRAP_SCRIPT }} />
 			</head>
 			<body>

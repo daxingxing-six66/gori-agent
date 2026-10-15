@@ -1366,7 +1366,7 @@
 			"sourceDigests": {
 				"packages/ssh-agent-web/package.json": "sha256:f79e4e4817149edd36a5364e5a1d99376379a9053471367b4f52e2b3b8a359c1",
 				"packages/ssh-agent-web/app/globals.css": "sha256:b42fe5d1cc147c1e2ef7e1f801be0e147ab1f2b70d9b77d3269c5d7495a3b364",
-				"packages/ssh-agent-web/app/layout.tsx": "sha256:b7aef79105ca23e6fe583deb441a146b5aef48ac47388a738f428213c879f6b8",
+				"packages/ssh-agent-web/app/layout.tsx": "sha256:ed1c7d623a3a1ce7994826546c52a1cf33ed71b540746b5c8fd992dfa88d197c",
 				"packages/ssh-agent-web/app/page.tsx": "sha256:c7c5ff9acdaa2b568854a24734ed139442b78a4ddcd28b8fab03d752eeea15b2",
 				"packages/ssh-agent-web/app/sessions/[sessionId]/page.tsx": "sha256:4f0d5b28cfaefe9a65f1a257399f9e6a7c466ec4f9e3bc126390613d138ac065",
 				"packages/ssh-agent-web/app/workspaces/[workspaceId]/page.tsx": "sha256:8b89c292b9e35f6042b09eb5ddad586f5d210a59b187fe5493253f09c23530be",
@@ -1572,7 +1572,7 @@
 			],
 			"sourceDigests": {
 				"packages/ssh-agent-web/package.json": "sha256:f79e4e4817149edd36a5364e5a1d99376379a9053471367b4f52e2b3b8a359c1",
-				"packages/ssh-agent-web/app/layout.tsx": "sha256:b7aef79105ca23e6fe583deb441a146b5aef48ac47388a738f428213c879f6b8",
+				"packages/ssh-agent-web/app/layout.tsx": "sha256:ed1c7d623a3a1ce7994826546c52a1cf33ed71b540746b5c8fd992dfa88d197c",
 				"packages/ssh-agent-web/components/settings-dialog.tsx": "sha256:ccba15b2fc4522af4bf291b0d9c0e8578ee74755000af0434e53a7b77814ae78",
 				"packages/ssh-agent-web/features/i18n/model/locale.ts": "sha256:6ec19e045008c6b7dcf454075a6792f35d3db7056bd85805b6e48e730bb5c013",
 				"packages/ssh-agent-web/features/i18n/model/react-intl.d.ts": "sha256:ec3c1efc057061f2e0cfb8a9eb12b99f30c7d7f74b0360170e46dca86aba8ac8",
@@ -1659,7 +1659,7 @@
 			],
 			"sourceDigests": {
 				"packages/ssh-agent-web/app/globals.css": "sha256:b42fe5d1cc147c1e2ef7e1f801be0e147ab1f2b70d9b77d3269c5d7495a3b364",
-				"packages/ssh-agent-web/app/layout.tsx": "sha256:b7aef79105ca23e6fe583deb441a146b5aef48ac47388a738f428213c879f6b8",
+				"packages/ssh-agent-web/app/layout.tsx": "sha256:ed1c7d623a3a1ce7994826546c52a1cf33ed71b540746b5c8fd992dfa88d197c",
 				"packages/ssh-agent-web/components/settings-dialog.tsx": "sha256:ccba15b2fc4522af4bf291b0d9c0e8578ee74755000af0434e53a7b77814ae78",
 				"packages/ssh-agent-web/components/workspace-sidebar.tsx": "sha256:3ddf460ff19cc6c345857d8eaa3c7a6e85660437d812ae013415233ae67a242f",
 				"packages/ssh-agent-web/features/llm-provider/components/llm-provider-context.ts": "sha256:da3504b64c9564eac02877de62cbd5ac243063a18c9f68f15225938bf499ed04",
