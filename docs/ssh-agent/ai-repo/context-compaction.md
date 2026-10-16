@@ -6,7 +6,7 @@
 
 - 摘要请求的厂商原因在 PI 错误包装前提取，统一复用模型错误模块。手动 HTTP、自动 SSE、失败 Assistant 与 Run failure 保留相同安全原因和 retryable；内部 cause/stack 只进入日志。见 [provider-failures.md](./provider-failures.md)。
 
-- 占用展示复用同一估算。手动压缩和离线占用查询由 `application/chat-context.ts` 构造包含已保存头部快照和稳定工具定义的 Context；自动压缩每次提交摘要后另发 `context.updated`，手动响应包含 `contextUsage`。见 [context-usage.md](./context-usage.md)。
+- 占用展示复用同一估算。手动压缩和离线占用查询由 `application/chat-context.ts` 构造包含已保存头部快照、普通工具及当前活动模式所需部署工具的 Context；未启用或已结束部署不计算部署定义。活动 Run 仍以真实运行时 payload 为准。自动压缩每次提交摘要后另发 `context.updated`，手动响应包含 `contextUsage`。见 [context-usage.md](./context-usage.md)。
 
 - Agent Core 提供 `beforeProviderRequest` 和 `recoverProviderError` 两个通用扩展点。前者可在每次 Provider 调用前替换 Run 内 Context、模型或 thinking level；后者只接收尚未产生有效流式内容、尚未写入 transcript 的终态错误，并且最多恢复重试一次。`transformContext` 仍只转换单次请求，不替换 Run 内 Context。
 - `pi-ai` 在 Agent 边界通过 `isContextOverflow()` 把不同 Provider 的超限文本规范化为 `AssistantMessage.errorCode="context_overflow"`。已经发送文本、思考内容或 Tool Call 的失败不回滚、不重试。
@@ -16,6 +16,7 @@
 - 压缩模型可配置为 Provider/Model，也可为 `null` 以使用当前 Session 模型。配置模型不存在、没有凭证或容量不足时回退 Session 模型；认证检查本身抛错返回 `chat_credential_check_failed`，不会当成没有凭证；Session 模型也不可用时返回 `chat_compaction_model_unavailable`。
 - 压缩模型为 `opencode-go` 时，摘要请求携带当前 SSH Agent Session 的稳定 `x-opencode-session` 和 `x-opencode-client=pi`；其他 Provider 不增加这些 Header。
 - 压缩摘要是普通 `chat_messages` 行，`message_type=compact`。`message_json` 继续保存完整消息，包括 summary、retained tail、tokens before、details、reason、attempt、实际摘要模型、Usage 和 timestamp。自动压缩关联 `run_id`，手动压缩的 `run_id` 为 null。
+- 部署历史入口属于 UI 元数据；`modelVisibleMessages()` 在历史加载、估算、压缩准备和 retained tail 投影中过滤 deployment custom 消息，避免被通用转换器当作 user 指令或进入摘要。
 - Context 加载只使用最新 compact 消息、其 retained tail 和该消息之后的记录。旧消息仍保留在数据库和消息列表中，因而时间线与后续二次压缩都有明确边界。
 - 图片附件引用参与 payload 估算，每张图片按 PI 的图片估算成本计入，但 Base64 不参与估算或摘要。压缩准备阶段只使用 `[Image attachment: name]` 文本标记和无二进制图片占位；进入摘要区的旧图片不再保留引用，retained tail 中的图片消息恢复为原文本和 `attachmentIds` 后再持久化。
 - 手动 `POST /api/sessions/:sessionId/chat/compactions` 忽略触发阈值，但复用相同模型选择、最多两次压缩、收益判断和持久化。它与 Chat Run 互斥，并持有 Session lifecycle lease。

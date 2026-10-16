@@ -60,6 +60,8 @@ Workspace/Credential 前端契约见 [workspace-credential-integration.md](../fr
 
 涉及任务 Tab 容器、Terminal 页面重构及后续 Deploy/Monitor 接入时，先阅读 [任务容器与 Terminal 重构约束](../design/task-container-terminal-refactor.md)。这是已确认的开发约束，Terminal 容器第一阶段见 [功能路由](./task-container.md)，当前行为以功能文档和源码为准；上下文压缩后仍需恢复其中的职责分层、最终交互决定和 UI 边界。
 
+继续 Deploy 重构前，阅读 [Deploy 重构实现依据](../design/deploy-refactor.md)，恢复 2026-10-15 已确认的历史消息、右侧任务页、日志追加、阶段重做、Session 模式和模型 harness 规则。本次实现及逐项验收见文档第 16–17 节；当前部署行为仍以 [deployment.md](./deployment.md) 和源码为准，不能将整份目标混为已完成能力。
+
 本地与远程联调约定见 [test-environments.md](../test-environments.md)。真实服务器资料不进入本仓库。
 
 ## 当前实现边界
@@ -68,7 +70,7 @@ Workspace/Credential 前端契约见 [workspace-credential-integration.md](../fr
 
 已经实现的 Terminal Interaction MVP：用户手动开启独立模式，后端维持长周期 PTY 和 Canonical State，Agent 使用专用 Tool，浏览器通过 snapshot + SSE 只读投影并同步 owner resize，Interaction/Input/Observation/Timeline 持久化到 SQLite。
 
-已经实现的 `/deploy`：用户选定服务后先进入可跨多轮 Chat Run 的模型驱动讨论；模型提交并经服务端校验本次构建、上传、重启与验证参数后，才生成待确认的流水线。确认后模型逐阶段推进；Plan v2 阶段失败会保留原记录，模型可提出仅修改失败阶段的修订，用户确认后从该阶段继续。完整命令和日志按需展开；远端重启与验证按 Session 沙盒设置与 `autoAudit` 执行，开启时只有沙箱不可用或已知写入路径越界才逐条人工批准 Full Access，关闭时跳过沙箱链路并保留普通审批，所有命令继续受 Guard 约束。详见 [deployment.md](./deployment.md)。
+已经接入的 `/deploy` 主链路：服务选择时创建稳定身份、正式历史消息和 Session 部署模式；Plan 提案及审批在中间会话，右侧 Deploy Tab 展示横向阶段与日志。模式跨 Chat Run，正式工具串行推进，同阶段/上游重做保留输出并使下游事实失效；用户或模型通过明确结束用例退出。普通工具保持原模式与授权规则，部署专用定义动态装配。已完成定向回归及授权的独立 Java 项目真实发布验收，包括失败修复、三类结束、Terminal 多 Tab、日志与窄屏/明暗主题；实测平台与沙箱边界见 [deployment.md](./deployment.md) 和设计文档第 16–17 节。
 
 尚未实现：附件删除、非图片附件的通用内容下载和 LLM 输入、图片生成、断点续传、Transfer 历史自动清理、主机密钥重新信任/预置信任/SSH CA、Chat 多 Lane/Fork 和跨进程 delta 重放。Terminal MVP 不允许用户输入、不自动开启模式，使用 REST + SSE 而不引入 WebSocket。
 

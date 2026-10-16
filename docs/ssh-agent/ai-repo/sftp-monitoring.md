@@ -3,9 +3,9 @@
 适用于 Workspace 级文件管理、Transfer 六状态持久化、流式上传下载、Workspace SSE、Connection 快照和远端 Linux 指标采集。
 
 
-文件页面从 Workspace `remoteDefaultCwd` 初始化（省略时 `/`），API 未传 `path` 时使用同一远端默认值；显式 `path` 原样作为远端路径查询，不能在 404 后悄悄替换为其他目录。本地 `defaultCwd` 仅用于会话继承。概览分别展示两个目录。
+文件页面从 `/` 初始化，API 未传 `path` 时也使用 `/`；显式路径保持原有查询及错误语义，不在 404 后悄悄替换。Workspace 不再保存远端默认目录，本地 `defaultCwd` 仅用于会话继承；概览不再展示远端默认目录。
 
-工作区远端默认目录选择器复用正式 SFTP 的目录投影：已有工作区调用其列表 API，创建草稿经独立临时 SSH/SFTP 连接调用 `POST /api/workspaces/browse-directory`；后者不进入共享 Pool，也不持久化凭据。选择器仅显示目录并在确认时采用远端规范化路径。见 [connection-test.md](./connection-test.md)。
+沙盒可写目录选择器复用正式 SFTP 的目录投影：已有工作区调用其列表 API，创建草稿经独立临时 SSH/SFTP 连接调用 `POST /api/workspaces/browse-directory`；后者不进入共享 Pool，也不持久化凭据。选择器仅显示目录并在确认时采用远端规范化路径。见 [connection-test.md](./connection-test.md)。
 
 ## 当前边界
 
@@ -14,7 +14,7 @@
 - Agent 文件工具按同批次读写路径判断是否并发；底层所有 SFTP 操作复用同连接身份的一个 Channel，各自持有独立文件句柄，空闲 1 秒释放。单任务取消不关闭共享 Channel。详见 [文件工具并发与 Channel 复用](./file-tool-concurrency.md)。
 
 - Workspace SSE 新增可选 `sessions` topic 与 `session.updated`，复用原事件格式、分发和心跳；原 monitoring/connection/transfers 订阅不受影响。见 [session-title.md](./session-title.md)。
-- `/deploy` 的上传阶段按本次模型提案中的产物清单逐个复用 `FileTransferService`，各文件进度写入 Transfer 历史，部署阶段另有汇总进度；Deployment 独立通过 `deployments` topic 广播结构化讨论和阶段快照。实际 SFTP 操作不经过 Landlock，部署服务在提案和上传前检查规范化远端父目录位于 Workspace 根及 Profile 允许目录内。见 [deployment.md](./deployment.md)。
+- `/deploy` 的上传阶段按本次模型提案中的产物清单逐个复用 `FileTransferService`，各文件进度写入 Transfer 历史，部署阶段另有汇总进度；Deployment 独立通过 `deployments` topic 广播结构化讨论和阶段快照。实际 SFTP 操作不经过 Landlock，部署服务在提案和上传前检查规范化远端父目录位于 Profile 允许目录内。见 [deployment.md](./deployment.md)。
 
 - HTTP SFTP 和监控不进入 Session FIFO、Guard 或 LLM。`sftp_upload` 和 `sftp_download` Agent Tool 直接使用 `SftpFileBroker` 流式传输文件，文件内容不进入 LLM，也不创建 `FileTransfer`。
 - SFTP Tool 的检查、等待覆盖审批、传输进度和固定结果提示携带包内消息描述符；Agent Context 与持久化仍使用规范英文或原始动态内容，Chat SSE 只翻译浏览器投影。上传和下载覆盖审批继续共用 `ToolApproval`，对外仅返回按 Locale 生成的场景 `description`。
@@ -30,7 +30,7 @@
 - 概览采用 Dashboard 布局：三个资源指标卡位于顶部，进程表为主区域，连接池与手动沙箱检测放在辅助区域，SSH 参数默认收起。窄屏自动改为单列，宽表在自身容器内横向滚动；展示仍只使用现有快照，不生成历史曲线或模拟指标。
 - SFTP 页面将上传放在内容标题操作区，目录路径、搜索和过滤组成紧凑工具栏；条目使用语义表格，名称可截断且保留完整悬停文本，窄屏仅表格局部横向滚动。传输队列在宽屏右侧、较窄屏幕下方；上传上下文及取消、覆盖确认和离开保护不随布局改变。
 - 前端上传任务由 Workspace 级上下文持有，切换 Tab 不会丢失 `File`、XHR、进度或取消能力；离开 Workspace 前会确认并中止活动上传。
-- 既有 Workspace 的非绝对默认目录不会直接发起 SFTP 请求，用户可显式从 `/` 浏览；`uncertain` Transfer 只允许刷新目录，不自动重试或覆盖。
+- `uncertain` Transfer 只允许刷新目录，不自动重试或覆盖。
 - 目录切换 loading 限定在 Remote files 卡片内并跟随当前视口；远程文件删除使用前端确认弹窗，删除期间禁止关闭或重复提交，失败保留弹窗错误。
 - 目录搜索和文件类型过滤只处理当前已加载的 `entries`，不会发起额外 SFTP 请求；用户主动切换目录时清空搜索词。
 - Workspace 页面状态树以 `workspaceId` 为实例边界；切换 Workspace 时清空 Overview、Guard、凭据和 SFTP 本地状态，并回到 Overview。
@@ -62,4 +62,4 @@
 
 修改 Transfer 状态时必须保持六状态边界，不能把 Channel 排队或 rename 阶段暴露为新状态。修改覆盖流程时必须保持“不确定结果不自动重放”和“无原子扩展不覆盖”。
 
-Workspace 目录浏览也供沙盒多选器使用：跨目录勾选保留已选路径，按目录 realpath 回填列表，最多 16 条，`/` 只可浏览。SFTP 默认 cwd 仍为单个目录，不由 Session 可写范围替换。Overview 显式沙箱检测校验并展示 Workspace 默认列表的全部规范根，不代表某个 Session 的当前覆盖配置；它不改变 Session 开关或现有 PTY。
+Workspace 目录浏览也供沙盒多选器使用：跨目录勾选保留已选路径，按目录 realpath 回填列表，最多 16 条，`/` 只可浏览。SFTP 默认从 `/` 浏览，不由 Session 可写范围替换。Overview 显式沙箱检测校验并展示 Workspace 默认列表的全部规范根，不代表某个 Session 的当前覆盖配置；它不改变 Session 开关或现有 PTY。

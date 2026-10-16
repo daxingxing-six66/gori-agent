@@ -1,18 +1,18 @@
 # Session 任务 Tab 容器
 
-适用于已有 Session 的通用任务容器、标签选择、关闭请求和会话布局。当前唯一接入页面为 Terminal；不提供 Deploy/Monitor Tab、多个 Terminal 实例或工作流执行引擎。
+适用于已有 Session 的通用任务容器、标签选择、关闭请求和会话布局。当前接入 Terminal 与 Deploy；不提供 Monitor、多个 Terminal 实例或通用工作流执行引擎。
 
 ## 职责与契约
 
 - `features/task-container/components/task-container.tsx` 接收 `tabs`、`activeTabId`、`tabListLabel`、`onSelect` 和可选 `display`。后者包含受控 `mode`、已本地化的放大/退出/收起/展开标签和 `onModeChange`；模式为 docked/fullscreen/collapsed。`TaskTab` 只包含 id、title、content、可选展示 status 和可选 close 能力；颜色 tone 为 neutral/positive/warning/danger，不识别业务状态名。
-- 容器不导入 Terminal/Deploy/Monitor 模块、不调用业务 API。关闭按钮仅调用 `onRequestClose`；是否可关闭、原因和 busy 由调用方提供，任务实际结束后由装配层移除页面。
+- 容器不导入 Terminal/Deploy/Monitor 模块、不调用业务 API。关闭按钮仅调用 `onRequestClose`；是否可关闭、原因和 busy 由调用方提供，功能模块决定关闭语义并由装配层移除页面：Terminal 需结束运行，Deploy 只隐藏展示，明确退出部署另走业务接口。
 - 所有页通过稳定 id 保持挂载，未选中的 `tabpanel` 用 `hidden` 隐藏，切换页面不销毁运行状态。选择失效时展示第一个现有页，没有任务时返回 null。
 - 标签和关闭按钮是独立原生 button，不嵌套。`tablist/tab/tabpanel` 通过 ARIA 关联，左右方向键循环激活并聚焦，Home/End 定位首尾，保留浏览器组合快捷键。
 - `task-container.css` 管理标签栏、展示按钮、恢复入口和内部页面：44px 顶栏、精简标题/状态与关闭按钮，使用 Workbench 主题语义变量，不增加容器标题或任务启动列表。展示按钮不受业务关闭禁用状态影响，任务运行期间可以放大或收起。
 
 ## 会话装配与布局
 
-- `features/chat/components/chat-console.tsx` 装配任务描述与具体页面，保持功能运行逻辑在各自模块。当前 Terminal 页面以固定功能 id `terminal` 接入，容器按 Session key 隔离。
+- `features/chat/components/chat-console.tsx` 装配任务描述与具体页面，保持功能运行逻辑在各自模块。Terminal 与 Deploy 分别以固定功能 id `terminal`、`deploy` 接入，容器按 Session key 隔离。Deploy 的模式、历史选择、日志与草稿由自身模块管理，容器没有部署状态分支。
 - `/` 或现有 `@` 工具菜单选择 Terminal 时，未打开则调用现有 open；已有页面则选中，包含正在连接、失败和关闭过渡中的页面，不重复打开或关闭。定位可在 Agent 运行期间进行，生命周期操作仍受原限制。
 - `chat-task-layout.css` 负责容器在会话页的位置，Terminal 内容不再拥有 Session 网格区域。1100px 及以下位于页首和聊天之间，高度为标签栏加 250px 内容区；1101px 起为全高右栏，占内容宽度 45%。退出期间右栏和聊天宽度同步过渡。
 - 容器宽度和过渡时长从 `model/task-container-defaults.ts` 读取。最终页面数和业务模块的退出投影决定容器存在与展开状态。

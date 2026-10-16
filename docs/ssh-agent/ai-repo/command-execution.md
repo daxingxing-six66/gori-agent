@@ -3,7 +3,7 @@
 适用于 `remote_server_call` Tool、Session 内 FIFO、进程并发限制、Command Operation、Guard 执行期校验、输出审计、失败分类和最终 Tool Result。
 
 
-未传 `cwd` 的命令使用 Workspace `remoteDefaultCwd`，默认 `/`；显式 `cwd` 仍优先。Workspace 本地 `defaultCwd` 不参与远端命令目录解析。
+未传 `cwd` 的远端命令使用 `~`，由远端 Shell 解析为 SSH 用户家目录；显式 `cwd` 仍优先。Workspace 仅保存本地 `defaultCwd`，不再配置远端默认目录，也不以启动目录推导沙盒权限。
 
 
 Session 缺省开启沙盒，Command Service 在开启时缺省 `workspace_write`，在远端 Linux 启动器中执行，准备失败不自动回退。开启状态的普通 Chat Run 先探测有效沙箱与已声明写入路径：路径在可写范围内时，`autoAudit` 只决定自动还是人工批准，实际命令始终受沙箱约束；明确无可用后端或已知越界时，才申请带 `remote_sandbox_exception` 标识的一次性人工 Full Access 授权。显式 `full_access` 同样必须逐次人工批准。部署 RESTART/VERIFY 也按实际后端与目标路径选模式，受限步骤服从 `autoAudit`，例外步骤仍需逐条人工审批；部署授权与普通 Chat Tool 授权互不通用。准备后派发前再次复检 Guard。独立的 `SandboxConfirmationCapture` 按 waiting/confirmed/missing 状态处理 stderr 前缀，收到远端确认后才写入实际强制约束事实；确认缺失保守视为可能执行。权限拒绝可能留下部分副作用，新的 Full Access 尝试须另经人工批准，不自动重试。关闭 Session 沙盒时，授权与执行都通过统一策略直接选无沙盒模式，不探测、不调用 Provider 准备、不使用受限启动器或例外 grant，普通 `autoAudit` 审批与 Guard/目标/cwd 校验仍生效。来源进入审计，过期设置计划拒绝执行。完整边界见 [remote-sandbox.md](./remote-sandbox.md) 与 [session-sandbox.md](./session-sandbox.md)。
@@ -22,7 +22,7 @@ Chat 的 `remote_server_call` 在创建人工审批前调用 `CommandOperationSe
 
 `remote-server-call-tool.ts` 持有远端审批准备逻辑：Guard 预检、显式 Full Access 参数、沙箱路由与审批描述。`ChatToolAuthorizationPolicy.prepare()` 分发该函数，并通过共用 `authorizationFailure` 把已知请求错误转换为非终止结果；Runtime 的审批边界使用同一转换函数，探针/持久化/未知错误仍终止 Run。
 
-授权与执行通过 `RemoteCommandExecutionPlan` 交接。请求在第一个异步检查前复制并冻结；计划显式保存 `access.mode` 和对应理由，同时绑定调用身份与 SSH 目标快照。审批通过后 Coordinator 将它放入内部 `executionContext`，Agent 直接交给本次 Tool `execute()`，不会修改模型参数或向事件/消息追加此上下文。Chat 远端 Tool 缺少计划、计划属于其他调用或原参数改变时，在 `submit()` 前返回非终止错误；它不查询 Store 重新决定权限，也不因 grant 缺失而降回沙箱。`expectedTarget` 随计划进入 Command Service，派发前目标身份、默认 cwd 或完整可写目录列表变化会拒绝执行；数组复制并冻结，避免外部修改授权快照。没有 Chat Run ID 的独立 Tool 按当前 Session 设置执行；开启时仍保持默认受限路径，Full Access 例外不能仅由参数获得。
+授权与执行通过 `RemoteCommandExecutionPlan` 交接。请求在第一个异步检查前复制并冻结；计划显式保存 `access.mode` 和对应理由，同时绑定调用身份与 SSH 目标快照。审批通过后 Coordinator 将它放入内部 `executionContext`，Agent 直接交给本次 Tool `execute()`，不会修改模型参数或向事件/消息追加此上下文。Chat 远端 Tool 缺少计划、计划属于其他调用或原参数改变时，在 `submit()` 前返回非终止错误；它不查询 Store 重新决定权限，也不因 grant 缺失而降回沙箱。`expectedTarget` 随计划进入 Command Service，派发前目标身份或完整可写目录列表变化会拒绝执行；数组复制并冻结，避免外部修改授权快照。没有 Chat Run ID 的独立 Tool 按当前 Session 设置执行；开启时仍保持默认受限路径，Full Access 例外不能仅由参数获得。
 
 `executePending()` 按固定步骤编排：读取 Operation → 排队复检 → 记录 dispatching → Guard → 解析目标并复核 Session 策略、授权与 cwd → 在执行时限内按模式准备 → Guard 复检 → 记录 running → Broker → 确认与结果结算。`CommandExecutionPolicy` 集中执行期检查、一次性 grant 消费和统一的 Guard/排队失败构造，不修改 Operation 或派发命令；每次调用自己的 `CommandOperationRecorder` 负责状态、时间、Guard/目标审计、输出限额、事件和终态，Service 保留执行顺序、超时/取消资源管理及远端结果分类。新组件由 Command Service 内部装配，`submit()` 的外部契约保持兼容。
 
@@ -63,4 +63,4 @@ Chat 的 `remote_server_call` 在创建人工审批前调用 `CommandOperationSe
 
 不要从 HTTP handler 直接调用 Channel Broker，也不要在断线后自动重放命令。Session 顺序约束、进程许可和 Connection Channel 容量是三个独立边界，不能用其中一个替代另外两个。
 
-沙盒准备使用当前 Session 的完整可写目录，默认 cwd 保持独立。已知写入路径落在任一规范根内即可受限执行；审计和 Tool 结果携带完整 `sandboxRoots`，首项 `sandboxRoot` 只作历史兼容。配置校验及新旧事实解析位于 `domain/sandbox-writable-roots.ts`；目标范围变更会使 grant 和已审批执行计划失效，回归见 `sandbox-writable-roots.test.ts`、`multiple-sandbox-roots.test.ts`。
+沙盒准备使用当前 Session 的完整可写目录，命令显式 cwd 与可写范围独立。已知写入路径落在任一规范根内即可受限执行；审计和 Tool 结果携带完整 `sandboxRoots`，首项 `sandboxRoot` 只作历史兼容。配置校验及新旧事实解析位于 `domain/sandbox-writable-roots.ts`；目标范围变更会使 grant 和已审批执行计划失效，回归见 `sandbox-writable-roots.test.ts`、`multiple-sandbox-roots.test.ts`。

@@ -5,11 +5,11 @@
 - `POST /api/workspaces/test-connection` 接收尚未保存的地址、Credential 和连接参数，认证成功返回 `{ success: true }`，不创建工作区或执行命令。Node 适配器在响应连接提前关闭时取消 Request，包括请求体已读完的情况；正常结束不取消。详见 [connection-test.md](./connection-test.md)。
 - `POST /api/workspaces/browse-directory` 以同一草稿连接读取指定远端绝对路径的 SFTP 目录，不创建工作区或持久化凭据。接口请求可取消，细节见 [connection-test.md](./connection-test.md)。
 
-Workspace POST/PATCH 接受可选 `remoteDefaultCwd`，响应携带持久化的远端默认目录；创建省略取 `/`，更新省略保留。`defaultCwd` 保留为本地会话默认目录，两个字段独立。
+Workspace POST/PATCH 已移除 `remoteDefaultCwd`，继续提交该字段返回 400 字段错误。`defaultCwd` 仅为本地会话默认目录，响应不再包含远端默认目录。
 
 Session POST/PATCH 接受布尔 `sandboxEnabled` 及可选 `sandboxWritableRoots` 列表，创建省略取 true，更新省略保留，GET 与 tree 返回当前值。PATCH 仍要求 `expectedRevision`；配置切换与执行互斥，`session_configuration_in_progress` 返回 409，已有 active PTY 自动重开。见 [session-sandbox.md](./session-sandbox.md)。
 
-Workspace POST/PATCH 通过 `remoteDefaultCwd` 设置默认远端目录，通过 `sandboxWritableRoots` 设置独立可写目录默认列表。显式列表为 1–16 条不重复的绝对非根路径；Session 创建未传时复制 Workspace 默认列表，PATCH 省略时保留，更新 Workspace 不覆盖已有 Session。默认 cwd 允许 `/`，可写根禁止 `/`。`POST /api/workspaces/:id/sandbox` 通过正式目标解析显式检测远端沙箱，成功返回 mode/backend/enforcement/后端版本、完整 `sandboxRoots` 与首根兼容字段 `sandboxRoot`；不运行用户脚本，可能创建连接及投递启动器。失败沿用安全本地化错误；该检测接口不提供 Full Access 直通执行。见 [remote-sandbox.md](./remote-sandbox.md)。
+Workspace POST/PATCH 通过 `sandboxWritableRoots` 设置独立可写目录默认列表。显式列表为 1–16 条不重复的绝对非根路径；Session 创建未传时复制 Workspace 默认列表，PATCH 省略时保留，更新 Workspace 不覆盖已有 Session。省略时保存空列表；可写根禁止 `/`。`POST /api/workspaces/:id/sandbox` 通过正式目标解析显式检测远端沙箱，成功返回 mode/backend/enforcement/后端版本、完整 `sandboxRoots` 与首根兼容字段 `sandboxRoot`；不运行用户脚本，可能创建连接及投递启动器。失败沿用安全本地化错误；该检测接口不提供 Full Access 直通执行。见 [remote-sandbox.md](./remote-sandbox.md)。
 
 ## 请求链路
 
@@ -17,10 +17,13 @@ Workspace POST/PATCH 通过 `remoteDefaultCwd` 设置默认远端目录，通过
 
 ## 当前边界
 
+
 - 用户决策使用 `GET /api/sessions/:sessionId/chat/decisions` 恢复待决题，`POST /api/sessions/:sessionId/chat/decisions/:decisionId/answer` 提交按题序排列的 `{ answers }`；Session、题目数量和答案类型在服务边界验证，重复同答幂等，冲突或过期返回错误。当前 Run SSE 发送 `decision.requested` 与 `decision.resolved`。见 [user-decision.md](./user-decision.md)。
 
 - 首次 Chat Run 接受可选 `generateTitle` 布尔值；Workspace SSE 可显式订阅 `sessions` topic 接收 `session.updated`。原默认 topics 和 SSE 传输机制不变，见 [session-title.md](./session-title.md)。
 - Deployment REST 位于 `/api/sessions/:id/deployments`：GET 发现当前主机 Profile、最近 Run 和活动 Discussion；`/discussions` POST 开始服务讨论，`/discussions/active` 与 `/discussions/:discussionId` GET 恢复状态，`/discussions/:discussionId/cancel` POST 取消。首次 Chat Run 使用 `workflow=deployment_planning` 和 `deploymentDiscussionId`，后续普通新 Run 可继续当前讨论；模型提案才创建待确认 Plan。`/history` 按不透明游标分页返回持久化部署记录，`/:runId` 查询快照，`/:runId/approvals/:stage/:approvalId/approve|reject` 为准确的 RESTART/VERIFY 命令作人工决定，`/:runId/recovery/:proposalId/approve|reject` 供用户确认或拒绝失败阶段的模型修订，`/:runId/cancel` 取消。旧的根路径 POST Prepare 接口仍保留兼容，但新 UI 不使用；`/:runId/confirm` 返回冲突。用户核对计划并批准远端命令后，以 `workflow=deployment_execution` 和 `deploymentRunId` 启动模型编排；失败后 `workflow=deployment_recovery` 可绑定同一 Run 讨论修复。`deployments` Workspace SSE topic 分发 Discussion 和阶段快照，前端独立订阅；详见 [deployment.md](./deployment.md)。
+
+- Deployment 新增 `GET /mode`、`GET /tasks/:id/state`、`POST /tasks/:id/finish` 和 `GET /:runId/logs`。finish 区分 cancelled 与带原因 failed；成功由模型结束工具经后端阶段核验。日志使用严格的 stage/afterSequence/limit 游标参数，部署 topic 另发 started/stage.updated/log.appended/message.created/finished。模式跨 Chat Run，UI 浏览历史不激活模式；详见 [deployment.md](./deployment.md)。
 
 - `GET /api/sessions/:sessionId/chat/context-usage` 只读返回占用快照或 null，使用 `no-store`；手动压缩响应包含同结构 `contextUsage`。联调见 [context-usage-integration.md](../frontend/context-usage-integration.md)。
 

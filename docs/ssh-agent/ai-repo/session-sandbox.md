@@ -51,6 +51,6 @@ Session Service 在读取/保存开关或目录配置前获取 `sandbox_update` 
 
 测试使用临时 SQLite、模拟 Broker/Provider 和确定性的前端异步驱动，覆盖默认迁移、Session 隔离、关闭绕过、开启恢复、Guard/目标保留、普通审批、过期计划、Terminal 双向重开及失败补偿。真实 Linux 内核与 SSH/PTY 行为需另做已授权的目标主机验收。
 
-Workspace 的 `sandboxWritableRoots` 是默认选项，新 Session 创建时复制，允许 POST 显式覆盖；创建后独立保存，Workspace 后续更新不覆盖它。SQLite v28 将旧单目录范围迁为列表，保持原 revision 和历史。显式目录列表为 1–16 条绝对非根路径；远端默认 cwd 独立，不要求属于可写范围。
+Workspace 的 `sandboxWritableRoots` 是默认选项，新 Session 创建时复制，允许 POST 显式覆盖；创建后独立保存，Workspace 后续更新不覆盖它。SQLite v28 将旧单目录范围迁为列表，保持原 revision 和历史。显式目录列表为 1–16 条绝对非根路径；未传远端 cwd 时从 SSH 用户家目录执行，Terminal 保留 SSH 初始目录；启动目录不授予写权限。
 
 目录编辑先 GET 权威 Session，并保存编辑开始时的 revision；提交不能重新获取新 revision 覆盖别人的变更。失败后保留草稿，用户可重新加载。`session-edit-dialog.tsx` 读取权威 Session，`session-dialog.tsx` 在同一表单维护名称、本地目录、审批和沙盒目录草稿，一次 PATCH 使用编辑快照 revision；没有修改目录时省略该字段，旧未配置范围不妨碍其他字段编辑。保存及可能已提交的重开失败均刷新树和当前 Terminal，后端 lifecycle barrier 继续保护并发。`use-session-sandbox.ts` 只负责 slash 开关，`ChatPageHeader` 和 Badge 只投影状态。共用目录字段及多选器位于 Workspace feature，双语 `sandbox.roots.*` 文案归入 Workspace 目录。回归见后端 `sandbox-writable-roots.test.ts`、`session-sandbox.test.ts`、`deployment-sandbox-roots.test.ts` 及前端 `sandbox-writable-roots.test.tsx`、`session-edit-dialog.test.tsx`、`use-session-sandbox.test.ts`。

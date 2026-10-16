@@ -11,6 +11,7 @@
 - 原始错误/cause 进入本地日志；公开原因不包含异常栈、认证 URL、常见凭证、完整响应对象或 HTML 页。正常模型内容不经过错误清洗。
 - 来源使用显式 `exception/response` 模式；结构化原因优先于外层字符串。带空格的引号凭证和认证 Header 整行清洗；额度耗尽、地区限制和参数限制优先于 HTTP 429 的可重试判断。
 - `ChatRunRuntime` 保存当前运行失败，通过 `beginProviderRequest()`、`captureFailure()`、`toAgentError()` 管理请求、运行异常和恢复失败。
+- 显式取消后的 Provider 终态错误按 `aborted` 归一化，包括 Adapter 以 error 事件返回取消的情况；不创建厂商失败报告。Runtime 在 Turn 结束时检查取消标志，取消期间排队的 steer/follow-up 不再被消费或触发下一次模型请求。
 - 空响应 400/413 的超限特例仅适用于 Cerebras；OpenCode Go 相同响应保留 HTTP 状态、使用 `chat_provider_request_rejected`，不自动压缩。
 - 统一分类、诊断、Run executor 和安全快照见 [chat-failures.md](./chat-failures.md)。
 

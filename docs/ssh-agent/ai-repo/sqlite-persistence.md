@@ -2,7 +2,7 @@
 
 适用于数据库初始化、schema migration、实体映射、Repository 实现、Credential 密文和默认后端装配。
 
-v18 为 Workspace 增加非空 `remote_default_cwd`，默认 `/`。原 `default_cwd`、Session `work_dir`、revision 与历史快照原样保留；不凭路径格式或本机存在性猜测旧值所属机器。升级后若需要原远端目录，应在工作区单独设置。回归 `workspace-directories.test.ts` 从冻结旧库验证保留、默认值、外键与幂等性。
+历史 v18 为 Workspace 增加 `remote_default_cwd`，v21 合并旧可写根，v28 将其迁成 Workspace/Session 独立 `sandbox_writable_roots_json`。当前 v32 删除 `remote_default_cwd`；保留可写目录原文、本地 `default_cwd`、Session `work_dir`、revision 及历史快照，不猜测或重写已有权限。`workspace-directories.test.ts` 使用冻结 v11/v27 schema 验证升级、外键和重复迁移。
 
 v19 追加 nullable `workspaces.remote_sandbox_root` 及 `command_operations.agent_run_id/sandbox_json/sandbox_justification`。v21 将已有独立可写根优先迁入 `remote_default_cwd`，再删除 `remote_sandbox_root`；旧根不存在时保留原远端目录。历史命令的约束事实不改写。Operation 保存实际 mode/backend/enforcement/ABI/规范根及可能副作用事实；Repository 按模式、后端和确认状态校验 `sandbox_json`，同时保留旧记录的未知及确认前事实。一次性 Full Access grant 只存内存。旧 v4/v15 回归使用冻结 schema fixture，避免从最新结构反向删表。见 [remote-sandbox.md](./remote-sandbox.md)。
 
@@ -13,7 +13,7 @@ Bubblewrap 事实沿用现有 JSON 列，无 schema migration：保存 `backend=
 - v22 新增 `chat_user_decisions`：持久化 Session/Run/Tool Call 绑定、问题 JSON、答案 JSON 和 pending/answered/cancelled/interrupted 状态。Repository 在读取边界解析问题与答案；启动恢复将遗留 pending 决策标记为 interrupted，Run 仍按现有重启逻辑失败。见 [user-decision.md](./user-decision.md)。
 
 - 使用 Node `node:sqlite`，启动时开启 foreign keys、busy timeout；文件数据库使用 WAL。
-- schema 由版本化 migration 管理，当前版本为 v28；v7 增加 Session 本地配置、Chat Run、消息、队列、审批和 Agent Session 投影表，v8 为 Tool Approval 增加持久化描述，v9 增加每个 LLM Provider 的最后一次成功模型目录快照，v10 增加 TerminalSession、Interaction、Input、Observation、Timeline 和 Chat Run 交互模式字段，v11 增加自定义 LLM Provider 聚合，v12 为 Chat 消息增加类型、Provider 和 Usage 投影并移除旧 Agent Session 投影表，v13 为 Tool Approval 描述和 Terminal failure 增加可选 message key/values 元数据，v14 增加 Session Attachment 元数据、同名唯一约束和级联删除，v15 增加有序 `chat_message_attachments` 关系，v16 增加不可变 `chat_prompt_snapshots`，通过触发器原子记录初始模式及 Terminal active 边界变化。v20 保存 Terminal 实际沙箱事实，v21 合并远端目录，v22 保存 Agent 用户决策，v23 保存 Deployment Run 计划、阶段和 Full Access 决策快照，v24 为同一 Session 的模型规划 Run 增加唯一关联索引，v25 保存部署讨论、每轮 Chat Run 绑定和单 Session 活动讨论唯一约束，v26 为 `deployment_runs` 增加 `recovering` 状态约束；v27 为 Session 增加非空布尔 `sandbox_enabled`，默认 1，升级不改其他设置或 revision。见 [session-prompt.md](./session-prompt.md) 和 [deployment.md](./deployment.md)。
+- schema 由版本化 migration 管理，后续版本见 migration 源码；v7 增加 Session 本地配置、Chat Run、消息、队列、审批和 Agent Session 投影表，v8 为 Tool Approval 增加持久化描述，v9 增加每个 LLM Provider 的最后一次成功模型目录快照，v10 增加 TerminalSession、Interaction、Input、Observation、Timeline 和 Chat Run 交互模式字段，v11 增加自定义 LLM Provider 聚合，v12 为 Chat 消息增加类型、Provider 和 Usage 投影并移除旧 Agent Session 投影表，v13 为 Tool Approval 描述和 Terminal failure 增加可选 message key/values 元数据，v14 增加 Session Attachment 元数据、同名唯一约束和级联删除，v15 增加有序 `chat_message_attachments` 关系，v16 增加不可变 `chat_prompt_snapshots`，通过触发器原子记录初始模式及 Terminal active 边界变化。v20 保存 Terminal 实际沙箱事实，v21 合并远端目录，v22 保存 Agent 用户决策，v23 保存 Deployment Run 计划、阶段和 Full Access 决策快照，v24 为同一 Session 的模型规划 Run 增加唯一关联索引，v25 保存部署讨论、每轮 Chat Run 绑定和单 Session 活动讨论唯一约束，v26 为 `deployment_runs` 增加 `recovering` 状态约束；v27 为 Session 增加非空布尔 `sandbox_enabled`，默认 1，升级不改其他设置或 revision。见 [session-prompt.md](./session-prompt.md) 和 [deployment.md](./deployment.md)。
 - v17 兼容开发期间已执行的两种 v16 结构：在同一事务内重建快照表，去除早期 `initial_mode NOT NULL` 列，逐字保留头部文本及其版本、创建时间，重建模式触发器；仅为缺失 `runtimeEventId` 的已生成模式消息补齐原消息 ID，不改变顺序和标签。不重新生成已有快照，也不清空业务数据。失败时表、触发器、消息修补与版本记录一起回滚；重复启动跳过已完成的版本。
 - v1 到 v2 采用开发期重建策略：带业务数据的 v1 数据库会拒绝启动并提示人工备份、删除；程序不会自动删除或搬迁旧数据。
 - Credential 元数据与认证材料分表。认证材料使用 AES-256-GCM，加密 AAD 绑定 `credentialId:authVersion`；32 字节密钥必须由进程外部注入。
@@ -65,8 +65,11 @@ Bubblewrap 事实沿用现有 JSON 列，无 schema migration：保存 `backend=
 
 升级回归：`packages/ssh-agent/test/chat-prompt-migration.test.ts` 使用冻结的两种 v16 SQL fixture 验证带数据升级、空快照升级、原文保留、模式消息修补、不可变约束、级联删除、回滚重试及幂等性。
 
-`context-compaction-api.test.ts` 从冻结的 `test/fixtures/schema-v11.sql` 创建带合法 Workspace/Session 与消息的旧库，在外键开启时验证升级到 v19、消息原文和顺序保留、类型/Usage 回填及重复迁移幂等性。不要从最新 schema 反向删表模拟旧版，以免遗留后续版本的触发器与外键。`llm-provider-api.test.ts` 的重开测试验证当前 schema 下凭据可解密、迁移记录及执行时间不被重写，不冒充 v3 升级测试。
+`context-compaction-api.test.ts` 从冻结的 `test/fixtures/schema-v11.sql` 创建带合法 Workspace/Session 与消息的旧库，在外键开启时验证升级到当前 v32、消息原文和顺序保留、类型/Usage 回填及重复迁移幂等性。不要从最新 schema 反向删表模拟旧版，以免遗留后续版本的触发器与外键。`llm-provider-api.test.ts` 的重开测试验证当前 schema 下凭据可解密、迁移记录及执行时间不被重写，不冒充 v3 升级测试。
 
 v28 为 Workspace 与 Session 追加 nullable `sandbox_writable_roots_json` 数组列。旧 Workspace 的非根远端 cwd 原样回填为单元素列表，`/` 回填为空列表；已有 Session 复制所属 Workspace 的范围。migration 不改 revision、头部、历史命令或 Terminal 事实。nullable 仅兼容旧 Repository 调用；`stored-sandbox-writable-roots.ts` 将 null 解释为缺省，显式空列表表示未配置，不回退到 cwd，非空列表完整校验路径和数量。服务创建时总是保存独立列表。
 
-新的 Command/Terminal 审计保存完整 `sandboxRoots` 及首根别名 `sandboxRoot`，SQLite 读取校验非空规范路径、无重复、首项一致；只有单根的历史事实继续可读。部署 Plan/Discussion 的目标绑定可携带完整 `sandboxWritableRoots`，读取时同样校验，缺省仅用于旧单目录快照的兼容。回归见 `sandbox-writable-roots.test.ts`（冻结 `fixtures/schema-v27-sandbox.sql`、文件重开、原文及历史保留）、`multiple-sandbox-roots.test.ts` 和 `deployment-sandbox-roots.test.ts`。
+新的 Command/Terminal 审计保存完整 `sandboxRoots` 及首根别名 `sandboxRoot`，SQLite 读取校验非空规范路径、无重复、首项一致；只有单根的历史事实继续可读。部署 Plan/Discussion 的目标绑定可携带完整 `sandboxWritableRoots`，读取时同样校验，缺省仅用于历史读取；执行时视为空列表，不从旧 writableRoot 推导授权，范围不一致须重新审阅。回归见 `sandbox-writable-roots.test.ts`（冻结 `fixtures/schema-v27-sandbox.sql`、文件重开、原文及历史保留）、`multiple-sandbox-roots.test.ts` 和 `deployment-sandbox-roots.test.ts`。
+
+
+v30 新增 `deployment_sessions`，单 Session 活动身份通过唯一索引约束；Discussion/模式同事务创建，触发器追加一条正式 custom 历史消息。v31 新增 `deployment_stage_executions` 与 `deployment_logs`，请求幂等、单一 running 执行、阶段日志 sequence 与游标持久化；模式终态与当前 Run 结果同事务结算，完整日志不受快照尾部上限影响。重启只恢复持久化事实，不重放执行或恢复内存 grant；无计划讨论保持活动，对已结束 Run 的模式收敛使用 `MAX(created_at, now)`，避免时钟回拨违反结束时间约束。`deployment-mode.test.ts` 覆盖运行中退出竞争、迟到日志拒绝、结果提交失败后的明确结算和回拨恢复。对应 Repository 与回归见 [deployment.md](./deployment.md)。

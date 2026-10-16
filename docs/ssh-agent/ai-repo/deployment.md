@@ -1,112 +1,98 @@
 # `/deploy` 代码路由
 
-适用于当前 Session 的模型驱动部署、Deployment Profile、首次配置 Skill、阶段安全边界和会话历史回显。
+适用于 Deployment Profile、Session 部署模式、模型规划与修订、阶段执行、日志和右侧 Deploy Tab。重构依据及逐项验收见 [Deploy 重构实现依据](../design/deploy-refactor.md) 第 16–17 节。本次范围已经实现并完成 macOS 本地构建、Linux 目标和授权模型的真实交互验收；跨平台及不同沙箱后端的实际执行范围分别说明。
 
-## 当前行为
+## 身份、事实与入口
 
-- `/deploy` 是已有 Session 的 Composer 工具入口，菜单标题按语言显示“部署”或“deploy”；新 Session 创建前显示禁用入口。每次主动选择入口都从空白模块选择开始，不选中上次的部署记录，也不向 Agent 发送自由执行部署的 Prompt。首版只扫描 Session 本地工作目录的 `.gori/deploy-*.md`，只展示 `target.host` 与当前 Workspace SSH 主机一致的 Profile；文件可保留其他主机的 Profile，但运行时不会跨 Workspace 选择主机或凭据。
-- Profile 是 Markdown + YAML front matter。v2 的模块记录服务工作目录、构建/重启/验证说明和允许上传的远端目录；它提供稳定知识，不固定本次要构建的命令和 jar 清单。旧 v1 的单产物字段继续可读。后端严格校验版本、相对本地目录、规范绝对远端目录、大小和未知字段；`.gori` 与 Profile 文件不能是符号链接。`connection.profile` 仅供显示，不作为凭据查找键。缺少 Profile 时，Chat Run 临时加载包内 `gori-deployment-spec` Skill，Agent 使用 `ask_user_decision` 确认缺失信息，向用户展示草案并经同意后保存；创建配置不会自动部署。
-- 选择服务只开启持久化的部署讨论，不创建 Deployment Run，也不展示尚无实际参数的五阶段流水线。讨论与 Session、Profile、模块及当前目标绑定，允许跨多个 Chat Run 延续；每轮模型请求由 ChatService 从服务端讨论状态注入可信的 `<deployment-mode-on>` 指引，普通无讨论请求注入 `<deployment-mode-off>`。模型检查当前项目、Git 变化与模块依赖，可通过 `ask_user_decision` 或普通文字与用户澄清；一次回复没有提交计划时，讨论仍可继续。信息齐备后，模型调用 `deployment_propose_plan` 提交本次准确的 1–8 个本地构建步骤、1–16 个普通文件产物及各自远端目标、重启命令和可选验证命令；重启/验证可分别声明已知远端写入路径 `writePaths`。`DeploymentService` 校验本地路径、Profile 允许目录、Workspace 远端根、当前 SSH 身份和 Guard，读取 Session 沙盒设置，开启时逐条探测远端沙箱，关闭时直接选无沙盒模式，再冻结执行来源与模式；模型调用本身不构建、上传或批准沙箱例外。服务按 planning Agent Run ID 和提案摘要去重，SQLite v24 唯一索引防止竞争写入。旧 Plan v1 无版本字段，保留历史读取；旧 Profile v1 仍可用于规划，其 `upload.target` 的父目录是允许上传的范围。
-- 用户核对完整提案，并仅对需要 Full Access 的远端命令批准标记为 `remote_sandbox_exception` 的例外后，才创建 `workflow=deployment_execution` 的 Chat Run。ChatService 注入已确认计划，DeploymentService 复核 Profile、SSH 身份和例外审批并经 SQLite 条件更新原子认领。模型调用 `deployment_execute_next` 逐阶段推进，只能提交阶段名；受限命令按当前 `autoAudit` 自动或逐条人工批准，但批准后仍在沙箱内执行。服务端锁定本次计划的命令、产物、目录和目标，复检顺序与权限。Plan v2 阶段失败后进入 `recovering`，保留已完成阶段和失败尝试；模型可在当前 Run 或新的 `deployment_recovery` Run 中检视结果，用 `deployment_propose_recovery` 仅提出失败阶段的修订。用户比较前后方案并确认后，服务更新有效计划版本，重置失败阶段，只有仍需 Full Access 的未完成命令需要新的例外审批，再用新的执行 Run 从该阶段继续。拒绝提案可继续讨论；没有自动重试。旧 Plan v1 仍按原逻辑结束为 failed。旧 `POST .../confirm` 返回 `deployment_agent_required`。
-- SFTP 子系统不在 Landlock 启动器内；上传要通过规范远端目录与 Profile 允许目录检查，不能称为 Landlock 保护。远端目录符号链接在检查和上传之间仍可能发生外部竞态。可上传多个普通文件，不支持目录递归上传；目录产物要在本次构建步骤中先打包。
-- `deployment_runs` v23 保存计划、执行 Agent Run、阶段与 Full Access 决策快照；v24 为规划 Agent Run 建立唯一索引；v25 单独保存部署讨论和其每轮 Chat Run 绑定；v26 允许 `recovering` 状态。快照保留初始计划、当前修订版、各阶段尝试、修订提案及历次绑定的 Agent Run，旧记录的可选字段保持兼容。SQLite 读取时校验 Discussion 和 Plan v1/v2、审批、阶段顺序及修订链；旧计划没有 `remoteAccess` 时按原有受限模式解释。重启时讨论与已落库的待修复提案可继续；未确认计划取消，正在运行的部署记失败并提示检查远端副作用，不自动续跑。`WorkspaceEventHub` 的 `deployments` topic 分别发布 `deployment.discussion.updated` 与 `deployment.updated`；前端部署功能独立订阅，刷新用 REST 补齐，历史按创建时间和 ID 稳定分页。关闭卡片不取消讨论或运行；取消讨论会使其后续提案失效，取消执行会中止阶段及对应执行 Run。
-- RESTART/VERIFY 各有冻结的 `access`：Session 开启时，有效 Landlock/Bubblewrap 且已声明写入路径均在允许范围内时使用 `workspace_write`；脚本未声明的副作用由实际沙箱约束。沙箱不可用或已声明写入路径越界时使用 `full_access`，生成带 `remote_sandbox_exception` 工具名、原因和准确命令的人工审批；`autoAudit` 不会批准例外。批准须在五分钟内用于启动，过期可重批；启动后每条授权只用于本次流水线中的准确命令一次，结束时清理。若原先因沙箱不可用获批，认领和命令派发前都会重新探测；能力已变化则拒绝旧例外，要求重新审阅计划。受限命令失败不会自动以 Full Access 重放，须诊断、提出修订并重新获人工审批。Guard 在实际执行时复检，SSH 身份变化会拒绝执行。Session 关闭时冻结 `full_access/reason=session_sandbox_disabled`，不探测、不生成例外审批或 grant，阶段按普通 `autoAudit` 审批直接执行。认领和每个副作用前比较当前设置与计划来源，变更返回 `deployment_sandbox_route_changed`；旧计划需要重新规划，不能沿用原权限执行。历史计划缺少逐阶段 `access` 时继续按其原有 `remoteAccess` 执行。
+- `/deploy` 只是打开功能页面。没有活动模式时展示模块选择；有活动模式时定位当前任务。浏览配置不创建部署或运行模型。缺少服务时，即使已有其他 Profile，仍可从“添加服务配置”进入配置讨论；保存 Profile 不自动发布。
+- Profile 从 Session 本地 `workDir`（未配置时为后端 `localCwd`）的 `.gori/deploy-*.md` 发现。只显示 `target.host` 与 Workspace 主机相符的文件；错误独立返回。`.gori` 必须是实体目录，Profile 必须是普通文件。`connection.profile` 是文档标签，不选择凭据。
+- Profile v2 保存长期构建/重启/验证知识和允许上传目录；本次 Plan v2 固定准确的 1–8 个本地构建步骤、1–16 个普通文件产物及远端目标、重启和可选验证命令。构建目录和产物 source 是相对项目根的模型输入，冻结为规范绝对路径。远端命令可声明最多 16 个 `writePaths`。Profile/Plan v1 保持兼容读取。
+- 选择服务后创建稳定部署 ID：新 Discussion、Session 模式和正式历史消息同事务提交；后续 Run 沿用 Discussion ID。`deployment_sessions` 只保存身份、活动绑定和终态，`deployment_runs` 仍是计划与当前阶段事实来源。每个 Session 只有一个活动部署，同一 Workspace 仍只允许一个 running 部署。
+- 正式消息位于 `chat_messages`，`message_type=deployment`、`customType=deployment`，按 Session sequence 排序，持有稳定 ID/标题。`deployment.message.created` 发布实际持久化消息，REST 历史和 SSE 通过相同消息 ID/sequence 去重。它是 UI 元数据，在模型与压缩投影中过滤，不能变成 user 指令。
 
-配置所有权、直接执行分支与计划失效见 [session-sandbox.md](./session-sandbox.md)。
+## 从讨论到明确结束
 
-## 代码实现概要
+1. 用户选定服务，开启 Session 部署模式，并启动首轮 `deployment_planning` Chat Run。后续普通用户消息由后端当前绑定决定讨论、待审、执行或诊断用途，不由 Tab 是否打开决定。
+2. 模型检查项目与变更，用普通文字或 `ask_user_decision` 补充信息，通过 `deployment_propose_plan` 提交准确参数。后端复核路径、Profile hash、目标身份、Guard 和逐命令沙箱来源；提案本身没有构建、上传、重启副作用。
+3. 中间 Agent 会话中的 `DeploymentReview` 展示完整计划、修订差异及必要的人工 Full Access 例外。用户确认后创建 `deployment_execution` Run，服务原子认领；旧 `POST .../confirm` 仍拒绝绕开 Agent。
+4. 模型使用 `deployment_execute_next({stage})` 串行推进。成功后检查结果；失败后模式保持，允许诊断、重试原命令或提交修订。模型一轮结束、失败或取消不会自动结束新部署。
+5. 用户通过结束接口取消，或模型通过 `deployment_finish` 明确成功/失败结束。成功须核验全部必要阶段；失败必须给原因。统一用例先收敛当前操作，再同事务保存最终 Run 与模式终态。竞争时首个终态获胜，结算失败保留原请求重试，不重放阶段。迟到请求不能恢复模式。
+6. VERIFY 成功或合法 skipped 后仍等明确结束。最终结论由模型在中间 Agent 会话输出。
 
-### 从选择服务到执行
+Discussion 状态为 discussing/proposed/cancelled；Run 状态为 preparing/running/recovering/success/failed/cancelled；阶段为 pending/running/success/failed/skipped。已批准修订只有在当前没有新失败时才表示等待继续；修订后再次失败会重新进入可诊断路径，不能被历史 approved 状态锁住。
 
-1. 用户在已有 Session 的 Composer 选择 /deploy。ChatConsole 调用 useDeployment.show，前端通过 GET /api/sessions/{sessionId}/deployments 读取当前主机、可用 Profile 和解析错误；接口仍返回最近一次 Run 供会话恢复使用，但这次主动唤起不选中它。此时不创建 Agent Run，也不执行命令。新 Session 尚无固定的 Workspace/Session 上下文，入口显示为禁用。
-2. 若有 Profile，面板汇总可选模块。用户选中模块后，服务端开启部署讨论，随后启动首轮 `deployment_planning` Chat Run。讨论期间，所选服务与讨论状态卡片按 Discussion 的创建时间插入 Chat 时间线，先显示卡片，再在其下方显示首轮及后续讨论消息；切换 Session 后仍按持久化创建时间重建顺序。尚未选定模块的选择面板仍位于时间线末尾。模型可进行多轮检索、提问和普通聊天回复，每一轮都由持久化讨论重新绑定 Profile、模块和提案工具。模型调用 `deployment_propose_plan` 并通过后端校验后，才产生待确认的 Deployment Run 和五阶段计划卡片。前端从 `deployment.discussion.updated` 与 `deployment.updated` SSE 获取状态和计划；规划时不构建、上传或执行远端命令。若没有 Profile，界面提供“创建部署配置”；用户点击后才创建 `deployment_setup` Chat Run，按内置 Skill 与 Schema 生成配置。配置生成和本次发布是独立操作。
-3. 用户核对计划和每个产物目标，仅完成沙箱例外命令的逐条 Full Access 审批，再点击“开始部署”。前端分别读取 RESTART/VERIFY 的 `access`，只为需要例外的 `full_access` 阶段显示审批按钮和有效期；`session_sandbox_disabled` 仅显示当前 Session 的直接执行说明；旧计划没有逐阶段 `access` 时回退到 `remoteAccess`。前端创建携带 Deployment Run ID 的 `deployment_execution` Chat Run；后端认领后模型才可调用专用阶段工具。沙箱内 RESTART/VERIFY 由当前自动/手动审批模型决定，手动批准不改变沙箱模式。失败时卡片留在同一历史位置，模型提出局部修订，用户确认后创建新的执行 Run 继续；已完成阶段不会重做。全部阶段完成后，执行指引要求模型在最终回复中概述实际部署和验证结果；成功结算后，该回复作为普通 Assistant 消息显示在部署卡片之后的主时间线。
+## 阶段执行和重做
 
-### 组件分工
-
-| 层 | 状态和职责 | 后续调整位置 |
-|---|---|---|
-| Profile、讨论与计划 | DeploymentProfile v2 定义可编辑的部署知识；DeploymentDiscussion 冻结选定的 Profile、模块和目标身份；DeploymentPlan v2 记录本次发布的准确步骤、产物、命令和权限模式。DeploymentRun 持有唯一的执行状态、修订链、尝试结果和 Agent Run 历史；v1 继续用于旧数据。Markdown 正文只供人阅读。 | domain/deployment.ts、Skill 的 profile-schema.md |
-| HTTP 边界 | deployment-routes.ts 处理 Profile 发现、Discussion 创建/取消/恢复、计划历史/查看、逐条 Full Access 审批、修订确认/拒绝与取消；旧 v1 的直接准备接口仍兼容。Chat 创建请求校验 planning、execution、recovery 各自的绑定 ID，旧确认接口拒绝绕过 Agent。 | api/deployment-routes.ts、api/request-validation.ts |
-| 应用服务 | DeploymentService 持有讨论、部署和恢复的状态，校验模型提案、认领复核、阶段顺序、局部修订、取消、日志与事件。参数校验集中于 deployment-plan-proposal.ts 和 deployment-recovery-proposal.ts。ChatService 从持久化状态注入对应工作流指引；模型只能提出待审修订，不能自行批准或越过阶段工具执行。 | application/deployment-plan-proposal.ts、application/deployment-recovery-proposal.ts、application/services/deployment-service.ts、application/services/chat-service.ts、application/tools/deployment-agent-tool.ts |
-| 持久化 | DeploymentDiscussionRepository 单独保存讨论及每轮 Run 绑定；DeploymentRepository 保存计划、修订和阶段。v26 扩充运行状态约束；SQLite 用条件更新时间实现待修复提案与确认的并发控制，校验完整修订链、历史分页与重启恢复。 | application/repositories/deployment-discussion-repository.ts、application/repositories/deployment-repository.ts、infrastructure/sqlite/sqlite-deployment-repository.ts、migrations.ts |
-| 前端投影 | useDeployment 独立处理 REST、`deployment.updated` SSE、讨论、历史与当前选择。DeploymentPanel 默认只显示服务、进度、阶段状态与故障，命令、产物路径、日志、尝试历史及主机指纹按需展开；各级展开入口使用统一的文字、向下箭头与键盘焦点样式。前端按 RESTART/VERIFY 各自的沙箱模式投影例外审批并校验计划，允许两阶段混合 `workspace_write`/`full_access`；修订先展示差异再提供人工确认。绑定的规划、执行和诊断过程归入原部署卡片；仅成功部署的最新执行 Run 的最终文字回复留在主时间线。展开的模型记录最高 34rem，超出后内部滚动。Chat SSE 仍按原链路解析，前端只投影已持久化消息，不复制或改写消息。 | features/deploy/api、model、runtime、components、features/chat/components/chat-timeline.tsx |
-| 运行时装配 | create-sqlite-management-backend 将部署服务连接到当前 Session、Workspace、SSH 目标、命令审批和 SFTP 服务，并在关闭时中止运行中的部署。 | runtime/create-sqlite-management-backend.ts |
-| 远端命令执行 | CommandOperationService 保留 FIFO 后的执行顺序与结果分类；CommandExecutionPolicy 复核 Guard、消费部署专属 grant 并检查目标/cwd；CommandOperationRecorder 保存命令状态、输出和沙箱事实。submit 契约与部署阶段结算保持兼容，不把部署 grant 改为普通 Chat 授权。 | application/services/command-operation-service.ts、application/services/command-execution-policy.ts、application/services/command-operation-recorder.ts |
-
-部署 HTTP 接口集中在同一 Session 路径下；前端 deployment-api.ts 会在接收时校验响应结构和 Session ID。
-
-| 方法与路径 | 作用 |
+| 阶段 | 执行事实与边界 |
 |---|---|
-| GET /api/sessions/{sessionId}/deployments | 返回当前主机、有效 Profile、文件错误、活动讨论及最近一次 Deployment Run。 |
-| POST /api/sessions/{sessionId}/deployments/discussions | 选定 Profile 和模块后创建新讨论；旧活动讨论转为 cancelled，尚不创建 Deployment Run。 |
-| GET /api/sessions/{sessionId}/deployments/discussions/active | 单独获取当前 discussing 的讨论或 null，供刷新后恢复。 |
-| GET /api/sessions/{sessionId}/deployments/discussions/{discussionId} | 按 Session 和 ID 读取历史讨论快照。 |
-| POST /api/sessions/{sessionId}/deployments/discussions/{discussionId}/cancel | 结束仍在 discussing 的讨论；不能取消已经提出的 Deployment Run。 |
-| GET /api/sessions/{sessionId}/deployments/history?limit=50&cursor=... | 按计划创建时间及 ID 稳定倒序返回部署快照、`hasMore` 和不透明 `nextCursor`，供会话历史逐页加载；后续认领不会让记录越过分页游标。 |
-| POST /api/sessions/{sessionId}/deployments | 旧 v1 Profile 的直接准备兼容入口；v2 须由模型规划工具提交。 |
-| GET /api/sessions/{sessionId}/deployments/{runId} | 读取指定 Run 的持久化快照。 |
-| POST /api/sessions/{sessionId}/deployments/{runId}/approvals/{stage}/{approvalId}/approve 或 /reject | 仅对需要沙箱例外的准确 restart/verify 命令作人工决定，Session 主动关闭不创建此类审批；拒绝会取消准备中的部署。 |
-| POST /api/sessions/{sessionId}/deployments/{runId}/recovery/{proposalId}/approve 或 /reject | 对当前失败阶段的修订提案作决定；重复相同决定幂等，冲突决定拒绝。批准后仍需例外的未完成远端命令须重新审批。 |
-| POST /api/sessions/{sessionId}/chat/runs | 首轮 `deployment_planning` 携带 Discussion ID；后续普通用户消息也会自动绑定活动 Discussion。`deployment_execution` 携带 Deployment Run ID 原子认领计划；`deployment_recovery` 携带同一个 ID 绑定失败状态，只能检视与提出修订。 |
-| POST /api/sessions/{sessionId}/deployments/{runId}/confirm | 旧入口返回 409 `deployment_agent_required`，不能绕开模型流程。 |
-| POST /api/sessions/{sessionId}/deployments/{runId}/cancel | 取消准备中或运行中的部署。 |
+| prepare | 初始计划通过校验；尚无计划的讨论不伪造执行进度。 |
+| build | `deployment-local-build.ts` 通过现有 `NodeExecutionEnv` 与 `executeShellWithCapture()` 在后端机器顺序运行本次步骤，支持输出、取消和 1800 秒超时；不另用一套 spawn。本地产物 realpath 需在项目根内且是普通文件。 |
+| upload | 逐文件复核 Profile 允许目录和 SSH 身份，再调用原 SFTP 服务 overwrite 上传。记录累计进度与当前文件 source、remotePath、真实 bytesTransferred/totalBytes。它不是 Landlock 内的操作。 |
+| restart / verify | 调用 CommandOperationService，保留 Guard、目标复核、沙箱事实和普通审批。缺少 verify 命令时合法 skipped。失败保留退出码、故障码和可公开详情。 |
 
-### 从计划到执行
+新模式使用 `deployment_stage_executions`：每次实际执行有独立 ID、计划版本、调用请求、阶段、时间和结果。请求键绑定 Agent Run 与 toolCallId；同一请求附着或返回原执行，新请求表达明确重做。每个部署最多一个 running 执行，其他请求返回忙。
 
-| 时点 | 具体代码行为 |
+允许重新执行同阶段或较早阶段，前序必须成功或合法跳过；不能从构建跳到重启。较早阶段重做使其及下游的当前结果、步骤/产物进度与相关一次性权限失效，保留历史输出与审计。界面始终只有五个稳定阶段，不新增 2-1 节点。旧未接入模式的历史 Run 保留兼容分支的结算行为。
+
+`deployment_propose_recovery` 可在新模式修改当前或较早阶段，不能在实际阶段运行中更改计划，也不能越过前序条件。参数仍经完整计划校验和目标复核；用户审阅后更新有效版本并重置受影响下游。每阶段尝试和修订历史分别最多 64 条。拒绝或失败不会隐式退出模式。
+
+## 日志、事件与恢复
+
+- v31 `deployment_logs` 按部署分配有序 sequence，关联阶段和执行 ID；每条输出、执行边界和结束结果追加保存。新阶段执行不会清空失败日志。单个事件拆到 16 KiB 字符以内，持久化日志当前不丢弃历史。
+- Run 快照只保留各阶段最近 128 KiB 字符尾部、logCursor 和截断标记；模型工具结果每段只返回 8192 字符尾部。用户完整历史从日志表分页读取，不能把模型尾部当作完整日志。
+- `DeploymentExecutionRecorder` 保存开始/结果及有序输出；结果提交失败保留待提交事实，同一次结算并发合并。重试先结算再检查请求身份，不重新运行副作用。执行结束后的迟到日志不能追加到另一次执行。
+- Workspace `deployments` topic 包含 `deployment.started`、`deployment.message.created`、`deployment.stage.updated`、`deployment.log.appended`、`deployment.finished`，并保留 `deployment.updated` 和 `deployment.discussion.updated` 快照。前端状态来自部署事实，模型文字仍走 Chat。
+- `DeploymentLogStore` 为挂载的 Session 保留日志，REST 游标补齐和 SSE 按 sequence 合并去重，重连补读。右侧日志按执行分组展开，支持时间、跟随输出与错误定位；查看旧输出不强制滚回底部。
+- 后端启动不复活进程、不重放命令、不恢复内存 grant。未开始 preparing 计划取消，running Run 失败并记录中断原因，running 执行记录标为 interrupted。已有 recovering 提案保留，但未完成远端命令的旧例外需重新决定；对应已终结 Run 的 Session 绑定一起结算，结束时间不早于模式创建时间，兼容系统时钟回拨。无执行计划的讨论可继续。
+
+## 模型 harness 与权限
+
+`ChatAgentRuntimeFactory` 只在绑定部署模式时装配真实专用定义，结束后从下一请求移除；入口复读绑定和所有权。Schema、阶段/执行预检在普通审批之前运行；副作用前再次检查当前计划、Session、目标和权限。已知 4xx 请求错误作为非终止工具错误交回模型修正，内部错误不统一改成参数错误。
+
+参数/规则错误返回精确 `code/message/field`，必要时含路径、允许目录及文件系统错误类别 `details`。初次提案与修订共用逐字段校验，指出数组索引、未知/缺失字段、路径格式/范围及数量限制；Profile 文件缺失/权限、构建 cwd、产物普通文件检查、Guard 对应阶段、执行顺序、完成条件和日志查询均保留具体原因。Tool 授权与执行捕获、HTTP 规范化不抹掉字段和详情。已知路径 errno 生成可修正错误，未知 I/O/SQLite 故障继续按内部故障处理；阶段结果保存精确错误文字及原日志。回归 `deployment-validation.test.ts`、Service 与 routes 测试。
+
+每个工具结束和模型请求前刷新可信部署状态；包括普通诊断工具的结果，状态仅在 provider 投影加入，不写入聊天或日志，也不无界累加。普通 bash/write、SFTP、Terminal submit/控制键和其他工具按原交互模式、Guard、沙箱与审批规则使用，其结果不会推进部署阶段。
+
+RESTART/VERIFY 各自冻结 `access`。Session 开启且沙箱完整可用、声明写入在根内时使用 workspace_write；不可用或写入超界的准确命令需要单独人工 Full Access 例外，autoAudit 不批准例外。批准启动时有效期五分钟；实际远端调用绑定执行身份与目标，一次消费。阶段重做或修订后受影响权限重新申请，不能复用已消费 grant。Session 主动关闭沙箱时来源是 session_sandbox_disabled，保留 Guard 与普通审批，不创建例外 grant。受限执行失败不自动提权重放。
+
+Profile hash、SSH 主机指纹、凭据版本、远端用户、Workspace revision、Session 沙箱来源及 `sandboxWritableRoots` 都需复核。上传仅依据 Profile 的允许目录（v1 使用其 target 父目录）做词法及 SFTP canonical 父目录校验，不与 Workspace/Session 沙盒根叠加。新绑定不再写 writableRoot，历史字段仅作审计读取；缺失 sandboxWritableRoots 的历史计划不会从该字段恢复权限。远端符号链接在检查和上传间仍有外部竞态。本地构建不受远端沙箱保护；普通工具不能靠命令字符串证明只读。
+
+## 前端职责与当前完成边界
+
+- `ChatConsole` 负责装配 Terminal/Deploy Tab，通用 TaskContainer 没有部署业务导入。`DeploymentTaskPage` 展示服务、目标、横向阶段、当前步骤、文件真实字节（自适应 B/KiB/MiB/GiB）、结束原因和日志；放大复用原容器，不覆盖左侧导航。Tab × 只隐藏，退出部署走独立接口；只有所展示任务确实是当前活动部署才提供退出按钮，配置选择页没有退出行为。
+- `use-deployment-tasks.ts` 只保存服务端活动模式和任务事实，`use-deployment-catalog.ts` 保存 Profile/分页 Run，`use-deployment.ts` 装配选择/显示；唯一 SSE adapter 是 `deployment-event-stream.ts`。关闭和用户历史选择优先于迟到恢复，Session 切换丢弃旧响应；活动审批目标不随历史选择改变。
+- 所有规划、执行、诊断和最终文字在中间 ChatTimeline。`conversationHistory` 对正式部署入口保持消息顺序，旧无正式消息的 Run 使用时间回显，不再按 Agent Run 把模型文字归组进部署卡片。`ChatMessageRow` 显式区分 custom 与 assistant，避免字符串 content 调用数组方法。
+- `DeploymentReview`、普通工具审批和 UserDecisionPanel 在中间交互。放大页仅显示待处理提示与返回入口；简洁补充框复用同一 Session 的 submit/queue 链路，不展示另一套聊天。发送同步锁阻止同一帧重复提交；成功只清空已提交且未改写的文本，旧 Session 迟到响应不清空新 Session 草稿。结束或停靠后的隐藏表单不接受提交。
+- 日志折叠状态在增量追加时保留；错误定位先展开对应执行分组，再于 DOM 提交后仅滚动日志视口并聚焦，避免移动外层任务页面。主动浏览旧日志时停止跟随，隐藏视口不使用零高度滚动测量；兼容历史尾部可定位错误但不伪造执行记录。
+- 已用独立 Java 项目完成真实配置讨论、构建失败与同阶段修复重试、SFTP 上传、启动和健康检查；验证失败刷新、正式消息回显、关闭后历史重开、Terminal/Deploy 切换、日志位置与折叠、放大草稿和同 Session 排队输入、返回中间决策、窄屏与明暗主题。三类明确结束均有真实记录；手动退出的取消语义和队列竞争已修复并复验。旧 `DeploymentPanel` 与 `DeploymentModelActivity` 已移除，相应测试改测新任务页与中间审阅组件；旧数据仅保留必要的读取兼容。
+
+## HTTP 入口
+
+以下路径均以 `/api/sessions/{sessionId}/deployments` 为根，返回值按 Session 和 ID 校验。
+
+| 方法与后缀 | 用途 |
 |---|---|
-| 发现 Profile | 以 Session 的本地 workDir 为项目根；未设置时使用后端配置的 localCwd。只扫描其 .gori/deploy-*.md，要求 .gori 是实体目录、Profile 是普通文件，按 Profile 内的 target.host 与当前 Workspace 主机精确匹配。文件名不是可信目标身份。解析错误单独返回，避免让一份坏文件隐藏其他有效配置。 |
-| 模型讨论、规划与冻结 | 选择模块建立服务端部署讨论；`deployment_planning` 可跨多个 Chat Run，普通文字追问导致本轮结束时不会结束讨论。ChatService 每轮从讨论绑定 Profile 和当前项目根，注入 `<deployment-mode-on>` 并开放提案工具；模型检索项目/Git/依赖后调用 `deployment_propose_plan`。工具参数是相对项目根的 build workdir、构建命令、各产物 source、绝对远端 target，以及准确 restart/verify 命令与可选 `writePaths`。服务限制 1–8 步、1–16 个普通文件目标和每条命令最多 16 个声明路径，验证目录、重名目标、Profile 允许目录、Workspace 根、SSH 快照和 Guard。当前 Session 策略决定是否进行读态沙箱探测；开启时由探测决定每条命令的 `access`，关闭时使用 `session_sandbox_disabled` 来源；未知脚本写入不按字符串猜测，先受限执行。成功后持久化 v2 Plan 与规划 Run ID/提案摘要，阶段为 prepare 成功、其余 pending；讨论和规划不会产生部署副作用。 |
-| 沙箱例外审批与用户确认 | 界面展示构建步骤、所有会覆盖的远端文件、重启与验证命令。只有沙箱不可用或已声明写入路径超界的远端命令生成 `remote_sandbox_exception` 人工审批；没有必要的预批就不能开始 BUILD/UPLOAD。例外批准五分钟内有效，过期重批。用户确认创建执行 Chat Run，`claimForAgent` 重新读取 Profile 并比对 SHA-256、计划路径、SSH 身份和审批有效期。SQLite 条件更新只允许 preparing 转 running，同一 Workspace 最多一个 running 部署。 |
-| 模型推进 | `deployment_inspect` 返回绑定计划与阶段事实，`deployment_execute_next({stage})` 只接受阶段名，Session、Agent Run、Deployment Run 都由服务端闭包绑定。DeploymentService 拒绝越序、重复副作用和其他 Agent；同一进行中阶段的并发调用共享任务。失败后模型可读日志并调用 `deployment_propose_recovery` 提交当前版本、失败阶段、原因与修订参数；服务端再次校验路径、目标和权限，修订不产生部署副作用。 |
-| BUILD | 在本机顺序运行已确认的 1–8 个 shell 构建步骤，各步限时并可取消；失败立即停止。所有计划上传的产物 realpath 必须仍在项目内且为普通文件，不自动把目录打包。 |
-| UPLOAD | 对计划中的 1–16 个产物逐个复核 SSH 目标、Profile 允许目录和 Workspace 远端根，以 SFTP `overwrite=true` 上传；目标身份不符或任一传输失败即停止。阶段记录累计字节进度；全部 completed 才进入重启。 |
-| RESTART、VERIFY | 分别用 CommandOperationService.submit 派发本次 Plan 冻结的远端命令与逐阶段模式。Session 开启且有可用沙箱、已声明写入路径在根内时用 `workspace_write`；无需 Full Access 例外，`autoAudit=false` 时 `deployment_execute_next` 的远端阶段经普通 Chat 工具人工审批后仍在沙箱内执行。开启状态只有标记过并获批准的例外才使用部署专属一次性授权；Session 关闭的 `full_access` 阶段不使用 grant，但同样按 `autoAudit` 决定普通审批。命令服务仍进行 Guard、授权校验与审计。非 completed 结果使阶段失败并保留可公开故障字段；未配置 verify 时记 skipped。历史 `deployment_policy` 计划保留原有 `cwd=/`。 |
-| 结束与恢复 | VERIFY 成功或按计划跳过后才记部署成功；Plan v2 的阶段失败记为 `recovering`，后续阶段停止，释放当前一次性授权。用户可让模型诊断，确认局部修订后从失败阶段继续；此前成功阶段保持原结果。Plan v1、取消、Agent 提前结束及运行时后端重启仍可能成为终态，不自动回滚或重试。若阶段写库失败，结算读取最后持久化快照并提示检查副作用；若结算仍无法落库，暂不提交 Chat 终态。各阶段日志保留最近 128 KiB，工具结果只返回限长尾部。 |
+| GET 根；POST /discussions | 发现 Profile；选定服务并开始讨论/模式。旧 POST 根仅兼容 v1 直接准备。 |
+| GET /mode；GET /tasks/{id}/state | 当前活动模式或指定历史任务。 |
+| POST /tasks/{id}/finish | 用户 cancelled 或 failed 结束；failed 要有 reason，不接受用户伪造 success。 |
+| GET /discussions/active；GET /discussions/{id}；POST /discussions/{id}/cancel | 讨论读取与兼容取消，新模式取消共用明确结束用例。 |
+| GET /history?limit=50&cursor=...；GET /{id} | 稳定历史分页与指定 Run 快照。 |
+| GET /{id}/logs?stage=build&afterSequence=0&limit=200 | 阶段日志游标补齐；limit 1–500，拒绝重复/未知参数和无效游标。 |
+| POST /{id}/approvals/{restart或verify}/{approvalId}/approve 或 reject | 准确远端命令的人工例外决定；新模式拒绝保留待审，不当作退出。 |
+| POST /{id}/recovery/{proposalId}/approve 或 reject | 修订决定；重复同决定幂等，冲突拒绝。 |
+| POST /{id}/cancel；POST /{id}/confirm | 前者兼容取消；后者拒绝绕过 Agent。 |
 
-### 状态、刷新与取消
+## 代码所有者与验证
 
-- 部署讨论与 Deployment Run 是不同生命周期：Discussion 状态为 discussing、proposed、cancelled；讨论中没有可执行阶段，模型的普通文字追问结束一轮 Chat Run 后仍可继续讨论。每轮规划 Run 绑定时 Discussion revision 递增，提案原子转为 proposed 并创建 Deployment Run。Deployment Run 状态为 preparing、running、recovering、success、failed、cancelled；阶段状态为 pending、running、success、failed、skipped。修订提案为 pending、approved、rejected，最多保存 64 个；单阶段尝试最多 64 次。待决提案不会被另一个修复 Run 覆盖；批准后生成新计划版本并使旧阶段授权失效。Workspace SSE 的 `deployments` topic 发布 `deployment.discussion.updated` 和 `deployment.updated`，Chat 消息仍走原有 Chat SSE 链路。
-- 页面首次进入时读取活动讨论与最近一页部署记录；活动讨论可在刷新后恢复并打开，`deployment.discussion.updated` 更新讨论状态，`deployment.updated` 更新任意可见 Run，重连时用 REST 补齐；“加载更早”按不透明游标逐页读取。讨论卡按 Discussion 创建时间与 Chat 消息合流，同毫秒时卡片排在消息前；历史部署卡也按时间排列，展开历史卡片只读。主动选择 `/deploy` 始终进入新的模块选择，不跳转或复用旧记录。此时旧讨论仍有效，直到用户选中新服务后创建新讨论并取消旧讨论。关闭面板只改变浏览器显示状态。取消或替换讨论时，先通过 SQLite 条件更新使后续提案无效，再尽力取消其最新绑定的 Chat Run；取消 Run 失败不会恢复已失效讨论。准备中的部署取消通过条件更新完成。执行中取消阶段 AbortController 并联动停止 Chat Run，即使部署结算写库报错也会尝试停止对应 Chat Run。BUILD、UPLOAD、远端命令分别接收取消信号。
-- 后端重启不能继续原来的进程、SFTP 或 SSH 命令，也不会恢复内存授权。启动时将未执行的 preparing 计划记为 cancelled；将已认领的 running 部署记为 failed，并提示检查可能发生的远端副作用。已在 `recovering` 的修订提案保持可审阅，但未执行远端阶段的旧 Full Access 批准会换成新的待批请求；不会重复执行之前的步骤。
-
-### 安全边界和首版限制
-
-- 本地 BUILD 运行在 Gori 服务所在机器，不受远端沙箱约束；用户在计划确认时会看到确切命令。Session 默认开启沙盒；新部署计划的 RESTART/VERIFY 在开启时先探测 Landlock/Bubblewrap 并在有完整约束时使用沙箱；模型声明的 `writePaths` 只用于已知目标的预判，不能证明脚本没有其他副作用。执行时沙箱拒绝会使阶段失败，服务不会自动升级权限重放。
-- UPLOAD 使用 SFTP，并非 Landlock 内的进程。当前代码用规范化远端目录限制目标范围，但检查与上传之间的目录符号链接仍有外部竞态。它不应被描述成 Landlock 保证的文件写入隔离。
-- 开启 Session 沙盒时，Full Access 例外仅用于本次部署计划中的 RESTART/VERIFY，不扩大 SFTP 上传根、不提升 SSH 用户权限；准备期间可发生远端目录读取，但本地 BUILD 与 SFTP UPLOAD 必须等必要例外审批和计划确认完成才开始。例外在快照中带 `remote_sandbox_exception` 与原因；恢复修订只重批仍未完成且需要例外的命令。历史计划缺少逐阶段 `access` 时继续使用其 `remoteAccess` 与原有 `deployment_policy` 等原因。
-- 部署规划、执行和修复 Run 的普通本地 `bash`、`write`、Terminal submit 与受限 `remote_server_call` 都按当前 `autoAudit` 自动或逐次人工批准；后两者按当前 Session 策略执行，开启时走远端沙箱预检与路由，例外始终要求单独的人工决定；关闭时保留 Guard 和普通审批，跳过沙箱链路。SFTP Tool 和 Terminal 控制键在部署 Run 内不可用，Terminal observe 可读。规划与修复工具只提交候选计划，阶段工具只执行用户确认的当前版本；均不能代替沙箱例外人工决定。模型可用受审批约束的普通工具诊断异常；失败后的新命令、产物与目标须经局部修订提案和用户确认。部分上传、重启等远端副作用可能已发生，确认重试前应检查实际状态。
-- 本地 `bash` 在 Gori 服务所在机器执行，与右侧远端 Terminal 的 Landlock/Bubblewrap 沙箱无关；开启 `autoAudit` 会允许部署 Run 中的普通本地 Shell 命令自动执行，不能从命令文本可靠判定其只读。本机 HTTP API 与该进程处在同一用户权限边界，现有接口不能从请求本身强证明 Full Access 审批来自人的点击。若未来需要对同机恶意 Agent 强隔离，必须重设计批准渠道和进程权限边界，单靠可被本机进程获取的前端令牌不足以证明用户意图。
-- 当前仅部署到 Session 所属 Workspace 的 SSH 主机。connection.profile 是文档标签，不选择凭据；多份 Profile 可同时保存在项目中，跨 Workspace 主机选择尚未实现。
-- 同一 Workspace 的部署认领互斥，即使由不同 Session 发起也不会并行执行。若用户将同一 SSH 主机保存为不同 Workspace，当前互斥不会跨 Workspace 生效；此类共享目标需要单独的主机/路径冲突策略。
-- 本次最多 8 个构建步骤、16 个普通文件产物；没有目录递归上传、自动打包、回滚、版本切换或跨后端重启续跑。新增能力要同步调整 Profile/Plan、DeploymentService 阶段协议、SQLite 与前端响应校验。
-
-部署 Run 的工具冲突由 Runtime Factory 装配到各工具入口：SFTP、Bubblewrap 安装/检查和 Terminal 控制键在审批前拒绝，也保护直接执行调用。`deployment-agent-tool.ts` 的 `prepareDeploymentStageAuthorization` 负责受限及 Session 主动关闭沙盒的 RESTART/VERIFY 普通审批方案；授权策略只分发并提供当前 `autoAudit` 与 Deployment Run ID。已知请求错误交回模型，阶段顺序、目标、确认版本与专属 Full Access 授权仍由 DeploymentService 校验。
-
-### 常见改动从哪里开始
-
-| 要改的行为 | 首先检查 |
+| 职责 | 主要入口 |
 |---|---|
-| 新增 Profile 字段或部署模块选项 | domain/deployment.ts 的解析与类型、Skill Schema、前端 Plan 展示、确认时的字段复核和两个边界校验测试。 |
-| 改变讨论与提案衔接 | DeploymentDiscussion 的状态、bindPlanningRun 与 proposeForDiscussion 的 CAS、ChatService 的 Run 级模式指引、HTTP/SQLite 边界及刷新恢复；不能只调整模型提示词或前端卡片。 |
-| 更改步骤或加入回滚 | DEPLOY_STAGES、DeploymentService.executeStageForAgent/stage、deployment-agent-tool、DeploymentRun 快照校验、前端 DEPLOY_STAGES 与阶段卡片、重启恢复策略。 |
-| 支持另一台已保存主机 | Workspace/Session 目标绑定和凭据选择规则、Profile target 校验、计划确认、传输固定目标校验；不能仅放宽前端 Profile 过滤。 |
-| 更改沙箱或审批规则 | DeploymentService 的逐阶段 `access`、共享 remote-sandbox-routing 探测、deployment-agent-tool 的阶段审批准备与 ChatToolAuthorizationPolicy 分发、例外状态/有效期与 CommandOperationService.submit，RemoteSandboxApprovalStore 的一次性 grant；SFTP 需单独设计边界。 |
-| 更改页面呈现或恢复 | useDeployment、DeploymentPanel、DeploymentHistoryCard、conversationHistory、ChatTimeline、ChatConsole；服务端 Run 快照仍应保持唯一可信状态。 |
+| 模式生命周期 | `domain/deployment-session.ts`、`deployment-mode-service.ts`、Deployment Session Repository 与 SQLite 实现 |
+| 阶段顺序/失效、执行和日志 | `deployment-stage-state.ts`、`deployment-service.ts`、`deployment-execution-recorder.ts`、`domain/deployment-execution.ts`、Execution Repository/SQLite |
+| Plan 与修订校验、本地构建复用 | `deployment-plan-proposal.ts`、`deployment-recovery-proposal.ts`、`deployment-validation.ts`、`deployment-file-system-error.ts`、`deployment-local-build.ts` |
+| Chat 绑定、工具与模型投影 | `chat-service.ts`、`chat-agent-runtime-factory.ts`、`deployment-agent-tool.ts`、`deployment-runtime-context.ts`、`deployment-history-message.ts` |
+| API、迁移与装配 | `deployment-routes.ts`、`migrations.ts` v23–26/v30–32、`create-sqlite-management-backend.ts`、`workspace-event-hub.ts` |
+| 页面、审批与日志 | `features/deploy/components/deployment-task-page.tsx`、`deployment-logs.tsx`、`deployment-review.tsx`、`deployment-task.css` |
+| 前端 API 与状态 | `features/deploy/api/deployment-api.ts`、`model/deployment-task.ts`、`runtime/use-deployment.ts`、`use-deployment-tasks.ts`、`use-deployment-catalog.ts`、`deployment-event-stream.ts`、`deployment-log-store.ts` |
+| Profile 配置规范 | `packages/ssh-agent/resources/skills/gori-deployment-spec/SKILL.md`、`references/profile-schema.md` |
 
-## 入口与所有者
-
-| 关注点 | 代码位置 |
-|---|---|
-| Profile v1/v2、Plan v1/v2、阶段领域类型 | `packages/ssh-agent/src/domain/deployment.ts` |
-| 模型初始计划与局部修订的参数校验 | `packages/ssh-agent/src/application/deployment-plan-proposal.ts`、`packages/ssh-agent/src/application/deployment-recovery-proposal.ts` |
-| 流水线状态、校验、构建、上传与命令编排 | `packages/ssh-agent/src/application/services/deployment-service.ts` |
-| 绑定 Agent 的阶段工具与 Chat 工作流 | `packages/ssh-agent/src/application/tools/deployment-agent-tool.ts`、`packages/ssh-agent/src/application/services/chat-service.ts`、`packages/ssh-agent/src/application/services/chat-run-executor.ts`、`packages/ssh-agent/src/application/services/chat-tool-authorization-policy.ts` |
-| 持久化端口、SQLite 实现与 v23–v26 迁移 | `packages/ssh-agent/src/application/repositories/deployment-discussion-repository.ts`、`packages/ssh-agent/src/application/repositories/deployment-repository.ts`、`packages/ssh-agent/src/infrastructure/sqlite/sqlite-deployment-discussion-repository.ts`、`packages/ssh-agent/src/infrastructure/sqlite/sqlite-deployment-repository.ts`、`packages/ssh-agent/src/infrastructure/sqlite/migrations.ts` |
-| HTTP 校验、运行时装配、Workspace SSE | `packages/ssh-agent/src/api/deployment-routes.ts`、`packages/ssh-agent/src/runtime/create-sqlite-management-backend.ts`、`packages/ssh-agent/src/application/workspace-event-hub.ts` |
-| 首次配置 Skill 与 Schema | `packages/ssh-agent/resources/skills/gori-deployment-spec/SKILL.md`、`packages/ssh-agent/resources/skills/gori-deployment-spec/references/profile-schema.md` |
-| `/deploy` 入口、API 校验、恢复、模块选择与流水线 UI | `packages/ssh-agent-web/features/chat/components/chat-console.tsx`、`packages/ssh-agent-web/features/deploy/runtime/use-deployment.ts`、`packages/ssh-agent-web/features/deploy/components/deployment-module-picker.tsx`、`packages/ssh-agent-web/features/deploy/components/deployment-panel.tsx` |
-| 定向回归 | `packages/ssh-agent/test/deployment-profile.test.ts`、`packages/ssh-agent/test/deployment-discussion.test.ts`、`packages/ssh-agent/test/deployment-service.test.ts`、`packages/ssh-agent/test/deployment-routes.test.ts`、`packages/ssh-agent/test/chat-service-lifecycle.test.ts`、`packages/ssh-agent-web/tests/deployment-model.test.ts`、`packages/ssh-agent-web/tests/deployment-panel.test.tsx`、`packages/ssh-agent-web/tests/use-deployment-selection.test.ts`、`packages/ssh-agent-web/tests/use-deployment-races.test.ts` |
-
-Discussion 和 Plan 的 `targetBinding.sandboxWritableRoots` 冻结当前 Session 的完整可写范围。讨论续接、计划认领及各副作用前复核；列表变更使旧讨论不可继续、旧计划返回 `deployment_sandbox_route_changed`，不能复用旧审批或 grant。SQLite 和前端 model 校验可选列表；缺少该字段的历史绑定仅按原单目录范围解释，不能用来授权新增目录。`targetBinding.writableRoot` 仍表示 Workspace 默认远端 cwd 及 SFTP 上传边界，Session 多目录不扩大上传范围；传输目标身份检查不把 Workspace 的默认列表误当作 Session 覆盖。回归见 `test/deployment-sandbox-roots.test.ts`。
+新增回归重点在 `deployment-mode.test.ts`、`chat-agent-runtime-factory.test.ts`、`deployment-task.test.tsx`、`deployment-task-interactions.test.tsx`、`chat-custom-messages.test.tsx`；原 Profile、Discussion、Service、HTTP、SQLite、Chat、沙箱 roots 和 Terminal/TaskContainer 测试仍需按变更定向运行。交互处理器回归覆盖草稿、双提交、跨 Session 迟到响应、折叠错误定位与日志跟随；后端覆盖运行中退出竞争、迟到输出拒绝、结算失败不重建和时钟回拨恢复。真实服务器或模型测试须有用户授权，不能替代本地测试；变更后必须核对映射文档并通过根 `npm run check`。经用户授权，已使用阿里云工作区与 OpenCode Go / DeepSeek V4.1 Flash 完成独立 Java 项目真实验收；实际发布时 Session 沙箱由用户侧变更为关闭，不能视为开启沙箱的发布实测。远端专用进程和临时目录已清理，本地项目和部署历史保留；结果见设计依据第 16–17 节。

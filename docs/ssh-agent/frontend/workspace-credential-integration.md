@@ -87,7 +87,6 @@ interface Workspace {
   };
   activeCredentialId: string;
   defaultCwd: string; // 本地 Session 默认目录
-  remoteDefaultCwd: string; // 远端 SSH/SFTP 默认目录（允许 /）
   sandboxWritableRoots?: string[]; // 新 Session 复制的可写范围默认列表
   connection: {
     connectTimeoutMs: number;
@@ -499,12 +498,12 @@ Accept-Language: zh-CN
 
 ## 编辑工作区
 
-`PATCH /api/workspaces/:workspaceId` 接收 `{ displayName: string, defaultCwd?: string, remoteDefaultCwd?: string, sandboxWritableRoots?: string[], expectedRevision: number }`，成功返回更新后的 Workspace，revision 加一。省略目录字段保留原值；其他连接字段仍不允许修改，版本冲突返回 409。本地和远端目录分别通过本机与 SFTP 目录选择器设置；仅后续新 Session 继承本地目录，不回填旧 Session。
+`PATCH /api/workspaces/:workspaceId` 接收 `{ displayName: string, defaultCwd?: string, sandboxWritableRoots?: string[], expectedRevision: number }`，成功返回更新后的 Workspace，revision 加一。省略目录字段保留原值；其他连接字段仍不允许修改，版本冲突返回 409。本地工作目录与沙盒可写目录分别通过本机与 SFTP 选择器设置；仅后续新 Session 继承本地目录，不回填旧 Session。
 
-本地 `defaultCwd` 与远端 `remoteDefaultCwd` 独立。创建时旧 API 客户端省略远端目录仍得到 `/`，但该路径不能作为沙箱可写根；创建界面要求单独选择非根可写目录，默认远端 cwd 可为 `/`。PATCH 省略则保留。显式远端 cwd 须为绝对路径、无 NUL/换行且最多 4096 字符。SFTP 初始化和未指定 cwd 的远端命令读取远端字段，沙盒以当前 Session 的 `sandboxWritableRoots` 列表作为可写范围；单条命令或 Workspace 修改 cwd 不自动改变该列表。
+工作区已取消 `remoteDefaultCwd`，POST/PATCH 继续提交会返回 `400 validation_error` 并指明 `body.remoteDefaultCwd`。未指定 cwd 的远端命令从 SSH 用户家目录启动，PTY 保留 SSH 初始目录；SFTP 页面和未传 path 的目录查询从 `/` 开始。沙盒只以当前 Session 的 `sandboxWritableRoots` 作为可写范围，启动目录不改变权限。
 
-v21 升级旧工作区时，优先把原先独立配置的可写根迁入 `remoteDefaultCwd`，再删除旧列，以保留既有写入边界。没有旧根时保留原远端目录；v28 再将原非根 cwd 迁为 Workspace 单元素列表并复制到已有 Session，`/` 迁为空列表；未配置范围时受限准备失败关闭。目录列表可独立编辑，Workspace 后续修改只影响新 Session 默认值。执行前由远端 canonicalization 再验证目录。
+历史 v21/v28 已把旧单目录范围迁入独立列表；v32 删除 `remote_default_cwd`，原列表、Session 本地目录和审计历史保留。目录列表可独立编辑，Workspace 后续修改只影响新 Session 默认值；未配置时受限准备失败关闭，执行前由远端 canonicalization 验证目录。
 
 `POST /api/workspaces/:workspaceId/sandbox` 无命令请求体，显式检测正式目标的 Landlock 并可能投递启动器；返回后端对应事实，如 `{ mode: "workspace_write", backend: "landlock", enforcement: "full", abi, launcherVersion, sandboxRoots, sandboxRoot }` 或既有安全错误结构。检测前显示“尚未验证”，能力不足显示失败，不将部分能力描述为已开启。最低 ABI 5，元数据、网络/IPC 与 SFTP 不属于本策略，受限 Terminal 使用同一文件写入规则。见 [远端沙箱](../ai-repo/remote-sandbox.md)。
 
-Workspace 与 Session POST/PATCH 都接受可选 `sandboxWritableRoots: string[]`，显式为 1–16 条不重复的绝对非根路径（每条最多 4096 字符、无 NUL/换行）。创建 Workspace 省略时兼容采用非根 cwd；新 Session 省略时复制 Workspace 默认值，显式列表优先；更新省略保留。Session GET、Tree 返回自己的配置，PATCH 要求编辑开始时的 `expectedRevision`。Session 修改范围与执行互斥，开启状态的 active PTY 自动重开并保留 geometry。新审计返回完整规范 `sandboxRoots`，`sandboxRoot` 为首项兼容字段；旧单根事实继续可读，不能用作新的授权。
+Workspace 与 Session POST/PATCH 都接受可选 `sandboxWritableRoots: string[]`，显式为 1–16 条不重复的绝对非根路径（每条最多 4096 字符、无 NUL/换行）。创建 Workspace 省略时保存空列表，不从本地 cwd 推导权限；新 Session 省略时复制 Workspace 默认值，显式列表优先；更新省略保留。Session GET、Tree 返回自己的配置，PATCH 要求编辑开始时的 `expectedRevision`。Session 修改范围与执行互斥，开启状态的 active PTY 自动重开并保留 geometry。新审计返回完整规范 `sandboxRoots`，`sandboxRoot` 为首项兼容字段；旧单根事实继续可读，不能用作新的授权。
