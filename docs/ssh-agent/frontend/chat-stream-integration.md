@@ -168,13 +168,14 @@ GET /api/sessions/{sessionId}/chat/messages?afterSequence=1200&limit=100
 - `beforeSequence` 返回排他边界之前、距离边界最近的一页，用于向上加载更早历史。
 - `afterSequence` 返回排他边界之后最早的一页，用于首次完整恢复、SSE 重连和持久化补偿。显式传入 `afterSequence=0` 会从 Session 第一条消息开始。
 - `beforeSequence` 和 `afterSequence` 不能同时使用；同时传入返回 `400 validation_error`，错误字段为 `beforeSequence`。
-- `limit` 默认为 100，范围为 1 到 100。所有页面内部始终按 `sequence` 从小到大排序。
+- `limit` 默认为 100，范围为 1 到 100，限制 sequence 锚点分组数。同一锚点的附属旧部署卡片整组返回，不占额外组数，因此实际条目数可超过 limit。页面按 `sequence`、`historyOrder`、时间及稳定 ID 排序。
 
 ```typescript
 interface ListChatMessagesResponse {
   messages: Array<{
     id: string;
     sequence: number;
+    historyOrder?: 1; // 旧部署入口挂在相同 sequence 的消息之后
     runId?: string;
     message: AgentMessage;
     attachments?: Attachment[];
@@ -186,6 +187,8 @@ interface ListChatMessagesResponse {
 ```
 
 `nextBeforeSequence` 有值时等于本页最早消息的 `sequence`，可直接用于下一次 `beforeSequence`；为 `null` 表示当前方向已到最早消息。`nextSequence` 有值时等于本页最后消息的 `sequence`，可直接用于下一次 `afterSequence`；为 `null` 表示当前方向没有更晚消息。无游标和 `beforeSequence` 查询只产生 `nextBeforeSequence`，`afterSequence` 查询只产生 `nextSequence`；另一个字段固定为 `null`。空页的两个字段都为 `null`。
+
+消息接口已经统一聊天与部署时间线。正式部署消息优先；没有正式消息的旧 Run、孤立活动讨论及 v33 的 legacy_finished 入口由后端只读投影为 customType=deployment，返回稳定 ID、标题、状态和时间。旧记录 sequence 是其前一条真实消息的锚点，historyOrder=1；没有前置聊天时锚点为 0。数值游标仍是排他边界，因此 afterSequence=0 用于真实 sequence 1 之后的增量，锚点 0 的历史可通过 latest/before 读取。不要再请求部署历史分页自行插入或按时间重新定位。前端合并相同 sequence 时按 historyOrder 排列，多个旧卡片继续按 timestamp 和稳定 ID 排列；卡片信息不是模型指令。
 
 压缩摘要也通过该接口作为普通消息返回，`message.role="compactionSummary"`，与用户、Assistant 和 Tool Result 消息遵循相同分页规则。Context 从最新摘要边界继续构造，但旧消息不会从数据库或历史接口删除。全局压缩 Setting、手动压缩和摘要消息字段见 [Context Compaction 前端接口](./context-compaction-api.md)。
 

@@ -168,7 +168,7 @@ export function NewSessionChat({ workspaceId }: { workspaceId: string }) {
 
 				<div className="chat-composer-dock z-20 shrink-0 bg-[linear-gradient(to_bottom,transparent_0%,var(--panel)_26%)]">
 					<div className="chat-composer-content">
-						<div className="chat-composer-shell rounded-[18px] border border-[var(--line)] bg-[var(--surface-strong)] px-3 pb-3 pt-2.5 shadow-[0_16px_48px_rgb(24_26_23/7%)] transition focus-within:border-[#b4c0b8] focus-within:shadow-[0_18px_52px_rgb(24_26_23/9%)]">
+						<div className="chat-composer-shell rounded-[18px] border border-[var(--line)] bg-[var(--surface-strong)] px-3 pb-3 pt-2.5 shadow-[0_16px_48px_rgb(24_26_23/7%)] transition">
 							{submitError ? <button type="button" className="mb-1 w-full rounded-lg bg-rose-50 px-3 py-2 text-left text-[9px] leading-4 text-rose-700" onClick={() => setSubmitError(null)}>{submitError}{createdSession ? <span className="mt-1 block text-rose-500">{intl.formatMessage({ id: "session.new.createdRetry" })}</span> : null}</button> : null}
 							<ChatTokenEditor ref={editorRef} value={draft} disabled={submitting} autoFocus placeholder={intl.formatMessage({ id: "session.new.composer.placeholder" })} tools={composerTools} onChange={setDraft} onSubmit={() => void submit()} />
 							<div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 pt-1">

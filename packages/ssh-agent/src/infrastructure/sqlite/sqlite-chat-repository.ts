@@ -1,3 +1,4 @@
+import { SqliteChatHistoryQuery } from "./sqlite-chat-history-query.ts";
 import type { DatabaseSync } from "node:sqlite";
 import type { AgentMessage, ThinkingLevel } from "@earendil-works/pi-agent-core";
 import { failureIdentity, reportFailure } from "../../application/failure-reporter.ts";
@@ -5,6 +6,8 @@ import type { ChatRepository, StoredChatCompaction } from "../../application/rep
 import type { Attachment } from "../../domain/attachment.ts";
 import type {
 	ChatMessageProjection,
+	ChatMessageListCursor,
+	ChatMessagePage,
 	ChatModelSelection,
 	ChatQueueBehavior,
 	ChatQueueItem,
@@ -316,6 +319,10 @@ export class SqliteChatRepository implements ChatRepository {
 			message,
 			createdAt,
 		};
+	}
+
+	listHistoryPage(sessionId: string, cursor: ChatMessageListCursor, limit: number): ChatMessagePage {
+		return new SqliteChatHistoryQuery(this.database, (rows) => this.messagesFromRows(rows)).list(sessionId, cursor, limit);
 	}
 
 	listMessages(sessionId: string, afterSequence = 0, limit = 10_000): ChatMessageProjection[] {

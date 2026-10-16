@@ -99,3 +99,5 @@ Runtime Factory 将 Run ID 绑定到远端 Tool。Full Access grant 绑定完整
 | Session 图片附件上传与缩放 | `packages/ssh-agent-web/features/session/api/session-attachment-api.ts`、`packages/ssh-agent-web/features/session/model/image-upload.ts`、`packages/ssh-agent-web/features/chat/components/chat-composer-panel.tsx`、`packages/ssh-agent-web/features/chat/components/chat-token-editor.tsx`；接口约束见 [session-attachment-api.md](../frontend/session-attachment-api.md) |
 
 前端契约见 [chat-stream-integration.md](../frontend/chat-stream-integration.md)，完整设计见 [chat-stream-runtime.md](../design/chat-stream-runtime.md)，后端结构治理顺序见 [ChatService 完整拆分计划](../design/chat-service-refactoring-plan.md)。
+
+Chat 历史接口新增 `SqliteChatHistoryQuery` UI 读模型，由 ChatRepository.listHistoryPage / ChatService.listMessages 委托。统一返回正式消息及缺失正式入口的旧部署/活动讨论，正式入口优先去重，旧结束记录在后端挂接 sequence 锚点，以 historyOrder=1 排在原消息之后。同组完整翻页，limit 限制锚点组数而非附属旧卡片数量；无前置消息的旧入口锚点为 0。原 transcript、消息 sequence 和模型/压缩读取不改写，无新增迁移；Run 快照只投影标题、状态和时间，不返回计划或日志。接口及分页回归见 `chat-message-pagination-api.test.ts`，前端接入另行提交。

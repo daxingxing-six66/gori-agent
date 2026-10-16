@@ -42,6 +42,83 @@ describe("Chat message pagination HTTP API", () => {
 		}
 	});
 
+	it("returns legacy cards only with their anchor group, in both pagination directions", async () => {
+		const backend = createBackend();
+		try {
+			const sessionId = await createSession(backend.handleRequest); insertMixedMessages(backend.database, sessionId);
+			insertLegacy(backend.database, sessionId, "legacy-a", "failed", 3);
+			insertLegacy(backend.database, sessionId, "legacy-b", "success", 3);
+			const before = backend.database.prepare("SELECT id, sequence, message_json FROM chat_messages WHERE session_id = ? ORDER BY sequence").all(sessionId);
+			expectPage(await listMessages(backend.handleRequest, sessionId, "limit=2"), [6, 7], 6, null);
+			const page = await listMessages(backend.handleRequest, sessionId, "beforeSequence=5&limit=2");
+			expectPage(page, [3, 3, 3, 4], 3, null);
+			expect(page.messages.map((m) => m.id)).toEqual(["message-3", "deployment:legacy-a", "deployment:legacy-b", "message-4"]);
+			expect(page.messages.slice(1, 3).map((m) => m.historyOrder)).toEqual([1, 1]);
+			expect(page.messages[1]?.message).toMatchObject({ role: "custom", customType: "deployment", details: { title: "API", outcome: "failed", startedAt: 1, finishedAt: 3 } });
+			const forward = await listMessages(backend.handleRequest, sessionId, "afterSequence=2&limit=1");
+			expectPage(forward, [3, 3, 3], null, 3);
+			expectPage(await listMessages(backend.handleRequest, sessionId, "afterSequence=3&limit=1"), [4], null, 4);
+			expect(backend.database.prepare("SELECT id, sequence, message_json FROM chat_messages WHERE session_id = ? ORDER BY sequence").all(sessionId)).toEqual(before);
+			expectPage(await listMessages(backend.handleRequest, "another-session", "limit=100"), [], null, null);
+		} finally { await backend.close(); }
+	});
+
+	it("prefers a formal message and relocates an old backfilled message on the server", async () => {
+		const backend = createBackend();
+		try {
+			const sessionId = await createSession(backend.handleRequest); insertMixedMessages(backend.database, sessionId);
+			insertLegacy(backend.database, sessionId, "formal", "success", 3);
+			const message = { role: "custom", customType: "deployment", display: true, content: "Formal API", timestamp: 1,
+				details: { deploymentId: "formal", title: "Formal API", position: "legacy_finished", outcome: "success", startedAt: 1, finishedAt: 3 } };
+			backend.database.prepare("INSERT INTO chat_messages (id, session_id, run_id, sequence, message_type, message_json, created_at) VALUES (?, ?, NULL, 8, 'deployment', ?, 1)").run("deployment:formal", sessionId, JSON.stringify(message));
+			const page = await listMessages(backend.handleRequest, sessionId, "limit=100");
+			expect(page.messages.filter((m) => m.message.role === "custom")).toHaveLength(1);
+			expect(page.messages.map((m) => m.id)).toEqual(["message-1", "message-2", "message-3", "deployment:formal", "message-4", "message-5", "message-6", "message-7"]);
+			expect(page.messages[3]).toMatchObject({ id: "deployment:formal", sequence: 3, historyOrder: 1, message: { details: { position: "history" } } });
+			expectPage(await listMessages(backend.handleRequest, sessionId, "afterSequence=3&limit=100"), [4, 5, 6, 7], null, null);
+		} finally { await backend.close(); }
+	});
+
+	it("projects current formal card status without returning the deployment plan", async () => {
+		const backend = createBackend();
+		try {
+			const sessionId = await createSession(backend.handleRequest); insertMixedMessages(backend.database, sessionId);
+			insertLegacy(backend.database, sessionId, "formal-current", "success", 3);
+			const message = { role: "custom", customType: "deployment", display: true, content: "API", timestamp: 1,
+				details: { deploymentId: "formal-current", title: "API" } };
+			backend.database.prepare("INSERT INTO chat_messages (id, session_id, run_id, sequence, message_type, message_json, created_at) VALUES (?, ?, NULL, 8, 'deployment', ?, 1)").run("deployment:formal-current", sessionId, JSON.stringify(message));
+			const page = await listMessages(backend.handleRequest, sessionId, "limit=100");
+			expect(page.messages.filter((m) => m.message.role === "custom")).toHaveLength(1);
+			expect(page.messages.at(-1)).toMatchObject({ sequence: 8, message: { details: { status: "success" } } });
+			expect(JSON.stringify(page)).not.toContain('"plan":');
+		} finally { await backend.close(); }
+	});
+
+	it("includes an orphan active discussion without inventing stages or duplicating a planned discussion", async () => {
+		const backend = createBackend();
+		try {
+			const sessionId = await createSession(backend.handleRequest); insertMixedMessages(backend.database, sessionId);
+			const workspace = backend.database.prepare("SELECT workspace_id FROM sessions WHERE id = ?").get(sessionId)!;
+			backend.database.prepare("INSERT INTO deployment_discussions (id, session_id, workspace_id, status, revision, snapshot_json, created_at, updated_at) VALUES ('discussion', ?, ?, 'discussing', 1, ?, 4, 4)")
+				.run(sessionId, workspace.workspace_id!, JSON.stringify({ module: { name: "Worker" } }));
+			let page = await listMessages(backend.handleRequest, sessionId, "limit=100");
+			expect(page.messages.find((m) => m.id === "deployment:discussion")).toMatchObject({ sequence: 3, message: { details: { status: "discussing", title: "Worker" } } });
+			insertLegacy(backend.database, sessionId, "planned", "failed", 6, "discussion");
+			page = await listMessages(backend.handleRequest, sessionId, "limit=100");
+			expect(page.messages.filter((m) => m.message.role === "custom").map((m) => m.id)).toEqual(["deployment:planned"]);
+		} finally { await backend.close(); }
+	});
+
+	it("can return a legacy-only history anchored before the first real Chat message", async () => {
+		const backend = createBackend();
+		try {
+			const sessionId = await createSession(backend.handleRequest); insertLegacy(backend.database, sessionId, "only", "cancelled", 3);
+			const page = await listMessages(backend.handleRequest, sessionId, "limit=1");
+			expectPage(page, [0], null, null);
+			expect(page.messages[0]).toMatchObject({ id: "deployment:only", historyOrder: 1 });
+		} finally { await backend.close(); }
+	});
+
 	it("returns empty cursor fields for empty and unknown Sessions", async () => {
 		const backend = createBackend();
 		try {
@@ -215,4 +292,10 @@ async function request(
 		}),
 	);
 	return { status: response.status, body: await response.json() };
+}
+
+function insertLegacy(database: DatabaseSync, sessionId: string, id: string, status: "success" | "failed" | "cancelled", finishedAt: number, discussionId?: string): void {
+	const workspace = database.prepare("SELECT workspace_id FROM sessions WHERE id = ?").get(sessionId)!;
+	database.prepare("INSERT INTO deployment_runs (id, session_id, workspace_id, status, snapshot_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 1, ?)")
+		.run(id, sessionId, workspace.workspace_id!, status, JSON.stringify({ plan: { module: { name: "API" } }, startedAt: 1, finishedAt, ...(discussionId ? { discussionId } : {}) }), finishedAt);
 }

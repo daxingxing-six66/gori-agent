@@ -1,6 +1,8 @@
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import type {
 	ChatMessageProjection,
+	ChatMessageListCursor,
+	ChatMessagePage,
 	ChatModelSelection,
 	ChatQueueBehavior,
 	ChatQueueItem,
@@ -59,6 +61,8 @@ export interface ChatRepository {
 		message: StoredChatCompactionMessage,
 		createdAt: number,
 	): ChatMessageProjection;
+	/** Unified UI history; raw list methods below remain the model transcript. */
+	listHistoryPage?(sessionId: string, cursor: ChatMessageListCursor, limit: number): ChatMessagePage;
 	listMessages(sessionId: string, afterSequence?: number, limit?: number): ChatMessageProjection[];
 	listMessagesBefore(sessionId: string, beforeSequence: number | undefined, limit: number): ChatMessageProjection[];
 	insertApproval(approval: ToolApproval): void;

@@ -16,7 +16,7 @@
 
 页面按用途组织：Dashboard 先展示 CPU/内存/磁盘指标和进程表，连接池与显式沙箱检测作为辅助区域，SSH 参数默认折叠；Guard、Credential、SFTP 使用统一内容标题及操作区，凭据和文件采用紧凑列表。Chat 与新会话在桌面使用 44px 单行页首和 820px 阅读列，页首不显示工作区/目录副标题，空闲“就绪”不展示，运行、重连、失败及取消状态仍保留。Sidebar 品牌栏与 Terminal 顶栏同高，品牌栏移除 Logo 图标，只显示 Gori，底部设置区由 69px 压缩为 46px，展开/收起共用高度；窄屏侧栏按钮为 28px，标题截断而不撑高页首。对话、提示和输入区对齐，窄屏输入区控件可换行；Session 右侧由通用任务容器承载，标签栏接替 Terminal 顶栏，名称和连接阶段只展示一次；Terminal 内部保留原有输出与恢复，底部活动列表不再挂载。容器布局与业务生命周期分别管理，见 [task-container.md](./task-container.md)。侧边栏采用小图标与更紧凑的工作区/会话行。
 
-视觉精修沿用原主题系统：明暗分层实验主题使用深绿导航、近白对话及浅中性 Workbench 外壳，内部 Terminal 使用中性深灰绿；明亮与暗部保留各自配色，共用轻量组件样式。`globals.css` 集中提供 Sidebar/Workbench/Terminal/Code 与圆角语义变量，顶栏和活动记录不继承 Terminal 深底。正文 14px、代码 12px，聊天代码块随主题使用轻量表面；普通卡片去除装饰阴影，Composer 使用 12px 圆角、细中性边框和柔和绿色焦点环。父级服务器与当前会话通过底色重量、细指示条、字重和树线分层；Tool Call 继续使用紧凑行和原生展开控件。布局、输入、审批、模型选择、复制及 Terminal 的 attach/SSE/resize 行为不由样式接管。完整主题边界见 [theme.md](./theme.md)。
+视觉精修沿用原主题系统：明暗分层实验主题使用深绿导航、近白对话及浅中性 Workbench 外壳，内部 Terminal 使用中性深灰绿；明亮与暗部保留各自配色，共用轻量组件样式。`globals.css` 集中提供 Sidebar/Workbench/Terminal/Code 与圆角语义变量，顶栏和活动记录不继承 Terminal 深底。正文 14px、代码 12px，聊天代码块随主题使用轻量表面；普通卡片去除装饰阴影，Composer 使用 12px 圆角和细中性边框，新会话及已有会话均取消聚焦时的边框变色与外圈高光。父级服务器与当前会话通过底色重量、细指示条、字重和树线分层；Tool Call 继续使用紧凑行和原生展开控件。布局、输入、审批、模型选择、复制及 Terminal 的 attach/SSE/resize 行为不由样式接管。完整主题边界见 [theme.md](./theme.md)。
 
 创建工作区的默认工作目录通过 `LocalDirectoryPicker` 选择，复用新建聊天的 `GET /api/local-files` 本机目录浏览、筛选及面包屑。打开选择器时暂时卸载外层管理弹窗，取消/Escape 只返回草稿，确认后回填 `defaultCwd`；其余表单和连接测试结果保留。
 

@@ -68,7 +68,6 @@
 .chat-composer-content { width: 100%; max-width: var(--chat-content-width); margin-inline: auto; }
 .chat-composer-dock { padding: 16px 24px 18px; background: var(--panel); }
 .page-main-chat .chat-composer-shell { border-color: var(--line); border-radius: var(--radius-composer); box-shadow: none; }
-.page-main-chat .chat-composer-shell:focus-within { border-color: var(--accent-line); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 12%, transparent); }
 .chat-composer-controls { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; padding-top: 4px; }
 .chat-composer-controls > div:first-child { font-size: 12px; }
 .chat-composer-actions { display: flex; align-items: center; gap: 8px; }

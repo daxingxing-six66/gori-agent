@@ -76,3 +76,5 @@ v30 新增 `deployment_sessions`，单 Session 活动身份通过唯一索引约
 
 
 v33 新增 `deployment_history_finished` 触发器：模式首次进入终态时，在同一结算事务内把稳定 ID 的正式部署消息移动到 Session 最大 sequence 之后，更新消息时间和结果元数据；不插入第二条消息。重入结束不再次移动。升级只为已有终态入口补充 `legacy_finished` 和结束结果，保留旧 sequence/created_at，前端按结束时间投影；普通 Chat 消息原文与顺序不变。`deployment-mode.test.ts` 使用冻结 v27 schema + `fixtures/schema-v32-deployment.sql` 扩展验证真实 v32 带数据升级、重复迁移、外键、同一消息身份与失败/取消结算顺序。
+
+Chat 历史接口新增 `SqliteChatHistoryQuery` UI 读模型，由 ChatRepository.listHistoryPage / ChatService.listMessages 委托。统一返回正式消息及缺失正式入口的旧部署/活动讨论，正式入口优先去重，旧结束记录在后端挂接 sequence 锚点，以 historyOrder=1 排在原消息之后。同组完整翻页，limit 限制锚点组数而非附属旧卡片数量；无前置消息的旧入口锚点为 0。原 transcript、消息 sequence 和模型/压缩读取不改写，无新增迁移；Run 快照只投影标题、状态和时间，不返回计划或日志。接口及分页回归见 `chat-message-pagination-api.test.ts`，前端接入另行提交。

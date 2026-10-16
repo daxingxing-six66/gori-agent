@@ -576,6 +576,7 @@ export class ChatService {
 	}
 
 	listMessages(sessionId: string, cursor: ChatMessageListCursor, limit: number): ChatMessagePage {
+		if (this.chatRepository.listHistoryPage) return this.chatRepository.listHistoryPage(sessionId, cursor, limit);
 		if (cursor.direction === "after") {
 			const results = this.chatRepository.listMessages(sessionId, cursor.sequence, limit + 1);
 			const messages = results.slice(0, limit);

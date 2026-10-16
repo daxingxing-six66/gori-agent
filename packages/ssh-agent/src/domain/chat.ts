@@ -82,6 +82,8 @@ export interface ToolApproval {
 }
 
 export interface ChatMessageProjection {
+	/** Legacy UI cards follow their anchor sequence without modifying stored messages. */
+	historyOrder?: 1;
 	id: string;
 	sequence: number;
 	runId?: string;
