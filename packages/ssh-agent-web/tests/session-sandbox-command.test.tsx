@@ -6,6 +6,7 @@ import { matchChatComposerMenuTrigger } from "../features/chat/model/chat-compos
 import { requireTerminalSession } from "../features/terminal/model/terminal";
 import { TerminalSandboxNotice } from "../features/terminal/components/terminal-sandbox-notice";
 import { DeploymentReview } from "../features/deploy/components/deployment-review";
+import { deploymentReviewState } from "../features/deploy/model/deployment-review";
 import { isDeploymentRun, type DeploymentRun } from "../features/deploy/model/deployment";
 import { zhCNMessages } from "../features/i18n/messages/zh-CN";
 
@@ -40,8 +41,8 @@ describe("Session sandbox command and audit projection", () => {
 				restart: { status: "pending", log: "" }, verify: { status: "pending", log: "" } } };
 		expect(isDeploymentRun(run)).toBe(true);
 		const noop = () => undefined;
-		const markup = renderToStaticMarkup(<IntlProvider locale="zh-CN" messages={zhCNMessages}><DeploymentReview run={run}
-			busy={false} canConfirm onConfirm={noop} onDecideFullAccess={noop} onDecideRecovery={noop} onDiscussRecovery={noop} /></IntlProvider>);
+		const markup = renderToStaticMarkup(<IntlProvider locale="zh-CN" messages={zhCNMessages}><DeploymentReview run={run} review={deploymentReviewState(run)}
+			busy={false} canConfirm onConfirm={noop} onDecideFullAccess={noop} onDecideRecovery={noop} /></IntlProvider>);
 		expect(markup).toContain(zhCNMessages["deploy.confirm"]); expect(markup).not.toContain("Full Access"); expect(markup).not.toContain("disabled=");
 	});
 });

@@ -20,4 +20,5 @@ export const enUSDeployTaskMessages = {
 	"deploy.task.open": "View deployment · {module}",
 	"deploy.task.started": "Deployment mode active",
 	"deploy.task.finished": "Deployment ended",
+	"deploy.history.elapsed": "Deployment duration",
 } as const;

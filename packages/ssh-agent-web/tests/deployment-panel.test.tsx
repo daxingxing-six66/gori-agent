@@ -7,6 +7,7 @@ import { deploymentModuleOptions } from "../features/deploy/components/deploymen
 import { ChatTimeline } from "../features/chat/components/chat-timeline";
 import { DeploymentLogStore } from "../features/deploy/runtime/deployment-log-store";
 import { conversationHistory } from "../features/deploy/model/deployment-history";
+import { deploymentNeedsReview, deploymentReviewState } from "../features/deploy/model/deployment-review";
 import type { DeploymentDiscussion, DeploymentProfileSummary, DeploymentRun } from "../features/deploy/model/deployment";
 import type { ChatTimelineEntry } from "../features/chat/model/chat-runtime-state";
 import { zhCNMessages } from "../features/i18n/messages/zh-CN";
@@ -48,8 +49,8 @@ function page(props: Partial<Parameters<typeof DeploymentTaskPage>[0]> = {}) {
 		onReturnConversation={noop} onSubmit={async () => true} {...props} />);
 }
 function review(value: DeploymentRun, props: Partial<Parameters<typeof DeploymentReview>[0]> = {}) {
-	return localize(<DeploymentReview run={value} busy={false} canConfirm onConfirm={noop}
-		onDecideFullAccess={noop} onDecideRecovery={noop} onDiscussRecovery={noop} {...props} />);
+	return localize(<DeploymentReview run={value} review={deploymentReviewState(value)} busy={false} canConfirm onConfirm={noop}
+		onDecideFullAccess={noop} onDecideRecovery={noop} {...props} />);
 }
 function timeline(messages: ChatTimelineEntry[], deployments: DeploymentRun[], extra: Partial<Parameters<typeof ChatTimeline>[0]> = {}) {
 	return localize(<ChatTimeline showActivity={false} loading={false} loadingOlderMessages={false} timeline={messages} tools={{}} approvals={{}}
@@ -153,7 +154,7 @@ describe("deployment task and conversation review", () => {
 		expect(review(full)).toContain('aria-label="批准验证命令使用 Full Access"');
 	});
 
-	it("shows reviewed changes before retry and returns to diagnosis after a later failure", () => {
+	it("shows proposed changes but does not gate diagnosis after a later failure", () => {
 		const next = planned();
 		if (next.plan.version !== 2) throw new Error("Expected v2");
 		next.status = "recovering";
@@ -167,8 +168,27 @@ describe("deployment task and conversation review", () => {
 		expect(pending).not.toContain("继续部署</button>");
 		next.recoveries[0]!.status = "approved";
 		const failedAgain = review(next);
-		expect(failedAgain).toContain(zhCNMessages["deploy.recovery.discuss"]);
-		expect(failedAgain).not.toContain("继续部署</button>");
+		expect(failedAgain).toBe("");
+		expect(deploymentNeedsReview(next)).toBe(false);
+		next.stages = { ...next.stages, build: { status: "pending", log: "" } };
+		expect(review(next)).toContain("继续部署</button>");
+		expect(deploymentNeedsReview(next)).toBe(true);
+	});
+
+	it("does not show a repair choice or mark action required for a failed stage", () => {
+		const failed: DeploymentRun = { ...planned(), status: "recovering", stages: { ...run.stages, build: { status: "failed", log: "compiler error" } } };
+		expect(review(failed)).toBe("");
+		expect(deploymentNeedsReview(failed)).toBe(false);
+	});
+
+	it.each(["rejected", "approved"] as const)("does not restore a repair-choice card from an old %s proposal", (status) => {
+		const failed = planned();
+		if (failed.plan.version !== 2) throw new Error("Expected v2");
+		failed.status = "recovering";
+		failed.stages = { ...failed.stages, verify: { status: "failed", log: "HTTP 503" } };
+		failed.recoveries = [{ id: "old", stage: "verify", reason: "Previous repair", baseRevision: 1, status, agentRunId: "agent", proposedAt: 5, resolvedAt: 6, plan: failed.plan }];
+		expect(review(failed)).toBe("");
+		expect(deploymentNeedsReview(failed)).toBe(false);
 	});
 });
 
@@ -180,7 +200,8 @@ describe("deployment history projection", () => {
 		];
 		expect(historyKeys(conversationHistory(messages, [run]))).toEqual(["before", "run-1", "after"]);
 		expect(historyKeys(conversationHistory(messages, [{ ...run, status: "running", startedAt: 4 }]))).toEqual(["before", "run-1", "after"]);
-		expect(timeline([], [run])).toContain("部署记录");
+		expect(timeline([], [run])).toContain('class="deployment-history-card-title" title="API">API</span>');
+		expect(timeline([], [run])).not.toContain("部署记录");
 		expect(timeline([], [run])).not.toContain("开始部署</button>");
 	});
 
@@ -188,7 +209,7 @@ describe("deployment history projection", () => {
 		const linked: DeploymentRun = { ...run, status: "success", planningAgentRunId: "planner", agentRunId: "execute", agentRunHistory: ["execute", "diagnose"], startedAt: 3, updatedAt: 9, finishedAt: 9 };
 		const messages: ChatTimelineEntry[] = ["planner", "execute", "diagnose"].map((runId, index) => ({ key: runId, runId, final: true,
 			message: { role: "assistant", content: [{ type: "text", text: `reply-${runId}` }], provider: "test", model: "test", stopReason: "stop", timestamp: 4 + index } }));
-		expect(historyKeys(conversationHistory(messages, [linked]))).toEqual(["run-1", "planner", "execute", "diagnose"]);
+		expect(historyKeys(conversationHistory(messages, [linked]))).toEqual(["planner", "execute", "diagnose", "run-1"]);
 		const html = timeline(messages, [linked]);
 		for (const name of ["planner", "execute", "diagnose"]) expect(html.match(new RegExp(`reply-${name}`, "g"))).toHaveLength(1);
 		expect(html).not.toContain("模型记录");
@@ -207,7 +228,7 @@ describe("deployment history projection", () => {
 		];
 		expect(historyKeys(conversationHistory(messages, [], selected))).toEqual(["old", discussion.id, "same"]);
 		const html = timeline(messages, [], { discussion: selected });
-		expect(html).toContain("查看部署 · API");
+		expect(html).toContain("查看API的部署流水线");
 		expect(html).not.toContain("deploy-task-page");
 	});
 

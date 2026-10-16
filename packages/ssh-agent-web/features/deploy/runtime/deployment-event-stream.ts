@@ -1,6 +1,6 @@
 import { apiUrlWithLocale } from "@/shared/api/client";
 import type { SupportedLocale } from "@/features/i18n/model/locale";
-import { isAgentMessage, type ChatMessage } from "@/features/chat/model/chat";
+import { isAgentMessage, isRecord, type ChatMessage } from "@/features/chat/model/chat";
 import { isDeploymentDiscussion, isDeploymentRun, type DeploymentDiscussion, type DeploymentRun } from "../model/deployment";
 import { isDeploymentTask, isDeploymentLogChunk, type DeploymentTask, type DeploymentLogChunk } from "../model/deployment-task";
 
@@ -30,15 +30,15 @@ export function subscribeDeploymentEvents(options: {
 	listen("deployment.log.appended", (value) => {
 		if (isDeploymentLogChunk(value) && "sessionId" in value && value.sessionId === options.sessionId) options.onLog(value);
 	});
-	listen("deployment.message.created", (value) => {
-		if (!record(value) || value.sessionId !== options.sessionId || !record(value.message)) return;
+	for (const type of ["deployment.message.created", "deployment.message.updated"]) listen(type, (value) => {
+		if (!isRecord(value) || value.sessionId !== options.sessionId || !isRecord(value.message)) return;
 		const entry = value.message;
 		if (isAgentMessage(entry.message) && entry.message.role === "custom" && entry.message.customType === "deployment" &&
-			typeof entry.id === "string" && Number.isSafeInteger(entry.sequence) && Number(entry.sequence) > 0 && Number.isSafeInteger(entry.createdAt))
-			options.onMessage?.(entry as unknown as ChatMessage);
+			typeof entry.id === "string" && typeof entry.sequence === "number" && Number.isSafeInteger(entry.sequence) && entry.sequence > 0 &&
+			typeof entry.createdAt === "number" && Number.isSafeInteger(entry.createdAt))
+			options.onMessage?.({ id: entry.id, sequence: entry.sequence, createdAt: entry.createdAt, message: entry.message,
+				...(typeof entry.runId === "string" ? { runId: entry.runId } : {}) });
 	});
 	stream.addEventListener("stream.ready", () => { if (!disposed) options.onReconnect(); });
 	return () => { disposed = true; stream.close(); };
 }
-
-function record(value: unknown): value is Record<string, unknown> { return value !== null && typeof value === "object" && !Array.isArray(value); }

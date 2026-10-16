@@ -1,4 +1,5 @@
 import { DatabaseSync } from "node:sqlite";
+import { readFileSync } from "node:fs";
 import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -89,6 +90,46 @@ modules:
 }
 
 describe("durable deployment mode", () => {
+	it.each(["failed", "cancelled"] as const)("moves the same formal message to the %s finish boundary even without a plan", async (outcome) => {
+		const { database, begin, service, events } = await harness();
+		const publish = vi.spyOn(events, "publish");
+		const discussion = await begin();
+		const repository = new SqliteChatRepository(database);
+		const initial = repository.listMessages("session")[0]!;
+		const text = JSON.stringify({ role: "user", content: "Discuss before finishing", timestamp: Date.now() });
+		database.prepare("INSERT INTO chat_messages (id,session_id,sequence,message_type,message_json,created_at) VALUES ('discussion-text','session',2,'user',?,?)").run(text, Date.now());
+		const finished = await service.finishDeployment("session", discussion.id, outcome, "User requested an end");
+		const history = repository.listMessages("session");
+		expect(history.map((entry) => entry.id)).toEqual(["discussion-text", initial.id]);
+		expect(history[1]).toMatchObject({ sequence: 3, createdAt: finished.deployment.finishedAt,
+			message: { timestamp: finished.deployment.finishedAt, details: { position: "finished", outcome, finishedAt: finished.deployment.finishedAt, reason: "User requested an end" } } });
+		expect(history.filter((entry) => entry.message.role === "custom")).toHaveLength(1);
+		expect(publish).toHaveBeenCalledWith("workspace", { type: "deployment.message.updated", data: { sessionId: "session", message: history[1] } });
+		await service.finishDeployment("session", discussion.id, "cancelled");
+		expect(repository.listMessages("session")).toEqual(history);
+		expect(database.prepare("SELECT message_json FROM chat_messages WHERE id='discussion-text'").get()?.message_json).toBe(text);
+	});
+
+	it("backfills finished metadata from frozen v32 without reordering normal messages or inventing another entry", () => {
+		const database = new DatabaseSync(":memory:");
+		try {
+			database.exec(readFileSync(new URL("./fixtures/schema-v27-sandbox.sql", import.meta.url), "utf8"));
+			database.exec(readFileSync(new URL("./fixtures/schema-v32-deployment.sql", import.meta.url), "utf8"));
+			database.exec(`INSERT INTO deployment_discussions VALUES ('old','s-app','w-app','discussing',1,'{}',10,10);
+				INSERT INTO deployment_sessions (id,session_id,workspace_id,title,created_at) VALUES ('old','s-app','w-app','API',10);
+				INSERT INTO chat_messages (id,session_id,sequence,message_type,message_json,created_at) VALUES ('text','s-app',2,'user','{"role":"user","content":"keep","timestamp":20}',20);
+				UPDATE deployment_sessions SET outcome='failed',reason='Old failure',finished_at=30 WHERE id='old';`);
+			const before = database.prepare("SELECT * FROM chat_messages WHERE id='text'").get();
+			applyMigrations(database);
+			const message = new SqliteDeploymentSessionRepository(database).historyMessage("s-app", "old");
+			expect(message).toMatchObject({ id: "deployment:old", sequence: 1, message: { details: { position: "legacy_finished", outcome: "failed", finishedAt: 30, reason: "Old failure" } } });
+			expect(database.prepare("SELECT * FROM chat_messages WHERE id='text'").get()).toEqual(before);
+			applyMigrations(database);
+			expect(new SqliteDeploymentSessionRepository(database).historyMessage("s-app", "old")).toEqual(message);
+			expect(database.prepare("SELECT count(*) AS n FROM chat_messages WHERE message_type='deployment'").get()?.n).toBe(1);
+			expect(database.prepare("PRAGMA foreign_key_check").all()).toEqual([]);
+		} finally { database.close(); }
+	});
 	it("counts deployment tools in offline contexts only while the current mode permits them", async () => {
 		const names = (service: DeploymentService) => createChatContext("snapshot", [], service.activeMode("session"))
 			.tools!.filter((tool) => tool.name.startsWith("deployment_")).map((tool) => tool.name).sort();

@@ -118,7 +118,12 @@ export function activeChatRun(run: ChatRun | null): run is ChatRun {
 }
 
 function hydrate(state: ChatRuntimeState, messages: ChatMessage[], approvals: ToolApproval[] | undefined, decisions: UserDecision[] | undefined, merge: boolean): ChatRuntimeState {
-	const persisted = messages.map(toTimelineEntry);
+	const currentByKey = new Map(state.timeline.map((entry) => [entry.key, entry]));
+	const persisted = messages.map((message) => {
+		const incoming = toTimelineEntry(message);
+		const current = currentByKey.get(incoming.key);
+		return current?.sequence !== undefined && current.sequence > message.sequence ? current : incoming;
+	});
 	const persistedFingerprints = new Set(persisted.map((entry) => messageFingerprint(entry.message)));
 	const retained = merge
 		? state.timeline.filter((entry) => entry.sequence === undefined && !persistedFingerprints.has(messageFingerprint(entry.message)))
@@ -329,6 +334,8 @@ function dedupeTimeline(timeline: ChatTimelineEntry[]): ChatTimelineEntry[] {
 	for (const entry of timeline) {
 		const key = messageFingerprint(entry.message);
 		const current = byFingerprint.get(key);
+		// A delayed page/event must not replace a newer persisted revision that moved in history.
+		if (current?.sequence !== undefined && entry.sequence !== undefined && current.sequence > entry.sequence) continue;
 		if (!current || entry.sequence !== undefined || (entry.final && !current.final)) byFingerprint.set(key, entry);
 	}
 	return [...byFingerprint.values()].sort((left, right) => (left.sequence ?? left.message.timestamp) - (right.sequence ?? right.message.timestamp));

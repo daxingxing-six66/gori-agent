@@ -65,7 +65,7 @@ Bubblewrap 事实沿用现有 JSON 列，无 schema migration：保存 `backend=
 
 升级回归：`packages/ssh-agent/test/chat-prompt-migration.test.ts` 使用冻结的两种 v16 SQL fixture 验证带数据升级、空快照升级、原文保留、模式消息修补、不可变约束、级联删除、回滚重试及幂等性。
 
-`context-compaction-api.test.ts` 从冻结的 `test/fixtures/schema-v11.sql` 创建带合法 Workspace/Session 与消息的旧库，在外键开启时验证升级到当前 v32、消息原文和顺序保留、类型/Usage 回填及重复迁移幂等性。不要从最新 schema 反向删表模拟旧版，以免遗留后续版本的触发器与外键。`llm-provider-api.test.ts` 的重开测试验证当前 schema 下凭据可解密、迁移记录及执行时间不被重写，不冒充 v3 升级测试。
+`context-compaction-api.test.ts` 从冻结的 `test/fixtures/schema-v11.sql` 创建带合法 Workspace/Session 与消息的旧库，在外键开启时验证升级到当前 v33、消息原文和顺序保留、类型/Usage 回填及重复迁移幂等性。不要从最新 schema 反向删表模拟旧版，以免遗留后续版本的触发器与外键。`llm-provider-api.test.ts` 的重开测试验证当前 schema 下凭据可解密、迁移记录及执行时间不被重写，不冒充 v3 升级测试。
 
 v28 为 Workspace 与 Session 追加 nullable `sandbox_writable_roots_json` 数组列。旧 Workspace 的非根远端 cwd 原样回填为单元素列表，`/` 回填为空列表；已有 Session 复制所属 Workspace 的范围。migration 不改 revision、头部、历史命令或 Terminal 事实。nullable 仅兼容旧 Repository 调用；`stored-sandbox-writable-roots.ts` 将 null 解释为缺省，显式空列表表示未配置，不回退到 cwd，非空列表完整校验路径和数量。服务创建时总是保存独立列表。
 
@@ -73,3 +73,6 @@ v28 为 Workspace 与 Session 追加 nullable `sandbox_writable_roots_json` 数�
 
 
 v30 新增 `deployment_sessions`，单 Session 活动身份通过唯一索引约束；Discussion/模式同事务创建，触发器追加一条正式 custom 历史消息。v31 新增 `deployment_stage_executions` 与 `deployment_logs`，请求幂等、单一 running 执行、阶段日志 sequence 与游标持久化；模式终态与当前 Run 结果同事务结算，完整日志不受快照尾部上限影响。重启只恢复持久化事实，不重放执行或恢复内存 grant；无计划讨论保持活动，对已结束 Run 的模式收敛使用 `MAX(created_at, now)`，避免时钟回拨违反结束时间约束。`deployment-mode.test.ts` 覆盖运行中退出竞争、迟到日志拒绝、结果提交失败后的明确结算和回拨恢复。对应 Repository 与回归见 [deployment.md](./deployment.md)。
+
+
+v33 新增 `deployment_history_finished` 触发器：模式首次进入终态时，在同一结算事务内把稳定 ID 的正式部署消息移动到 Session 最大 sequence 之后，更新消息时间和结果元数据；不插入第二条消息。重入结束不再次移动。升级只为已有终态入口补充 `legacy_finished` 和结束结果，保留旧 sequence/created_at，前端按结束时间投影；普通 Chat 消息原文与顺序不变。`deployment-mode.test.ts` 使用冻结 v27 schema + `fixtures/schema-v32-deployment.sql` 扩展验证真实 v32 带数据升级、重复迁移、外键、同一消息身份与失败/取消结算顺序。

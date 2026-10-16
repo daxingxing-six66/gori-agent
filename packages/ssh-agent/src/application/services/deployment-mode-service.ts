@@ -96,6 +96,8 @@ export class DeploymentModeService {
 			});
 			const final = this.get(sessionId, id);
 			this.pending.delete(id);
+			const message = this.options.sessions.historyMessage(sessionId, id);
+			if (message) this.options.events.publish(final.deployment.workspaceId, { type: "deployment.message.updated", data: { sessionId, message } });
 			this.options.events.publish(final.deployment.workspaceId, { type: "deployment.finished", data: final });
 			return final;
 		}).finally(() => { if (this.finishing.get(id) === task) this.finishing.delete(id); });

@@ -34,8 +34,9 @@ import { useWorkspaceTree } from "@/features/workspace/components/workspace-tree
 import { ApiError } from "@/shared/errors/api-error";
 import { DeploymentTaskPage } from "@/features/deploy/components/deployment-task-page";
 import { DeploymentReview } from "@/features/deploy/components/deployment-review";
-import { deploymentAwaitsResume } from "@/features/deploy/model/deployment-task";
+import { deploymentAwaitsResume } from "@/features/deploy/model/deployment-review";
 import { useDeployment } from "@/features/deploy/runtime/use-deployment";
+import { useDeploymentReview } from "@/features/deploy/runtime/use-deployment-review";
 import "./chat-task-layout.css";
 
 export function ChatConsole({ sessionId }: { sessionId: string }) {
@@ -325,20 +326,6 @@ export function ChatConsole({ sessionId }: { sessionId: string }) {
 		} catch (error) { deployment.setError(error instanceof Error ? error.message : String(error)); }
 	}, [active, deployment, model, sandbox.pending, runtime.submit, runtime.submitting, terminalMode.status?.effectiveServerInteractionMode, thinkingLevel]);
 
-	const startDeploymentRecovery = useCallback(async () => {
-		const plan = deployment.activeTask?.run ?? deployment.run;
-		if (!plan || plan.status !== "recovering" || deploymentAwaitsResume(plan) ||
-			plan.recoveries?.at(-1)?.status === "pending" || !model || active || sandbox.pending || runtime.submitting) return;
-		deployment.setError(null);
-		try {
-			await runtime.submit({
-				message: intl.formatMessage({ id: "deploy.recovery.prompt" }), attachments: [], model, thinkingLevel,
-				behavior: "follow_up", serverInteractionMode: terminalMode.status?.effectiveServerInteractionMode ?? "command",
-				workflow: "deployment_recovery", deploymentRunId: plan.id,
-			});
-		} catch (error) { deployment.setError(error instanceof Error ? error.message : String(error)); }
-	}, [active, deployment, intl, model, sandbox.pending, runtime.submit, runtime.submitting, terminalMode.status?.effectiveServerInteractionMode, thinkingLevel]);
-
 	const resolveApproval = useCallback((approval: ToolApproval, approved: boolean) => {
 		void runtime.resolveApproval(approval, approved);
 	}, [runtime.resolveApproval]);
@@ -354,7 +341,8 @@ export function ChatConsole({ sessionId }: { sessionId: string }) {
 		}} onSubmit={(answers) => runtime.answerDecision(pendingDecision, answers)} />
 	</> : null;
 	const activeDeploymentRun = deployment.activeTask?.run ?? null;
-	const needsDeploymentReview = activeDeploymentRun && ["preparing", "recovering"].includes(activeDeploymentRun.status);
+	const deploymentReview = useDeploymentReview(activeDeploymentRun);
+	const needsDeploymentReview = activeDeploymentRun && deploymentReview !== null;
 	const pendingDeploymentAction = Boolean(needsDeploymentReview || pendingDecision || Object.values(runtime.state.approvals).some((approval) => approval.status === "pending"));
 	const returnToConversation = () => {
 		taskDisplay.changeMode("docked"); setHiddenDecisionId(null);
@@ -427,9 +415,9 @@ export function ChatConsole({ sessionId }: { sessionId: string }) {
 							deployments={deployment.history} onOpenDeployment={(id) => { setActiveTaskTabId("deploy"); taskDisplay.reveal(); void deployment.openHistory(id); }}
 							hasOlderDeployments={deployment.hasOlderHistory} loadingOlderDeployments={deployment.loadingOlderHistory} onLoadOlderDeployments={loadOlderDeployments} />
 						{needsDeploymentReview ? <div data-deployment-review tabIndex={-1} className="mx-auto max-w-[820px] px-5 py-5 lg:px-8"><DeploymentReview
-							run={activeDeploymentRun} busy={deployment.busy} canConfirm={Boolean(model && !active && !runtime.submitting && !sandbox.pending)}
+							run={activeDeploymentRun} review={deploymentReview} busy={deployment.busy} canConfirm={Boolean(model && !active && !runtime.submitting && !sandbox.pending)}
 							onConfirm={() => { void startDeploymentExecution(); }} onDecideFullAccess={(stage, id, approved) => { void deployment.decideFullAccess(stage, id, approved); }}
-							onDecideRecovery={(id, approved) => { void deployment.decideRecovery(id, approved); }} onDiscussRecovery={() => { void startDeploymentRecovery(); }} /></div> : null}
+							onDecideRecovery={(id, approved) => { void deployment.decideRecovery(id, approved); }} /></div> : null}
 					</div>
 					{showReturnToBottom ? <button type="button" className="absolute bottom-3 left-1/2 z-10 grid h-9 w-9 -translate-x-1/2 place-items-center rounded-full border border-zinc-200 bg-white text-zinc-700 shadow-[0_6px_20px_rgb(24_24_27/12%)] transition hover:border-zinc-300 hover:bg-zinc-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#7aa48e]/40" aria-label={intl.formatMessage({ id: "chat.scroll.latest" })} title={intl.formatMessage({ id: "chat.scroll.latest" })} onClick={scrollToBottom}><ArrowDown size={16} /></button> : null}
 				</div>

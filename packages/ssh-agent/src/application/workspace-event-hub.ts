@@ -48,7 +48,7 @@ export type WorkspaceEvent =
 	| { type: "transfer.updated"; data: FileTransfer }
 	| { type: "deployment.updated"; data: DeploymentRun }
 	| { type: "deployment.started" | "deployment.finished"; data: DeploymentModeView }
-	| { type: "deployment.message.created"; data: { sessionId: string; message: ChatMessageProjection } }
+	| { type: "deployment.message.created" | "deployment.message.updated"; data: { sessionId: string; message: ChatMessageProjection } }
 	| { type: "deployment.log.appended"; data: DeploymentLogChunk & { sessionId: string } }
 	| { type: "deployment.stage.updated"; data: { sessionId: string; deploymentRunId: string; stage: DeploymentExecutableStage;
 		revision: number; view: DeploymentStageView } }

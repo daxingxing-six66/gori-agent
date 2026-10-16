@@ -898,6 +898,32 @@ const MIGRATIONS = [
 		version: 32,
 		sql: `ALTER TABLE workspaces DROP COLUMN remote_default_cwd;`,
 	},
+	{
+		version: 33,
+		sql: `
+			-- Historical UI entries keep their sequence; the client positions them by finish time.
+			UPDATE chat_messages SET message_json = json_set(message_json,
+				'$.details.position', 'legacy_finished',
+				'$.details.startedAt', (SELECT created_at FROM deployment_sessions WHERE 'deployment:' || id = chat_messages.id),
+				'$.details.outcome', (SELECT outcome FROM deployment_sessions WHERE 'deployment:' || id = chat_messages.id),
+				'$.details.finishedAt', (SELECT finished_at FROM deployment_sessions WHERE 'deployment:' || id = chat_messages.id),
+				'$.details.reason', (SELECT reason FROM deployment_sessions WHERE 'deployment:' || id = chat_messages.id))
+			WHERE message_type = 'deployment' AND id IN (SELECT 'deployment:' || id FROM deployment_sessions WHERE outcome IS NOT NULL);
+
+			-- One stable UI message moves to the actual finish boundary, including pre-plan exits.
+			CREATE TRIGGER deployment_history_finished AFTER UPDATE OF outcome ON deployment_sessions
+			WHEN OLD.outcome IS NULL AND NEW.outcome IS NOT NULL
+			BEGIN
+				UPDATE chat_messages SET
+					sequence = (SELECT COALESCE(MAX(sequence), 0) + 1 FROM chat_messages WHERE session_id = NEW.session_id),
+					created_at = NEW.finished_at,
+					message_json = json_set(message_json, '$.timestamp', NEW.finished_at,
+						'$.details.position', 'finished', '$.details.startedAt', NEW.created_at, '$.details.outcome', NEW.outcome,
+						'$.details.finishedAt', NEW.finished_at, '$.details.reason', NEW.reason)
+				WHERE session_id = NEW.session_id AND id = 'deployment:' || NEW.id AND message_type = 'deployment';
+			END;
+		`,
+	},
 ] as const;
 
 export function applyMigrations(database: DatabaseSync): void {

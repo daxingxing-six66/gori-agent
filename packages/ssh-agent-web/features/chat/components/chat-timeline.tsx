@@ -1,6 +1,6 @@
 "use client";
 
-import { LoaderCircle, Rocket, ChevronRight } from "lucide-react";
+import { LoaderCircle } from "lucide-react";
 import { memo } from "react";
 import { useIntl } from "react-intl";
 import { ChatFailureDetails } from "@/features/chat/components/chat-failure-details";
@@ -9,6 +9,8 @@ import type { ChatTimelineEntry } from "@/features/chat/model/chat-runtime-state
 import type { ChatRun, ChatToolExecution, ToolApproval } from "@/features/chat/model/chat";
 import { DeploymentHistoryCard } from "@/features/deploy/components/deployment-history-card";
 import { conversationHistory } from "@/features/deploy/model/deployment-history";
+import { deploymentEntryId } from "@/features/deploy/model/deployment-history-entry";
+import { deploymentCompletionHistory } from "@/features/deploy/model/deployment-completion-history";
 import type { DeploymentDiscussion, DeploymentRun } from "@/features/deploy/model/deployment";
 
 export const ChatTimeline = memo(function ChatTimeline({
@@ -51,7 +53,7 @@ export const ChatTimeline = memo(function ChatTimeline({
 	onLoadOlderDeployments?(): void;
 }) {
 	const intl = useIntl();
-	const entries = conversationHistory(timeline, deployments ?? [], discussion);
+	const entries = deploymentCompletionHistory(conversationHistory(timeline, deployments ?? [], discussion), tools);
 	return (
 		<div className="chat-timeline min-h-full [&>*+*]:mt-8 [&>.chat-tool-only+.chat-tool-only]:mt-1">
 			{loading ? <div className="flex justify-center py-16 text-zinc-400"><LoaderCircle size={18} className="animate-spin" /></div> : null}
@@ -60,18 +62,7 @@ export const ChatTimeline = memo(function ChatTimeline({
 			{!loading && !showActivity && entries.length === 0 ? <div className="grid min-h-[320px] place-items-center text-center"><div><p className="text-[13px] font-semibold text-zinc-700">{intl.formatMessage({ id: "chat.empty.title" })}</p><p className="mt-2 text-[10px] leading-5 text-zinc-400">{intl.formatMessage({ id: "chat.empty.description" })}</p></div></div> : null}
 			{entries.map((item) => {
 				if (item.kind === "message") return <ChatMessageRow key={item.entry.key} entry={item.entry} tools={tools} approvals={approvals} approvalMutationId={approvalMutationId} targetHost={targetHost} hideFailure={Boolean(run?.status === "failed" && run.failure?.errorId && item.entry.message.role === "assistant" && item.entry.message.failure?.errorId === run.failure.errorId)} onResolveApproval={onResolveApproval} />;
-				if (item.kind === "deploymentMessage") return <button key={item.entry.key} type="button" data-deployment-id={item.deploymentId} onClick={() => onOpenDeployment?.(item.deploymentId)}
-					className="flex w-full items-center gap-3 rounded-xl border border-line bg-surface-raised px-4 py-3 text-left text-sm text-ink hover:bg-surface-hover">
-					<Rocket size={16} className="text-accent" aria-hidden="true" /><span className="min-w-0 flex-1">{intl.formatMessage({ id: "deploy.task.open" }, { module: item.title })}</span>
-					{item.run ? <span className="text-xs text-muted">{intl.formatMessage({ id: `deploy.runStatus.${item.run.status}` })}</span> : null}<ChevronRight size={15} aria-hidden="true" />
-				</button>;
-				if (item.kind === "discussion") return <button key={`discussion:${item.discussion.id}`} type="button" data-deployment-discussion-id={item.discussion.id}
-					onClick={() => onOpenDeployment?.(item.discussion.id)} className="flex w-full items-center gap-3 rounded-xl border border-line px-4 py-3 text-left text-sm text-ink hover:bg-surface-hover">
-					<Rocket size={16} className="text-accent" aria-hidden="true" /><span>{intl.formatMessage({ id: "deploy.task.open" }, { module: item.discussion.module.name })}</span>
-				</button>;
-				return <div key={`deployment:${item.run.id}`}>
-					<DeploymentHistoryCard run={item.run} onOpen={() => onOpenDeployment?.(item.run.id)} />
-				</div>;
+				return <DeploymentHistoryCard key={`deployment:${deploymentEntryId(item)}`} entry={item} onOpen={() => onOpenDeployment?.(deploymentEntryId(item))} />;
 			})}
 			{showActivity ? <div role="status" aria-label={intl.formatMessage({ id: "chat.status.running" })} className="flex h-9 w-full items-center justify-center gap-1 text-[var(--text-secondary)]">
 				{[0, 160, 320].map((delay) => <span key={delay} aria-hidden="true" className="h-1 w-1 rounded-full bg-current motion-safe:animate-pulse" style={{ animationDelay: `${delay}ms`, animationDuration: "1.2s" }} />)}

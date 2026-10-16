@@ -1,37 +1,35 @@
 "use client";
 
-import { ChevronRight, Rocket } from "lucide-react";
+import { Circle, CircleCheck, CircleMinus, CircleX, Clock3, LoaderCircle, Rocket } from "lucide-react";
 import { useIntl } from "react-intl";
-import { DEPLOY_STAGES, type DeploymentRun } from "../model/deployment";
-import { deploymentHistoryTime } from "../model/deployment-history";
+import { deploymentEntryId, deploymentEntrySummary, type DeploymentConversationEntry, type DeploymentHistoryStatus } from "../model/deployment-history-entry";
+import "./deployment-history-card.css";
 
-export function DeploymentHistoryCard({ run, onOpen }: { run: DeploymentRun; onOpen(): void }) {
+const statusIcons = {
+	preparing: Circle, running: LoaderCircle, recovering: Circle,
+	success: CircleCheck, failed: CircleX, cancelled: CircleMinus, discussing: Circle,
+} satisfies Record<DeploymentHistoryStatus, typeof Circle>;
+
+/** Deployment-owned history presentation; ordinary tool/transfer cards never render this entry. */
+export function DeploymentHistoryCard({ entry, onOpen }: { entry: DeploymentConversationEntry; onOpen(): void }) {
 	const intl = useIntl();
-	const completed = DEPLOY_STAGES.filter((stage) => ["success", "skipped"].includes(run.stages[stage].status)).length;
-	const timestamp = deploymentHistoryTime(run);
-	return <div className="overflow-hidden rounded-2xl border border-line bg-surface-raised shadow-[var(--shadow-soft)]"><button type="button" onClick={onOpen} data-deployment-id={run.id}
-		aria-label={intl.formatMessage({ id: "deploy.history.open" }, { module: run.plan.module.name })}
-		className="group flex w-full min-w-0 items-start gap-3 px-4 py-3 text-left transition-colors hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent">
-		<span className={["mt-0.5 grid h-7 w-7 shrink-0 place-items-center rounded-full", iconTone(run.status)].join(" ")}><Rocket size={14} aria-hidden="true" /></span>
-		<span className="min-w-0 flex-1">
-			<span className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-sm font-medium text-ink">
-				<span>{intl.formatMessage({ id: "deploy.history.title" })}</span>
-				<span className="text-xs font-normal text-secondary">{run.plan.module.name} · {run.plan.target.host}</span>
-			</span>
-			<span className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-muted">
-				<span className={run.status === "failed" ? "text-danger" : run.status === "recovering" ? "text-warning" : run.status === "success" ? "text-accent" : "text-secondary"}>{intl.formatMessage({ id: `deploy.runStatus.${run.status}` })}</span>
-				<span>{intl.formatMessage({ id: "deploy.pipeline.progress" }, { completed, total: DEPLOY_STAGES.length })}</span>
-				<time dateTime={new Date(timestamp).toISOString()}>{intl.formatDate(timestamp, { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}</time>
-			</span>
-			{run.error ? <span className="mt-1 line-clamp-2 break-words text-[11px] text-danger">{run.error}</span> : null}
-		</span>
-		<ChevronRight size={16} className="mt-1 shrink-0 text-muted transition-transform group-hover:translate-x-0.5" aria-hidden="true" />
-	</button></div>;
+	const { title, status, startedAt, finishedAt } = deploymentEntrySummary(entry);
+	const StatusIcon = statusIcons[status];
+	const statusLabel = intl.formatMessage({ id: status === "discussing" ? "deploy.task.discussion" : `deploy.runStatus.${status}` });
+	return <button type="button" className="deployment-history-card" data-status={status} data-deployment-id={deploymentEntryId(entry)}
+		data-deployment-discussion-id={entry.kind === "discussion" ? entry.discussion.id : undefined} onClick={onOpen}
+		aria-label={`${intl.formatMessage({ id: "deploy.history.open" }, { module: title })}, ${statusLabel}`}>
+		<Rocket className="deployment-history-card-icon" size={16} strokeWidth={1.6} aria-hidden="true" />
+		<span className="deployment-history-card-title" title={title}>{title}</span>
+		{finishedAt !== undefined && startedAt !== undefined ? <span className="deployment-history-card-duration" title={intl.formatMessage({ id: "deploy.history.elapsed" })}>
+			<Clock3 size={12} aria-hidden="true" />{duration(Math.max(0, Math.round((finishedAt - startedAt) / 1000)))}
+		</span> : null}
+		<span className="deployment-history-card-status" title={statusLabel} aria-hidden="true"><StatusIcon size={18} strokeWidth={1.8} /></span>
+	</button>;
 }
 
-function iconTone(status: DeploymentRun["status"]): string {
-	if (status === "success" || status === "running") return "bg-[var(--success-soft)] text-accent";
-	if (status === "failed") return "bg-[var(--danger-soft)] text-danger";
-	if (status === "recovering") return "bg-[var(--warning-soft)] text-warning";
-	return "bg-surface-muted text-secondary";
+function duration(seconds: number): string {
+	const pad = (value: number) => String(value).padStart(2, "0");
+	return seconds < 3600 ? `${pad(Math.floor(seconds / 60))}:${pad(seconds % 60)}`
+		: `${Math.floor(seconds / 3600)}:${pad(Math.floor(seconds / 60) % 60)}:${pad(seconds % 60)}`;
 }

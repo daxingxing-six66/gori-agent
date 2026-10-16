@@ -1,0 +1,18 @@
+.deployment-history-card {
+  --deployment-result-ink: var(--text-secondary);
+  display: flex; align-items: center; gap: 12px;
+  width: 100%; min-width: 0; min-height: 38px;
+  padding: 9px 12px; border: 1px solid var(--line-strong); border-left: 3px solid var(--deployment-result-ink); border-radius: 4px;
+  background: var(--surface-muted); color: var(--ink); text-align: left;
+  cursor: pointer; transition: border-color 140ms, background-color 140ms;
+}
+.deployment-history-card:hover { background: var(--surface-hover); border-color: var(--line-strong); }
+.deployment-history-card:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.deployment-history-card[data-status="success"] { --deployment-result-ink: var(--accent-ink); }
+.deployment-history-card[data-status="failed"] { --deployment-result-ink: var(--danger); }
+.deployment-history-card[data-status="recovering"] { --deployment-result-ink: var(--warning); }
+.deployment-history-card-icon { flex-shrink: 0; color: var(--ink); }
+.deployment-history-card-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-mono, monospace); font-size: 12px; font-weight: 600; line-height: 18px; }
+.deployment-history-card-duration { display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0; padding-left: 12px; border-left: 1px solid var(--line-strong); font-family: var(--font-mono, monospace); font-size: 11px; line-height: 16px; font-variant-numeric: tabular-nums; color: var(--text-secondary); }
+.deployment-history-card-status { display: grid; place-items: center; flex-shrink: 0; width: 18px; height: 18px; color: var(--deployment-result-ink); }
+@media (prefers-reduced-motion: reduce) { .deployment-history-card { transition: none; } }

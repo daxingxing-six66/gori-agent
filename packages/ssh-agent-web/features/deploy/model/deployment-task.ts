@@ -16,11 +16,6 @@ export interface DeploymentLogChunk {
 }
 export interface DeploymentLogPage { chunks: DeploymentLogChunk[]; nextSequence: number; hasMore: boolean }
 
-export function deploymentAwaitsResume(run: DeploymentRun): boolean {
-	return run.status === "recovering" && run.recoveries?.at(-1)?.status === "approved" &&
-		!DEPLOY_STAGES.some((stage) => run.stages[stage].status === "failed");
-}
-
 export function isDeploymentTask(value: unknown): value is DeploymentTask {
 	if (!record(value) || !record(value.deployment)) return false;
 	const task = value.deployment;
