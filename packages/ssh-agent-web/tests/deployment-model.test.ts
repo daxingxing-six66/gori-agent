@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { deploymentApi } from "../features/deploy/api/deployment-api";
 import { isDeploymentDiscussion, isDeploymentDiscovery, isDeploymentRun } from "../features/deploy/model/deployment";
-import { addDeploymentHistoryRun, applyDeploymentHistoryPage, emptyDeploymentHistory } from "../features/deploy/model/deployment-history";
+import { mergeDeploymentHistory } from "../features/deploy/model/deployment-history";
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -181,19 +181,9 @@ describe("deployment HTTP boundary", () => {
 		await expect(deploymentApi.history("session-1")).rejects.toThrow("Invalid deployment history response");
 	});
 
-	it("keeps the oldest loaded page cursor during SSE and first-page refresh", () => {
-		if (!isDeploymentRun(run)) throw new Error("Invalid test fixture");
-		const newest = { ...run, id: "newest", createdAt: 30, updatedAt: 30 };
-		const middle = { ...run, id: "middle", createdAt: 20, updatedAt: 20 };
-		const oldest = { ...run, id: "oldest", createdAt: 10, updatedAt: 10 };
-		let history = applyDeploymentHistoryPage(emptyDeploymentHistory(), { runs: [newest], nextCursor: "page-2" });
-		history = applyDeploymentHistoryPage(history, { runs: [middle], nextCursor: "page-3" }, "page-2");
-		history = addDeploymentHistoryRun(history, { ...newest, updatedAt: 31, status: "running" });
-		history = applyDeploymentHistoryPage(history, { runs: [newest], nextCursor: "page-2" });
-		expect(history.nextCursor).toBe("page-3");
-		expect(history.runs.find((item) => item.id === "newest")?.status).toBe("running");
-		history = applyDeploymentHistoryPage(history, { runs: [oldest], nextCursor: null }, "page-3");
-		expect(history.runs.map((item) => item.id)).toEqual(["newest", "middle", "oldest"]);
-		expect(applyDeploymentHistoryPage(history, { runs: [newest], nextCursor: "page-2" }).nextCursor).toBeNull();
+	it("keeps cached Run facts at their newest revision", () => {
+		if (!isDeploymentRun(run)) throw new Error("Invalid fixture");
+		const newer = { ...run, updatedAt: 31, status: "running" as const };
+		expect(mergeDeploymentHistory([newer], [run])).toEqual([newer]);
 	});
 });

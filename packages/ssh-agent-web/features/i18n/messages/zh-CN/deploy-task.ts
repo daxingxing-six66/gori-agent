@@ -21,4 +21,7 @@ export const zhCNDeployTaskMessages = {
 	"deploy.task.started": "部署模式已开启",
 	"deploy.task.finished": "部署已结束",
 	"deploy.history.elapsed": "部署耗时",
+	"deploy.picker.title": "选择部署模块",
+	"deploy.picker.close": "关闭模块选择",
+	"deploy.picker.selectModule": "选择 {module}",
 } as const;

@@ -54,10 +54,16 @@ export function deploymentEntrySummary(entry: DeploymentConversationEntry): {
 	const result = entry.kind === "deploymentMessage" ? deploymentMessageResult(entry.entry) : undefined;
 	return {
 		title: entry.kind === "deploymentMessage" ? entry.title : entry.run.plan.module.name,
-		status: result?.outcome ?? run?.status ?? "discussing",
+		status: result?.outcome ?? run?.status ?? (entry.kind === "deploymentMessage" ? deploymentMessageStatus(entry.entry) : undefined) ?? "discussing",
 		startedAt: result?.startedAt ?? run?.startedAt ?? run?.createdAt,
 		finishedAt: result?.finishedAt ?? deploymentFinishedAt(run),
 	};
+}
+
+function deploymentMessageStatus(entry: ChatTimelineEntry): DeploymentHistoryStatus | undefined {
+	const status = deploymentMessageDetails(entry)?.status;
+	return status === "preparing" || status === "running" || status === "recovering" || status === "success" ||
+		status === "failed" || status === "cancelled" || status === "discussing" ? status : undefined;
 }
 
 function deploymentMessageDetails(entry: ChatTimelineEntry): Record<string, unknown> | undefined {

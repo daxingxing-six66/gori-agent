@@ -175,6 +175,39 @@ beforeEach(async () => {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("deployment task selection and durable mode", () => {
+ it("opens module selection above the Composer without creating a task tab or deployment", async () => {
+  expect(await hooks.value.show()).toBe("picker"); hooks.render();
+  expect(hooks.value).toMatchObject({ pickerOpen: true, pickerLoading: false, open: false });
+  expect(api.beginDiscussion).not.toHaveBeenCalled(); expect(api.finish).not.toHaveBeenCalled();
+  hooks.value.closePicker(); hooks.render(); expect(hooks.value.pickerOpen).toBe(false);
+ });
+
+ it("keeps a displayed historical task while opening the module picker", async () => {
+  api.task.mockResolvedValue(finishedTask()); await hooks.value.openHistory(oldRun.id); hooks.render();
+  await hooks.value.show(); hooks.render();
+  expect(hooks.value).toMatchObject({ pickerOpen: true, open: true, run: { id: oldRun.id } });
+ });
+
+ it("does not reopen either surface after the picker closes during a mode lookup", async () => {
+  const pending = deferred<DeploymentTask | null>(); api.mode.mockReturnValueOnce(pending.promise);
+  const opening = hooks.value.show(); hooks.render();
+  hooks.value.closePicker(); hooks.render(); pending.resolve(activeTask());
+  expect(await opening).toBeUndefined(); await renderSettled();
+  expect(hooks.value).toMatchObject({ open: false, pickerOpen: false, pickerLoading: false });
+ });
+
+ it("moves from selection to the existing task only after a module is explicitly chosen", async () => {
+  await hooks.value.show(); hooks.render(); api.mode.mockResolvedValue(activeTask());
+  expect(await hooks.value.beginDiscussion(discussion.profileFile, discussion.module.id)).toEqual(discussion); hooks.render();
+  expect(hooks.value).toMatchObject({ open: true, pickerOpen: false, selectedDiscussion: { id: discussion.id } });
+ });
+
+ it("keeps mode lookup errors in the picker and allows a clean retry", async () => {
+  api.mode.mockRejectedValueOnce(new Error("Mode unavailable")); await hooks.value.show(); hooks.render();
+  expect(hooks.value).toMatchObject({ pickerOpen: true, pickerLoading: false, open: false, error: "Mode unavailable" });
+  await hooks.value.show(); hooks.render(); expect(hooks.value.error).toBeNull();
+ });
+
  it("restores server mode over older discovery, closes only the page and reopens that identity", async () => {
   api.mode.mockResolvedValue(activeTask()); api.task.mockResolvedValue(activeTask());
   hooks = new HookDriver(); hooks.render(); await renderSettled();
@@ -224,7 +257,7 @@ describe("deployment task selection and durable mode", () => {
 
  it("does not reopen a page closed while its lookup is pending", async () => {
   const pending = deferred<DeploymentTask | null>(); api.mode.mockReturnValueOnce(pending.promise);
-  const opening = hooks.value.show(); hooks.render(); expect(hooks.value.loading).toBe(true);
+  const opening = hooks.value.show(); hooks.render(); expect(hooks.value.pickerLoading).toBe(true);
   hooks.value.hide(); hooks.render(); pending.resolve(activeTask()); await opening; await renderSettled();
   expect(hooks.value).toMatchObject({ open: false, loading: false }); expect(hooks.value.activeTask?.deployment.id).toBe(discussion.id);
  });
@@ -270,15 +303,9 @@ describe("deployment task selection and durable mode", () => {
   expect(hooks.value.run?.id).toBe(discussion.id); expect(FakeEventSource.current).toBe(stream);
  });
 
- it("preserves a paged history cursor when refreshing the first page", async () => {
-  api.history.mockResolvedValueOnce({ runs: [oldRun], nextCursor: "older" });
-  hooks = new HookDriver(); hooks.render(); await renderSettled(); expect(hooks.value.hasOlderHistory).toBe(true);
-  const older = { ...oldRun, id: "older", createdAt: 0 }; api.history.mockResolvedValueOnce({ runs: [older], nextCursor: "last" });
-  await hooks.value.loadOlderHistory(); hooks.render();
-  api.history.mockResolvedValueOnce({ runs: [oldRun], nextCursor: "older" }); await hooks.value.refresh(); hooks.render();
-  expect(hooks.value.history.map((run) => run.id)).toEqual(["old", "older"]);
-  api.history.mockResolvedValueOnce({ runs: [], nextCursor: null }); await hooks.value.loadOlderHistory();
-  expect(api.history).toHaveBeenLastCalledWith("session", "last");
+ it("does not request a separate history page for the Chat timeline", async () => {
+  await hooks.value.refresh(); await hooks.value.show(); hooks.render();
+  expect(api.history).not.toHaveBeenCalled();
  });
 
  it("discards pending responses and errors from the previous Session", async () => {

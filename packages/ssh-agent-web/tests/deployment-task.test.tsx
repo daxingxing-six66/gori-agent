@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { IntlProvider } from "react-intl";
 import { describe, expect, it, vi } from "vitest";
 import { DeploymentTaskPage } from "../features/deploy/components/deployment-task-page";
+import { DeploymentModulePicker } from "../features/deploy/components/deployment-module-picker";
 import { ChatTimeline } from "../features/chat/components/chat-timeline";
 import { conversationHistory } from "../features/deploy/model/deployment-history";
 import { DeploymentLogStore } from "../features/deploy/runtime/deployment-log-store";
@@ -27,9 +28,9 @@ const localized = (element: React.ReactNode) => renderToStaticMarkup(createEleme
 
 describe("deployment task presentation", () => {
 	it("shows the five stable stages and actual artifact bytes without decision controls or model prose", () => {
-		const html = localized(createElement(DeploymentTaskPage, { sessionId: "session", task, run, discussion: null, discovery: null,
-			logs: new DeploymentLogStore("session"), loading: false, busy: false, error: null, canPlan: true, fullscreen: true, pending: true,
-			onPlan: vi.fn(), onSetup: vi.fn(), onExit: vi.fn(), onReturnConversation: vi.fn(), onSubmit: async () => true }));
+		const html = localized(createElement(DeploymentTaskPage, { sessionId: "session", task, run, discussion: null,
+			logs: new DeploymentLogStore("session"), loading: false, busy: false, error: null, fullscreen: true, pending: true,
+			onExit: vi.fn(), onReturnConversation: vi.fn(), onSubmit: async () => true }));
 		expect(html.match(/<li data-status=/gu)).toHaveLength(5);
 		expect(html).toContain('data-current="true" data-selected="true"');
 		expect(html).toContain("64%");
@@ -42,12 +43,12 @@ describe("deployment task presentation", () => {
 	});
 
 	it("offers missing service setup even when another service profile exists", () => {
-		const html = localized(createElement(DeploymentTaskPage, { sessionId: "session", task: null, run: null, discussion: null,
+		const html = localized(createElement(DeploymentModulePicker, {
 			discovery: { host: "example.org", profiles: [{ file: "deploy-example.md", project: "test", target: { host: "example.org" }, modules: [{ id: "api", name: "API" }] }], errors: [], latest: null, activeDiscussion: null },
-			logs: new DeploymentLogStore("session"), loading: false, busy: false, error: null, canPlan: true, fullscreen: false, pending: false,
-			onPlan: vi.fn(), onSetup: vi.fn(), onReturnConversation: vi.fn(), onSubmit: async () => true }));
+			loading: false, busy: false, disabled: false, error: null, onSelect: async () => undefined, onSetup: vi.fn(), onClose: vi.fn(), onRetry: vi.fn() }));
 		expect(html).toContain("添加服务配置");
-		expect(html).toContain(zhCNMessages["deploy.module.placeholder"]);
+		expect(html).toContain("API");
+		expect(html).toContain('role="dialog"');
 	});
 
 	it("keeps the formal entry at its Chat sequence position and all model messages in the main timeline", () => {
@@ -56,9 +57,9 @@ describe("deployment task presentation", () => {
 			{ key: "deployment", final: true, sequence: 11, message: { role: "custom", customType: "deployment", display: true, content: "API", details: { deploymentId: run.id, title: "Stable title" }, timestamp: 50 } },
 			{ key: "diagnosis", final: true, runId: "agent", sequence: 12, message: { role: "assistant", content: [{ type: "text", text: "Diagnose in the main conversation" }], provider: "test", model: "test", stopReason: "stop", timestamp: 51 } },
 		];
-		const projected = conversationHistory(messages, [run]);
+		const projected = conversationHistory(messages);
 		expect(projected.map((entry) => entry.kind)).toEqual(["message", "deploymentMessage", "message"]);
-		const html = localized(createElement(ChatTimeline, { timeline: messages, deployments: [run], showActivity: false, loading: false,
+		const html = localized(createElement(ChatTimeline, { timeline: messages, showActivity: false, loading: false,
 			loadingOlderMessages: false, tools: {}, approvals: {}, approvalMutationId: null, run: null, latestUserText: "", onResolveApproval: vi.fn(), onRestoreDraft: vi.fn(), onOpenDeployment: vi.fn() }));
 		expect(html).toContain("Stable title");
 		expect(html).toContain("Diagnose in the main conversation");

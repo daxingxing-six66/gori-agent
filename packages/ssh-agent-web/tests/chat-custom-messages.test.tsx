@@ -54,6 +54,16 @@ describe("structured Chat history", () => {
 		expect(state.timeline[0]?.message).toEqual(messages[0]?.message);
 	});
 
+	it("retains the backend placement when pages merge in the opposite order", () => {
+		const card = { ...deployment("legacy", 2), historyOrder: 1 as const };
+		const anchor: ChatMessage = { id: "anchor", sequence: 2, createdAt: 90, message: { role: "user", content: "Anchor", timestamp: 90 } };
+		const later: ChatMessage = { id: "later", sequence: 3, createdAt: 110, message: { role: "user", content: "Later", timestamp: 110 } };
+		let state = chatRuntimeReducer(initialChatRuntimeState, { type: "hydrate", messages: [card, later] });
+		state = chatRuntimeReducer(state, { type: "mergePersisted", messages: [anchor, card] });
+		expect(state.timeline.map((entry) => entry.key)).toEqual(["persisted:anchor", "persisted:deployment:legacy", "persisted:later"]);
+		expect(state.maxSequence).toBe(3);
+	});
+
 	it.each([
 		{ role: "future-task", content: "metadata", timestamp: 1 },
 		{ role: "assistant", content: "invalid wire content", timestamp: 1 },

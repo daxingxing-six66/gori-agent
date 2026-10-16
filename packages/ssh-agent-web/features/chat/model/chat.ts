@@ -108,6 +108,7 @@ export interface CustomMessage {
 export type AgentMessage = SystemMessage | UserMessage | AssistantMessage | ToolResultMessage | CompactionSummaryMessage | CustomMessage;
 
 export interface ChatMessage {
+	historyOrder?: 1;
 	id: string;
 	sequence: number;
 	runId?: string;

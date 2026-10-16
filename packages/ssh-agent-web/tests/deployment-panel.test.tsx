@@ -3,7 +3,8 @@ import { IntlProvider } from "react-intl";
 import { describe, expect, it } from "vitest";
 import { DeploymentReview } from "../features/deploy/components/deployment-review";
 import { DeploymentTaskPage } from "../features/deploy/components/deployment-task-page";
-import { deploymentModuleOptions } from "../features/deploy/components/deployment-module-picker";
+import { DeploymentModulePicker } from "../features/deploy/components/deployment-module-picker";
+import { deploymentModuleOptions } from "../features/deploy/model/deployment-module-options";
 import { ChatTimeline } from "../features/chat/components/chat-timeline";
 import { DeploymentLogStore } from "../features/deploy/runtime/deployment-log-store";
 import { conversationHistory } from "../features/deploy/model/deployment-history";
@@ -44,18 +45,22 @@ const run: DeploymentRun = {
 const localize = (element: React.ReactNode) => renderToStaticMarkup(<IntlProvider locale="zh-CN" messages={zhCNMessages}>{element}</IntlProvider>);
 function page(props: Partial<Parameters<typeof DeploymentTaskPage>[0]> = {}) {
 	return localize(<DeploymentTaskPage sessionId="session-1" task={null} run={null} discussion={null}
-		discovery={{ host: "example.org", profiles: [], errors: [], latest: null, activeDiscussion: null }} logs={new DeploymentLogStore("session-1")}
-		loading={false} busy={false} error={null} canPlan fullscreen={false} pending={false} onPlan={noop} onSetup={noop}
+		logs={new DeploymentLogStore("session-1")}
+		loading={false} busy={false} error={null} fullscreen={false} pending={false}
 		onReturnConversation={noop} onSubmit={async () => true} {...props} />);
+}
+function picker(props: Partial<Parameters<typeof DeploymentModulePicker>[0]> = {}) {
+	return localize(<DeploymentModulePicker discovery={null} loading={false} busy={false} disabled={false} error={null}
+		onSelect={async () => undefined} onSetup={noop} onClose={noop} onRetry={noop} {...props} />);
 }
 function review(value: DeploymentRun, props: Partial<Parameters<typeof DeploymentReview>[0]> = {}) {
 	return localize(<DeploymentReview run={value} review={deploymentReviewState(value)} busy={false} canConfirm onConfirm={noop}
 		onDecideFullAccess={noop} onDecideRecovery={noop} {...props} />);
 }
-function timeline(messages: ChatTimelineEntry[], deployments: DeploymentRun[], extra: Partial<Parameters<typeof ChatTimeline>[0]> = {}) {
+function timeline(messages: ChatTimelineEntry[], extra: Partial<Parameters<typeof ChatTimeline>[0]> = {}) {
 	return localize(<ChatTimeline showActivity={false} loading={false} loadingOlderMessages={false} timeline={messages} tools={{}} approvals={{}}
 		approvalMutationId={null} run={null} latestUserText="" onResolveApproval={noop} onRestoreDraft={noop}
-		deployments={deployments} onOpenDeployment={noop} {...extra} />);
+		onOpenDeployment={noop} {...extra} />);
 }
 function historyKeys(history: ReturnType<typeof conversationHistory>): string[] {
 	return history.map((entry) => entry.kind === "deployment" ? entry.run.id : entry.kind === "discussion" ? entry.discussion.id : entry.entry.key);
@@ -75,9 +80,18 @@ describe("deployment task and conversation review", () => {
 		];
 		const options = deploymentModuleOptions(profiles);
 		expect(new Set(options.map((option) => option.key)).size).toBe(3);
-		const html = page({ discovery: { host: "example.org", profiles, errors: [], latest: null, activeDiscussion: null } });
-		expect(html).toContain("请选择打包模块");
-		expect(html).toContain('aria-haspopup="listbox"');
+		const html = picker({ discovery: { host: "example.org", profiles, errors: [], latest: null, activeDiscussion: null } });
+		expect(html).toContain("选择部署模块");
+		expect(html).not.toContain("deploy-a.md");
+		expect(html).not.toContain("deploy-b.md");
+		expect(html).not.toContain("deploy-module-source");
+		expect(html).not.toContain("<code>");
+		expect(html).not.toContain("lucide-package");
+		expect(html.match(/type="radio"/g)).toHaveLength(3);
+		expect(html).toContain('<ol class="deploy-module-list"');
+		expect(html.match(/class="deploy-module-card"/g)).toHaveLength(3);
+		expect(html).not.toContain('checked=""');
+		expect(html).toContain('role="dialog"');
 		expect(html).not.toContain("deploy-stage-overview");
 		expect(html).toContain("添加服务配置");
 	});
@@ -91,11 +105,11 @@ describe("deployment task and conversation review", () => {
 	});
 
 	it("disables profile selection without a model and surfaces discovery errors", () => {
-		const html = page({ canPlan: false, error: "连接失败", discovery: null });
+		const html = picker({ disabled: true, error: "连接失败", discovery: null });
 		expect(html).toContain("连接失败");
 		expect(html).not.toContain("正在读取部署配置");
 		const profiles: DeploymentProfileSummary[] = [{ file: "deploy-a.md", project: "A", target: { host: "example.org" }, modules: [{ id: "api", name: "API" }] }];
-		expect(page({ canPlan: false, discovery: { host: "example.org", profiles, errors: [], latest: null, activeDiscussion: null } })).toMatch(/disabled=""[^>]*aria-haspopup="listbox"/);
+		expect(picker({ disabled: true, discovery: { host: "example.org", profiles, errors: [], latest: null, activeDiscussion: null } })).toMatch(/disabled=""[^>]*aria-label="选择 API/);
 	});
 
 	it("reviews exact legacy commands and file overwrite targets in the conversation", () => {
@@ -193,48 +207,28 @@ describe("deployment task and conversation review", () => {
 });
 
 describe("deployment history projection", () => {
-	it("keeps legacy deployment creation position stable after execution starts", () => {
-		const messages: ChatTimelineEntry[] = [
-			{ key: "before", message: { role: "user", content: "before", timestamp: 1 }, final: true },
-			{ key: "after", message: { role: "user", content: "after", timestamp: 3 }, final: true },
-		];
-		expect(historyKeys(conversationHistory(messages, [run]))).toEqual(["before", "run-1", "after"]);
-		expect(historyKeys(conversationHistory(messages, [{ ...run, status: "running", startedAt: 4 }]))).toEqual(["before", "run-1", "after"]);
-		expect(timeline([], [run])).toContain('class="deployment-history-card-title" title="API">API</span>');
-		expect(timeline([], [run])).not.toContain("部署记录");
-		expect(timeline([], [run])).not.toContain("开始部署</button>");
+	const card: ChatTimelineEntry = { key: "card", sequence: 2, final: true, message: { role: "custom", customType: "deployment", content: "API", display: true, timestamp: 2,
+		details: { deploymentId: "run-1", title: "API", outcome: "success", startedAt: 1, finishedAt: 2 } } };
+	it("renders the backend order without synthesizing entries from a separate catalog", () => {
+		const before: ChatTimelineEntry = { key: "before", sequence: 1, final: true, message: { role: "user", content: "Before", timestamp: 3 } };
+		expect(historyKeys(conversationHistory([before, card]))).toEqual(["before", "card"]);
+		expect(timeline([before])).not.toContain("deployment-history-card");
+		expect(timeline([before, card])).toContain('class="deployment-history-card-title" title="API">API</span>');
 	});
-
-	it("keeps planning, execution, diagnosis and final text in the main conversation", () => {
-		const linked: DeploymentRun = { ...run, status: "success", planningAgentRunId: "planner", agentRunId: "execute", agentRunHistory: ["execute", "diagnose"], startedAt: 3, updatedAt: 9, finishedAt: 9 };
+	it("keeps planning, execution and diagnostic model prose in the main conversation", () => {
 		const messages: ChatTimelineEntry[] = ["planner", "execute", "diagnose"].map((runId, index) => ({ key: runId, runId, final: true,
 			message: { role: "assistant", content: [{ type: "text", text: `reply-${runId}` }], provider: "test", model: "test", stopReason: "stop", timestamp: 4 + index } }));
-		expect(historyKeys(conversationHistory(messages, [linked]))).toEqual(["planner", "execute", "diagnose", "run-1"]);
-		const html = timeline(messages, [linked]);
+		const html = timeline([...messages, card]);
 		for (const name of ["planner", "execute", "diagnose"]) expect(html.match(new RegExp(`reply-${name}`, "g"))).toHaveLength(1);
 		expect(html).not.toContain("模型记录");
 	});
-
-	it("leaves failed replies visible regardless of the deployment status", () => {
-		const reply: ChatTimelineEntry = { key: "reply", runId: "agent", final: true, message: { role: "assistant", content: [{ type: "text", text: "Build failed; diagnosing" }], provider: "test", model: "test", stopReason: "stop", timestamp: 4 } };
-		for (const status of ["running", "failed", "recovering"] as const) expect(historyKeys(conversationHistory([reply], [{ ...run, status, agentRunId: "agent" }]))).toEqual(["run-1", "reply"]);
+	it("does not show a card-only intermediate state before initial history finishes loading", () => {
+		expect(timeline([card], { loading: true })).not.toContain('data-deployment-id=');
+		expect(timeline([card], { loading: false })).toContain('data-deployment-id="run-1"');
 	});
-
-	it("retains a compact legacy discussion entry without an embedded task page", () => {
-		const selected = { ...discussion, createdAt: 20, updatedAt: 20 };
-		const messages: ChatTimelineEntry[] = [
-			{ key: "same", final: true, message: { role: "user", content: "Same timestamp", timestamp: 20 } },
-			{ key: "old", final: true, message: { role: "user", content: "Older", timestamp: 10 } },
-		];
-		expect(historyKeys(conversationHistory(messages, [], selected))).toEqual(["old", discussion.id, "same"]);
-		const html = timeline(messages, [], { discussion: selected });
-		expect(html).toContain("查看API的部署流水线");
-		expect(html).not.toContain("deploy-task-page");
-	});
-
 	it("keeps a tool approval in the main timeline beside its tool call", () => {
 		const message: ChatTimelineEntry = { key: "tool", runId: "agent", final: true, message: { role: "assistant", content: [{ type: "toolCall", id: "call", name: "remote_server_call", arguments: { command: "id" } }], provider: "test", model: "test", stopReason: "toolUse", timestamp: 4 } };
-		const html = timeline([message], [run], { approvals: { approval: { id: "approval", sessionId: "session-1", runId: "agent", assistantMessageId: "message", toolCallId: "call", toolName: "remote_server_call", description: "需要审批", status: "pending", createdAt: 4 } } });
+		const html = timeline([message, card], { approvals: { approval: { id: "approval", sessionId: "session-1", runId: "agent", assistantMessageId: "message", toolCallId: "call", toolName: "remote_server_call", description: "需要审批", status: "pending", createdAt: 4 } } });
 		expect(html).toContain("需要审批");
 		expect(html).toContain("批准远程执行");
 	});

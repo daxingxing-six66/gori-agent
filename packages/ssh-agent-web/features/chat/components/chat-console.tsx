@@ -34,6 +34,7 @@ import { useWorkspaceTree } from "@/features/workspace/components/workspace-tree
 import { ApiError } from "@/shared/errors/api-error";
 import { DeploymentTaskPage } from "@/features/deploy/components/deployment-task-page";
 import { DeploymentReview } from "@/features/deploy/components/deployment-review";
+import { DeploymentModulePicker } from "@/features/deploy/components/deployment-module-picker";
 import { deploymentAwaitsResume } from "@/features/deploy/model/deployment-review";
 import { useDeployment } from "@/features/deploy/runtime/use-deployment";
 import { useDeploymentReview } from "@/features/deploy/runtime/use-deployment-review";
@@ -145,11 +146,11 @@ export function ChatConsole({ sessionId }: { sessionId: string }) {
 		const container = scrollRef.current;
 		if (!restore || !container) return;
 		container.scrollTop = restore.scrollTop + container.scrollHeight - restore.scrollHeight;
-	}, [deployment.history.length, runtime.state.timeline]);
+	}, [runtime.state.timeline]);
 
 	useEffect(() => {
-		if (!runtime.loadingOlderMessages && !deployment.loadingOlderHistory) historyScrollRestoreRef.current = null;
-	}, [deployment.loadingOlderHistory, runtime.loadingOlderMessages]);
+		if (!runtime.loadingOlderMessages) historyScrollRestoreRef.current = null;
+	}, [runtime.loadingOlderMessages]);
 
 	useEffect(() => {
 		const container = scrollRef.current;
@@ -167,6 +168,10 @@ export function ChatConsole({ sessionId }: { sessionId: string }) {
 	useEffect(() => {
 		if (deployment.open) setActiveTaskTabId("deploy");
 	}, [deployment.open]);
+
+	useEffect(() => {
+		if (deployment.pickerOpen) taskDisplay.changeMode("docked");
+	}, [deployment.pickerOpen, taskDisplay.changeMode]);
 
 	const handleChatScroll = useCallback(() => {
 		const container = scrollRef.current;
@@ -188,13 +193,6 @@ export function ChatConsole({ sessionId }: { sessionId: string }) {
 		followNewContentRef.current = true;
 		setShowReturnToBottom(false);
 		container.scrollTo({ top: container.scrollHeight, behavior: "smooth" });
-	};
-	const loadOlderDeployments = () => {
-		const container = scrollRef.current;
-		if (container) historyScrollRestoreRef.current = { scrollHeight: container.scrollHeight, scrollTop: container.scrollTop };
-		void deployment.loadOlderHistory().then((loaded) => {
-			if (!loaded) historyScrollRestoreRef.current = null;
-		});
 	};
 
 	const submit = useCallback(async (message: string, attachments: SessionAttachment[]): Promise<boolean> => {
@@ -259,7 +257,11 @@ export function ChatConsole({ sessionId }: { sessionId: string }) {
 		if (toolId === "sandbox") { void sandbox.execute("/sandbox"); return; }
 		if (sandbox.pending) return;
 		if (toolId === "deploy" && (!active || deployment.activeTask) && !deployment.busy) {
-			setActiveTaskTabId("deploy"); taskDisplay.reveal(); void deployment.show(); return;
+			if (deployment.pickerOpen) { deployment.closePicker(); composerRef.current?.focus(); return; }
+			void deployment.show().then((surface) => {
+				if (surface === "task") { setActiveTaskTabId("deploy"); taskDisplay.reveal(); }
+			});
+			return;
 		}
 		if (toolId === "compact" && compactionDisabledReason === undefined) void runtime.compact();
 	}, [active, compactionDisabledReason, deployment, runtime.compact, sandbox.execute, sandbox.pending, taskDisplay.reveal, terminalTask.menuDisabledReason, terminalTask.reveal]);
@@ -367,10 +369,8 @@ export function ChatConsole({ sessionId }: { sessionId: string }) {
 	if (deployment.open) taskTabs.push({ id: "deploy", title: "Deploy",
 		close: { label: intl.formatMessage({ id: "deploy.task.close" }), onRequestClose: deployment.hide },
 		content: <DeploymentTaskPage sessionId={sessionId} task={deployment.selectedTask} run={deployment.run} discussion={deployment.selectedDiscussion}
-			discovery={deployment.discovery} logs={deployment.logs} loading={deployment.loading} busy={deployment.busy} error={deployment.error}
-			canPlan={Boolean(model && !active && !runtime.submitting && !sandbox.pending && !planningSubmitting)}
+			logs={deployment.logs} loading={deployment.loading} busy={deployment.busy} error={deployment.error}
 			fullscreen={taskDisplay.mode === "fullscreen"} pending={pendingDeploymentAction} onReturnConversation={returnToConversation}
-			onPlan={(file, moduleId) => { void startDeploymentDiscussion(file, moduleId); }} onSetup={() => { void startDeploymentSetup(); }}
 			onExit={deployment.activeTask && deployment.activeTask.deployment.id === deployment.selectedTask?.deployment.id ? () => { void deployment.finish(); } : undefined}
 			onSubmit={(message) => submit(message, [])} /> });
 
@@ -412,8 +412,7 @@ export function ChatConsole({ sessionId }: { sessionId: string }) {
 				<div className="session-console-chat relative min-h-0">
 					<div ref={scrollRef} className="app-scrollbar h-full overflow-y-auto" onScroll={handleChatScroll}>
 						<ChatTimeline showActivity={showActivity} loading={runtime.loading} loadingOlderMessages={runtime.loadingOlderMessages} timeline={runtime.state.timeline} tools={runtime.state.tools} approvals={runtime.state.approvals} approvalMutationId={runtime.approvalMutationId} targetHost={targetHost} run={runtime.state.run} latestUserText={latestUserText} onResolveApproval={resolveApproval} onRestoreDraft={restoreDraft}
-							deployments={deployment.history} onOpenDeployment={(id) => { setActiveTaskTabId("deploy"); taskDisplay.reveal(); void deployment.openHistory(id); }}
-							hasOlderDeployments={deployment.hasOlderHistory} loadingOlderDeployments={deployment.loadingOlderHistory} onLoadOlderDeployments={loadOlderDeployments} />
+							onOpenDeployment={(id) => { setActiveTaskTabId("deploy"); taskDisplay.reveal(); void deployment.openHistory(id); }} />
 						{needsDeploymentReview ? <div data-deployment-review tabIndex={-1} className="mx-auto max-w-[820px] px-5 py-5 lg:px-8"><DeploymentReview
 							run={activeDeploymentRun} review={deploymentReview} busy={deployment.busy} canConfirm={Boolean(model && !active && !runtime.submitting && !sandbox.pending)}
 							onConfirm={() => { void startDeploymentExecution(); }} onDecideFullAccess={(stage, id, approved) => { void deployment.decideFullAccess(stage, id, approved); }}
@@ -459,6 +458,11 @@ export function ChatConsole({ sessionId }: { sessionId: string }) {
 					onCancelQueued={cancelQueued}
 					onPromoteQueued={promoteQueued}
 					decisionPanel={decisionPanel}
+					aboveInputPanel={deployment.pickerOpen && !pendingDecision ? <DeploymentModulePicker key={sessionId}
+						discovery={deployment.discovery} loading={deployment.pickerLoading} busy={deployment.busy || planningSubmitting}
+						disabled={!model || active || runtime.submitting || sandbox.pending} error={deployment.error}
+						onSelect={startDeploymentDiscussion} onSetup={() => { void startDeploymentSetup().catch((error) => deployment.setError(error instanceof Error ? error.message : String(error))); }}
+						onClose={(restoreFocus = true) => { deployment.closePicker(); if (restoreFocus) composerRef.current?.focus(); }} onRetry={() => { void deployment.show(); }} /> : undefined}
 				/>
 			</main>
 		</div>

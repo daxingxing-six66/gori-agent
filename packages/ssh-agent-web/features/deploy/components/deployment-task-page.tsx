@@ -3,18 +3,17 @@
 import { Check, Circle, CircleX, LoaderCircle, Minus, Send } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useIntl } from "react-intl";
-import { DEPLOY_STAGES, type DeploymentDiscussion, type DeploymentDiscovery, type DeploymentRun, type DeployStage } from "../model/deployment";
+import { DEPLOY_STAGES, type DeploymentDiscussion, type DeploymentRun, type DeployStage } from "../model/deployment";
 import type { DeploymentTask } from "../model/deployment-task";
 import type { DeploymentLogStore } from "../runtime/deployment-log-store";
 import { DeploymentLogs } from "./deployment-logs";
-import { DeploymentModulePicker } from "./deployment-module-picker";
 import "./deployment-task.css";
 
-export function DeploymentTaskPage({ sessionId, task, run, discussion, discovery, logs, loading, busy, error, canPlan,
-	fullscreen, pending, onPlan, onSetup, onExit, onReturnConversation, onSubmit }: {
+export function DeploymentTaskPage({ sessionId, task, run, discussion, logs, loading, busy, error,
+	fullscreen, pending, onExit, onReturnConversation, onSubmit }: {
 	sessionId: string; task: DeploymentTask | null; run: DeploymentRun | null; discussion: DeploymentDiscussion | null;
-	discovery: DeploymentDiscovery | null; logs: DeploymentLogStore; loading: boolean; busy: boolean; error: string | null;
-	canPlan: boolean; fullscreen: boolean; pending: boolean; onPlan(file: string, moduleId: string): void; onSetup(): void;
+	logs: DeploymentLogStore; loading: boolean; busy: boolean; error: string | null;
+	fullscreen: boolean; pending: boolean;
 	onExit?: () => void; onReturnConversation(): void; onSubmit(message: string): Promise<boolean>;
 }) {
 	const intl = useIntl();
@@ -41,11 +40,7 @@ export function DeploymentTaskPage({ sessionId, task, run, discussion, discovery
 			{status ? <span className="deploy-task-state" data-status={status}><StatusIcon status={current && run ? run.stages[current].status : "pending"} />
 				{intl.formatMessage({ id: status === "review" || status === "discussion" ? `deploy.task.${status}` : `deploy.runStatus.${status}` })}</span> : null}</header> : null}
 		{task?.deployment.reason ? <p className={task.deployment.outcome === "failed" ? "deploy-task-error" : "text-xs text-muted"}>{task.deployment.reason}</p> : null}
-		{!run && !discussion && !task && discovery ? <div className="deploy-task-picker">
-			{discovery.errors.map((problem) => <p className="deploy-task-error" key={problem.file}>{problem.file}: {problem.message}</p>)}
-			{discovery.profiles.length > 0 ? <DeploymentModulePicker profiles={discovery.profiles} busy={busy} disabled={!canPlan} onSelect={onPlan} /> : <p className="text-sm text-muted">{intl.formatMessage({ id: "deploy.noProfile" })}</p>}
-			<button type="button" className="deploy-task-button" disabled={busy || !canPlan} onClick={onSetup}>{intl.formatMessage({ id: "deploy.task.addService" })}</button>
-		</div> : null}
+
 		{run ? <>
 			<ol className="deploy-stage-overview" aria-label={intl.formatMessage({ id: "deploy.pipeline" })}>
 				{DEPLOY_STAGES.map((name) => <li key={name} data-status={run.stages[name].status} data-current={name === current} data-selected={name === stage}>

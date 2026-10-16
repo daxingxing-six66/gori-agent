@@ -104,7 +104,7 @@ describe("deployment completion history", () => {
 
 	it.each(["success", "failed", "cancelled"] as const)("renders one %s result after discussion and before later conversation", (outcome) => {
 		const messages = [user("Discuss this release", 2, 200), user("Check the service", 3, 300), finish(outcome), user("Next question", 5, 500)];
-		expect(ids(conversationHistory(timeline(messages), []))).toEqual(["persisted:Discuss this release", "persisted:Check the service", "release", "persisted:Next question"]);
+		expect(ids(conversationHistory(timeline(messages)))).toEqual(["persisted:Discuss this release", "persisted:Check the service", "release", "persisted:Next question"]);
 		const html = render(messages);
 		expect(html.match(/data-deployment-id=/gu)).toHaveLength(1);
 		expect(html.indexOf("Check the service")).toBeLessThan(html.indexOf('class="deployment-history-card"'));
@@ -128,9 +128,9 @@ describe("deployment completion history", () => {
 		expect(state.timeline.at(-1)).toMatchObject({ sequence: 4, message: { details: { outcome: "success" } } });
 	});
 
-	it("positions backfilled entries by finish time without changing normal message order", () => {
-		const old = finish("failed", "legacy_finished"); old.sequence = 1;
-		expect(ids(conversationHistory(timeline([old, user("Discussion", 2, 200), user("Later", 3, 500)]), [])))
+	it("keeps the backend anchor position for a legacy entry without sorting it again", () => {
+		const old = { ...finish("failed", "history"), sequence: 2, historyOrder: 1 as const };
+		expect(ids(conversationHistory(timeline([old, user("Discussion", 2, 200), user("Later", 3, 500)]))))
 			.toEqual(["persisted:Discussion", "release", "persisted:Later"]);
 	});
 
@@ -149,7 +149,7 @@ describe("deployment completion history", () => {
 	it("preserves ordinary transfer tool entries beside the deployment result", () => {
 		const transfer: ChatTimelineEntry = { key: "transfer", sequence: 2, final: true, message: { role: "assistant", timestamp: 200,
 			provider: "test", model: "test", stopReason: "toolUse", content: [{ type: "toolCall", id: "upload", name: "sftp_upload", arguments: { sourceFilePath: "/local/file", targetPath: "/remote/file" } }] } };
-		const entries = conversationHistory([transfer, timeline([finish("success")])[0]!], []);
+		const entries = conversationHistory([transfer, timeline([finish("success")])[0]!]);
 		expect(entries.find((entry) => entry.kind === "message")?.entry).toBe(transfer);
 		expect(entries.filter((entry) => entry.kind === "deploymentMessage")).toHaveLength(1);
 	});

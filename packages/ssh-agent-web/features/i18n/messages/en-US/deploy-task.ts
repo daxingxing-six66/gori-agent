@@ -21,4 +21,7 @@ export const enUSDeployTaskMessages = {
 	"deploy.task.started": "Deployment mode active",
 	"deploy.task.finished": "Deployment ended",
 	"deploy.history.elapsed": "Deployment duration",
+	"deploy.picker.title": "Select deployment module",
+	"deploy.picker.close": "Close module selection",
+	"deploy.picker.selectModule": "Select {module}",
 } as const;

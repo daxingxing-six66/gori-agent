@@ -15,6 +15,7 @@ import type { UserDecision } from "@/features/chat/model/user-decision";
 import { isRecord } from "@/features/chat/model/chat";
 
 export interface ChatTimelineEntry {
+	historyOrder?: 1;
 	key: string;
 	runId?: string;
 	sequence?: number;
@@ -314,6 +315,7 @@ function toTimelineEntry(message: ChatMessage): ChatTimelineEntry {
 		key: `persisted:${message.id}`,
 		...(message.runId === undefined ? {} : { runId: message.runId }),
 		sequence: message.sequence,
+		...(message.historyOrder === undefined ? {} : { historyOrder: message.historyOrder }),
 		message: message.message,
 		...(message.attachments === undefined ? {} : { attachments: message.attachments }),
 		final: true,
@@ -338,7 +340,13 @@ function dedupeTimeline(timeline: ChatTimelineEntry[]): ChatTimelineEntry[] {
 		if (current?.sequence !== undefined && entry.sequence !== undefined && current.sequence > entry.sequence) continue;
 		if (!current || entry.sequence !== undefined || (entry.final && !current.final)) byFingerprint.set(key, entry);
 	}
-	return [...byFingerprint.values()].sort((left, right) => (left.sequence ?? left.message.timestamp) - (right.sequence ?? right.message.timestamp));
+	return [...byFingerprint.values()].sort(compareTimelineEntries);
+}
+
+function compareTimelineEntries(left: ChatTimelineEntry, right: ChatTimelineEntry): number {
+	return (left.sequence ?? left.message.timestamp) - (right.sequence ?? right.message.timestamp)
+		|| (left.historyOrder ?? 0) - (right.historyOrder ?? 0)
+		|| (left.historyOrder ? left.message.timestamp - right.message.timestamp || (left.key === right.key ? 0 : left.key < right.key ? -1 : 1) : 0);
 }
 
 function messageKey(message: AgentMessage): string {

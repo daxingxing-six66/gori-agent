@@ -1,4 +1,4 @@
-import { Children, isValidElement, type ChangeEvent, type ComponentProps, type SubmitEvent, type MouseEvent, type ReactElement, type ReactNode } from "react";
+import { Children, isValidElement, type ChangeEvent, type ComponentProps, type SubmitEvent, type MouseEvent, type ReactElement, type ReactNode, type KeyboardEvent } from "react";
 import { createIntl } from "react-intl";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { DeploymentRun } from "../features/deploy/model/deployment";
@@ -11,6 +11,7 @@ const intl = createIntl({ locale: "en-US", messages: enUSMessages });
 vi.mock("react-intl", async (original) => ({ ...await original<typeof import("react-intl")>(), useIntl: () => intl }));
 vi.mock("react", async (original) => ({
  ...await original<typeof import("react")>(),
+ useId: () => host.memo(() => "picker-title", []),
  useState: (initial: unknown) => host.state(initial), useRef: (initial: unknown) => host.ref(initial),
  useMemo: <T,>(factory: () => T, deps?: readonly unknown[]) => host.memo(factory, deps),
  useCallback: <T,>(callback: T, deps?: readonly unknown[]) => host.memo(() => callback, deps),
@@ -19,6 +20,7 @@ vi.mock("react", async (original) => ({
  useSyncExternalStore: (_subscribe: unknown, snapshot: () => unknown) => snapshot(),
 }));
 import { DeploymentTaskPage } from "../features/deploy/components/deployment-task-page";
+import { DeploymentModulePicker } from "../features/deploy/components/deployment-module-picker";
 import { DeploymentLogs } from "../features/deploy/components/deployment-logs";
 
 type Effect = () => void | (() => void);
@@ -56,7 +58,7 @@ function elements(node: ReactNode): ReactElement<{ children?: ReactNode; classNa
  Children.forEach(node, (child) => { if (isValidElement<{ children?: ReactNode; className?: string }>(child)) result.push(child, ...elements(child.props.children)); });
  return result;
 }
-function native<T extends "textarea" | "form" | "button" | "li" | "div">(node: ReactNode, type: T): ReactElement<ComponentProps<T>>[] {
+function native<T extends "textarea" | "form" | "button" | "input" | "li" | "div">(node: ReactNode, type: T): ReactElement<ComponentProps<T>>[] {
  return elements(node).filter((item) => item.type === type) as ReactElement<ComponentProps<T>>[];
 }
 function click(node: ReactElement<ComponentProps<"button">>) { node.props.onClick?.({} as MouseEvent<HTMLButtonElement>); }
@@ -70,10 +72,10 @@ const run: DeploymentRun = {
   upload: { status: "running", log: "" }, restart: { status: "pending", log: "" }, verify: { status: "pending", log: "" } },
 };
 const task: DeploymentTask = { deployment: { id: run.id, sessionId: "session", workspaceId: "workspace", title: "API", createdAt: 1 }, run, phase: "execution", stage: "upload", stageStatus: "running", nextStage: "restart" };
-function pageProps(): ComponentProps<typeof DeploymentTaskPage> { return { sessionId: "session", task, run, discussion: null, discovery: null,
+function pageProps(): ComponentProps<typeof DeploymentTaskPage> { return { sessionId: "session", task, run, discussion: null,
  logs: new DeploymentLogStore("session", async (_s, _r, _t, cursor) => ({ chunks: [], nextSequence: cursor, hasMore: false })),
- loading: false, busy: false, error: null, canPlan: false, fullscreen: true, pending: true,
- onPlan: vi.fn(), onSetup: vi.fn(), onReturnConversation: vi.fn(), onExit: vi.fn(), onSubmit: vi.fn(async () => true) }; }
+ loading: false, busy: false, error: null, fullscreen: true, pending: true,
+ onReturnConversation: vi.fn(), onExit: vi.fn(), onSubmit: vi.fn(async () => true) }; }
 function page(props: ComponentProps<typeof DeploymentTaskPage>) { return host.render(() => DeploymentTaskPage(props)); }
 function typeDraft(view: ReactNode, value: string) { native(view, "textarea")[0]!.props.onChange?.({ target: { value } } as ChangeEvent<HTMLTextAreaElement>); }
 async function submit(view: ReactNode) { await native(view, "form")[0]!.props.onSubmit?.({ preventDefault() {} } as SubmitEvent<HTMLFormElement>); }
@@ -177,5 +179,65 @@ describe("deployment log interaction", () => {
   if (typeof pre.props.ref === "function") pre.props.ref(target as unknown as HTMLPreElement);
   click(button(view, "Jump to error")); view = host.render(() => DeploymentLogs({ run: legacy, stage: "build", store })); host.flushLayout();
   expect(groups(view)).toHaveLength(0); expect(target.focus).toHaveBeenCalledOnce();
+ });
+});
+
+
+describe("deployment module launcher interaction", () => {
+ function props(): ComponentProps<typeof DeploymentModulePicker> { return {
+  discovery: { host: "example.org", errors: [], latest: null, activeDiscussion: null, profiles: [
+   { file: "deploy-a.md", project: "A", target: { host: "example.org" }, modules: [{ id: "api", name: "API" }, { id: "worker", name: "Worker" }] },
+   { file: "deploy-b.md", project: "B", target: { host: "example.org" }, modules: [{ id: "api", name: "API" }] },
+  ] }, loading: false, busy: false, disabled: false, error: null,
+  onSelect: vi.fn(async () => undefined), onSetup: vi.fn(), onClose: vi.fn(), onRetry: vi.fn(),
+ }; }
+ function render(value: ComponentProps<typeof DeploymentModulePicker>) { return host.render(() => DeploymentModulePicker(value)); }
+ function rows(view: ReactNode) { return native(view, "input").filter((item) => item.props.type === "radio"); }
+ function select(node: ReactElement<ComponentProps<"input">>) { node.props.onChange?.({ target: { checked: true } } as ChangeEvent<HTMLInputElement>); }
+ function key(node: ReactElement<ComponentProps<"div"> | ComponentProps<"input">>, value: string) {
+  const event = { key: value, preventDefault: vi.fn(), stopPropagation: vi.fn() };
+  node.props.onKeyDown?.(event as unknown as KeyboardEvent<HTMLInputElement> & KeyboardEvent<HTMLDivElement>); return event;
+ }
+ beforeEach(() => { vi.stubGlobal("document", { addEventListener: vi.fn(), removeEventListener: vi.fn() }); });
+ it("focuses the panel without highlighting a module and supports arrow, Home and End navigation", () => {
+  const value = props(); value.loading = true; let view = render(value);
+  const panel = { focus: vi.fn() };
+  (native(view, "div")[0]!.props.ref as { current: unknown }).current = panel;
+  host.commit(); expect(panel.focus).toHaveBeenCalledExactlyOnceWith({ preventScroll: true });
+  value.loading = false; view = render(value);
+  const targets = rows(view).map((row) => { const target = { focus: vi.fn(), disabled: false };
+   if (typeof row.props.ref === "function") row.props.ref(target as unknown as HTMLInputElement); return target; });
+  host.commit(); expect(targets[0]!.focus).not.toHaveBeenCalled();
+  expect(key(rows(view)[0]!, "ArrowUp").preventDefault).toHaveBeenCalledOnce(); expect(targets[2]!.focus).toHaveBeenCalledOnce();
+  key(rows(view)[2]!, "ArrowDown"); expect(targets[0]!.focus).toHaveBeenCalledOnce();
+  key(rows(view)[0]!, "End"); key(rows(view)[2]!, "Home");
+  expect(targets[2]!.focus).toHaveBeenCalledTimes(2); expect(targets[0]!.focus).toHaveBeenCalledTimes(2);
+ });
+ it("closes with Escape or the close control and lets an outside pointer retain its own focus", () => {
+  const value = props(); const view = render(value); const root = native(view, "div")[0]!;
+  class Target {} vi.stubGlobal("Node", Target); const inside = new Target();
+  (root.props.ref as { current: unknown }).current = { contains: (target: unknown) => target === inside, focus: vi.fn() };
+  host.commit();
+  const listener = vi.mocked(document.addEventListener).mock.calls[0]![1] as (event: { target: unknown }) => void;
+  listener({ target: inside }); expect(value.onClose).not.toHaveBeenCalled();
+  listener({ target: new Target() }); expect(value.onClose).toHaveBeenLastCalledWith(false);
+  const event = key(root, "Escape"); expect(event.preventDefault).toHaveBeenCalledOnce(); expect(event.stopPropagation).toHaveBeenCalledOnce();
+  expect(value.onClose).toHaveBeenLastCalledWith(true);
+  click(native(view, "button")[0]!); expect(value.onClose).toHaveBeenCalledTimes(3);
+  host.dispose(); expect(document.removeEventListener).toHaveBeenCalledWith("pointerdown", listener);
+ });
+ it("selects the exact profile once while a choice is pending and permits another attempt afterwards", async () => {
+  const value = props(); const pending = deferred<void>(); value.onSelect = vi.fn(() => pending.promise);
+  const view = render(value); select(rows(view)[2]!); select(rows(view)[0]!);
+  expect(rows(render(value)).map((row) => row.props.checked)).toEqual([false, false, true]);
+  expect(value.onSelect).toHaveBeenCalledExactlyOnceWith("deploy-b.md", "api");
+  pending.resolve(); await pending.promise; await Promise.resolve();
+  expect(rows(render(value)).every((row) => !row.props.checked)).toBe(true);
+  select(rows(view)[2]!); expect(value.onSelect).toHaveBeenCalledTimes(2);
+ });
+ it("does not dispatch a stale row handler after selection is disabled", () => {
+  const value = props(); value.disabled = true; const view = render(value); select(rows(view)[0]!);
+  expect(value.onSelect).not.toHaveBeenCalled();
+  expect(rows(view).every((row) => row.props.disabled)).toBe(true);
  });
 });

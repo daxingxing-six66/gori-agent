@@ -11,7 +11,6 @@ import { DeploymentHistoryCard } from "@/features/deploy/components/deployment-h
 import { conversationHistory } from "@/features/deploy/model/deployment-history";
 import { deploymentEntryId } from "@/features/deploy/model/deployment-history-entry";
 import { deploymentCompletionHistory } from "@/features/deploy/model/deployment-completion-history";
-import type { DeploymentDiscussion, DeploymentRun } from "@/features/deploy/model/deployment";
 
 export const ChatTimeline = memo(function ChatTimeline({
 	showActivity,
@@ -26,12 +25,7 @@ export const ChatTimeline = memo(function ChatTimeline({
 	latestUserText,
 	onResolveApproval,
 	onRestoreDraft,
-	deployments,
-	discussion,
 	onOpenDeployment,
-	hasOlderDeployments,
-	loadingOlderDeployments,
-	onLoadOlderDeployments,
 }: {
 	showActivity: boolean;
 	loading: boolean;
@@ -45,19 +39,13 @@ export const ChatTimeline = memo(function ChatTimeline({
 	latestUserText: string;
 	onResolveApproval(approval: ToolApproval, approved: boolean): void;
 	onRestoreDraft(message: string): void;
-	deployments?: DeploymentRun[];
-	discussion?: DeploymentDiscussion | null;
 	onOpenDeployment?(id: string): void;
-	hasOlderDeployments?: boolean;
-	loadingOlderDeployments?: boolean;
-	onLoadOlderDeployments?(): void;
 }) {
 	const intl = useIntl();
-	const entries = deploymentCompletionHistory(conversationHistory(timeline, deployments ?? [], discussion), tools);
+	const entries = loading ? [] : deploymentCompletionHistory(conversationHistory(timeline), tools);
 	return (
 		<div className="chat-timeline min-h-full [&>*+*]:mt-8 [&>.chat-tool-only+.chat-tool-only]:mt-1">
 			{loading ? <div className="flex justify-center py-16 text-zinc-400"><LoaderCircle size={18} className="animate-spin" /></div> : null}
-			{hasOlderDeployments ? <button type="button" disabled={loadingOlderDeployments} onClick={onLoadOlderDeployments} className="mx-auto block rounded-lg border border-line px-3 py-1.5 text-xs text-secondary hover:bg-surface-hover disabled:opacity-50">{intl.formatMessage({ id: loadingOlderDeployments ? "deploy.history.loadingOlder" : "deploy.history.loadOlder" })}</button> : null}
 			{loadingOlderMessages ? <div className="flex justify-center py-1.5 text-zinc-400" role="status" aria-label={intl.formatMessage({ id: "chat.history.loadingOlder" })}><LoaderCircle size={14} className="animate-spin" /></div> : null}
 			{!loading && !showActivity && entries.length === 0 ? <div className="grid min-h-[320px] place-items-center text-center"><div><p className="text-[13px] font-semibold text-zinc-700">{intl.formatMessage({ id: "chat.empty.title" })}</p><p className="mt-2 text-[10px] leading-5 text-zinc-400">{intl.formatMessage({ id: "chat.empty.description" })}</p></div></div> : null}
 			{entries.map((item) => {

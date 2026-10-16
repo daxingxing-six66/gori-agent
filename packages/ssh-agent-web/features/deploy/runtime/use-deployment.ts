@@ -30,6 +30,7 @@ export function useDeployment(sessionId: string, workspaceId: string | undefined
 	const { refresh: refreshCatalog, upsert: upsertRun } = catalog;
 	const logs = useMemo(() => new DeploymentLogStore(sessionId), [sessionId]);
 	const [view, setView] = useState({ scope, selection: initialSelection() });
+	const [picker, setPicker] = useState({ scope, open: false, loading: false });
 	const [discussions, setDiscussions] = useState<{ scope: typeof scope; values: Record<string, DeploymentDiscussion> }>({ scope, values: {} });
 	const [failure, setFailure] = useState<{ scope: typeof scope; message: string | null }>({ scope, message: null });
 	const [mutation, setMutation] = useState<{ scope: typeof scope; pending: boolean }>({ scope, pending: false });
@@ -91,7 +92,14 @@ export function useDeployment(sessionId: string, workspaceId: string | undefined
 	}, [logs, scope]);
 	useEffect(() => {
 		if (!workspaceId) return;
-		return subscribeDeploymentEvents({ sessionId, workspaceId, locale, onRun: acceptRun, onDiscussion: acceptDiscussion,
+		const observedStatuses = new Map<string, DeploymentRun["status"]>();
+		return subscribeDeploymentEvents({ sessionId, workspaceId, locale, onRun: (run) => {
+				acceptRun(run);
+				if (observedStatuses.get(run.id) !== run.status) {
+					observedStatuses.set(run.id, run.status);
+					void onHistoryResync?.();
+				}
+			}, onDiscussion: acceptDiscussion,
 			onTask: receiveTask, onLog: (chunk) => logs.append(chunk), onMessage: onHistoryMessage,
 			onReconnect: () => { logs.refresh(); void refresh(); void onHistoryResync?.(); },
 		});
@@ -111,23 +119,39 @@ export function useDeployment(sessionId: string, workspaceId: string | undefined
 	}, [activeId, tasks.ready, legacyDiscussion, legacyRun, acceptDiscussion, loadDiscussion, setError, setSelection]);
 
 	const isCurrentIntent = (revision: number) => live.current === scope && intent.current.scope === scope && intent.current.revision === revision;
+	const closePicker = () => {
+		intent.current.userSelected = true; ++intent.current.revision;
+		if (live.current === scope) setPicker({ scope, open: false, loading: false });
+	};
 	const select = (id: string | null, loading: boolean) => {
 		intent.current.userSelected = true;
 		const revision = ++intent.current.revision;
+		setPicker({ scope, open: false, loading: false });
 		setError(null); setSelection(() => ({ open: true, id, loading }));
 		return revision;
 	};
-	const show = async () => {
-		const revision = select(tasks.active?.deployment.id ?? null, true);
+	const show = async (): Promise<"task" | "picker" | undefined> => {
+		intent.current.userSelected = true;
+		const revision = ++intent.current.revision;
+		setError(null);
+		setPicker({ scope, open: !tasks.active, loading: true });
 		try {
 			const task = await refreshMode();
 			if (!isCurrentIntent(revision) || task === undefined) return;
-			setSelection(() => ({ open: true, id: task?.deployment.id ?? null, loading: false }));
-			if (task?.run) acceptRun(task.run);
-			else if (task) await loadDiscussion(task.deployment.id);
-			else await refreshCatalog();
-		} catch (error) { if (isCurrentIntent(revision)) setError(message(error)); }
-		finally { if (isCurrentIntent(revision)) setSelection((current) => ({ ...current, loading: false })); }
+			if (task) {
+				setPicker({ scope, open: false, loading: false });
+				setSelection(() => ({ open: true, id: task.deployment.id, loading: false }));
+				if (task.run) acceptRun(task.run);
+				else await loadDiscussion(task.deployment.id);
+				return isCurrentIntent(revision) ? "task" : undefined;
+			}
+			setPicker({ scope, open: true, loading: true });
+			await refreshCatalog();
+			return isCurrentIntent(revision) ? "picker" : undefined;
+		} catch (error) {
+			if (isCurrentIntent(revision)) { setError(message(error)); setPicker({ scope, open: true, loading: false }); }
+		}
+		finally { if (isCurrentIntent(revision)) setPicker((current) => ({ ...current, loading: false })); }
 	};
 	const openHistory = async (id: string) => {
 		const revision = select(id, true);
@@ -162,24 +186,25 @@ export function useDeployment(sessionId: string, workspaceId: string | undefined
 			const active = await refreshMode();
 			acceptDiscussion(discussion);
 			if (!isCurrentIntent(revision) || active?.deployment.id !== discussion.id) return null;
+			setPicker({ scope, open: false, loading: false });
 			setSelection(() => ({ open: true, id: discussion.id, loading: false }));
 			return discussion;
 		});
 	};
 	const selectedTask = selection.id ? tasks.tasks[selection.id] ?? null : null;
-	const run = newestDeploymentRun(selectedTask?.run, catalog.history.runs.find((run) => run.id === selection.id || run.discussionId === selection.id));
+	const run = newestDeploymentRun(selectedTask?.run, catalog.runs.find((run) => run.id === selection.id || run.discussionId === selection.id));
 	const selectedDiscussion = selection.id ? discussions.scope === scope ? discussions.values[selection.id] ?? null : null : null;
 	const activeRun = tasks.active?.run ?? null;
 	const act = (operation: (id: string) => Promise<DeploymentRun>) => activeRun ? mutate(async () => {
 		const result = await operation(activeRun.id); acceptRun(result); return result;
 	}) : Promise.resolve(null);
 	return {
-		open: selection.open, loading: selection.loading, busy: mutation.scope === scope && mutation.pending,
+		open: selection.open, loading: selection.loading, pickerOpen: picker.scope === scope && picker.open,
+		pickerLoading: picker.scope === scope && picker.loading, closePicker, busy: mutation.scope === scope && mutation.pending,
 		discovery: catalog.discovery, run, selectedTask, selectedDiscussion, activeTask: tasks.active, logs,
-		history: catalog.history.runs, hasOlderHistory: typeof catalog.history.nextCursor === "string", loadingOlderHistory: catalog.loadingOlder,
 		error: (failure.scope === scope ? failure.message : null) ?? tasks.error ?? catalog.error,
-		show, openHistory, refresh, setError, beginDiscussion, loadOlderHistory: catalog.loadOlder,
-		hide: () => { intent.current.userSelected = true; ++intent.current.revision; setSelection((current) => ({ ...current, open: false, loading: false })); },
+		show, openHistory, refresh, setError, beginDiscussion,
+		hide: () => { closePicker(); setSelection((current) => ({ ...current, open: false, loading: false })); },
 		finish: () => tasks.active ? mutate(async () => {
 			const result = await deploymentApi.finish(sessionId, tasks.active!.deployment.id, "cancelled");
 			acceptTask(result); if (result.run) acceptRun(result.run); return result;

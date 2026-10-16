@@ -18,6 +18,7 @@ import { sessionAttachmentApi, type SessionAttachment } from "@/features/session
 import { fitImageWithinMaximumDimension, maximumImageUploadBytes } from "@/features/session/model/image-upload";
 
 export interface ChatComposerPanelHandle {
+	focus(): void;
 	restoreDraft(message: string): void;
 }
 
@@ -70,6 +71,7 @@ export const ChatComposerPanel = forwardRef<ChatComposerPanelHandle, {
 	onCancelQueued(id: string): void;
 	onPromoteQueued(id: string): void;
 	decisionPanel?: ReactNode;
+	aboveInputPanel?: ReactNode;
 }>(function ChatComposerPanel({
 	sessionId,
 	contextUsage,
@@ -106,6 +108,7 @@ export const ChatComposerPanel = forwardRef<ChatComposerPanelHandle, {
 	onCancelQueued,
 	onPromoteQueued,
 	decisionPanel,
+	aboveInputPanel,
 }, forwardedRef) {
 	const intl = useIntl();
 	const localizedErrorMessage = useLocalizedErrorMessage();
@@ -142,6 +145,7 @@ export const ChatComposerPanel = forwardRef<ChatComposerPanelHandle, {
 	}, []);
 
 	useImperativeHandle(forwardedRef, () => ({
+		focus: () => editorRef.current?.focus(),
 		restoreDraft: (message) => {
 			setDraft(message);
 			requestAnimationFrame(() => editorRef.current?.focus());
@@ -261,6 +265,7 @@ export const ChatComposerPanel = forwardRef<ChatComposerPanelHandle, {
 					onClearManualCompactionResult={onClearManualCompactionResult}
 				/>
 				<div className="chat-composer-shell border border-[var(--line)] bg-[var(--surface-strong)] px-3 pb-3 pt-2.5 transition">
+					{aboveInputPanel}
 					{decisionPanel}
 					{modelSelectionError ? <div className="mb-1 flex w-full items-center justify-between gap-3 rounded-lg bg-[var(--warning-soft)] px-3 py-2 text-[11px] leading-5 text-[var(--warning)]"><span>{modelSelectionError}</span>{modelSelectionRetryable ? <button type="button" className="shrink-0 font-semibold underline underline-offset-2" onClick={onRetryModelSelection}>{intl.formatMessage({ id: "chat.model.reload" })}</button> : null}</div> : null}
 					{queue.length > 0 ? <QueuePreview items={queue} active={active} mutationId={queueMutationId} onCancel={onCancelQueued} onPromote={onPromoteQueued} /> : null}
