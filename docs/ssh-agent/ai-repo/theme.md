@@ -36,3 +36,5 @@ Composer 的发送/停止主操作按钮共用 32px 圆形外观，各主题的�
 多目录字段及远端多选器使用 `features/workspace/components/sandbox-writable-roots.css` 的局部样式与主题变量，目录列表保持紧凑行高、小图标及文字操作，选中路径以可移除标签呈现；窄屏操作区换行，列表文本截断并保留完整 title。Session 编辑弹窗复用同一字段及 `ManagementDialog` 的主题、滚动和操作区，不另建明暗配色；页首沙盒标识保留只读标签样式。
 
 统计页面采用独立的分析视图风格，样式在 `features/statistics/components/statistics.css`：仅在统计 main 内覆盖语义变量为中性灰/深色表面，Sidebar 和其他页面不受影响。深色 KPI、面板标题带、较强边框和多色数据序列区分指标、分析和明细区域；三种主题仍使用统一偏好入口。图表浮层使用统计局部固定定位，不进入全局主题或业务状态。详见 [statistics.md](./statistics.md)。
+
+用户决策的自定义想法输入区使用 `globals.css` 的 `decision-custom-*` 样式，复用表面、边框和文字语义变量。激活后保持单行，随文本换行增高至 144px 后内部滚动；使用完整中性边框，无下划线或装饰阴影，继续按钮为 44px 圆形。组件中的尺寸测量只控制 textarea 高度，不接管 Chat Composer、Terminal 或主题状态。

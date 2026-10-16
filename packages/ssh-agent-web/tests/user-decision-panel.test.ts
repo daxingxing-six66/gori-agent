@@ -38,6 +38,7 @@ vi.mock("react", async (importOriginal) => {
 		...actual,
 		useId: () => "decision-test",
 		useEffect: () => undefined,
+		useLayoutEffect: () => undefined,
 		useRef: <T>(initial: T) => currentHarness().useRef(initial),
 		useState: <T>(initial: T | (() => T)) => currentHarness().useState(initial),
 	};
@@ -209,6 +210,10 @@ describe("user decision panel interaction", () => {
 		click(buttonWithText(tree, "或输入你的想法"));
 		tree = panel.render();
 		expect(findElement(tree, "textarea")?.props["aria-describedby"]).toBe("decision-test-custom-hint");
+		expect(findElement(tree, "span", (element) => element.props.id === "decision-test-custom-hint")?.props.className).toBe("sr-only");
+		expect(findElement(tree, "textarea")?.props.rows).toBe(1);
+		expect(buttonWithText(tree, "或输入你的想法")).toBeUndefined();
+		expect(findElement(tree, "textarea")?.props.maxLength).toBe(4_000);
 		expect(buttonWithLabel(tree, "下一题")?.props.disabled).toBe(true);
 		changeText(tree, "   ");
 		tree = panel.render();
@@ -240,6 +245,7 @@ describe("user decision panel interaction", () => {
 		expect(buttonWithText(panel.render(), "提交决定")).toBeUndefined();
 		changeText(panel.render(), "第三题由我处理");
 		tree = panel.render();
+		expect(findElement(tree, "button", (element) => element.props.className === "decision-custom-advance")).toBeUndefined();
 		click(buttonWithText(tree, "提交决定"));
 		expect(panel.onSubmit).toHaveBeenCalledExactlyOnceWith([
 			{ kind: "custom", text: "用我的方案" },

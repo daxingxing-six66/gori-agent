@@ -1,7 +1,7 @@
 "use client";
 
 import { ArrowRight, Check, ChevronLeft, ChevronRight, Pencil, SkipForward, Sparkles, X } from "lucide-react";
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { useIntl } from "react-intl";
 import type { UserDecision, UserDecisionAnswer } from "@/features/chat/model/user-decision";
 
@@ -17,6 +17,7 @@ export function UserDecisionPanel({ decision, open, busy, error, onClose, onSubm
 	const groupId = useId();
 	const headingRef = useRef<HTMLHeadingElement>(null);
 	const customInputRef = useRef<HTMLTextAreaElement>(null);
+	const customEditorRef = useRef<HTMLDivElement>(null);
 	const submitRef = useRef<HTMLButtonElement>(null);
 	const [index, setIndex] = useState(0);
 	const [answers, setAnswers] = useState<Array<UserDecisionAnswer | null>>(() => decision.questions.map(() => null));
@@ -27,8 +28,35 @@ export function UserDecisionPanel({ decision, open, busy, error, onClose, onSubm
 	const answered = answers.filter(isCompleteAnswer).length;
 	const complete = answered === decision.questions.length;
 	const customSelected = current?.kind === "custom";
+	const customText = customSelected ? current.text : "";
 
 	useEffect(() => { if (open) headingRef.current?.focus(); }, [index, open]);
+	useLayoutEffect(() => {
+		resizeCustomInput(customInputRef.current);
+		if (customInputRef.current === document.activeElement) {
+			customEditorRef.current?.scrollIntoView({ block: "nearest" });
+		}
+	}, [customSelected, customText, index, open]);
+	useEffect(() => {
+		const input = customInputRef.current;
+		if (!input) return;
+		let width = input.clientWidth;
+		let frame: number | undefined;
+		const observer = new ResizeObserver(() => {
+			if (input.clientWidth === width) return;
+			width = input.clientWidth;
+			if (frame !== undefined) cancelAnimationFrame(frame);
+			frame = requestAnimationFrame(() => {
+				frame = undefined;
+				resizeCustomInput(input);
+			});
+		});
+		observer.observe(input);
+		return () => {
+			observer.disconnect();
+			if (frame !== undefined) cancelAnimationFrame(frame);
+		};
+	}, [customSelected, index, open]);
 
 	const updateAnswer = (answer: UserDecisionAnswer) => {
 		setAnswers((previous) => previous.map((value, position) => position === index ? answer : value));
@@ -41,7 +69,10 @@ export function UserDecisionPanel({ decision, open, busy, error, onClose, onSubm
 	const activateCustom = () => {
 		if (busy) return;
 		if (!customSelected) updateAnswer({ kind: "custom", text: "" });
-		requestAnimationFrame(() => customInputRef.current?.focus());
+		requestAnimationFrame(() => {
+			customInputRef.current?.focus();
+			customEditorRef.current?.scrollIntoView({ block: "nearest" });
+		});
 	};
 	const advanceCustom = () => {
 		if (!currentComplete || busy) return;
@@ -96,12 +127,13 @@ export function UserDecisionPanel({ decision, open, busy, error, onClose, onSubm
 					</button>;
 				})}
 				<div className={`decision-custom ${customSelected ? "decision-custom-active" : ""}`}>
-					<button type="button" disabled={busy} onClick={activateCustom} aria-expanded={customSelected} className="decision-custom-trigger">
+					{!customSelected ? <button type="button" disabled={busy} onClick={activateCustom} aria-expanded={false} className="decision-custom-trigger">
 						<Pencil size={15} aria-hidden="true" />
 						<span>{intl.formatMessage({ id: "chat.decision.custom" })}</span>
-					</button>
-					{customSelected ? <div className="decision-custom-editor">
-						<textarea ref={customInputRef} rows={2} maxLength={4_000} value={current.text}
+					</button> : null}
+					{customSelected ? <div ref={customEditorRef} className="decision-custom-editor">
+						<Pencil size={15} className="decision-custom-pencil" aria-hidden="true" />
+						<textarea ref={customInputRef} rows={1} maxLength={4_000} value={current.text}
 							onChange={(event) => updateAnswer({ kind: "custom", text: event.target.value })} disabled={busy}
 							onKeyDown={(event) => {
 							if (event.key !== "Enter" || event.shiftKey || event.nativeEvent.isComposing) return;
@@ -111,9 +143,9 @@ export function UserDecisionPanel({ decision, open, busy, error, onClose, onSubm
 							placeholder={intl.formatMessage({ id: "chat.decision.custom.placeholder" })}
 							aria-label={intl.formatMessage({ id: "chat.decision.custom" })}
 							aria-describedby={`${groupId}-custom-hint`}
-							className="app-scrollbar min-w-0 flex-1 resize-none bg-transparent text-[13px] leading-5 text-ink outline-none placeholder:text-muted" />
+							className="app-scrollbar decision-custom-input" />
 						<span id={`${groupId}-custom-hint`} className="sr-only">{intl.formatMessage({ id: "chat.decision.custom.hint" })}</span>
-						{!lastQuestion ? <button type="button" disabled={!currentComplete || busy} onClick={advanceCustom} className="decision-custom-advance" aria-label={intl.formatMessage({ id: "chat.decision.next" })} title={intl.formatMessage({ id: "chat.decision.next" })}><ArrowRight size={15} aria-hidden="true" /></button> : null}
+						{!lastQuestion ? <button type="button" disabled={!currentComplete || busy} onClick={advanceCustom} className="decision-custom-advance" aria-label={intl.formatMessage({ id: "chat.decision.next" })} title={intl.formatMessage({ id: "chat.decision.next" })}><ArrowRight size={18} aria-hidden="true" /></button> : null}
 					</div> : null}
 				</div>
 			</div>
@@ -134,4 +166,10 @@ export function UserDecisionPanel({ decision, open, busy, error, onClose, onSubm
 
 function isCompleteAnswer(answer: UserDecisionAnswer | null): answer is UserDecisionAnswer {
 	return answer !== null && (answer.kind !== "custom" || answer.text.trim().length > 0);
+}
+
+function resizeCustomInput(input: HTMLTextAreaElement | null): void {
+	if (!input) return;
+	input.style.height = "0px";
+	input.style.height = `${input.scrollHeight}px`;
 }

@@ -10,7 +10,7 @@ Bubblewrap 事实沿用现有 JSON 列，无 schema migration：保存 `backend=
 
 ## 当前边界
 
-- v22 新增 `chat_user_decisions`：持久化 Session/Run/Tool Call 绑定、问题 JSON、答案 JSON 和 pending/answered/cancelled/interrupted 状态。Repository 在读取边界解析问题与答案；启动恢复将遗留 pending 决策标记为 interrupted，Run 仍按现有重启逻辑失败。见 [user-decision.md](./user-decision.md)。
+- v22 新增 `chat_user_decisions`：持久化 Session/Run/Tool Call 绑定、问题 JSON、答案 JSON 和 pending/answered/cancelled/interrupted 状态。Repository 在读取边界解析问题与答案，按每题实际选项数量校验推荐项与答案索引，不限定为三个选项；启动恢复将遗留 pending 决策标记为 interrupted，Run 仍按现有重启逻辑失败。见 [user-decision.md](./user-decision.md)。
 
 - 使用 Node `node:sqlite`，启动时开启 foreign keys、busy timeout；文件数据库使用 WAL。
 - schema 由版本化 migration 管理，统计索引迁移为 v29；后续版本见 migration 源码；v7 增加 Session 本地配置、Chat Run、消息、队列、审批和 Agent Session 投影表，v8 为 Tool Approval 增加持久化描述，v9 增加每个 LLM Provider 的最后一次成功模型目录快照，v10 增加 TerminalSession、Interaction、Input、Observation、Timeline 和 Chat Run 交互模式字段，v11 增加自定义 LLM Provider 聚合，v12 为 Chat 消息增加类型、Provider 和 Usage 投影并移除旧 Agent Session 投影表，v13 为 Tool Approval 描述和 Terminal failure 增加可选 message key/values 元数据，v14 增加 Session Attachment 元数据、同名唯一约束和级联删除，v15 增加有序 `chat_message_attachments` 关系，v16 增加不可变 `chat_prompt_snapshots`，通过触发器原子记录初始模式及 Terminal active 边界变化。v20 保存 Terminal 实际沙箱事实，v21 合并远端目录，v22 保存 Agent 用户决策，v23 保存 Deployment Run 计划、阶段和 Full Access 决策快照，v24 为同一 Session 的模型规划 Run 增加唯一关联索引，v25 保存部署讨论、每轮 Chat Run 绑定和单 Session 活动讨论唯一约束，v26 为 `deployment_runs` 增加 `recovering` 状态约束；v27 为 Session 增加非空布尔 `sandbox_enabled`，默认 1，升级不改其他设置或 revision。见 [session-prompt.md](./session-prompt.md) 和 [deployment.md](./deployment.md)。
