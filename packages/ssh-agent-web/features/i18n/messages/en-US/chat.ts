@@ -29,7 +29,7 @@ export const enUSChatMessages = {
 	"deploy.history.loadingOlder": "Loading deployments…",
 	"deploy.activity.title": "Agent activity",
 	"deploy.activity.partial": "Only loaded agent messages are shown. Scroll up to load earlier messages.",
-	"deploy.planning.prompt": "I want to release the selected service. Review the project changes and discuss the release scope and any uncertain details with me first. Propose this release's deployment plan once everything is clear; do not execute it yet.",
+	"deploy.planning.prompt": "I want to release {module}. Review the project changes and discuss the release scope and any uncertain details with me first. Propose this release's deployment plan once everything is clear; do not execute it yet.",
 	"deploy.planning.notStarted": "Deployment planning did not start. Please try again.",
 	"deploy.discussion.title": "Discussing this release",
 	"deploy.discussion.status": "Discussing",

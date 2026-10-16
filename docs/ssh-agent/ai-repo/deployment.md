@@ -10,6 +10,7 @@
 - Profile 从 Session 本地 `workDir`（未配置时为后端 `localCwd`）的 `.gori/deploy-*.md` 发现。只显示 `target.host` 与 Workspace 主机相符的文件；错误独立返回。`.gori` 必须是实体目录，Profile 必须是普通文件。`connection.profile` 是文档标签，不选择凭据。
 - Profile v2 保存长期构建/重启/验证知识和允许上传目录；本次 Plan v2 固定准确的 1–8 个本地构建步骤、1–16 个普通文件产物及远端目标、重启和可选验证命令。构建目录和产物 source 是相对项目根的模型输入，冻结为规范绝对路径。远端命令可声明最多 16 个 `writePaths`。Profile/Plan v1 保持兼容读取。
 - 选择服务后创建稳定部署 ID：新 Discussion、Session 模式和正式历史消息同事务提交；后续 Run 沿用 Discussion ID。`deployment_sessions` 只保存身份、活动绑定和终态，`deployment_runs` 仍是计划与当前阶段事实来源。每个 Session 只有一个活动部署，同一 Workspace 仍只允许一个 running 部署。
+- 模块选择请求必须提供 `file + moduleId`，按 ID 匹配，不默认选择 Profile 第一项。`deployment-selection-context.ts` 为规划指引生成 `selection={source:"user",profileFile,profileHash,module:{id,name}}` 和 Profile 版本/模块名称列表，完整参考数据仅提供所选模块。来源从明确选择接口及已持久化 Discussion 推导，无需迁移或回填；每轮状态读取同一绑定，Profile 改动仍要求重新讨论。选择服务不代表确认 Git 发布基线，规划指引要求检查分支、commit、工作树和可得的线上版本证据，有基线歧义或回退风险时先与用户确认；本轮未新增 Git 版本冻结门禁。
 - 正式消息位于 `chat_messages`，`message_type=deployment`、`customType=deployment`，按 Session sequence 排序，持有稳定 ID/标题。开始时 `deployment.message.created` 发布实际持久化消息；成功、失败或手动退出在结算事务中将同一消息移到结束 sequence，保存 outcome/startedAt/finishedAt/reason，提交后发布 `deployment.message.updated`。不追加第二张卡片。REST 历史和 SSE 通过相同消息身份及较新 sequence 合并。它是 UI 元数据，在模型与压缩投影中过滤，不能变成 user 指令。
 
 ## 从讨论到明确结束
@@ -53,7 +54,7 @@ Discussion 状态为 discussing/proposed/cancelled；Run 状态为 preparing/run
 
 参数/规则错误返回精确 `code/message/field`，必要时含路径、允许目录及文件系统错误类别 `details`。初次提案与修订共用逐字段校验，指出数组索引、未知/缺失字段、路径格式/范围及数量限制；Profile 文件缺失/权限、构建 cwd、产物普通文件检查、Guard 对应阶段、执行顺序、完成条件和日志查询均保留具体原因。Tool 授权与执行捕获、HTTP 规范化不抹掉字段和详情。已知路径 errno 生成可修正错误，未知 I/O/SQLite 故障继续按内部故障处理；阶段结果保存精确错误文字及原日志。回归 `deployment-validation.test.ts`、Service 与 routes 测试。
 
-每个工具结束和模型请求前刷新可信部署状态；包括普通诊断工具的结果，状态仅在 provider 投影加入，不写入聊天或日志，也不无界累加。普通 bash/write、SFTP、Terminal submit/控制键和其他工具按原交互模式、Guard、沙箱与审批规则使用，其结果不会推进部署阶段。
+每个工具结束和模型请求前刷新可信部署状态，包含选择来源、Profile/模块身份及当前阶段。本轮指引与请求头部动态状态属于 system prompt；完整工具结果组之后的最新状态另以真实 `role:system` 消息投影，不再拼进 ToolResult。并行结果不被系统消息隔开，原用户输入仍为 user，工具输出/日志仍是 toolResult，不提升为系统指令。临时状态不写入聊天或日志，也不无界累加；结束后移除专用工具并在请求头部明确模式关闭。普通 bash/write、SFTP、Terminal submit/控制键和其他工具按原交互模式、Guard、沙箱与审批规则使用，其结果不会推进部署阶段。
 
 RESTART/VERIFY 各自冻结 `access`。Session 开启且沙箱完整可用、声明写入在根内时使用 workspace_write；不可用或写入超界的准确命令需要单独人工 Full Access 例外，autoAudit 不批准例外。批准启动时有效期五分钟；实际远端调用绑定执行身份与目标，一次消费。阶段重做或修订后受影响权限重新申请，不能复用已消费 grant。Session 主动关闭沙箱时来源是 session_sandbox_disabled，保留 Guard 与普通审批，不创建例外 grant。受限执行失败不自动提权重放。
 
@@ -64,6 +65,7 @@ Profile hash、SSH 主机指纹、凭据版本、远端用户、Workspace revisi
 - `ChatConsole` 负责装配 Terminal/Deploy Tab，通用 TaskContainer 没有部署业务导入。`DeploymentTaskPage` 展示服务、目标、横向阶段、当前步骤、文件真实字节（自适应 B/KiB/MiB/GiB）、结束原因和日志；放大复用原容器，不覆盖左侧导航。Tab × 只隐藏，退出部署走独立接口；只有所展示任务确实是当前活动部署才提供退出按钮，模块选择已移至 Composer 上拉面板，任务页不再接收 Profile 或选择/配置回调。
 - `use-deployment-tasks.ts` 只保存服务端活动模式和任务事实，`use-deployment-catalog.ts` 保存 Profile 和已读取的 Run 缓存，不请求部署历史分页，`use-deployment.ts` 分别管理 Composer 选择面板与任务选择/显示；唯一 SSE adapter 是 `deployment-event-stream.ts`。关闭和用户历史选择优先于迟到恢复，Session 切换丢弃旧响应；活动审批目标不随历史选择改变。
 - `DeploymentModulePicker` 及局部 `deployment-module-picker.css` 只负责输入框上方的非模态模块列表：沿用聊天输入框底色，有序列表为每项自动编号；每项独立圆角卡片约 36px 高、细边框、轻微底部阴影，前置 11px 轻描边单选控件（整张卡片仍可点击），只展示序号和模块名称。不显示模块 ID、配置来源、行图标、计数或整行选中高光，不使用绿色铺底/强调边框。打开时聚焦面板而不聚焦第一项，单选控件键盘聚焦仅加深原圆圈边框，不叠加外圈；选择期间仅对应圆点标记，失败返回后清除以便重试。列表超高内部滚动，标题和配置入口固定。`model/deployment-module-options.ts` 以 Profile 文件和模块 ID 组合身份，保留跨文件重名模块。Composer 仅提供通用 `aboveInputPanel` 插槽和 focus 能力，不导入 Deploy。Esc/关闭按钮还原输入焦点，点击外部不抢焦点；方向键/Home/End 导航，选择同步锁阻止重复请求。加载/失败/重试只读取模式和目录；明确选择后才沿用原讨论接口，成功后关闭面板并显示任务。关闭及切换 Session 拒绝迟到响应重新展开，打开选择器不覆盖已展示的历史任务。
+- 选择后自动发送的简短 user 消息使用后端返回的 `discussion.module.name`，双语模板为“我想发布 {module}……”/“I want to release {module}...”，只补服务名；不从旧目录顺序或缓存推测名字。用户聊天与自动发布意图不改变 role，权威绑定始终由后端 system 上下文提供。
 - 所有规划、执行、诊断和最终文字在中间 ChatTimeline。`GET .../chat/messages` 通过独立 `SqliteChatHistoryQuery` 统一返回正式消息、旧 Run 和无计划活动讨论入口，正式消息优先去重；旧结束记录及 v33 legacy_finished 正式消息在后端按结束位置挂接原始消息 sequence 分组。旧记录合成稳定 custom ID 与精简状态/时间，不回填数据库或加载完整日志。`conversationHistory` 只识别服务端条目并选择组件，不从另一份部署列表插入或按时间重排。首屏加载完成前不渲染 SSE 提前到达的孤立卡片；历史按钮只保留 Chat 的统一向前分页，点击仍打开原 Deploy Tab。普通消息顺序不变，`ChatMessageRow` 显式区分 custom 与 assistant，避免字符串 content 调用数组方法。
 - `DeploymentHistoryCard` 与局部 `deployment-history-card.css` 统一展示服务端统一历史消息（含旧 Run/Discussion 的只读投影）。采用约 38px 高、与对话内容区等宽的单行技术风格，服务靠左、耗时与状态靠右，通过加深底色、较强边框和状态侧线增强辨识度：部署图标、服务名、MM:SS（超过一小时为 H:MM:SS）耗时和图形状态。成功使用圆形勾、失败使用圆形叉、取消使用圆形短横线，状态图标不加外层方框；不显示部署记录标题、IP、日期、详情文案或失败说明，完整信息从点击打开的原 Deploy Tab 查看。长服务名省略并保留 title，状态有双语无障碍名称。`ChatTimeline` 只装配，不持有部署卡片 UI；Deploy 不导入 `chat-tool-details`/`chat-transfer-details`，上传/下载不读取部署状态。
 - `deployment-completion-history.ts` 仅做前端展示替换：`deployment_finish` 确实 completed、非工具错误，结果 JSON 含准确部署 ID、success/failed outcome 及 deploymentMode=false，并存在同 ID/同 outcome 的结束卡片时，将唯一卡片放在该 Tool Call 位置，隐藏原结束入口。混合 Assistant 消息按原内容顺序拆分，保留正文、其他工具与失败报告；原始历史、工具结果和模型上下文不改写。缺少卡片、运行中、错误/无效结果和取消均沿用原渲染，不以请求参数或相邻位置猜测成功。

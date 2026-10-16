@@ -6,10 +6,11 @@ export function deploymentStateInstructions(mode: DeploymentModeView | null): st
 	return `<deployment-state>\n${JSON.stringify(mode ? {
 		deploymentMode: true, deploymentId: mode.deployment.id, phase: mode.phase,
 		stage: mode.stage, stageStatus: mode.stageStatus, nextStage: mode.nextStage,
+		selection: mode.selection,
 	} : { deploymentMode: false })}\n</deployment-state>`;
 }
 
-/** Add current trusted facts at projection time, without growing the stored transcript. */
+/** Project trusted state as system context after the complete tool-result group, never inside tool output. */
 export function deploymentProviderMessages(messages: AgentMessage[], mode: DeploymentModeView | null): AgentMessage[] {
 	const visible = modelVisibleMessages(messages);
 	if (!mode) return visible;
@@ -17,7 +18,7 @@ export function deploymentProviderMessages(messages: AgentMessage[], mode: Deplo
 	for (let index = visible.length - 1; index >= 0; index--) {
 		if (visible[index]?.role === "assistant") { lastAssistant = index; break; }
 	}
-	return visible.map((message, index) => message.role === "toolResult" && index > lastAssistant ? {
-		...message, content: [...message.content, { type: "text" as const, text: deploymentStateInstructions(mode) }],
-	} : message);
+	if (!visible.some((message, index) => message.role === "toolResult" && index > lastAssistant)) return visible;
+	return [...visible, { role: "system", content: [{ type: "text", text: deploymentStateInstructions(mode) }],
+		timestamp: visible.at(-1)?.timestamp ?? mode.deployment.createdAt }];
 }

@@ -261,15 +261,43 @@ describe("durable deployment mode", () => {
 		expect(service.activeMode("session")).toBeNull();
 	});
 
-	it("projects trusted state onto diagnostic results without growing stored messages", async () => {
+	it("projects selection and state as system context while preserving user input and diagnostic output", async () => {
 		const { service, begin } = await harness();
-		await begin();
-		const messages = [{ role: "toolResult" as const, toolCallId: "diagnostic", toolName: "terminal_interaction",
-			content: [{ type: "text" as const, text: "Linux" }], isError: false, timestamp: 1 }];
+		const discussion = await begin();
+		const messages = [
+			{ role: "user" as const, content: "Check the selected service", timestamp: 1 },
+			{ role: "toolResult" as const, toolCallId: "diagnostic", toolName: "terminal_interaction",
+				content: [{ type: "text" as const, text: "Linux" }], isError: false, timestamp: 2 },
+			{ role: "toolResult" as const, toolCallId: "files", toolName: "read",
+				content: [{ type: "text" as const, text: "module references" }], isError: false, timestamp: 3 },
+		];
 		const projected = deploymentProviderMessages(messages, service.activeMode("session"));
-		expect(JSON.stringify(projected)).toContain('"deploymentMode\\":true');
-		expect(messages[0]?.content).toHaveLength(1);
+		expect(projected.slice(0, -1)).toEqual(messages);
+		expect(projected.at(-1)).toMatchObject({ role: "system", content: [{ type: "text" }] });
+		const state = projected.at(-1)!;
+		if (state.role !== "system") throw new Error("Expected system deployment state");
+		expect(JSON.parse(state.content[0]!.text.split("\n")[1]!)).toMatchObject({ deploymentMode: true,
+			selection: { source: "user", profileFile: discussion.profileFile,
+				profileHash: discussion.profileHash, module: discussion.module } });
+		expect(messages).toHaveLength(3);
+		expect(deploymentProviderMessages(messages, service.activeMode("session"))).toEqual(projected);
 		expect(deploymentProviderMessages(messages, null)).toEqual(messages);
+	});
+
+	it("derives the same selection from persisted discussion facts through review and execution", async () => {
+		const { service, propose, modes } = await harness();
+		const planned = await propose();
+		const selection = service.activeMode("session")!.selection;
+		expect(selection).toEqual({ source: "user", profileFile: "deploy-example.org.md",
+			profileHash: planned.plan.profileHash, module: planned.plan.module });
+		expect(service.activeMode("session")?.phase).toBe("review");
+		await service.claimForAgent("session", planned.id, "execution");
+		expect(modes.active("session")).toMatchObject({ phase: "execution", selection });
+		await service.executeStageForAgent("session", planned.id, "execution", "build", new AbortController().signal, "build");
+		expect(service.activeMode("session")?.selection).toEqual(selection);
+		await service.finishDeployment("session", planned.id, "failed", "User ended this release");
+		expect(service.activeMode("session")).toBeNull();
+		expect(service.getMode("session", planned.id).selection).toEqual(selection);
 	});
 
 	it("exposes explicit user exit through strict HTTP input", async () => {

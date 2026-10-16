@@ -296,7 +296,7 @@ export function ChatConsole({ sessionId }: { sessionId: string }) {
 			const discussion = await deployment.beginDiscussion(profileFile, moduleId);
 			if (!discussion || planningRequestRef.current !== request) return;
 			const run = await runtime.submit({
-				message: intl.formatMessage({ id: "deploy.planning.prompt" }),
+				message: intl.formatMessage({ id: "deploy.planning.prompt" }, { module: discussion.module.name }),
 				attachments: [], model, thinkingLevel, behavior: "follow_up",
 				serverInteractionMode: terminalMode.status?.effectiveServerInteractionMode ?? "command",
 				workflow: "deployment_planning", deploymentDiscussionId: discussion.id,

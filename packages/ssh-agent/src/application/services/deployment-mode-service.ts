@@ -1,5 +1,5 @@
 import { DeploymentError, type DeploymentDiscussion, type DeploymentRun } from "../../domain/deployment.ts";
-import { deploymentModeView, type DeploymentModeView, type DeploymentOutcome } from "../../domain/deployment-session.ts";
+import { deploymentModeView, deploymentSelection, type DeploymentModeView, type DeploymentOutcome } from "../../domain/deployment-session.ts";
 import type { DeploymentDiscussionRepository } from "../repositories/deployment-discussion-repository.ts";
 import type { DeploymentRepository } from "../repositories/deployment-repository.ts";
 import type { DeploymentSessionRepository } from "../repositories/deployment-session-repository.ts";
@@ -37,7 +37,7 @@ export class DeploymentModeService {
 		if (!deployment) throw new DeploymentError("deployment_session_not_found", "Deployment was not found", 404);
 		const discussion = this.options.discussions.find(sessionId, id);
 		const run = discussion?.deploymentRunId ? this.options.runs.find(sessionId, discussion.deploymentRunId) ?? null : null;
-		return deploymentModeView(deployment, run);
+		return deploymentModeView(deployment, run, discussion ? deploymentSelection(discussion) : undefined);
 	}
 
 	/** The caller's transaction also creates the Discussion and formal history message. */

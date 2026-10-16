@@ -1,9 +1,10 @@
 import { DatabaseSync } from "node:sqlite";
-import { appendFile, mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { appendFile, mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { handleDeploymentRoute } from "../src/api/deployment-routes.ts";
+import type { deploymentSelectionContext } from "../src/application/deployment-selection-context.ts";
 import { DeploymentService } from "../src/application/services/deployment-service.ts";
 import { RemoteSandboxApprovalStore } from "../src/application/services/remote-sandbox-approval-store.ts";
 import { WorkspaceEventHub } from "../src/application/workspace-event-hub.ts";
@@ -78,6 +79,53 @@ const proposal = {
 const signal = () => new AbortController().signal;
 
 describe("deployment discussions", () => {
+	it.each(["api", "canvas"])("identifies %s as the explicit choice in a multi-module profile across Chat Runs", async (moduleId) => {
+		const { service, database, root } = await harness();
+		try {
+			const path = join(root, ".gori", "deploy-example.org.md");
+			const otherModules = ["order", "canvas"].map((id) => `  - id: ${id}
+    name: ${id.toUpperCase()}
+    workdir: .
+    build:
+      instructions: Build only ${id}.
+    upload:
+      allowedDirectories:
+        - /srv/${id}/lib
+    restart:
+      instructions: Restart only ${id}.
+`).join("");
+			await writeFile(path, (await readFile(path, "utf8")).replace(/\n---\n$/u, `\n${otherModules}---\n`));
+			const discussion = await service.beginDiscussion("session-1", "deploy-example.org.md", moduleId);
+			const instructions = () => service.discussionInstructions("session-1", discussion.id);
+			const context = (prompt: string) => JSON.parse(prompt.split("\n").find((line) => line.startsWith("{"))!) as ReturnType<typeof deploymentSelectionContext>;
+			const initial = context(await instructions());
+			expect(initial.selection).toEqual({ source: "user", profileFile: discussion.profileFile,
+				profileHash: discussion.profileHash, module: discussion.module });
+			expect(initial.module.id).toBe(moduleId);
+			expect(initial.profile).toEqual({ version: 2, modules: [
+				{ id: "api", name: "API" }, { id: "order", name: "ORDER" }, { id: "canvas", name: "CANVAS" },
+			] });
+			expect(initial.profile.modules.every((entry) => !Object.hasOwn(entry, "build"))).toBe(true);
+			for (const id of ["agent-first", "agent-second"]) {
+				await service.bindPlanningRun("session-1", discussion.id, id);
+				expect(context(await instructions()).selection).toEqual(initial.selection);
+				await service.finishPlanningAgent("session-1", id, "completed");
+			}
+			expect(context(await service.planningInstructions("session-1", discussion.profileFile, moduleId)).selection)
+				.toEqual(initial.selection);
+		} finally { await service.close(); database.close(); }
+	});
+
+	it("rejects an unknown requested module instead of defaulting to the first service", async () => {
+		const { service, database } = await harness();
+		try {
+			await expect(service.beginDiscussion("session-1", "deploy-example.org.md", "missing"))
+				.rejects.toMatchObject({ code: "deployment_module_not_found", field: "moduleId" });
+			expect(service.activeDiscussion("session-1")).toBeNull();
+			expect(service.latest("session-1")).toBeNull();
+		} finally { await service.close(); database.close(); }
+	});
+
 	it("exposes the active discussion through discovery and explicit routes", async () => {
 		const { service, database } = await harness();
 		const base = "http://localhost/api/sessions/session-1/deployments";
@@ -178,6 +226,9 @@ describe("deployment discussions", () => {
 		expect(restored.activeDiscussion("session-1")).toMatchObject({ id: discussion.id, status: "discussing" });
 		const second = await restored.bindPlanningRun("session-1", discussion.id, "agent-after-restart");
 		expect(second.revision).toBe(first.revision + 1);
+		expect(await restored.discussionInstructions("session-1", discussion.id)).toContain(JSON.stringify({
+			source: "user", profileFile: discussion.profileFile, profileHash: discussion.profileHash, module: discussion.module,
+		}));
 		await restored.close(); reopened.close();
 	});
 

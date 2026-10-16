@@ -686,7 +686,9 @@ describe("ChatAgentRuntimeFactory", () => {
 		proposed.discussionId = proposed.id;
 		proposed.status = "running";
 		let mode: DeploymentModeView | null = deploymentModeView({ id: proposed.id, sessionId: "session-1",
-			workspaceId: "workspace-1", title: "API", createdAt: 1 }, proposed);
+			workspaceId: "workspace-1", title: "API", createdAt: 1 }, proposed, {
+				source: "user", profileFile: "deploy-host.md", profileHash: proposed.plan.profileHash, module: proposed.plan.module,
+			});
 		deployments.activeMode = vi.fn(() => mode);
 		deployments.finishDeployment = vi.fn(async () => {
 			const final = { ...mode!, deployment: { ...mode!.deployment, outcome: "failed" as const, finishedAt: 2 }, phase: "finished" as const };
@@ -707,10 +709,14 @@ describe("ChatAgentRuntimeFactory", () => {
 			(providerContext) => {
 				expect(providerContext.tools?.some((tool) => tool.name === "deployment_finish")).toBe(true);
 				expect(JSON.stringify(providerContext.messages)).not.toContain("UI_ONLY");
+				expect(providerContext.messages.at(-1)).toMatchObject({ role: "user", content: "Inspect and end" });
+				expect(providerContext.systemPrompt).toContain('"source":"user"');
+				expect(providerContext.systemPrompt).toContain('"module":{"id":"api","name":"API"}');
 				return fauxAssistantMessage(fauxToolCall("deployment_execute_next", { stage: "restart", command: "unexpected" }, { id: "invalid" }), { stopReason: "toolUse" });
 			},
 			(providerContext) => {
-				expect(providerContext.messages.at(-1)).toMatchObject({ role: "toolResult", toolCallId: "invalid", isError: true });
+				expect(providerContext.messages.at(-1)).toMatchObject({ role: "system" });
+				expect(providerContext.messages.at(-2)).toMatchObject({ role: "toolResult", toolCallId: "invalid", isError: true });
 				expect(beforeToolCall).not.toHaveBeenCalled();
 				expect(deployments.executeStageForAgent).not.toHaveBeenCalled();
 				return fauxAssistantMessage(fauxToolCall("remote_server_call", { command: "uname" }, { id: "diagnostic" }), { stopReason: "toolUse" });
@@ -718,6 +724,10 @@ describe("ChatAgentRuntimeFactory", () => {
 			(providerContext) => {
 				expect(JSON.stringify(providerContext.messages.at(-1))).toContain("upload");
 				expect(JSON.stringify(providerContext.messages.at(-1))).toContain("deployment-state");
+				expect(providerContext.messages.at(-1)).toMatchObject({ role: "system" });
+				expect(providerContext.messages.at(-2)).toMatchObject({ role: "toolResult", toolCallId: "diagnostic",
+					content: [{ type: "text", text: "Linux" }] });
+				expect(JSON.stringify(providerContext.messages.at(-1))).toContain('"source\\":\\"user');
 				expect(providerContext.systemPrompt?.match(/<deployment-state>/gu)).toHaveLength(1);
 				return fauxAssistantMessage(fauxToolCall("deployment_finish", { outcome: "failed", reason: "User requested failure" }, { id: "finish" }), { stopReason: "toolUse" });
 			},

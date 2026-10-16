@@ -29,7 +29,7 @@ export const zhCNChatMessages = {
 	"deploy.history.loadingOlder": "正在加载部署记录…",
 	"deploy.activity.title": "模型记录",
 	"deploy.activity.partial": "仅显示已加载的模型记录；向上滚动可加载更早消息。",
-	"deploy.planning.prompt": "我想发布所选服务。请先检查本次项目变更，和我讨论发布范围及其他不确定的细节；确认清楚后由你提出本次部署计划，不要提前执行。",
+	"deploy.planning.prompt": "我想发布 {module}。请先检查本次项目变更，和我讨论发布范围及其他不确定的细节；确认清楚后由你提出本次部署计划，不要提前执行。",
 	"deploy.planning.notStarted": "部署规划未启动，请重试。",
 	"deploy.discussion.title": "正在讨论本次发布",
 	"deploy.discussion.status": "讨论中",

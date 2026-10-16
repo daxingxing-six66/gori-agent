@@ -26,6 +26,8 @@
 
 Chat 协议接受 runtime system 消息，状态按 `runtimeEventId` 保留同毫秒内的不同切换。时间线不把模式协议显示为 Assistant 气泡，也不因仅有模式记录而隐藏空会话提示。回归见 `tests/chat-system-messages.test.tsx`。 部署入口使用独立 custom 消息，支持字符串或文本块 content；先按 role 分流，仅 Assistant 数组进入内容渲染，REST 与 SSE 按稳定身份合并。
 
+Deploy 模块选定后的自动发布消息使用后端返回的 Discussion 服务名称填充 `deploy.planning.prompt`，例如“我想发布 AI Web API……”，只补名称。该意图仍走普通 user 提交流程；选择来源、Profile/模块绑定及阶段状态由后端运行时 system 上下文独立提供。
+
 
 工作区创建/编辑表单提供默认本地工作目录和独立沙盒可写目录列表，已移除默认远端工作目录。本地沿用 LocalDirectoryPicker；沙盒列表由 RemoteDirectoryPicker 通过 SFTP 多选，初始浏览路径为首个已选目录或 `/`。创建时使用尚未保存的主机/凭据临时连接，配置完整后才能浏览；编辑时使用当前工作区 SFTP API。选择器只列目录，支持面包屑、搜索、加载和失败重试，`/` 可浏览但不能加入可写列表，确认后回填规范路径。概览只展示本地默认目录，新会话继承本地 `defaultCwd`，SFTP 默认从 `/` 浏览。
 

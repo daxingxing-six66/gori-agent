@@ -73,4 +73,12 @@ describe("locale state", () => {
 		expect(markup).toContain("English");
 		expect(markup).toMatch(/checked="" value="en-US"|value="en-US" checked=""/);
 	});
+
+	it.each([["zh-CN", zhCNMessages], ["en-US", enUSMessages]] as const)("names the selected service in the %s deployment request", (locale, messages) => {
+		const intl = createIntl({ locale, messages }, createIntlCache());
+		const text = intl.formatMessage({ id: "deploy.planning.prompt" }, { module: "AI Order {canary}" });
+		expect(text).toContain("AI Order {canary}");
+		expect(text).not.toContain("{module}");
+		expect(text).not.toMatch(/所选服务|selected service/u);
+	});
 });

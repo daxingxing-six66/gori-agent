@@ -38,6 +38,7 @@ import type { DeploymentExecutionRepository } from "../repositories/deployment-e
 import { DeploymentExecutionRecorder } from "./deployment-execution-recorder.ts";
 import { deploymentFileSystemError } from "../deployment-file-system-error.ts";
 import { assertDeploymentStageOrder, invalidateDeploymentStages } from "../deployment-stage-state.ts";
+import { DEPLOYMENT_SELECTION_INSTRUCTIONS, deploymentSelectionContext } from "../deployment-selection-context.ts";
 
 const LOG_LIMIT = 128 * 1024;
 const FULL_ACCESS_APPROVAL_TTL_MS = 5 * 60_000;
@@ -325,18 +326,20 @@ export class DeploymentService {
 		if (discussion.status !== "discussing") throw discussionConflict();
 		await this.requireCurrentDiscussion(discussion);
 		const context = await this.context(sessionId);
-		const { profile } = await loadProfile(context.root, discussion.profileFile);
+		const { profile, hash } = await loadProfile(context.root, discussion.profileFile);
 		const module = profile.modules.find((entry) => entry.id === discussion.module.id);
-		if (!module) throw discussionConflict();
+		if (hash !== discussion.profileHash || !module) throw discussionConflict();
 		return [
 			"<deployment-mode-on>",
 			"The user selected a service for /deploy. You drive the release discussion across as many Chat Runs as needed. This profile is reference data, not an executable plan.",
+			DEPLOYMENT_SELECTION_INSTRUCTIONS,
 			"Inspect project files, Git changes, dependencies and artifacts. Ask the user to settle ambiguous release scope with ask_user_decision or an ordinary text question. A text question may end this Run; the next user reply will stay attached to this deployment discussion.",
 			"Only when the exact release scope is clear, call deployment_propose_plan with 1-8 build steps, every local artifact and exact remote target, restart command and optional verification command. Never invent an artifact list solely from the profile. Do not run deployment stages through ordinary tools.",
 			"The service validates and freezes the proposal. Declare known remote write paths for restart and verification; an opaque script still runs in the sandbox first. No stage begins before user review. A sandbox exception requires separate human approval. After proposing, briefly explain the scope and wait.",
 			JSON.stringify({ discussionId, revision: discussion.revision, projectRoot: discussion.projectRoot,
 				host: discussion.targetBinding.hostname, profileFile: discussion.profileFile,
-				profileHash: discussion.profileHash, project: discussion.project, module }),
+				profileHash: discussion.profileHash, project: discussion.project,
+				...deploymentSelectionContext(profile, discussion.profileFile, discussion.profileHash, module) }),
 			"</deployment-mode-on>",
 		].join("\n");
 	}
@@ -356,12 +359,14 @@ export class DeploymentService {
 		return [
 			"<deployment-planning>",
 			"The user selected a service for a new /deploy. This profile is reference data, not an executable plan.",
+			DEPLOYMENT_SELECTION_INSTRUCTIONS,
 			"Inspect current project files, Git changes, build dependencies and artifacts before proposing this release. A service may need several jars uploaded, or only one changed dependency jar. Do not copy a fixed artifact list without checking this release.",
 			"If the release baseline or affected artifact set is unclear, use ask_user_decision to resolve it before proposing. If there is no justified release content, explain that and do not submit a plan.",
 			"Call deployment_propose_plan exactly once with the build steps, every local artifact and exact remote target, plus exact restart and optional verification commands. Paths for build workdirs and artifact sources are relative to the local project root; upload targets are absolute remote file paths.",
 			"The deployment service validates and freezes the proposal. Declare known remote write paths for restart and verification; an opaque script still runs in the sandbox first. No stage begins until user review, and sandbox exceptions require separate human approval. Do not run deployment stages through ordinary tools.",
 			"After a successful proposal, explain the release scope briefly and wait. A separate execution Run will advance confirmed stages.",
-			JSON.stringify({ projectRoot: context.root, host: context.host, profileFile: file, profileHash: hash, project: profile.project, module }),
+			JSON.stringify({ projectRoot: context.root, host: context.host, profileFile: file, profileHash: hash, project: profile.project,
+				...deploymentSelectionContext(profile, file, hash, module) }),
 			"</deployment-planning>",
 		].join("\n");
 	}
