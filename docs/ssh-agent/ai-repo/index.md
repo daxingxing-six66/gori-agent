@@ -71,7 +71,7 @@ Workspace/Credential 前端契约见 [workspace-credential-integration.md](../fr
 
 已经实现的 Terminal Interaction MVP：用户手动开启独立模式，后端维持长周期 PTY 和 Canonical State，Agent 使用专用 Tool，浏览器通过 snapshot + SSE 只读投影并同步 owner resize，Interaction/Input/Observation/Timeline 持久化到 SQLite。
 
-已经接入的 `/deploy` 主链路：服务选择时创建稳定身份、正式历史消息和 Session 部署模式；Plan 提案及审批在中间会话，右侧 Deploy Tab 展示横向阶段与日志。模式跨 Chat Run，正式工具串行推进，同阶段/上游重做保留输出并使下游事实失效；用户或模型通过明确结束用例退出。普通工具保持原模式与授权规则，部署专用定义动态装配。已完成定向回归及授权的独立 Java 项目真实发布验收，包括失败修复、三类结束、Terminal 多 Tab、日志与窄屏/明暗主题；实测平台与沙箱边界见 [deployment.md](./deployment.md) 和设计文档第 16–17 节。
+已经接入的 `/deploy` 主链路：服务选择时创建稳定身份、正式历史消息和 Session 部署模式；Plan 提案由模型在中间会话发起，计划审阅在右侧 Deploy Tab；确认启动后展示准备及四个执行阶段的横向图标节点，准备详情可查看计划，其余节点展示执行事实与日志，普通工具和 Full Access 审批保留在中间。模式跨 Chat Run，正式工具串行推进，同阶段/上游重做保留输出并使下游事实失效；用户或模型通过明确结束用例退出。普通工具保持原模式与授权规则，部署专用定义动态装配。已完成定向回归及授权的独立 Java 项目真实发布验收，包括失败修复、三类结束、Terminal 多 Tab、日志与窄屏/明暗主题；实测平台与沙箱边界见 [deployment.md](./deployment.md) 和设计文档第 16–17 节。
 
 尚未实现：附件删除、非图片附件的通用内容下载和 LLM 输入、图片生成、断点续传、Transfer 历史自动清理、主机密钥重新信任/预置信任/SSH CA、Chat 多 Lane/Fork 和跨进程 delta 重放。Terminal MVP 不允许用户输入、不自动开启模式，使用 REST + SSE 而不引入 WebSocket。
 

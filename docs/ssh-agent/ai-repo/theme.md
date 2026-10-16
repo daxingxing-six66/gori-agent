@@ -38,3 +38,5 @@ Composer 的发送/停止主操作按钮共用 32px 圆形外观，各主题的�
 统计页面采用独立的分析视图风格，样式在 `features/statistics/components/statistics.css`：仅在统计 main 内覆盖语义变量为中性灰/深色表面，Sidebar 和其他页面不受影响。深色 KPI、面板标题带、较强边框和多色数据序列区分指标、分析和明细区域；三种主题仍使用统一偏好入口。图表浮层使用统计局部固定定位，不进入全局主题或业务状态。详见 [statistics.md](./statistics.md)。
 
 用户决策的自定义想法输入区使用 `globals.css` 的 `decision-custom-*` 样式，复用表面、边框和文字语义变量。激活后保持单行，随文本换行增高至 144px 后内部滚动；使用完整中性边框，无下划线或装饰阴影，继续按钮为 44px 圆形。组件中的尺寸测量只控制 textarea 高度，不接管 Chat Composer、Terminal 或主题状态。
+
+Deploy 计划使用 deployment-plan.css 的局部竖向时间轴和连接卡片，复用 Surface/Ink/Line/Code 语义变量。开始按钮采用中性高对比色，按用户精修为 32px 高，位于分隔线上方，通过轻微阴影区分层次；不修改全局按钮或其他功能配色。阶段节点间距 32px，节点图标/展开箭头使用轻微 drop-shadow，阶段文字和数量摘要使用 text-shadow；阴影颜色从当前主题 Ink 混合透明色得到，限于计划节点。完整内容按需展开；执行进度仍由原事实驱动。deployment-task.css 的横向流程增加 ClipboardList 准备图标，并复用其余四个语义图标作为线上节点，保留轻微图标阴影；连接线与小状态标记使用 Line/Accent/Danger 语义色，阶段身份不会被运行或结果图标替换。样式仅作用于 Deploy，不修改容器或全局图标。构建命令在局部引用块中使用 SurfaceMuted 背景和 LineStrong 左侧边线，步骤按钮右对齐；日志标题控制整块视口折叠，收回整个日志区的占高，连续文本使用同一等宽区域，不再有执行分组卡片。

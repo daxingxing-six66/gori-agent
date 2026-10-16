@@ -49,7 +49,7 @@ describe("Session sandbox command and audit projection", () => {
 		expect(isDeploymentRun(run)).toBe(true);
 		const noop = () => undefined;
 		const markup = renderToStaticMarkup(<IntlProvider locale="zh-CN" messages={zhCNMessages}><DeploymentReview run={run} review={deploymentReviewState(run)}
-			busy={false} canConfirm onConfirm={noop} onDecideFullAccess={noop} onDecideRecovery={noop} /></IntlProvider>);
+			busy={false} canConfirm onConfirm={noop} onReviewPermissions={noop} onDecideRecovery={noop} /></IntlProvider>);
 		expect(markup).toContain(zhCNMessages["deploy.confirm"]); expect(markup).not.toContain("Full Access"); expect(markup).not.toContain("disabled=");
 	});
 });

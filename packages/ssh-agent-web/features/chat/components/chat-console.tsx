@@ -33,9 +33,9 @@ import { useTaskContainerDisplay } from "@/features/task-container/runtime/use-t
 import { useWorkspaceTree } from "@/features/workspace/components/workspace-tree-context";
 import { ApiError } from "@/shared/errors/api-error";
 import { DeploymentTaskPage } from "@/features/deploy/components/deployment-task-page";
-import { DeploymentReview } from "@/features/deploy/components/deployment-review";
+import { DeploymentFullAccessReview } from "@/features/deploy/components/deployment-full-access-review";
 import { DeploymentModulePicker } from "@/features/deploy/components/deployment-module-picker";
-import { deploymentAwaitsResume } from "@/features/deploy/model/deployment-review";
+import { useDeploymentExecution } from "@/features/deploy/runtime/use-deployment-execution";
 import { useDeployment } from "@/features/deploy/runtime/use-deployment";
 import { useDeploymentReview } from "@/features/deploy/runtime/use-deployment-review";
 import "./chat-task-layout.css";
@@ -312,21 +312,12 @@ export function ChatConsole({ sessionId }: { sessionId: string }) {
 		}
 	}, [active, deployment, intl, model, sandbox.pending, sandbox.readOnly, runtime.submit, runtime.submitting, sessionId, terminalMode.status?.effectiveServerInteractionMode, thinkingLevel]);
 
-	const startDeploymentExecution = useCallback(async () => {
-		const plan = deployment.activeTask?.run ?? deployment.run;
-		if (!plan || (plan.status !== "preparing" && !deploymentAwaitsResume(plan)) || !model || active || sandbox.readOnly || sandbox.pending || runtime.submitting) return;
-		deployment.setError(null);
-		try {
-			const run = await runtime.submit({
-				message: plan.status === "recovering" ? "请继续已确认修订的部署，从待执行阶段开始；若再次失败，先分析并提出修复方案。"
-					: "请执行我刚确认的部署计划。每一阶段后检查结果并决定下一步；出现异常时先分析并提出修复方案。",
-				attachments: [], model, thinkingLevel, behavior: "follow_up",
-				serverInteractionMode: terminalMode.status?.effectiveServerInteractionMode ?? "command",
-				workflow: "deployment_execution", deploymentRunId: plan.id,
-			});
-			if (run) await deployment.refresh();
-		} catch (error) { deployment.setError(error instanceof Error ? error.message : String(error)); }
-	}, [active, deployment, model, sandbox.pending, sandbox.readOnly, runtime.submit, runtime.submitting, terminalMode.status?.effectiveServerInteractionMode, thinkingLevel]);
+	const activeDeploymentRun = deployment.activeTask?.run ?? null;
+	const deploymentReview = useDeploymentReview(activeDeploymentRun);
+	const execution = useDeploymentExecution({ sessionId, run: activeDeploymentRun, model, thinkingLevel,
+		serverInteractionMode: terminalMode.status?.effectiveServerInteractionMode ?? "command",
+		disabled: active || sandbox.readOnly || sandbox.pending || runtime.submitting || deployment.busy || Boolean(deploymentReview?.pendingExceptions.length),
+		submit: runtime.submit, refresh: deployment.refresh, setError: deployment.setError });
 
 	const resolveApproval = useCallback((approval: ToolApproval, approved: boolean) => {
 		void runtime.resolveApproval(approval, approved);
@@ -342,10 +333,7 @@ export function ChatConsole({ sessionId }: { sessionId: string }) {
 			requestAnimationFrame(() => decisionReopenRef.current?.focus());
 		}} onSubmit={(answers) => runtime.answerDecision(pendingDecision, answers)} />
 	</> : null;
-	const activeDeploymentRun = deployment.activeTask?.run ?? null;
-	const deploymentReview = useDeploymentReview(activeDeploymentRun);
-	const needsDeploymentReview = activeDeploymentRun && deploymentReview !== null;
-	const pendingDeploymentAction = Boolean(needsDeploymentReview || pendingDecision || Object.values(runtime.state.approvals).some((approval) => approval.status === "pending"));
+	const pendingDeploymentAction = Boolean(deploymentReview?.pendingExceptions.length || pendingDecision || Object.values(runtime.state.approvals).some((approval) => approval.status === "pending"));
 	const returnToConversation = () => {
 		taskDisplay.changeMode("docked"); setHiddenDecisionId(null);
 		requestAnimationFrame(() => {
@@ -371,6 +359,10 @@ export function ChatConsole({ sessionId }: { sessionId: string }) {
 		content: <DeploymentTaskPage sessionId={sessionId} task={deployment.selectedTask} run={deployment.run} discussion={deployment.selectedDiscussion}
 			logs={deployment.logs} loading={deployment.loading} busy={deployment.busy} error={deployment.error}
 			fullscreen={taskDisplay.mode === "fullscreen"} pending={pendingDeploymentAction} onReturnConversation={returnToConversation}
+			review={activeDeploymentRun && deploymentReview ? { runId: activeDeploymentRun.id, review: deploymentReview,
+				busy: deployment.busy, starting: execution.starting, canConfirm: Boolean(model && !active && !runtime.submitting && !sandbox.readOnly && !sandbox.pending),
+				onConfirm: () => { void execution.start(); }, onReviewPermissions: returnToConversation,
+				onDecideRecovery: (id, approved) => { void deployment.decideRecovery(id, approved); } } : undefined}
 			onExit={deployment.activeTask && deployment.activeTask.deployment.id === deployment.selectedTask?.deployment.id ? () => { void deployment.finish(); } : undefined}
 			onSubmit={(message) => submit(message, [])} /> });
 
@@ -413,10 +405,11 @@ export function ChatConsole({ sessionId }: { sessionId: string }) {
 					<div ref={scrollRef} className="app-scrollbar h-full overflow-y-auto" onScroll={handleChatScroll}>
 						<ChatTimeline showActivity={showActivity} loading={runtime.loading} loadingOlderMessages={runtime.loadingOlderMessages} timeline={runtime.state.timeline} tools={runtime.state.tools} approvals={runtime.state.approvals} approvalMutationId={runtime.approvalMutationId} targetHost={targetHost} run={runtime.state.run} latestUserText={latestUserText} onResolveApproval={resolveApproval} onRestoreDraft={restoreDraft}
 							onOpenDeployment={(id) => { setActiveTaskTabId("deploy"); taskDisplay.reveal(); void deployment.openHistory(id); }} />
-						{needsDeploymentReview ? <div data-deployment-review tabIndex={-1} className="mx-auto max-w-[820px] px-5 py-5 lg:px-8"><DeploymentReview
-							run={activeDeploymentRun} review={deploymentReview} busy={deployment.busy} canConfirm={Boolean(model && !active && !runtime.submitting && !sandbox.readOnly && !sandbox.pending)}
-							onConfirm={() => { void startDeploymentExecution(); }} onDecideFullAccess={(stage, id, approved) => { void deployment.decideFullAccess(stage, id, approved); }}
-							onDecideRecovery={(id, approved) => { void deployment.decideRecovery(id, approved); }} /></div> : null}
+						{activeDeploymentRun && deploymentReview && deploymentReview.pendingExceptions.length > 0 ? <div data-deployment-review tabIndex={-1} className="mx-auto max-w-[820px] px-5 py-5 lg:px-8">
+							<DeploymentFullAccessReview run={activeDeploymentRun} stages={deploymentReview.exceptionStages}
+								pendingStages={deploymentReview.pendingExceptions} busy={deployment.busy}
+								onDecide={(stage, id, approved) => { void deployment.decideFullAccess(stage, id, approved); }} />
+						</div> : null}
 					</div>
 					{showReturnToBottom ? <button type="button" className="absolute bottom-3 left-1/2 z-10 grid h-9 w-9 -translate-x-1/2 place-items-center rounded-full border border-zinc-200 bg-white text-zinc-700 shadow-[0_6px_20px_rgb(24_24_27/12%)] transition hover:border-zinc-300 hover:bg-zinc-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#7aa48e]/40" aria-label={intl.formatMessage({ id: "chat.scroll.latest" })} title={intl.formatMessage({ id: "chat.scroll.latest" })} onClick={scrollToBottom}><ArrowDown size={16} /></button> : null}
 				</div>

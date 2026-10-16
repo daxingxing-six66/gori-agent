@@ -1,6 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { IntlProvider } from "react-intl";
 import { describe, expect, it } from "vitest";
+import { DeploymentFullAccessReview } from "../features/deploy/components/deployment-full-access-review";
 import { DeploymentReview } from "../features/deploy/components/deployment-review";
 import { DeploymentTaskPage } from "../features/deploy/components/deployment-task-page";
 import { DeploymentModulePicker } from "../features/deploy/components/deployment-module-picker";
@@ -55,8 +56,13 @@ function picker(props: Partial<Parameters<typeof DeploymentModulePicker>[0]> = {
 }
 function review(value: DeploymentRun, props: Partial<Parameters<typeof DeploymentReview>[0]> = {}) {
 	return localize(<DeploymentReview run={value} review={deploymentReviewState(value)} busy={false} canConfirm onConfirm={noop}
-		onDecideFullAccess={noop} onDecideRecovery={noop} {...props} />);
+		onReviewPermissions={noop} onDecideRecovery={noop} {...props} />);
 }
+function permissions(value: DeploymentRun) {
+	const state = deploymentReviewState(value);
+	return state ? localize(<DeploymentFullAccessReview run={value} stages={state.exceptionStages} pendingStages={state.pendingExceptions} busy={false} onDecide={noop} />) : "";
+}
+const disabledStart = /<button(?=[^>]*class="deploy-plan-start")(?=[^>]*disabled="")[^>]*>/u;
 function timeline(messages: ChatTimelineEntry[], extra: Partial<Parameters<typeof ChatTimeline>[0]> = {}) {
 	return localize(<ChatTimeline showActivity={false} loading={false} loadingOlderMessages={false} timeline={messages} tools={{}} approvals={{}}
 		approvalMutationId={null} run={null} latestUserText="" onResolveApproval={noop} onRestoreDraft={noop}
@@ -72,7 +78,7 @@ function planned(): DeploymentRun {
 		artifacts: [{ source: build.artifact, remotePath: upload.remotePath }] } };
 }
 
-describe("deployment task and conversation review", () => {
+describe("deployment task and plan review", () => {
 	it("keeps profile selection unselected and distinguishes identical module ids across profiles", () => {
 		const profiles: DeploymentProfileSummary[] = [
 			{ file: "deploy-a.md", project: "A", target: { host: "example.org" }, modules: [{ id: "api", name: "API" }, { id: "worker", name: "Worker" }] },
@@ -112,7 +118,7 @@ describe("deployment task and conversation review", () => {
 		expect(picker({ disabled: true, discovery: { host: "example.org", profiles, errors: [], latest: null, activeDiscussion: null } })).toMatch(/disabled=""[^>]*aria-label="选择 API/);
 	});
 
-	it("reviews exact legacy commands and file overwrite targets in the conversation", () => {
+	it("reviews exact legacy commands and file overwrite targets in Deploy", () => {
 		const html = review(run);
 		for (const detail of ["npm run build", "/tmp/project/app.tar.gz", "/srv/app/app.tar.gz", "systemctl restart app", "systemctl is-active app"]) expect(html).toContain(detail);
 		expect(html).toContain("开始部署");
@@ -127,7 +133,7 @@ describe("deployment task and conversation review", () => {
 		next.plan.artifacts = [{ source: "/tmp/project/common.jar", remotePath: "/srv/app/common.jar" }, { source: "/tmp/project/api.jar", remotePath: "/srv/app/api.jar" }];
 		const html = review(next);
 		for (const detail of ["build-common", "build-api", "/tmp/project/common.jar", "/srv/app/common.jar", "/tmp/project/api.jar", "/srv/app/api.jar"]) expect(html).toContain(detail);
-		expect(review(next, { canConfirm: false })).toMatch(/disabled=""[^>]*>开始部署/);
+		expect(review(next, { canConfirm: false })).toMatch(disabledStart);
 	});
 
 	it("requires exact per-command human exceptions before confirming a Full Access plan", () => {
@@ -136,12 +142,12 @@ describe("deployment task and conversation review", () => {
 				restart: { id: "r", stage: "restart", command: run.plan.restart.command, status: "pending", requestedAt: 1 },
 				verify: { id: "v", stage: "verify", command: run.plan.verify!.command, status: "pending", requestedAt: 1 },
 			} };
-		const html = review(full);
+		const html = review(full) + permissions(full);
 		expect(html).toContain("tester@example.org:22");
 		expect(html).toContain("SHA256:test");
 		expect(html).toContain('aria-label="批准重启命令使用 Full Access"');
 		expect(html).toContain('aria-label="批准验证命令使用 Full Access"');
-		expect(html).toMatch(/disabled=""[^>]*>开始部署/);
+		expect(html).toMatch(disabledStart);
 	});
 
 	it("reviews only the exceptional stage in a mixed plan and permits a fresh human approval", () => {
@@ -151,12 +157,12 @@ describe("deployment task and conversation review", () => {
 			verify: { command: "test -f /srv/app/api.jar", access: { mode: "workspace_write" } } };
 		next.fullAccessApprovals = { restart: { id: "r", stage: "restart", command: next.plan.restart.command, status: "pending", requestedAt: 1,
 			toolName: "remote_sandbox_exception", reason: "sandbox_scope_exceeded" } };
-		expect(review(next).match(/批准本条命令/g)).toHaveLength(1);
-		expect(review(next)).toMatch(/disabled=""[^>]*>开始部署/);
+		expect(permissions(next).match(/批准本条命令/g)).toHaveLength(1);
+		expect(review(next)).toMatch(disabledStart);
 		next.fullAccessApprovals.restart = { ...next.fullAccessApprovals.restart!, status: "approved", resolvedAt: 2, expiresAt: Date.now() + 60_000 };
-		expect(review(next)).not.toMatch(/disabled=""[^>]*>开始部署/);
+		expect(review(next)).not.toMatch(disabledStart);
 		next.fullAccessApprovals.restart.expiresAt = 3;
-		expect(review(next)).toMatch(/disabled=""[^>]*>开始部署/);
+		expect(review(next)).toMatch(disabledStart);
 	});
 
 	it("does not ask to renew a completed stage until that stage is invalidated by a rerun", () => {
@@ -164,8 +170,8 @@ describe("deployment task and conversation review", () => {
 			stages: { ...run.stages, restart: { status: "success", log: "restarted" }, verify: { status: "failed", log: "verification failed" } },
 			fullAccessApprovals: { restart: { id: "r", stage: "restart", command: run.plan.restart.command, status: "approved", requestedAt: 1, resolvedAt: 2, expiresAt: 3 },
 				verify: { id: "v", stage: "verify", command: run.plan.verify!.command, status: "pending", requestedAt: 4 } } };
-		expect(review(full)).not.toContain('aria-label="批准重启命令使用 Full Access"');
-		expect(review(full)).toContain('aria-label="批准验证命令使用 Full Access"');
+		expect(permissions(full)).not.toContain('aria-label="批准重启命令使用 Full Access"');
+		expect(permissions(full)).toContain('aria-label="批准验证命令使用 Full Access"');
 	});
 
 	it("shows proposed changes but does not gate diagnosis after a later failure", () => {
@@ -179,13 +185,13 @@ describe("deployment task and conversation review", () => {
 		expect(pending).toContain("Correct the goal");
 		expect(pending).toContain("build-corrected");
 		expect(pending).toContain("确认修订");
-		expect(pending).not.toContain("继续部署</button>");
+		expect(pending).not.toContain("继续部署</span>");
 		next.recoveries[0]!.status = "approved";
 		const failedAgain = review(next);
 		expect(failedAgain).toBe("");
 		expect(deploymentNeedsReview(next)).toBe(false);
 		next.stages = { ...next.stages, build: { status: "pending", log: "" } };
-		expect(review(next)).toContain("继续部署</button>");
+		expect(review(next)).toContain("继续部署</span>");
 		expect(deploymentNeedsReview(next)).toBe(true);
 	});
 

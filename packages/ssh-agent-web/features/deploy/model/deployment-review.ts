@@ -8,6 +8,12 @@ export interface DeploymentReviewState {
 	pendingExceptions: DeploymentRemoteStage[];
 }
 
+/** Preparing/abandoned plans are not execution progress. Older runs may omit startedAt. */
+export function deploymentHasExecution(run: DeploymentRun): boolean {
+	return run.status !== "preparing" && (run.startedAt !== undefined || run.status === "running" || run.status === "recovering" ||
+		DEPLOY_STAGES.slice(1).some((stage) => run.stages[stage].status !== "pending"));
+}
+
 export function deploymentAwaitsResume(run: DeploymentRun): boolean {
 	return run.status === "recovering" && run.recoveries?.at(-1)?.status === "approved" &&
 		!DEPLOY_STAGES.some((stage) => run.stages[stage].status === "failed");

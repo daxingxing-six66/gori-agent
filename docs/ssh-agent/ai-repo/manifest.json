@@ -383,7 +383,7 @@
 				"packages/ssh-agent/src/application/services/chat-service.ts": "sha256:7c2e97a9a04085df99cf4b11c01137dec7ef6290276b9ba6ba0cea71dfb75cfd",
 				"packages/ssh-agent/src/domain/chat.ts": "sha256:83a1a42ca957c8e894cd843bdd545eedbf55eb00391256eb3a887cd9ca510e34",
 				"packages/ssh-agent-web/features/chat/api/chat-api.ts": "sha256:c95159d28b5e80d2e996ffb819cfd88c5d33a374bd02758515bfd647ac40fc7d",
-				"packages/ssh-agent-web/features/chat/components/chat-console.tsx": "sha256:fb98e68dbbda79fff74de333ae3775bd609a66980c19dc1aaf3243972594b8ad",
+				"packages/ssh-agent-web/features/chat/components/chat-console.tsx": "sha256:48d347b38b2133095fd62abfabe7fa1573d6325062adf72ecf98fe51813d280e",
 				"packages/ssh-agent-web/features/chat/components/chat-composer-panel.tsx": "sha256:1cb1cd17266ecdd300b20cc4d334d7a30cf96f8bd87229f24f9a8df40e708aa3",
 				"packages/ssh-agent-web/features/chat/components/chat-token-editor.tsx": "sha256:a5c8bed69266e1596f64f4b82c2e1ded16504da571fcf419e045398e0c373c80",
 				"packages/ssh-agent-web/features/chat/model/chat-composer-menu.ts": "sha256:88fb98da1eba5078057a8d5fe5c16840333f0d35c0f41540a86ba44ea712079c",
@@ -483,7 +483,7 @@
 				"packages/ssh-agent-web/features/chat/components/chat-token-editor.tsx": "sha256:a5c8bed69266e1596f64f4b82c2e1ded16504da571fcf419e045398e0c373c80",
 				"packages/ssh-agent-web/features/chat/components/chat-reference.tsx": "sha256:1a93725384349d8d8e29ac9b5c6cf8b2c5e5244fc20dbc3f79979b0dd3eda5b3",
 				"packages/ssh-agent-web/features/chat/components/chat-message.tsx": "sha256:5f12a74fa04be5c9fcfff9ac24a7591d5410a6bd0144638dfe679412208b9081",
-				"packages/ssh-agent-web/features/chat/components/chat-console.tsx": "sha256:fb98e68dbbda79fff74de333ae3775bd609a66980c19dc1aaf3243972594b8ad",
+				"packages/ssh-agent-web/features/chat/components/chat-console.tsx": "sha256:48d347b38b2133095fd62abfabe7fa1573d6325062adf72ecf98fe51813d280e",
 				"packages/ssh-agent-web/features/chat/components/chat-composer-panel.tsx": "sha256:1cb1cd17266ecdd300b20cc4d334d7a30cf96f8bd87229f24f9a8df40e708aa3",
 				"packages/ssh-agent-web/features/chat/model/chat-composer-menu.ts": "sha256:88fb98da1eba5078057a8d5fe5c16840333f0d35c0f41540a86ba44ea712079c",
 				"packages/ssh-agent-web/features/chat/model/chat-composer.ts": "sha256:d24b2c9dd2ce1f519d12bba80a375ce32de08f2fa808877ed26662479e8c5ae3",
@@ -1133,7 +1133,8 @@
 				"packages/ssh-agent-web/features/deploy/runtime/use-deployment-review.ts",
 				"packages/ssh-agent-web/tests/deployment-review-clock.test.ts",
 				"packages/ssh-agent/src/infrastructure/sqlite/sqlite-chat-history-query.ts",
-				"packages/ssh-agent/src/application/deployment-selection-context.ts"
+				"packages/ssh-agent/src/application/deployment-selection-context.ts",
+				"packages/ssh-agent-web/features/deploy/runtime/use-deployment-execution.ts"
 			],
 			"sourceDigests": {
 				"packages/agent/src/agent.ts": "sha256:433564b54b12e00102a979d128c6c008d2b9298e4d7dacdd0e7768bd48c694a6",
@@ -1182,7 +1183,7 @@
 				"packages/ssh-agent-web/features/chat/api/chat-api.ts": "sha256:c95159d28b5e80d2e996ffb819cfd88c5d33a374bd02758515bfd647ac40fc7d",
 				"packages/ssh-agent-web/features/chat/components/chat-markdown.tsx": "sha256:e861ee50ac2d1e97d1cc6e4ee801a57f9b502e29e1bde1221fcfd2de2d64f987",
 				"packages/ssh-agent-web/features/chat/components/chat-message.tsx": "sha256:5f12a74fa04be5c9fcfff9ac24a7591d5410a6bd0144638dfe679412208b9081",
-				"packages/ssh-agent-web/features/chat/components/chat-console.tsx": "sha256:fb98e68dbbda79fff74de333ae3775bd609a66980c19dc1aaf3243972594b8ad",
+				"packages/ssh-agent-web/features/chat/components/chat-console.tsx": "sha256:48d347b38b2133095fd62abfabe7fa1573d6325062adf72ecf98fe51813d280e",
 				"packages/ssh-agent-web/features/chat/components/chat-composer-panel.tsx": "sha256:1cb1cd17266ecdd300b20cc4d334d7a30cf96f8bd87229f24f9a8df40e708aa3",
 				"packages/ssh-agent-web/features/chat/components/chat-timeline.tsx": "sha256:bbd2e9e125a5a9b633736e3f54249fac989b12fb3765eeb1cc787a033b88e52a",
 				"packages/ssh-agent-web/features/chat/components/chat-token-editor.tsx": "sha256:a5c8bed69266e1596f64f4b82c2e1ded16504da571fcf419e045398e0c373c80",
@@ -1253,12 +1254,13 @@
 				"packages/ssh-agent-web/tests/chat-custom-messages.test.tsx": "sha256:bfd4f1d0e7ea1aa019aab82b21bea10c5db1da2e6f30fbf936768b8d296611da",
 				"packages/ssh-agent-web/features/deploy/model/deployment-completion-history.ts": "sha256:2145a32a4e33c2dc629aa80f4e85361afc69cb31481cafc3d96c369a8f9d8704",
 				"packages/ssh-agent-web/features/deploy/model/deployment-history-entry.ts": "sha256:2ac0bdfa5d63fdca7e471f2cda06dd4f831ced53799509334ebe33487691c1f6",
-				"packages/ssh-agent-web/features/deploy/model/deployment-review.ts": "sha256:f4e47c5110cfa40b471a604a84bd22ac5fdb90adfba725243784c6d80b6a3c2c",
+				"packages/ssh-agent-web/features/deploy/model/deployment-review.ts": "sha256:86c3e68f333905220dbc1ce853ff1049bd94141faa6fb30f80b97978ed0f94f7",
 				"packages/ssh-agent-web/features/deploy/components/deployment-full-access-review.tsx": "sha256:02a0d64f9c1d1a95db729d1dc8e7c12231ae2d39fa9531f8ee373ca2614ff3c9",
 				"packages/ssh-agent-web/features/deploy/runtime/use-deployment-review.ts": "sha256:03e871f7ab71b62a03a04e39caa14882a8ea8aaa185ad8335c4253d3cf3d04cc",
 				"packages/ssh-agent-web/tests/deployment-review-clock.test.ts": "sha256:fd7a234b20d0814f59742d08f0228fd966652e37ac7d7f926c419cf6b3f061e2",
 				"packages/ssh-agent/src/infrastructure/sqlite/sqlite-chat-history-query.ts": "sha256:3d7dd42a023ed9bc29e2054908c2add8dcba96f4d1d13ea63ad1fe161783914b",
-				"packages/ssh-agent/src/application/deployment-selection-context.ts": "sha256:0aad997e56e1d653119c166885682471eea8642b9cb957cef73c1cb41e0e60c1"
+				"packages/ssh-agent/src/application/deployment-selection-context.ts": "sha256:0aad997e56e1d653119c166885682471eea8642b9cb957cef73c1cb41e0e60c1",
+				"packages/ssh-agent-web/features/deploy/runtime/use-deployment-execution.ts": "sha256:0f4903f39df3ef2ceff1402ebd93099bb22ceb1f6f283cb38073919e6120e753"
 			}
 		},
 		{
@@ -1426,7 +1428,13 @@
 				"packages/ssh-agent-web/features/deploy/runtime/use-deployment-review.ts",
 				"packages/ssh-agent-web/tests/deployment-review-clock.test.ts",
 				"packages/ssh-agent-web/features/deploy/model/deployment-module-options.ts",
-				"packages/ssh-agent-web/features/deploy/components/deployment-module-picker.css"
+				"packages/ssh-agent-web/features/deploy/components/deployment-module-picker.css",
+				"packages/ssh-agent-web/features/deploy/components/deployment-plan-overview.tsx",
+				"packages/ssh-agent-web/features/deploy/components/deployment-plan.css",
+				"packages/ssh-agent-web/features/deploy/components/deployment-pipeline.tsx",
+				"packages/ssh-agent-web/features/deploy/runtime/use-deployment-execution.ts",
+				"packages/ssh-agent-web/features/deploy/components/deployment-stage-icon.tsx",
+				"packages/ssh-agent-web/features/deploy/components/deployment-build-steps.tsx"
 			],
 			"sourceDigests": {
 				"packages/ssh-agent-web/package.json": "sha256:f79e4e4817149edd36a5364e5a1d99376379a9053471367b4f52e2b3b8a359c1",
@@ -1484,7 +1492,7 @@
 				"packages/ssh-agent-web/features/llm-provider/model/llm-provider.ts": "sha256:dc532befe571aabb3efdfc4a3a3b1ad5f29147046881cc8fbb42e7d506f2a743",
 				"packages/ssh-agent-web/features/chat/api/chat-api.ts": "sha256:c95159d28b5e80d2e996ffb819cfd88c5d33a374bd02758515bfd647ac40fc7d",
 				"packages/ssh-agent-web/features/chat/api/local-files-api.ts": "sha256:32d99188869f1668ca4a8249cc62fd57437ba6c8807ee4154deb2b357b42fa96",
-				"packages/ssh-agent-web/features/chat/components/chat-console.tsx": "sha256:fb98e68dbbda79fff74de333ae3775bd609a66980c19dc1aaf3243972594b8ad",
+				"packages/ssh-agent-web/features/chat/components/chat-console.tsx": "sha256:48d347b38b2133095fd62abfabe7fa1573d6325062adf72ecf98fe51813d280e",
 				"packages/ssh-agent-web/features/chat/components/chat-composer-panel.tsx": "sha256:1cb1cd17266ecdd300b20cc4d334d7a30cf96f8bd87229f24f9a8df40e708aa3",
 				"packages/ssh-agent-web/features/chat/components/chat-timeline.tsx": "sha256:bbd2e9e125a5a9b633736e3f54249fac989b12fb3765eeb1cc787a033b88e52a",
 				"packages/ssh-agent-web/features/chat/components/chat-token-editor.tsx": "sha256:a5c8bed69266e1596f64f4b82c2e1ded16504da571fcf419e045398e0c373c80",
@@ -1586,12 +1594,18 @@
 				"packages/ssh-agent-web/tests/terminal-viewport-sync.test.ts": "sha256:f2465cce49b4188df8756251380af4b2c0937845f76eb776cf4e8feeaffae57c",
 				"packages/ssh-agent-web/features/deploy/model/deployment-completion-history.ts": "sha256:2145a32a4e33c2dc629aa80f4e85361afc69cb31481cafc3d96c369a8f9d8704",
 				"packages/ssh-agent-web/features/deploy/model/deployment-history-entry.ts": "sha256:2ac0bdfa5d63fdca7e471f2cda06dd4f831ced53799509334ebe33487691c1f6",
-				"packages/ssh-agent-web/features/deploy/model/deployment-review.ts": "sha256:f4e47c5110cfa40b471a604a84bd22ac5fdb90adfba725243784c6d80b6a3c2c",
+				"packages/ssh-agent-web/features/deploy/model/deployment-review.ts": "sha256:86c3e68f333905220dbc1ce853ff1049bd94141faa6fb30f80b97978ed0f94f7",
 				"packages/ssh-agent-web/features/deploy/components/deployment-full-access-review.tsx": "sha256:02a0d64f9c1d1a95db729d1dc8e7c12231ae2d39fa9531f8ee373ca2614ff3c9",
 				"packages/ssh-agent-web/features/deploy/runtime/use-deployment-review.ts": "sha256:03e871f7ab71b62a03a04e39caa14882a8ea8aaa185ad8335c4253d3cf3d04cc",
 				"packages/ssh-agent-web/tests/deployment-review-clock.test.ts": "sha256:fd7a234b20d0814f59742d08f0228fd966652e37ac7d7f926c419cf6b3f061e2",
 				"packages/ssh-agent-web/features/deploy/model/deployment-module-options.ts": "sha256:c222911e7d9c35d9972c48157f518be25cbf38d6b4682e31529404b1df8a4d81",
-				"packages/ssh-agent-web/features/deploy/components/deployment-module-picker.css": "sha256:5e482b4062681a624d7586b413e260e477a51775f1d189d76d1611c0d93bbf89"
+				"packages/ssh-agent-web/features/deploy/components/deployment-module-picker.css": "sha256:5e482b4062681a624d7586b413e260e477a51775f1d189d76d1611c0d93bbf89",
+				"packages/ssh-agent-web/features/deploy/components/deployment-plan-overview.tsx": "sha256:91ab99a53d69943787635048301169780550a99d473e702dff5b40a72578088e",
+				"packages/ssh-agent-web/features/deploy/components/deployment-plan.css": "sha256:a302fb69b99488981f88c512e918e90717efd3d108a0e0febfb0a24c4d459acf",
+				"packages/ssh-agent-web/features/deploy/components/deployment-pipeline.tsx": "sha256:f43d68c053ba1237f14b3e87b1b2d53e1862f679941b2f6c56006aa6a6080e99",
+				"packages/ssh-agent-web/features/deploy/runtime/use-deployment-execution.ts": "sha256:0f4903f39df3ef2ceff1402ebd93099bb22ceb1f6f283cb38073919e6120e753",
+				"packages/ssh-agent-web/features/deploy/components/deployment-stage-icon.tsx": "sha256:05ba7dd5a36e546fad1ea92b239733b88ff88014681e8e87142a71c898303671",
+				"packages/ssh-agent-web/features/deploy/components/deployment-build-steps.tsx": "sha256:00337f44336187fc85b30f1c21d881b6796d3233f9a5288b77a40bc7dd40980a"
 			}
 		},
 		{
@@ -1705,8 +1719,8 @@
 				"packages/ssh-agent-web/features/terminal/components/terminal-task.tsx": "sha256:47dc1051d2e3f281d743abfaf6f83741bbba29705e1b5ada1d86ea387bf1d548",
 				"packages/ssh-agent-web/features/i18n/messages/zh-CN/task-container.ts": "sha256:3d51d9752ba494d7b584675a7e84359e6c2f376b21bf80737d7c897218150782",
 				"packages/ssh-agent-web/features/i18n/messages/en-US/task-container.ts": "sha256:83e28fc05c612c22d61d0baa54f12809e21ebec0bc834475d5942676c4f3290e",
-				"packages/ssh-agent-web/features/i18n/messages/zh-CN/deploy-task.ts": "sha256:6778d0c4f6e74f881163e7cd7c682df2a7f149d54a24d91bceca32012d82d4f1",
-				"packages/ssh-agent-web/features/i18n/messages/en-US/deploy-task.ts": "sha256:022f000d03f2085b556b68364e3badd3098c6563437fadbd25a3cc7cb15587bb"
+				"packages/ssh-agent-web/features/i18n/messages/zh-CN/deploy-task.ts": "sha256:5f3a37d629c03a16394eb8d7e2203f6f89217def9837e5d10510d17674047f67",
+				"packages/ssh-agent-web/features/i18n/messages/en-US/deploy-task.ts": "sha256:1e6e586b4bfb21abf691e0b46830317082f5d245728203b98b8970fbdee3d0a6"
 			}
 		},
 		{
@@ -1741,7 +1755,9 @@
 				"packages/ssh-agent-web/features/chat/components/chat-command-details.css",
 				"packages/ssh-agent-web/features/task-container/components/task-container.css",
 				"packages/ssh-agent-web/features/chat/components/chat-task-layout.css",
-				"packages/ssh-agent-web/features/terminal/components/terminal-task.css"
+				"packages/ssh-agent-web/features/terminal/components/terminal-task.css",
+				"packages/ssh-agent-web/features/deploy/components/deployment-plan.css",
+				"packages/ssh-agent-web/features/deploy/components/deployment-task.css"
 			],
 			"sourceDigests": {
 				"packages/ssh-agent-web/app/globals.css": "sha256:3e6e292f08b3fa91130889fb8fab55c1390033a8301476cc255c509b63b8df08",
@@ -1773,7 +1789,9 @@
 				"packages/ssh-agent-web/features/chat/components/chat-command-details.css": "sha256:e893cf7c3e9810ba6bef532db213d51cad99eef9af02363bc077e92a34f67dbd",
 				"packages/ssh-agent-web/features/task-container/components/task-container.css": "sha256:cbc496c157f29c396e4d8c333e06987f498a12c45efc866b13fe6f524a650d15",
 				"packages/ssh-agent-web/features/chat/components/chat-task-layout.css": "sha256:b8f6fb90be130840e5ea9a7d6a82a646ee7ba19883e88a72fc83bd6aab8aeb18",
-				"packages/ssh-agent-web/features/terminal/components/terminal-task.css": "sha256:2504caaf11ba19b6a3f48c6f8a14a313f6f578ddfecb840084b2051068d13dc5"
+				"packages/ssh-agent-web/features/terminal/components/terminal-task.css": "sha256:2504caaf11ba19b6a3f48c6f8a14a313f6f578ddfecb840084b2051068d13dc5",
+				"packages/ssh-agent-web/features/deploy/components/deployment-plan.css": "sha256:a302fb69b99488981f88c512e918e90717efd3d108a0e0febfb0a24c4d459acf",
+				"packages/ssh-agent-web/features/deploy/components/deployment-task.css": "sha256:814cf6dc1ae31f4177d8f188be41e26c66fcbb09f46364be61cdfbb26779e805"
 			}
 		},
 		{
@@ -2409,7 +2427,7 @@
 				"packages/ssh-agent-web/features/chat/components/user-decision-panel.tsx": "sha256:c12c4c772fd3f00ab7408779878d417423a1e7ccc59ea38180ead5944a129eb5",
 				"packages/ssh-agent-web/features/chat/components/chat-composer-panel.tsx": "sha256:1cb1cd17266ecdd300b20cc4d334d7a30cf96f8bd87229f24f9a8df40e708aa3",
 				"packages/ssh-agent-web/app/globals.css": "sha256:3e6e292f08b3fa91130889fb8fab55c1390033a8301476cc255c509b63b8df08",
-				"packages/ssh-agent-web/features/chat/components/chat-console.tsx": "sha256:fb98e68dbbda79fff74de333ae3775bd609a66980c19dc1aaf3243972594b8ad",
+				"packages/ssh-agent-web/features/chat/components/chat-console.tsx": "sha256:48d347b38b2133095fd62abfabe7fa1573d6325062adf72ecf98fe51813d280e",
 				"packages/ssh-agent-web/features/i18n/messages/zh-CN/chat.ts": "sha256:999b01f898e96e5101efc39c3b608910f72d1067f1eb5f20ab6800c6f3dba262",
 				"packages/ssh-agent-web/features/i18n/messages/en-US/chat.ts": "sha256:55232a7e35e6dc817a60ff1982321c4df93242d53d7a8982d7e646a9ea2bd443",
 				"packages/ssh-agent/test/chat-user-decision.test.ts": "sha256:f16427e142a15894226221049c5e666d7347a706cf8e14522422f6862d292bd0",
@@ -2511,7 +2529,13 @@
 				"packages/ssh-agent-web/features/deploy/components/deployment-module-picker.css",
 				"packages/ssh-agent/src/infrastructure/sqlite/sqlite-chat-history-query.ts",
 				"packages/ssh-agent/test/chat-message-pagination-api.test.ts",
-				"packages/ssh-agent/src/application/deployment-selection-context.ts"
+				"packages/ssh-agent/src/application/deployment-selection-context.ts",
+				"packages/ssh-agent-web/features/deploy/components/deployment-plan-overview.tsx",
+				"packages/ssh-agent-web/features/deploy/components/deployment-plan.css",
+				"packages/ssh-agent-web/features/deploy/components/deployment-pipeline.tsx",
+				"packages/ssh-agent-web/features/deploy/runtime/use-deployment-execution.ts",
+				"packages/ssh-agent-web/features/deploy/components/deployment-stage-icon.tsx",
+				"packages/ssh-agent-web/features/deploy/components/deployment-build-steps.tsx"
 			],
 			"sourceDigests": {
 				"packages/ssh-agent/src/domain/deployment.ts": "sha256:263e424905dbe8e58c61bb18e37f0a4e86628f0afee4315560b884d1ba9f0aab",
@@ -2540,7 +2564,7 @@
 				"packages/ssh-agent-web/features/deploy/runtime/use-deployment.ts": "sha256:70dcc98fe2d27c573f6f437bedf7fecb38aa114862835e389b8936ded09f8f2a",
 				"packages/ssh-agent-web/features/deploy/components/deployment-module-picker.tsx": "sha256:b27b33aea5aefa1219bab89e9cbc47b5af019e9bdf1328d0fcae4a7b7b839f55",
 				"packages/ssh-agent-web/features/deploy/components/deployment-history-card.tsx": "sha256:34264f32ba7d5e8ccccbd60132a2e7852aee3f7f1a58e3acfee665aca551219e",
-				"packages/ssh-agent-web/features/chat/components/chat-console.tsx": "sha256:fb98e68dbbda79fff74de333ae3775bd609a66980c19dc1aaf3243972594b8ad",
+				"packages/ssh-agent-web/features/chat/components/chat-console.tsx": "sha256:48d347b38b2133095fd62abfabe7fa1573d6325062adf72ecf98fe51813d280e",
 				"packages/ssh-agent-web/features/chat/components/chat-timeline.tsx": "sha256:bbd2e9e125a5a9b633736e3f54249fac989b12fb3765eeb1cc787a033b88e52a",
 				"packages/ssh-agent-web/features/session/components/new-session-chat.tsx": "sha256:91ef74ef766f4dec5061bcc064ca46d78bbefdc64d5e839a21d84eeb103c4b01",
 				"packages/ssh-agent-web/features/i18n/messages/zh-CN/chat.ts": "sha256:999b01f898e96e5101efc39c3b608910f72d1067f1eb5f20ab6800c6f3dba262",
@@ -2552,7 +2576,7 @@
 				"packages/ssh-agent/test/deployment-routes.test.ts": "sha256:54c116db86c314df60490fd14d736b6f010cf80945825201a76dfc7a111e6727",
 				"packages/ssh-agent/test/deployment-agent-tool.test.ts": "sha256:c3fc1e05a3e58d3c9c718d3a7a28f7c38c5be7a0c69048cfa622f4e14bb692ae",
 				"packages/ssh-agent-web/tests/deployment-model.test.ts": "sha256:1eaaf0027cf04002f4ed42d7a4ecdf2ea32c5b720b87a3b694154f6e6609e394",
-				"packages/ssh-agent-web/tests/deployment-panel.test.tsx": "sha256:0304face3229b265ecdf4624ca4d244e7d28d2da1bb2ee738ac7fbb8ab8bfa01",
+				"packages/ssh-agent-web/tests/deployment-panel.test.tsx": "sha256:2237bd1b154318495ba5bb137e259075390b67e126ac94d4ed304174f9357144",
 				"packages/ssh-agent-web/tests/use-deployment-selection.test.ts": "sha256:f95e9bb0523c86f5b48b06b9c1908ea4105b96ac091244b02a7066ac7cdeb777",
 				"packages/ssh-agent-web/tests/use-deployment-races.test.ts": "sha256:38c097d238bb0e66d51a67a5ceb17521928956f4033c21703f333b5b81fd28a2",
 				"packages/ssh-agent/src/application/deployment-plan-proposal.ts": "sha256:d7e240f287b844cf26d08b56e9aaddade0f468cac8d1c4a2cc6c047b48f4b8df",
@@ -2565,10 +2589,10 @@
 				"packages/ssh-agent-web/features/deploy/runtime/deployment-event-stream.ts": "sha256:6f376092a27823632e1c98fba7fd4520c9f8ca2a69a926d4331284c02b858bde",
 				"packages/ssh-agent-web/features/deploy/model/deployment-task.ts": "sha256:c61206c82f48da37d694de8f39cc8b00945c58757a9735900d1f5aefbefd1d38",
 				"packages/ssh-agent-web/features/deploy/components/deployment-plan-details.tsx": "sha256:05f38a220fc0262d4759419d656afd794ce0839ae791dd19d2328e0961b4b4e4",
-				"packages/ssh-agent-web/features/deploy/components/deployment-task-page.tsx": "sha256:9ffd4ff2e3cc27c6d9d3d9f87d7d30d3963b7ebcc4863d3a7414ece14578c609",
-				"packages/ssh-agent-web/features/deploy/components/deployment-logs.tsx": "sha256:8955f285ab93797d9281d08bcf097125a65cb156d1d8af5ece6d9e21e4e264d6",
-				"packages/ssh-agent-web/features/deploy/components/deployment-review.tsx": "sha256:c5e52b5551ae312ba6e4e9a029cec50ccb6d42d2d07015e15c6c90000e7fbdd6",
-				"packages/ssh-agent-web/features/deploy/components/deployment-task.css": "sha256:8a0e88b84ac921be7d4bef75c5fe8360abeda3ac83be99d64b41b0aea55deb91",
+				"packages/ssh-agent-web/features/deploy/components/deployment-task-page.tsx": "sha256:1df8ee5ee394d116c4ca3ffdcfb3a1db924e99387680b0823c2f5b4c0ff0a3c1",
+				"packages/ssh-agent-web/features/deploy/components/deployment-logs.tsx": "sha256:64e9d980899f62ee6fcf3cb77c65d3bc1966aa81840bb2f26faaf652b2d2f5a3",
+				"packages/ssh-agent-web/features/deploy/components/deployment-review.tsx": "sha256:a06d56a0d29c911123f13fd8087c4588bd352c86605efc218b76312c7ff60778",
+				"packages/ssh-agent-web/features/deploy/components/deployment-task.css": "sha256:814cf6dc1ae31f4177d8f188be41e26c66fcbb09f46364be61cdfbb26779e805",
 				"packages/ssh-agent/src/domain/deployment-session.ts": "sha256:4ca6cf998a4d2b7badf2b51093820b5731ecb63df259f9b1a6f6609bd597611c",
 				"packages/ssh-agent/src/domain/deployment-execution.ts": "sha256:eacce15945a98722abe529921ff77c66c94e1efd32a64c800ab74383e41f0e79",
 				"packages/ssh-agent/src/application/deployment-history-message.ts": "sha256:5595c67e72dc2f502606079a4a256a0d1ed97455915b42f87e16de9201dfb9d2",
@@ -2583,11 +2607,11 @@
 				"packages/ssh-agent/src/infrastructure/sqlite/sqlite-deployment-execution-repository.ts": "sha256:7a399c9da5a29eabbae818a36691072a4011893bbb6e663bfe18a14f8fb99f13",
 				"packages/ssh-agent/src/application/services/chat-agent-runtime-factory.ts": "sha256:bbc3732297ab6fbfbece3c976635d8e801fe22e114017046459b16ecc95557d2",
 				"packages/ssh-agent/test/deployment-mode.test.ts": "sha256:ff45d2120f59f82878732e9027b7cde7dc3ec676f5bae065dd4a9a79b49a99e0",
-				"packages/ssh-agent-web/tests/deployment-task.test.tsx": "sha256:43357999a878a83febc838801aa74c51108c134924f57137bb1ed69d7a29a73e",
-				"packages/ssh-agent-web/tests/deployment-task-interactions.test.tsx": "sha256:158c750f828480d8c4998c10a931a50bae51aaf3aff3e69d6d00a22112274885",
+				"packages/ssh-agent-web/tests/deployment-task.test.tsx": "sha256:2bb122a25c6e607c6e4df56a259d77d4274cf1496cda00182a95516844975dda",
+				"packages/ssh-agent-web/tests/deployment-task-interactions.test.tsx": "sha256:8143a07f4d0548438c56bd8fad2e0e713b7e6d7214d95100662d6f983a9b8ce7",
 				"packages/ssh-agent-web/tests/chat-custom-messages.test.tsx": "sha256:bfd4f1d0e7ea1aa019aab82b21bea10c5db1da2e6f30fbf936768b8d296611da",
-				"packages/ssh-agent-web/features/i18n/messages/zh-CN/deploy-task.ts": "sha256:6778d0c4f6e74f881163e7cd7c682df2a7f149d54a24d91bceca32012d82d4f1",
-				"packages/ssh-agent-web/features/i18n/messages/en-US/deploy-task.ts": "sha256:022f000d03f2085b556b68364e3badd3098c6563437fadbd25a3cc7cb15587bb",
+				"packages/ssh-agent-web/features/i18n/messages/zh-CN/deploy-task.ts": "sha256:5f3a37d629c03a16394eb8d7e2203f6f89217def9837e5d10510d17674047f67",
+				"packages/ssh-agent-web/features/i18n/messages/en-US/deploy-task.ts": "sha256:1e6e586b4bfb21abf691e0b46830317082f5d245728203b98b8970fbdee3d0a6",
 				"packages/ssh-agent/src/application/deployment-validation.ts": "sha256:fdda077dcc2be587466b6f3a2d6998baa97c8ebef02cf42331beb30b4e7b817f",
 				"packages/ssh-agent/src/application/deployment-file-system-error.ts": "sha256:3c3c639f3d001d14b3392cace0dd2e96fa107e8d331904bebbd31711c31a1b8f",
 				"packages/ssh-agent/test/deployment-validation.test.ts": "sha256:13d5ce838196423d66c477ebf1442c776ac17745f4717ef7a9ff27fbfe67b846",
@@ -2595,7 +2619,7 @@
 				"packages/ssh-agent-web/tests/deployment-completion-history.test.tsx": "sha256:0dc224ed848ba785360d3b941893d156f04045263c696ac0e6ad480a27b750bc",
 				"packages/ssh-agent-web/features/deploy/model/deployment-completion-history.ts": "sha256:2145a32a4e33c2dc629aa80f4e85361afc69cb31481cafc3d96c369a8f9d8704",
 				"packages/ssh-agent-web/features/deploy/model/deployment-history-entry.ts": "sha256:2ac0bdfa5d63fdca7e471f2cda06dd4f831ced53799509334ebe33487691c1f6",
-				"packages/ssh-agent-web/features/deploy/model/deployment-review.ts": "sha256:f4e47c5110cfa40b471a604a84bd22ac5fdb90adfba725243784c6d80b6a3c2c",
+				"packages/ssh-agent-web/features/deploy/model/deployment-review.ts": "sha256:86c3e68f333905220dbc1ce853ff1049bd94141faa6fb30f80b97978ed0f94f7",
 				"packages/ssh-agent-web/features/deploy/components/deployment-full-access-review.tsx": "sha256:02a0d64f9c1d1a95db729d1dc8e7c12231ae2d39fa9531f8ee373ca2614ff3c9",
 				"packages/ssh-agent-web/features/deploy/runtime/use-deployment-review.ts": "sha256:03e871f7ab71b62a03a04e39caa14882a8ea8aaa185ad8335c4253d3cf3d04cc",
 				"packages/ssh-agent-web/tests/deployment-review-clock.test.ts": "sha256:fd7a234b20d0814f59742d08f0228fd966652e37ac7d7f926c419cf6b3f061e2",
@@ -2603,7 +2627,13 @@
 				"packages/ssh-agent-web/features/deploy/components/deployment-module-picker.css": "sha256:5e482b4062681a624d7586b413e260e477a51775f1d189d76d1611c0d93bbf89",
 				"packages/ssh-agent/src/infrastructure/sqlite/sqlite-chat-history-query.ts": "sha256:3d7dd42a023ed9bc29e2054908c2add8dcba96f4d1d13ea63ad1fe161783914b",
 				"packages/ssh-agent/test/chat-message-pagination-api.test.ts": "sha256:60518ec37c1f93dc9940f6848b866f0e52eff37ce5035ab36bf009f3aaae80c6",
-				"packages/ssh-agent/src/application/deployment-selection-context.ts": "sha256:0aad997e56e1d653119c166885682471eea8642b9cb957cef73c1cb41e0e60c1"
+				"packages/ssh-agent/src/application/deployment-selection-context.ts": "sha256:0aad997e56e1d653119c166885682471eea8642b9cb957cef73c1cb41e0e60c1",
+				"packages/ssh-agent-web/features/deploy/components/deployment-plan-overview.tsx": "sha256:91ab99a53d69943787635048301169780550a99d473e702dff5b40a72578088e",
+				"packages/ssh-agent-web/features/deploy/components/deployment-plan.css": "sha256:a302fb69b99488981f88c512e918e90717efd3d108a0e0febfb0a24c4d459acf",
+				"packages/ssh-agent-web/features/deploy/components/deployment-pipeline.tsx": "sha256:f43d68c053ba1237f14b3e87b1b2d53e1862f679941b2f6c56006aa6a6080e99",
+				"packages/ssh-agent-web/features/deploy/runtime/use-deployment-execution.ts": "sha256:0f4903f39df3ef2ceff1402ebd93099bb22ceb1f6f283cb38073919e6120e753",
+				"packages/ssh-agent-web/features/deploy/components/deployment-stage-icon.tsx": "sha256:05ba7dd5a36e546fad1ea92b239733b88ff88014681e8e87142a71c898303671",
+				"packages/ssh-agent-web/features/deploy/components/deployment-build-steps.tsx": "sha256:00337f44336187fc85b30f1c21d881b6796d3233f9a5288b77a40bc7dd40980a"
 			}
 		},
 		{
@@ -2710,7 +2740,7 @@
 				"packages/ssh-agent-web/features/session/runtime/use-session-sandbox.ts": "sha256:34de0152673756fce9c0c2a5508199840a0d1a0ca235f3f8cc19b9af6f7dbceb",
 				"packages/ssh-agent-web/features/session/components/session-sandbox-badge.tsx": "sha256:f37d10b6d6a6033d241364dfea162bded573c9624f63a9d7acf92b5acafa4c0e",
 				"packages/ssh-agent-web/features/session/components/session-sandbox-status.tsx": "sha256:25fc74719e627ef30d2fbe440763ec3c0d88e86ca7570aa99bc32247e91a9093",
-				"packages/ssh-agent-web/features/chat/components/chat-console.tsx": "sha256:fb98e68dbbda79fff74de333ae3775bd609a66980c19dc1aaf3243972594b8ad",
+				"packages/ssh-agent-web/features/chat/components/chat-console.tsx": "sha256:48d347b38b2133095fd62abfabe7fa1573d6325062adf72ecf98fe51813d280e",
 				"packages/ssh-agent-web/features/chat/components/chat-composer-panel.tsx": "sha256:1cb1cd17266ecdd300b20cc4d334d7a30cf96f8bd87229f24f9a8df40e708aa3",
 				"packages/ssh-agent-web/features/chat/components/chat-token-editor.tsx": "sha256:a5c8bed69266e1596f64f4b82c2e1ded16504da571fcf419e045398e0c373c80",
 				"packages/ssh-agent-web/features/chat/model/chat-composer-menu.ts": "sha256:88fb98da1eba5078057a8d5fe5c16840333f0d35c0f41540a86ba44ea712079c",
@@ -2721,7 +2751,7 @@
 				"packages/ssh-agent-web/features/i18n/messages/en-US/session.ts": "sha256:efa912e536c36f5dea2f5e48e6bbd0a1358ca97ce4e46febe37047b52699f0b9",
 				"packages/ssh-agent-web/features/i18n/messages/zh-CN/session.ts": "sha256:63bd382eb276b801fc8666ef02b03804f9eac567b0679ef585624723294a1f28",
 				"packages/ssh-agent-web/tests/use-session-sandbox.test.ts": "sha256:9c85885492c0b2d012d4ac54af78750c1df90885aa98f0c9a2a519210fba1936",
-				"packages/ssh-agent-web/tests/session-sandbox-command.test.tsx": "sha256:4edb595f169285dd13b7aa1acfb5b5a8370b3f16b3f76947bfcaee386faa71e0",
+				"packages/ssh-agent-web/tests/session-sandbox-command.test.tsx": "sha256:7aab1fcc64595180e384642133fb1a9ba30f73c67571c3b8004a94cd6cbba6ce",
 				"packages/ssh-agent-web/features/terminal/runtime/use-terminal-mode.ts": "sha256:4886e42ac322699b90cc9de543f6f1d4c54905c866f85b1b11f4dd002d5c6ed7",
 				"packages/ssh-agent-web/features/chat/components/chat-page-header.tsx": "sha256:120abfacef699d3763c5cbc1a47f5378d45ad71e965383aa3b7415d4b1f51e03",
 				"packages/ssh-agent/src/domain/sandbox-writable-roots.ts": "sha256:45a5286172613d0e1bba88bb870ebae10d02330df6352759ae17ab0697685313",
@@ -2773,7 +2803,7 @@
 				"packages/ssh-agent/src/application/workspace-event-hub.ts": "sha256:edccde225caa510d91c358b9dc8d9539fad84bdbdb32decefbef66a0d7aacbea",
 				"packages/ssh-agent/test/remote-network-sampler.test.ts": "sha256:490031ccafcc8b473b9379d0b398494dd2b52a6912e8f3520d238c4ede8db81f",
 				"packages/ssh-agent/test/remote-metrics-subscriptions.test.ts": "sha256:b07865925741c8954944ea28524fff8e8e5db467100363336ee021a7940c4464",
-				"packages/ssh-agent-web/features/chat/components/chat-console.tsx": "sha256:fb98e68dbbda79fff74de333ae3775bd609a66980c19dc1aaf3243972594b8ad",
+				"packages/ssh-agent-web/features/chat/components/chat-console.tsx": "sha256:48d347b38b2133095fd62abfabe7fa1573d6325062adf72ecf98fe51813d280e",
 				"packages/ssh-agent-web/features/chat/components/chat-page-header.tsx": "sha256:120abfacef699d3763c5cbc1a47f5378d45ad71e965383aa3b7415d4b1f51e03",
 				"packages/ssh-agent-web/features/i18n/messages/zh-CN/server-metrics.ts": "sha256:676314cfc6d77c3792d6955c8b29af0ea549aabc1fe57c7c6edacffe64e53f88",
 				"packages/ssh-agent-web/features/i18n/messages/en-US/server-metrics.ts": "sha256:8805c160b2f8d6578e9520df7e42fbfdaa901711fb3e8fb7936b4e2807ef86a3",
@@ -2813,7 +2843,7 @@
 				"packages/ssh-agent-web/features/task-container/model/task-container-defaults.ts": "sha256:1bffab3eb6ab696372418a695efd5d0c067652421ed5c6634f0acd1e728c5b33",
 				"packages/ssh-agent-web/features/chat/components/chat-task-layout.css": "sha256:b8f6fb90be130840e5ea9a7d6a82a646ee7ba19883e88a72fc83bd6aab8aeb18",
 				"packages/ssh-agent-web/tests/task-container.test.tsx": "sha256:2430147dbd4f97d02c1bf5f5b4efc1700ba16035d4e1e65d9020476b2ea2c2df",
-				"packages/ssh-agent-web/features/chat/components/chat-console.tsx": "sha256:fb98e68dbbda79fff74de333ae3775bd609a66980c19dc1aaf3243972594b8ad",
+				"packages/ssh-agent-web/features/chat/components/chat-console.tsx": "sha256:48d347b38b2133095fd62abfabe7fa1573d6325062adf72ecf98fe51813d280e",
 				"packages/ssh-agent-web/features/task-container/model/task-container-display.ts": "sha256:40a2daad9df16c19e5d3f791fe0d948551dadd39ed0bcccdd83c2a37df092b97",
 				"packages/ssh-agent-web/features/task-container/runtime/use-task-container-display.ts": "sha256:8f1364d6d1f591eca89a7db06ef26e1efb98e0ecfe1f11f7dd4d66f569009945",
 				"packages/ssh-agent-web/features/task-container/runtime/task-container-fullscreen.ts": "sha256:c561fca98d3eaeb32c153f4318dc04d498a91ca1c85129cad0324122a2f3d75b",

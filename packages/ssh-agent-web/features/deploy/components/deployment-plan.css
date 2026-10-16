@@ -1,0 +1,46 @@
+.deploy-plan-review { display: flex; flex: 1; flex-direction: column; min-width: 0; gap: 16px; }
+.deploy-plan-heading { display: flex; align-items: center; gap: 8px; }
+.deploy-plan-heading h3 { color: var(--ink); font-size: 13px; font-weight: 600; }
+.deploy-plan-version { padding: 2px 6px; border: 1px solid var(--line); border-radius: 4px; color: var(--text-muted); font: 10px/1.4 var(--font-mono, monospace); }
+.deploy-plan-overview { --deploy-node-shadow: color-mix(in srgb, var(--ink) 20%, transparent); display: grid; gap: 32px; min-width: 0; padding: 4px 0; list-style: none; }
+.deploy-plan-node { position: relative; min-width: 0; }
+.deploy-plan-node:not(:last-child)::before { content: ""; position: absolute; left: 14px; top: 36px; bottom: -40px; border-left: 1px solid var(--line-strong); pointer-events: none; }
+.deploy-plan-section > summary { display: flex; align-items: center; gap: 12px; min-height: 44px; padding: 8px 0; cursor: pointer; list-style: none; }
+.deploy-plan-section > summary::-webkit-details-marker, .deploy-plan-artifact > summary::-webkit-details-marker { display: none; }
+.deploy-plan-section > summary:hover .deploy-plan-section-title { text-decoration: underline; text-underline-offset: 4px; }
+.deploy-plan-artifact > summary:hover { background: var(--surface-hover); }
+.deploy-plan-icon { position: relative; z-index: 1; display: grid; place-items: center; flex-shrink: 0; width: 28px; height: 28px; color: var(--ink); background: var(--surface); }
+.deploy-plan-section-title { flex: 1; color: var(--ink); font-size: 12px; font-weight: 500; }
+.deploy-plan-meta { color: var(--text-muted); font-size: 11px; }
+.deploy-plan-section-title, .deploy-plan-meta { text-shadow: 0 1px 1px var(--deploy-node-shadow); }
+.deploy-plan-icon > svg, .deploy-plan-section > summary > svg { filter: drop-shadow(0 1px 1px var(--deploy-node-shadow)); }
+.deploy-plan-section > summary > svg, .deploy-plan-artifact > summary > svg:last-child { flex-shrink: 0; color: var(--text-muted); transition: transform 120ms ease; }
+.deploy-plan-section[open] > summary > svg, .deploy-plan-artifact[open] > summary > svg:last-child { transform: rotate(180deg); }
+.deploy-plan-section-content { position: relative; min-width: 0; max-width: 680px; margin: 8px 0 0 44px; }
+.deploy-plan-section-content::before { content: ""; position: absolute; left: -30px; top: 16px; width: 30px; border-top: 1px solid var(--line-strong); pointer-events: none; }
+.deploy-plan-section-content::after { content: ""; position: absolute; left: -30px; top: -16px; height: 32px; border-left: 1px solid var(--line-strong); pointer-events: none; }
+.deploy-plan-card { position: relative; min-width: 0; padding: 14px; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--surface-raised); }
+.deploy-plan-builds { display: grid; gap: 12px; }
+.deploy-plan-step-heading { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; color: var(--text-muted); font-size: 10px; }
+.deploy-plan-step-heading > span { flex-shrink: 0; font-family: var(--font-mono, monospace); }
+.deploy-plan-step-heading > code { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.deploy-plan-command { max-height: 160px; margin: 0; padding: 10px 12px; overflow: auto; border: 1px solid var(--line); border-radius: 5px; background: var(--code-bg); color: var(--text-secondary); font: 11px/1.7 var(--font-mono, monospace); white-space: pre-wrap; overflow-wrap: anywhere; }
+.deploy-plan-artifacts { border: 1px solid var(--line); border-radius: 5px; overflow: hidden; }
+.deploy-plan-artifacts > li + li { border-top: 1px solid var(--line); }
+.deploy-plan-artifact > summary { display: flex; align-items: center; gap: 8px; min-height: 44px; padding: 8px 10px; list-style: none; cursor: pointer; }
+.deploy-plan-artifact > summary > svg { flex-shrink: 0; color: var(--text-muted); }
+.deploy-plan-file { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink); font: 11px/1.5 var(--font-mono, monospace); }
+.deploy-plan-destination { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-muted); font: 10px/1.5 var(--font-mono, monospace); }
+.deploy-plan-artifact dl { display: grid; gap: 5px; padding: 2px 12px 12px; }
+.deploy-plan-artifact dt { margin-top: 5px; color: var(--text-muted); font-size: 10px; }
+.deploy-plan-artifact dd { color: var(--text-secondary); font-size: 11px; overflow-wrap: anywhere; }
+.deploy-plan-overwrite { margin-top: 8px; color: var(--text-muted); font-size: 10px; }
+.deploy-plan-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 12px; position: sticky; bottom: 0; z-index: 1; margin-top: auto; padding: 2px 0 14px; border-bottom: 1px solid var(--line); background: var(--surface); }
+.deploy-plan-start { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 32px; padding: 0 13px; border: 1px solid var(--ink); border-radius: 6px; color: var(--surface); background: var(--ink); box-shadow: 0 1px 2px rgb(0 0 0 / 14%), 0 3px 8px rgb(0 0 0 / 10%), inset 0 1px 0 rgb(255 255 255 / 12%); font-size: 12px; font-weight: 600; cursor: pointer; }
+.deploy-plan-start:hover:not(:disabled) { opacity: .85; }
+.deploy-plan-start:active:not(:disabled) { transform: translateY(1px); box-shadow: 0 1px 2px rgb(0 0 0 / 12%); }
+.deploy-plan-start:disabled { box-shadow: none; opacity: .45; cursor: not-allowed; }
+.deploy-plan-permissions { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; color: var(--warning); font-size: 11px; }
+.deploy-plan-review :is(button, summary, pre):focus-visible, .deploy-stage-plan :is(summary, pre):focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; }
+@media (max-width: 600px) { .deploy-plan-section > summary { gap: 10px; } .deploy-plan-card { padding: 10px; } .deploy-plan-artifact > summary { flex-wrap: wrap; } .deploy-plan-destination { flex-basis: 50%; } }
+@media (prefers-reduced-motion: reduce) { .deploy-plan-section > summary > svg, .deploy-plan-artifact > summary > svg:last-child { transition: none; } }

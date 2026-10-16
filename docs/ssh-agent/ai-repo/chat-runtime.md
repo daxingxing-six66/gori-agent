@@ -15,7 +15,7 @@ Runtime Factory 将 Run ID 绑定到远端 Tool。Full Access grant 绑定完整
 
 - `ask_user_decision` 在普通模式与 Terminal Mode 共用同一工具定义和独立的 `ChatUserDecisionService`。服务持有无超时等待，SQLite 保存题目、回答及终态；Run 取消和服务关闭中止等待。回答只表达用户选择，不授予命令权限，Guard 和原有审批规则继续生效。前端通过 Run SSE 和待决 REST 接口恢复；完整代码入口见 [user-decision.md](./user-decision.md)。
 
-- `/deploy` 在无活动部署时展开 Agent 输入框上方的模块选择，选定服务后创建稳定部署身份、Session 模式与正式历史消息并展示右侧任务页；已有活动部署直接定位任务；配置补充仍使用独立 `deployment_setup` Skill，保存不自动发布。后续普通消息由后端活动模式绑定讨论、待审、执行或诊断。部署跨 Chat Run 保留，模型用专用工具推进及明确结束；成功须核验必要阶段。模式/结算由 DeploymentModeService 持有，阶段/执行/日志由 DeploymentService 与 ExecutionRecorder 保存，模型文字和全部审批留在中间会话。阶段失败由当前模型直接读取工具结果并诊断，前端通过 Deploy 自有审阅模型和到期 Hook 统一计算实际待决需求，展示组件只读共享快照；不再提供“让模型分析修复”的二次选择或额外启动恢复 Run；计划修订及命令权限审批继续保留。完整链路见 [deployment.md](./deployment.md)。
+- `/deploy` 在无活动部署时展开 Agent 输入框上方的模块选择，选定服务后创建稳定部署身份、Session 模式与正式历史消息并展示右侧任务页；已有活动部署直接定位任务；配置补充仍使用独立 `deployment_setup` Skill，保存不自动发布。后续普通消息由后端活动模式绑定讨论、待审、执行或诊断。部署跨 Chat Run 保留，模型用专用工具推进及明确结束；成功须核验必要阶段。模式/结算由 DeploymentModeService 持有，阶段/执行/日志由 DeploymentService 与 ExecutionRecorder 保存，模型文字、用户问题和命令权限审批留在中间会话，计划确认及修订移至右侧 Deploy 页。阶段失败由当前模型直接读取工具结果并诊断，前端通过 Deploy 自有审阅模型和到期 Hook 统一计算实际待决需求，展示组件只读共享快照；不再提供“让模型分析修复”的二次选择或额外启动恢复 Run；计划修订及命令权限审批继续保留。完整链路见 [deployment.md](./deployment.md)。
 
 - 文件工具批次仅允许 read/SFTP 上传/SFTP 下载在无路径冲突时并行；包含其他串行工具或路径读写/写写冲突则整批按模型顺序执行。详见 [文件工具并发](./file-tool-concurrency.md)。
 

@@ -19,9 +19,14 @@ vi.mock("react", async (original) => ({
  useLayoutEffect: (effect: Effect, deps?: readonly unknown[]) => host.effect(effect, deps, true),
  useSyncExternalStore: (_subscribe: unknown, snapshot: () => unknown) => snapshot(),
 }));
+import { DeploymentPipeline } from "../features/deploy/components/deployment-pipeline";
+import { DeploymentReview } from "../features/deploy/components/deployment-review";
+import { deploymentReviewState } from "../features/deploy/model/deployment-review";
+import { useDeploymentExecution } from "../features/deploy/runtime/use-deployment-execution";
 import { DeploymentTaskPage } from "../features/deploy/components/deployment-task-page";
 import { DeploymentModulePicker } from "../features/deploy/components/deployment-module-picker";
 import { DeploymentLogs } from "../features/deploy/components/deployment-logs";
+import { DeploymentBuildSteps } from "../features/deploy/components/deployment-build-steps";
 
 type Effect = () => void | (() => void);
 /** Exercises real handlers and commit order in Node, without a browser or network. */
@@ -58,7 +63,7 @@ function elements(node: ReactNode): ReactElement<{ children?: ReactNode; classNa
  Children.forEach(node, (child) => { if (isValidElement<{ children?: ReactNode; className?: string }>(child)) result.push(child, ...elements(child.props.children)); });
  return result;
 }
-function native<T extends "textarea" | "form" | "button" | "input" | "li" | "div">(node: ReactNode, type: T): ReactElement<ComponentProps<T>>[] {
+function native<T extends "textarea" | "form" | "button" | "input" | "li" | "div" | "span" | "pre" | "code">(node: ReactNode, type: T): ReactElement<ComponentProps<T>>[] {
  return elements(node).filter((item) => item.type === type) as ReactElement<ComponentProps<T>>[];
 }
 function click(node: ReactElement<ComponentProps<"button">>) { node.props.onClick?.({} as MouseEvent<HTMLButtonElement>); }
@@ -86,16 +91,85 @@ beforeEach(() => {
 afterEach(() => { host.dispose(); vi.unstubAllGlobals(); });
 
 describe("deployment page interaction", () => {
+
+	it("only submits the confirmed bound plan on click, locks duplicate starts and waits for backend facts", async () => {
+		const pending = deferred<Awaited<ReturnType<Parameters<typeof useDeploymentExecution>[0]["submit"]>>>();
+		const plan = { ...run, status: "preparing" as const };
+		const options: Parameters<typeof useDeploymentExecution>[0] = { sessionId: "session", run: plan,
+			model: { providerId: "test", id: "model" }, thinkingLevel: "off", serverInteractionMode: "terminal", disabled: false,
+			submit: vi.fn(() => pending.promise), refresh: vi.fn(async () => undefined), setError: vi.fn() };
+		const render = () => { let result!: ReturnType<typeof useDeploymentExecution>; host.render(() => { result = useDeploymentExecution(options); return null; }); return result; };
+		let execution = render(); host.commit();
+		expect(options.submit).not.toHaveBeenCalled();
+		const first = execution.start(); const duplicate = execution.start();
+		expect(options.submit).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ workflow: "deployment_execution", deploymentRunId: plan.id, serverInteractionMode: "terminal" }));
+		expect(options.refresh).not.toHaveBeenCalled();
+		execution = render(); expect(execution.starting).toBe(true);
+		expect(plan.status).toBe("preparing");
+		pending.resolve({ id: "agent" } as Awaited<ReturnType<typeof options.submit>>);
+		await Promise.all([first, duplicate]);
+		expect(options.refresh).toHaveBeenCalledOnce(); expect(render().starting).toBe(false);
+	});
+
+	it("keeps a failed start retryable and ignores an old Session's late response", async () => {
+		const pending = deferred<Awaited<ReturnType<Parameters<typeof useDeploymentExecution>[0]["submit"]>>>();
+		let options: Parameters<typeof useDeploymentExecution>[0] = { sessionId: "session", run: { ...run, status: "preparing" },
+			model: { providerId: "test", id: "model" }, thinkingLevel: "off", serverInteractionMode: "command", disabled: false,
+			submit: vi.fn(async () => null), refresh: vi.fn(async () => undefined), setError: vi.fn() };
+		const render = () => { let result!: ReturnType<typeof useDeploymentExecution>; host.render(() => { result = useDeploymentExecution(options); return null; }); return result; };
+		let execution = render(); host.commit(); await execution.start();
+		expect(render().starting).toBe(false); expect(options.setError).toHaveBeenLastCalledWith("Deployment did not start. Try again.");
+		options.submit = vi.fn(() => pending.promise); const old = options;
+		execution = render(); const staleHandler = execution.start; const sending = execution.start();
+		options = { ...options, sessionId: "next", submit: vi.fn(async () => null), setError: vi.fn(), refresh: vi.fn(async () => undefined) };
+		expect(render().starting).toBe(false); host.commit();
+		await staleHandler(); expect(options.submit).not.toHaveBeenCalled();
+		pending.resolve({ id: "old-agent" } as Awaited<ReturnType<typeof options.submit>>); await sending;
+		expect(old.refresh).not.toHaveBeenCalled(); expect(options.setError).not.toHaveBeenCalled();
+	});
+
+	it("blocks the plan action while busy or awaiting permission and keeps permission decisions separate", () => {
+		const plan: DeploymentRun = { ...run, status: "preparing" };
+		const value = { run: plan, review: deploymentReviewState(plan), busy: false, canConfirm: true,
+			onConfirm: vi.fn(), onReviewPermissions: vi.fn(), onDecideRecovery: vi.fn() };
+		const view = DeploymentReview(value);
+		click(native(view, "button").find((item) => item.props.className === "deploy-plan-start")!);
+		expect(value.onConfirm).toHaveBeenCalledOnce();
+		const gated = DeploymentReview({ ...value, review: { ...value.review!, pendingExceptions: ["restart"] } });
+		const start = native(gated, "button").find((item) => item.props.className === "deploy-plan-start")!;
+		expect(start.props.disabled).toBe(true); click(start); expect(value.onConfirm).toHaveBeenCalledOnce();
+		click(native(gated, "button").find((item) => item.props.className === "deploy-plan-permissions")!);
+		expect(value.onReviewPermissions).toHaveBeenCalledOnce();
+		expect(native(gated, "button").every((item) => item.props.children !== "Approve this command")).toBe(true);
+	});
  it("keeps selected build logs while execution advances and retains all four log pages", () => {
-  const props = pageProps(); let view = page(props); host.commit();
+  const props = pageProps(); let view = host.render(() => DeploymentPipeline({ run: props.run!, task: props.task, logs: props.logs })); host.commit();
   click(native(view, "button").find((item) => elements(item.props.children).some((child) => child.props.children === "Build"))!);
   props.run = { ...run, updatedAt: 21, stages: { ...run.stages, upload: { status: "success", log: "" }, restart: { status: "running", log: "" } } };
-  view = page(props);
+  view = host.render(() => DeploymentPipeline({ run: props.run!, task: props.task, logs: props.logs }));
   const stages = native(view, "li") as ReactElement<{ "data-current": boolean; "data-selected": boolean }>[];
   expect(stages.map((item) => item.props["data-current"])).toEqual([false, false, false, true, false]);
   expect(stages.map((item) => item.props["data-selected"])).toEqual([false, true, false, false, false]);
   const pages = native(view, "div").filter((item) => item.props.className === "deploy-stage-log-page");
   expect(pages).toHaveLength(4); expect(pages.filter((item) => !item.props.hidden)).toHaveLength(1); expect(pages[0]?.key).toBe(`${run.id}:build`);
+ });
+ it("opens preparation without changing execution and restores the same log pages when returning", () => {
+  const props = pageProps();
+  const render = () => host.render(() => DeploymentPipeline({ run: props.run!, task: props.task, logs: props.logs }));
+  let view = render(); host.commit();
+  const pagesBefore = native(view, "div").filter((item) => item.props.className === "deploy-stage-log-page");
+  click(native(view, "button").find((item) => elements(item.props.children).some((child) => child.props.children === "Prepare"))!);
+  view = render();
+  expect(elements(view).some((item) => item.props.className === "deploy-stage-plan")).toBe(true);
+  expect(native(view, "div").find((item) => item.props.className === "deploy-stage-logs")?.props.hidden).toBe(true);
+  const stages = native(view, "li") as ReactElement<{ "data-current": boolean; "data-selected": boolean }>[];
+  expect(stages.map((item) => item.props["data-current"])).toEqual([false, false, true, false, false]);
+  expect(stages.map((item) => item.props["data-selected"])).toEqual([true, false, false, false, false]);
+  click(native(view, "button").find((item) => elements(item.props.children).some((child) => child.props.children === "Upload"))!);
+  view = render();
+  expect(native(view, "div").find((item) => item.props.className === "deploy-stage-logs")?.props.hidden).toBe(false);
+  expect(native(view, "div").filter((item) => item.props.className === "deploy-stage-log-page").map((item) => item.key)).toEqual(pagesBefore.map((item) => item.key));
+  expect(props.run!.stages.upload.status).toBe("running");
  });
  it("retains a draft while its mounted page switches between docked and enlarged presentation", () => {
   const props = pageProps(); let view = page(props); host.commit(); typeDraft(view, "Keep this requirement");
@@ -133,8 +207,9 @@ describe("deployment page interaction", () => {
  });
 });
 
-type GroupProps = { chunks: DeploymentLogChunk[]; open: boolean; onToggle(): void; registerChunk(sequence: number, element: HTMLElement | null): void };
-function groups(view: ReactNode): ReactElement<GroupProps>[] { return elements(view).filter((item) => typeof item.type === "function" && item.type.name === "LogGroup") as ReactElement<GroupProps>[]; }
+function logChunks(view: ReactNode) { return native(view, "span").filter((item) => item.props.className?.includes("deploy-log-chunk")); }
+function logViewport(view: ReactNode) { return native(view, "div").find((item) => item.props.className?.includes("deploy-log-viewport"))!; }
+function logToggle(view: ReactNode) { return native(view, "button").find((item) => item.props.className === "deploy-log-toggle")!; }
 const chunk = (sequence: number, executionId: string, text: string): DeploymentLogChunk => ({ deploymentRunId: run.id, stage: "build", sequence, executionId, timestamp: sequence, kind: "output", text });
 async function logFixture() {
  const store = new DeploymentLogStore("session", async (_s, _r, _t, cursor) => ({ chunks: cursor === 0 ? [chunk(1, "build-1", "[ERROR] missing dependency\n"), chunk(2, "build-2", "BUILD SUCCESS\n")] : [], nextSequence: 2, hasMore: false }));
@@ -143,16 +218,21 @@ async function logFixture() {
 function button(view: ReactNode, label: string) { return native(view, "button").find((item) => item.props.children === label)!; }
 
 describe("deployment log interaction", () => {
- it("retains collapsed history on append and opens the error group before focusing it", async () => {
-  const fixture = await logFixture(); let view = fixture.render(); host.commit(); groups(view)[0]!.props.onToggle();
-  view = fixture.render(); expect(groups(view)[0]?.props.open).toBe(false);
-  fixture.store.append(chunk(3, "build-2", "post-build output\n")); view = fixture.render();
-  expect(groups(view)).toHaveLength(2); expect(groups(view)[0]?.props.open).toBe(false);
+ it("appends retries to one text viewport, keeps the entire panel collapsed and opens it to locate an error", async () => {
+  const fixture = await logFixture(); let view = fixture.render(); host.commit(); click(logToggle(view));
+  view = fixture.render(); expect(logViewport(view).props.hidden).toBe(true);
+  fixture.store.append(chunk(3, "build-3", "post-build output\n")); view = fixture.render();
+  expect(logToggle(view).props["aria-expanded"]).toBe(false);
+  expect(logViewport(view).props.hidden).toBe(true);
+  expect(native(view, "pre")).toHaveLength(1);
+  expect(logChunks(view).map((item) => item.props.children).join("")).toBe("[ERROR] missing dependency\nBUILD SUCCESS\npost-build output\n");
   const viewport = { scrollTop: 10, clientHeight: 200, getBoundingClientRect: () => ({ top: 100 }) };
-  const logViewport = native(view, "div").find((item) => item.props.className?.includes("deploy-log-viewport"))!;
-  (logViewport.props.ref as { current: unknown }).current = viewport;
-  const target = { getBoundingClientRect: () => ({ top: 500, height: 40 }), focus: vi.fn() }; groups(view)[0]!.props.registerChunk(1, target as unknown as HTMLElement);
-  click(button(view, "Jump to error")); view = fixture.render(); expect(groups(view)[0]?.props.open).toBe(true);
+  (logViewport(view).props.ref as { current: unknown }).current = viewport;
+  const target = { getBoundingClientRect: () => ({ top: 500, height: 40 }), focus: vi.fn() };
+  const first = logChunks(view)[0]!;
+  if (typeof first.props.ref === "function") first.props.ref(target as unknown as HTMLSpanElement);
+  click(button(view, "Jump to error")); view = fixture.render(); expect(logViewport(view).props.hidden).toBe(false);
+  expect(logToggle(view).props["aria-expanded"]).toBe(true);
   host.flushLayout(); expect(viewport.scrollTop).toBe(330); expect(target.focus).toHaveBeenCalledWith({ preventScroll: true });
   expect(button(view, "Follow output").props["aria-pressed"]).toBe(false);
  });
@@ -178,7 +258,53 @@ describe("deployment log interaction", () => {
   const pre = elements(view).find((item) => item.type === "pre") as ReactElement<ComponentProps<"pre">>;
   if (typeof pre.props.ref === "function") pre.props.ref(target as unknown as HTMLPreElement);
   click(button(view, "Jump to error")); view = host.render(() => DeploymentLogs({ run: legacy, stage: "build", store })); host.flushLayout();
-  expect(groups(view)).toHaveLength(0); expect(target.focus).toHaveBeenCalledOnce();
+  expect(logChunks(view)).toHaveLength(0); expect(target.focus).toHaveBeenCalledOnce();
+ });
+ it("opens collapsed output when following resumes and retains content while hidden", async () => {
+  const fixture = await logFixture(); let view = fixture.render(); host.commit(); click(logToggle(view));
+  view = fixture.render(); expect(logViewport(view).props.hidden).toBe(true);
+  click(button(view, "Follow output")); view = fixture.render();
+  expect(logViewport(view).props.hidden).toBe(false);
+  expect(logChunks(view)).toHaveLength(2);
+  expect(button(view, "Follow output").props["aria-pressed"]).toBe(true);
+ });
+});
+
+describe("deployment build command navigation", () => {
+ function fixture(): DeploymentRun {
+  if (run.plan.version !== 2) throw new Error("Expected a multi-step plan");
+  return { ...run, plan: { ...run.plan, buildSteps: [1, 2, 3, 4].map((index) => ({ cwd: "/project", command: `build-${index}` })) },
+   stages: { ...run.stages, build: { ...run.stages.build, status: "running", step: { current: 4, total: 4, cwd: "/project", command: "build-4" } } } };
+ }
+ function render(value: DeploymentRun) { return host.render(() => DeploymentBuildSteps({ run: value })); }
+ function previous(view: ReactNode) { return native(view, "button").find((item) => item.props["aria-label"] === "Previous step command")!; }
+ function next(view: ReactNode) { return native(view, "button").find((item) => item.props["aria-label"] === "Next step command")!; }
+ it("browses all commands with bounded previous and next controls without changing execution", () => {
+  const value = fixture(); let view = render(value);
+  expect(native(view, "code")[0]?.props.children).toBe("build-4"); expect(next(view).props.disabled).toBe(true);
+  for (let index = 3; index >= 1; index--) { click(previous(view)); view = render(value); expect(native(view, "code")[0]?.props.children).toBe(`build-${index}`); }
+  expect(previous(view).props.disabled).toBe(true); click(previous(view)); view = render(value);
+  expect(native(view, "code")[0]?.props.children).toBe("build-1");
+  click(next(view)); view = render(value); expect(native(view, "code")[0]?.props.children).toBe("build-2");
+  expect(value.stages.build.step?.current).toBe(4);
+ });
+ it("follows live steps until browsing, then keeps that selection until another execution starts", () => {
+  let value = fixture(); value.stages.build.step!.current = 2; value.stages.build.step!.command = "build-2";
+  let view = render(value); expect(native(view, "code")[0]?.props.children).toBe("build-2");
+  value = { ...value, stages: { ...value.stages, build: { ...value.stages.build, step: { ...value.stages.build.step!, current: 3, command: "build-3" } } } };
+  view = render(value); expect(native(view, "code")[0]?.props.children).toBe("build-3");
+  click(previous(view)); view = render(value);
+  value.stages.build.step = { ...value.stages.build.step!, current: 4, command: "build-4" };
+  view = render(value); expect(native(view, "code")[0]?.props.children).toBe("build-2");
+  value = { ...value, stages: { ...value.stages, build: { ...value.stages.build, executionId: "build-3" } } };
+  view = render(value); expect(native(view, "code")[0]?.props.children).toBe("build-4");
+ });
+ it("supports a legacy single command without inventing additional steps", () => {
+  const value: DeploymentRun = { ...run, plan: { ...run.plan, version: undefined,
+   build: { cwd: "/project", command: "legacy-build", artifact: "/project/api.jar" }, upload: { remotePath: "/srv/app/api.jar" } } };
+  const view = render(value);
+  expect(native(view, "code")[0]?.props.children).toBe("legacy-build");
+  expect(previous(view).props.disabled).toBe(true); expect(next(view).props.disabled).toBe(true);
  });
 });
 
