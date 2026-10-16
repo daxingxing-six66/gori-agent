@@ -4,6 +4,8 @@
 
 浏览器图标由 `app/layout.tsx` 的 Metadata 与显式 head 链接声明：`public/favicon-16.png`、`public/favicon-32.png` 供小尺寸标签页使用，`public/favicon.png` 为 256px 版本，`public/apple-touch-icon.png` 为 180px 触屏图标。图像保留大猩猩与绿色终端符号，外围透明，无黑色底板；根目录 `icon.png` 与 256px 版本保持一致。替换资源时同步尺寸声明并递增图标 URL 的版本参数，避免旧浏览器缓存。
 
+新会话页 `new-session-chat.tsx` 在提示标题上方复用透明的 `public/favicon.png`，替代原星光图标；桌面显示为 96px，640px 以下显示为 80px，与标题及说明保持左对齐，不增加底板或边框。
+
 创建工作区弹窗底部左侧提供可选“测试连接”，测试当前草稿，无需工作区名称或有效默认目录；结果复用 NoticeCard，在操作栏上方显示。ManagementDialog 增加可选 footerLeading/footerNotice 插槽，取消和创建保持右侧一组。测试期间禁用重复测试与创建，编辑连接字段、进入凭据配置或关闭时取消并清除结果；请求序号避免旧结果回写。实现、契约与测试见 [connection-test.md](./connection-test.md)。
 
 工作区创建/编辑弹窗使用 `workspace-form.tsx` 共用分区、紧凑凭据行和目录控件，局部样式集中于 `workspace-form.css`，通过 `workspace-management-dialog` 限定作用范围。桌面端采用左侧说明、右侧表单，600px 以下改为单列；凭据仅展示名称、用户与类型，说明位于控件下方并关联无障碍描述。本地/远端目录使用不同的小图标和截断路径，标签位于控件上方；目录、凭据控件与输入框保持相同高度，不使用图标底座和大面积强调底色。创建时高级连接参数默认收起，字段发生原生或服务端校验错误时自动展开；编辑弹窗标题下显示主机、端口和环境。ManagementDialog 的可选 className/headerIcon 支持这类扩展，其余管理弹窗保留默认外观。

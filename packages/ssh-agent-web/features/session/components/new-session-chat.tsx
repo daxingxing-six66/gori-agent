@@ -1,6 +1,6 @@
 "use client";
 
-import { FolderOpen, LoaderCircle, Send, ShieldCheck, Sparkles, X } from "lucide-react";
+import { FolderOpen, LoaderCircle, Send, ShieldCheck, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useIntl } from "react-intl";
@@ -160,7 +160,14 @@ export function NewSessionChat({ workspaceId }: { workspaceId: string }) {
 
 				<div className="app-scrollbar chat-empty-state overflow-y-auto">
 					<div className="chat-empty-state-inner">
-						<Sparkles size={20} className="text-[var(--accent)]" aria-hidden="true" />
+						<img
+							src="/favicon.png?v=4"
+							alt="Gori"
+							width={96}
+							height={96}
+							className="block size-20 object-contain sm:size-24"
+							draggable={false}
+						/>
 						<h2>{intl.formatMessage({ id: "session.new.heading" }, { name: workspace.displayName })}</h2>
 						<p>{intl.formatMessage({ id: "session.new.description" })}</p>
 					</div>
