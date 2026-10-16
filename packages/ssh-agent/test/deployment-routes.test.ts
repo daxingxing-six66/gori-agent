@@ -5,6 +5,19 @@ import type { DeploymentService } from "../src/application/services/deployment-s
 const segments = ["api", "sessions", "session-1", "deployments"];
 
 describe("deployment HTTP route", () => {
+	it.each([
+		["history", "cursor=a&cursor=b", "history.cursor"],
+		["history", "unknown=a", "history.unknown"],
+		["run-1/logs", "stage=build&afterSequence=-1", "logs.afterSequence"],
+		["run-1/logs", "stage=build&afterSequence=9007199254740992", "logs.afterSequence"],
+		["run-1/logs", "stage=build&limit=501", "logs.limit"],
+		["run-1/logs", "stage=other", "logs.stage"],
+		["run-1/logs", "stage=build&stage=upload", "logs.stage"],
+	])("identifies the offending query field for %s?%s", async (path, query, field) => {
+		await expect(handleDeploymentRoute({} as DeploymentService,
+			new Request(`http://local/api/sessions/session-1/deployments/${path}?${query}`), [...segments, ...path.split("/")]))
+			.rejects.toMatchObject({ code: "deployment_request_invalid", field, message: expect.stringContaining(field) });
+	});
 	it("validates the prepare request before calling the runtime", async () => {
 		const prepare = vi.fn();
 		const service = { prepare } as unknown as DeploymentService;

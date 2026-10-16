@@ -1,3 +1,4 @@
+import { testSshTarget } from "./test-ssh-target.ts";
 import { describe, expect, it, vi } from "vitest";
 import type { RemoteSandboxBackend } from "../src/application/services/remote-sandbox-provider.ts";
 import { sandboxFailure } from "../src/domain/remote-sandbox.ts";
@@ -5,7 +6,7 @@ import type { SshTargetSnapshot } from "../src/domain/ssh-target.ts";
 import { RemoteSandboxCoordinator } from "../src/infrastructure/sandbox/remote-sandbox-coordinator.ts";
 import { wrapRemoteCommand } from "../src/infrastructure/sandbox/shell-command.ts";
 
-const target = { defaultCwd: "/srv/app" } as SshTargetSnapshot;
+const target = testSshTarget({ sandboxWritableRoots: ["/srv/app"] });
 const facts = { mode: "workspace_write", backend: "landlock", enforcement: "full", abi: 5,
 	launcherVersion: "3", sandboxRoot: "/srv/app" } as const;
 const execution = { command: "confined command", sandbox: facts, confirmation: "confirmed\n" };

@@ -5,6 +5,8 @@ import type { DeploymentPlanProposal } from "../deployment-plan-proposal.ts";
 import type { DeploymentRecoveryInput } from "../deployment-recovery-proposal.ts";
 import { backendMessage } from "../../i18n/message.ts";
 import { isToolArguments, type PreparedToolAuthorization, type ToolAuthorizationInput } from "./tool-authorization.ts";
+import type { DeploymentModeView, DeploymentOutcome } from "../../domain/deployment-session.ts";
+import type { DeploymentStageExecution } from "../../domain/deployment-execution.ts";
 
 export type { DeploymentPlanProposal } from "../deployment-plan-proposal.ts";
 
@@ -12,6 +14,9 @@ type ExecutableDeploymentStage = Exclude<DeployStage, "prepare">;
 
 /** The deployment service, rather than the model, owns commands and stage transitions. */
 export interface AgentDeploymentService {
+	activeMode?(sessionId: string): DeploymentModeView | null;
+	bindModeRun?(sessionId: string, id: string, agentRunId: string): Promise<void>;
+	finishDeployment?(sessionId: string, id: string, outcome: DeploymentOutcome, reason?: string, agentRunId?: string): Promise<DeploymentModeView>;
 	activeDiscussion(sessionId: string): DeploymentDiscussion | null;
 	getDiscussion(sessionId: string, discussionId: string): DeploymentDiscussion;
 	bindPlanningRun(sessionId: string, discussionId: string, agentRunId: string): Promise<DeploymentDiscussion>;
@@ -21,12 +26,15 @@ export interface AgentDeploymentService {
 	finishPlanningAgent(sessionId: string, agentRunId: string, status: "failed" | "cancelled"): Promise<void>;
 	get(sessionId: string, deploymentRunId: string): DeploymentRun;
 	claimForAgent(sessionId: string, deploymentRunId: string, agentRunId: string): Promise<DeploymentRun>;
+	validateStageRequest?(sessionId: string, deploymentRunId: string, agentRunId: string, stage: ExecutableDeploymentStage, requestId?: string): void;
+	stageExecutionForRequest?(sessionId: string, deploymentRunId: string, agentRunId: string, requestId: string): DeploymentStageExecution | undefined;
 	executeStageForAgent(
 		sessionId: string,
 		deploymentRunId: string,
 		agentRunId: string,
 		stage: ExecutableDeploymentStage,
 		signal: AbortSignal,
+		requestId?: string,
 	): Promise<DeploymentRun>;
 	finishAgent(sessionId: string, deploymentRunId: string, agentRunId: string, status: "completed" | "failed" | "cancelled"): Promise<void>;
 	bindRecoveryAgent(sessionId: string, deploymentRunId: string, agentRunId: string): Promise<DeploymentRun>;
@@ -84,17 +92,39 @@ export const deploymentInspectDefinition = {
 	parameters: Type.Object({}, { additionalProperties: false }),
 };
 
+export const deploymentFinishDefinition = {
+	name: "deployment_finish",
+	label: "Finish deployment",
+	description: "Explicitly end the current deployment. Success requires every necessary stage to have succeeded or been legally skipped. Use failed with a reason when unable to complete or when the user explicitly requests failure. A failed stage or the end of a Chat Run alone does not end deployment mode.",
+	parameters: Type.Object({
+		outcome: Type.Union([Type.Literal("success"), Type.Literal("failed")]),
+		reason: Type.Optional(Type.String({ minLength: 1, maxLength: 4000 })),
+	}, { additionalProperties: false }),
+};
+
+export function createDeploymentFinishTool(input: {
+	run: { id: string; sessionId: string }; deploymentId: string; deployments: AgentDeploymentService;
+}): AgentTool {
+	return { ...deploymentFinishDefinition, executionMode: "sequential", execute: async (_id, params) => {
+		if (!input.deployments.finishDeployment) throw new Error("Deployment lifecycle is unavailable");
+		const { outcome, reason } = params as { outcome: "success" | "failed"; reason?: string };
+		const view = await input.deployments.finishDeployment(input.run.sessionId, input.deploymentId, outcome, reason, input.run.id);
+		return { content: [{ type: "text", text: JSON.stringify({ deploymentId: view.deployment.id,
+			outcome: view.deployment.outcome, reason: view.deployment.reason, deploymentMode: false }) }], details: {} };
+	} };
+}
+
 export const deploymentExecuteNextDefinition = {
 	name: "deployment_execute_next",
 	label: "Execute deployment stage",
-	description: "Execute exactly one stage from the user-confirmed deployment plan. Supply only the stage name. The server verifies the Agent Run binding, required order, target, Guard, and any sandbox exception approval. A failed stage is not retried automatically.",
+	description: "Execute or explicitly rerun one stage from the user-confirmed deployment plan. Supply only the stage name. Rerunning an earlier stage invalidates downstream results while preserving their logs. Required preceding stages must have succeeded; do not skip ahead. The server verifies identity, target, Guard and fresh one-use sandbox exceptions. Replaying the same tool call attaches to the original execution.",
 	parameters: executeParameters,
 };
 
 export const deploymentProposeRecoveryDefinition = {
 	name: "deployment_propose_recovery",
 	label: "Propose deployment repair",
-	description: "After a stage fails, propose a change to that stage only. This never executes or approves a command. Supply the current plan revision from deployment_inspect. Build accepts buildSteps and optional artifacts; upload accepts artifacts; restart/verify accept command and optional declared writePaths. The user reviews the change before the stage can be retried. Build workdirs and artifact sources are relative to the local project root.",
+	description: "Propose a change to the current or an earlier deployment stage. This never executes or approves commands. Supply the current plan revision from deployment_inspect. Build accepts buildSteps and optional artifacts; upload accepts artifacts; restart/verify accept command and optional declared writePaths. The user reviews affected commands and artifacts before execution. Build workdirs and artifact sources are relative to the local project root.",
 	parameters: Type.Object({
 		expectedRevision: Type.Integer({ minimum: 1 }),
 		stage: executeParameters.properties.stage,
@@ -121,10 +151,10 @@ export function createDeploymentAgentTools(input: {
 		{
 			...deploymentExecuteNextDefinition,
 			executionMode: "sequential",
-			execute: async (_toolCallId, params, signal) => {
+			execute: async (toolCallId, params, signal) => {
 				const stage = (params as { stage: ExecutableDeploymentStage }).stage;
-				const snapshot = await deployments.executeStageForAgent(run.sessionId, deploymentRunId, run.id, stage, signal ?? new AbortController().signal);
-				return result(snapshot, false, stage);
+				const snapshot = await deployments.executeStageForAgent(run.sessionId, deploymentRunId, run.id, stage, signal ?? new AbortController().signal, toolCallId);
+				return result(snapshot, false, stage, deployments.stageExecutionForRequest?.(run.sessionId, deploymentRunId, run.id, toolCallId));
 			},
 		},
 		createRecoveryProposalTool(run, deploymentRunId, deployments),
@@ -136,10 +166,7 @@ export function createDeploymentRecoveryTools(input: {
 	deploymentRunId: string;
 	deployments: AgentDeploymentService;
 }): AgentTool[] {
-	return [
-		{ ...deploymentInspectDefinition, executionMode: "sequential", execute: async () => result(input.deployments.get(input.run.sessionId, input.deploymentRunId), true) },
-		createRecoveryProposalTool(input.run, input.deploymentRunId, input.deployments),
-	];
+	return createDeploymentAgentTools(input);
 }
 
 function createRecoveryProposalTool(run: { id: string; sessionId: string }, deploymentRunId: string,
@@ -182,11 +209,12 @@ export function createDeploymentPlanningTool(input: {
 	};
 }
 
-function result(run: DeploymentRun, includePlan = false, logStage?: ExecutableDeploymentStage) {
+function result(run: DeploymentRun, includePlan = false, logStage?: ExecutableDeploymentStage, execution?: DeploymentStageExecution) {
 	const stages = Object.fromEntries(DEPLOY_STAGES.map((stage) => {
 		const view = run.stages[stage];
 		return [stage, {
 			status: view.status,
+			...(view.executionId ? { executionId: view.executionId } : {}),
 			...(view.error === undefined ? {} : { error: view.error }),
 			...(view.exitCode === undefined ? {} : { exitCode: view.exitCode }),
 			...(view.failureCode === undefined ? {} : { failureCode: view.failureCode }),
@@ -194,7 +222,7 @@ function result(run: DeploymentRun, includePlan = false, logStage?: ExecutableDe
 			...(view.safeDetails === undefined ? {} : { safeDetails: view.safeDetails }),
 			...(view.progress === undefined ? {} : { progress: view.progress }),
 			...(view.log.length === 0 || (logStage !== undefined && stage !== logStage)
-				? {} : { logTail: view.log.slice(-8_192), logTruncated: view.log.length > 8_192 }),
+				? {} : { logTail: view.log.slice(-8_192), logTruncated: view.logTruncated || view.log.length > 8_192 }),
 		}];
 	}));
 	const nextStage = run.status === "running"
@@ -205,6 +233,10 @@ function result(run: DeploymentRun, includePlan = false, logStage?: ExecutableDe
 			deploymentRunId: run.id,
 			status: run.status,
 			planRevision: run.planRevision ?? 1,
+			...(execution ? { execution: { id: execution.id, stage: execution.stage, planRevision: execution.planRevision,
+				status: execution.status, startedAt: execution.startedAt, finishedAt: execution.finishedAt,
+				...(execution.result ? { result: { status: execution.result.status, error: execution.result.error,
+					logTail: execution.result.log.slice(-8_192), logTruncated: execution.result.logTruncated || execution.result.log.length > 8_192 } } : {}) } } : {}),
 			...(run.recoveries?.at(-1) ? { recovery: run.recoveries.at(-1) } : {}),
 			nextStage,
 			...(run.error === undefined ? {} : { error: run.error }),

@@ -114,7 +114,7 @@ describe("deployment Agent boundary", () => {
 		});
 		const signal = new AbortController().signal;
 		await execute!.execute("call-2", { stage: "build" }, signal);
-		expect(executeStageForAgent).toHaveBeenCalledWith("session-1", "deploy-1", "agent-1", "build", signal);
+		expect(executeStageForAgent).toHaveBeenCalledWith("session-1", "deploy-1", "agent-1", "build", signal, "call-2");
 	});
 
 	it("returns a failed stage as diagnostic data without suggesting another stage", async () => {
@@ -137,7 +137,7 @@ describe("deployment Agent boundary", () => {
 		expect(output.stages.restart.logTail).toHaveLength(8_192);
 	});
 
-	it("exposes inspection and proposal, but no execution, during recovery", async () => {
+	it("allows a recovery Run to inspect, retry the confirmed plan and propose reviewed changes", async () => {
 		const run = deployment();
 		run.status = "recovering";
 		run.stages.build = { status: "failed", log: "compiler error", error: "Build exited with status 1" };
@@ -145,10 +145,10 @@ describe("deployment Agent boundary", () => {
 		const tools = createDeploymentRecoveryTools({
 			run: { id: "agent-repair", sessionId: "session-1" }, deploymentRunId: run.id, deployments,
 		});
-		expect(tools.map((tool) => tool.name)).toEqual(["deployment_inspect", "deployment_propose_recovery"]);
+		expect(tools.map((tool) => tool.name)).toEqual(["deployment_inspect", "deployment_execute_next", "deployment_propose_recovery"]);
 		const input = { expectedRevision: 1, stage: "build", reason: "Use the correct build goal",
 			buildSteps: [{ workdir: ".", command: "mvn package" }] };
-		await tools[1]!.execute("call-repair", input, undefined);
+		await tools[2]!.execute("call-repair", input, undefined);
 		expect(deployments.proposeRecoveryForAgent).toHaveBeenCalledWith("session-1", "deploy-1", "agent-repair", 1,
 			{ stage: "build", reason: input.reason, buildSteps: input.buildSteps }, expect.any(AbortSignal));
 		expect(executeStageForAgent).not.toHaveBeenCalled();

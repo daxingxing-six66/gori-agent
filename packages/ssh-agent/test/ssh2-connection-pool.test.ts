@@ -515,7 +515,7 @@ function createTarget(port: number, hostKeyFingerprint: string): SshTargetSnapsh
 		credentialId: "credential-1",
 		credentialAuthVersion: 1,
 		remoteUser: "root",
-		defaultCwd: "/",
+		sandboxWritableRoots: ["/"],
 		connectTimeoutMs: 2_000,
 		keepaliveIntervalMs: 500,
 		keepaliveMaxCount: 2,

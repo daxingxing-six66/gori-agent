@@ -7,7 +7,7 @@ import type { TerminalSessionActor } from "./terminal-session-actor.ts";
 import { randomBytes } from "node:crypto";
 import type { SessionRepository } from "../repositories/session-repository.ts";
 import { SessionSandboxPolicy } from "../services/session-sandbox-policy.ts";
-import { quoteShell, wrapRemoteCommand } from "../remote-shell-command.ts";
+import { quoteShell, shellArgv } from "../remote-shell-command.ts";
 import type { OpenTerminalChannelInput } from "../ssh-channel-broker.ts";
 
 interface OpenedTerminalChannel {
@@ -84,7 +84,7 @@ export class TerminalChannelOpener {
 			throw new TerminalError("terminal_open_request_conflict", "Session sandbox setting changed during Terminal opening", { status: 409 });
 		}
 		const prepared = mode === "full_access"
-			? unconfinedTerminal(target.defaultCwd)
+			? unconfinedTerminal()
 			: await this.#prepareSandboxed(target, signal);
 		requireOpening(signal);
 		const channel = await this.#broker.open({
@@ -104,11 +104,11 @@ export class TerminalChannelOpener {
 	}
 }
 
-function unconfinedTerminal(cwd: string): { launch: OpenTerminalChannelInput["launch"]; sandbox: TerminalSandboxFacts } {
+function unconfinedTerminal(): { launch: OpenTerminalChannelInput["launch"]; sandbox: TerminalSandboxFacts } {
 	const confirmation = `gori-terminal: ready token=${randomBytes(16).toString("hex")}`;
 	return {
 		launch: { kind: "unconfined_exec", confirmation,
-			command: wrapRemoteCommand(cwd, `printf '%s\\n' ${quoteShell(confirmation)} >&2; exec /bin/bash --login -i`) },
+			command: shellArgv(["/bin/bash", "--noprofile", "--norc", "-c", `printf '%s\\n' ${quoteShell(confirmation)} >&2; exec /bin/bash --login -i`]) },
 		sandbox: { mode: "full_access", backend: "none", enforcement: "none", source: "session_setting", configuredAt: Date.now() },
 	};
 }

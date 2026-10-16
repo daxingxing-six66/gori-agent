@@ -23,7 +23,7 @@ const target: SshTargetSnapshot = {
 	credentialId: "credential-1",
 	credentialAuthVersion: 1,
 	remoteUser: "root",
-	defaultCwd: "/srv",
+	sandboxWritableRoots: ["/srv"],
 	connectTimeoutMs: 1_000,
 	keepaliveIntervalMs: 1_000,
 	keepaliveMaxCount: 3,

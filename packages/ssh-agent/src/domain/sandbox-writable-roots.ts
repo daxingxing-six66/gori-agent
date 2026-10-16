@@ -2,11 +2,6 @@ import { canonicalRemoteSandboxRoot, validRemoteSandboxRoot } from "./remote-san
 
 export const MAX_SANDBOX_WRITABLE_ROOTS = 16;
 
-/** Compatibility for configurations written before writable directories were separate from cwd. */
-export function defaultSandboxWritableRoots(remoteDefaultCwd: string): string[] {
-	return validRemoteSandboxRoot(remoteDefaultCwd) ? [remoteDefaultCwd] : [];
-}
-
 export function validSandboxWritableRoots(value: unknown, allowEmpty = false): value is string[] {
 	return Array.isArray(value) && (allowEmpty || value.length > 0) && value.length <= MAX_SANDBOX_WRITABLE_ROOTS &&
 		value.every((root) => typeof root === "string" && validRemoteSandboxRoot(root)) &&

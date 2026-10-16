@@ -21,7 +21,7 @@ import { createTestLlmModels } from "./test-llm-models.ts";
 
 const roots = ["/srv/app", "/var/log/app"];
 const input: CreateWorkspaceInput = { displayName: "test", environment: "development",
-	host: { hostname: "fixture.invalid", port: 22 }, defaultCwd: tmpdir(), remoteDefaultCwd: "/srv/app",
+	host: { hostname: "fixture.invalid", port: 22 }, defaultCwd: tmpdir(),
 	credential: { displayName: "fixture", remoteUser: "fixture", secret: { type: "password", password: "synthetic" } },
 	sandboxWritableRoots: roots };
 const backendFor = (databasePath = ":memory:") => createSqliteManagementBackend({ databasePath,
@@ -44,29 +44,29 @@ describe("sandbox writable directory configuration", () => {
 			expect((await backend.api.getSession(other.id)).sandboxWritableRoots).toEqual(roots);
 			expect((await backend.api.createSession({ workspaceId: workspace.id, displayName: "new" })).sandboxWritableRoots).toEqual(["/srv/new"]);
 			const resolver = targetsFor(backend.database);
-			expect(await resolver.resolve(first.id)).toMatchObject({ defaultCwd: "/srv/app", sandboxWritableRoots: ["/etc/app", "/srv/app"] });
-			expect(await resolver.resolveWorkspace(workspace.id)).toMatchObject({ defaultCwd: "/srv/app", sandboxWritableRoots: ["/srv/new"] });
+			expect(await resolver.resolve(first.id)).toMatchObject({ sandboxWritableRoots: ["/etc/app", "/srv/app"] });
+			expect(await resolver.resolveWorkspace(workspace.id)).toMatchObject({ sandboxWritableRoots: ["/srv/new"] });
 			await expect(backend.api.renameSession({ id: first.id, sandboxWritableRoots: ["/wrong"], expectedRevision: 1 })).rejects.toMatchObject({ code: "revision_conflict" });
 			expect((await backend.api.getSession(first.id)).sandboxWritableRoots).toEqual(["/etc/app", "/srv/app"]);
 		} finally { await backend.close(); }
 	});
 
-	it("accepts remote cwd / without granting / writes and accepts a per-Session override at creation", async () => {
+	it("uses a per-Session override without adding remote directory configuration", async () => {
 		const backend = backendFor();
 		try {
-			const { workspace } = await backend.api.createWorkspace({ ...input, remoteDefaultCwd: "/" });
+			const { workspace } = await backend.api.createWorkspace({ ...input });
 			const session = await backend.api.createSession({ workspaceId: workspace.id, displayName: "custom", sandboxWritableRoots: ["/etc/app"] });
-			expect(await targetsFor(backend.database).resolve(session.id)).toMatchObject({ defaultCwd: "/", sandboxWritableRoots: ["/etc/app"] });
+			expect(await targetsFor(backend.database).resolve(session.id)).toMatchObject({ sandboxWritableRoots: ["/etc/app"] });
 		} finally { await backend.close(); }
 	});
 
-	it("preserves legacy one-directory defaults without treating cwd changes as write authorization", async () => {
+	it("never derives writable permissions from a local working directory", async () => {
 		const backend = backendFor();
 		try {
 			const { workspace } = await backend.api.createWorkspace({ ...input, sandboxWritableRoots: undefined });
-			expect(workspace.sandboxWritableRoots).toEqual(["/srv/app"]);
-			const changed = await backend.api.updateWorkspace({ id: workspace.id, displayName: "test", remoteDefaultCwd: "/etc", expectedRevision: 1 });
-			expect(changed.sandboxWritableRoots).toEqual(["/srv/app"]);
+			expect(workspace.sandboxWritableRoots).toEqual([]);
+			const changed = await backend.api.updateWorkspace({ id: workspace.id, displayName: "test", defaultCwd: tmpdir(), expectedRevision: 1 });
+			expect(changed.sandboxWritableRoots).toEqual([]);
 		} finally { await backend.close(); }
 	});
 
@@ -129,7 +129,7 @@ describe("sandbox writable directory configuration", () => {
 describe("complete scope in authorization and execution evidence", () => {
 	const target = { workspaceId: "w", workspaceRevision: 1, hostname: "fixture.invalid", port: 22,
 		hostKeyAlgorithm: "ssh-ed25519", hostKeyFingerprint: "SHA256:fixture", credentialId: "c", credentialAuthVersion: 1,
-		remoteUser: "fixture", defaultCwd: "/srv/app", sandboxWritableRoots: roots,
+		remoteUser: "fixture", sandboxWritableRoots: roots,
 		connectTimeoutMs: 1000, keepaliveIntervalMs: 1000, keepaliveMaxCount: 3 };
 	it("deeply snapshots writable directories in an execution plan", () => {
 		const mutableTarget = { ...target, sandboxWritableRoots: [...roots] };

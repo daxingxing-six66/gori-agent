@@ -41,7 +41,7 @@ modules:
 	const backend = createSqliteManagementBackend({ databasePath: ":memory:", credentialEncryptionKey: new Uint8Array(32).fill(1), llmModelsFactory: createTestLlmModels });
 	const { workspace } = await backend.api.createWorkspace({ displayName: "test", environment: "development", host: { hostname: "fixture.invalid", port: 22 },
 		credential: { displayName: "fixture", remoteUser: "fixture", secret: { type: "password", password: "synthetic" } },
-		defaultCwd: root, remoteDefaultCwd: "/srv/app", sandboxWritableRoots: ["/srv/app", "/var/log/app"] });
+		defaultCwd: root,  sandboxWritableRoots: ["/srv/app", "/var/log/app"] });
 	const session = await backend.api.createSession({ workspaceId: workspace.id, displayName: "test" });
 	const sessions = new SqliteSessionRepository(backend.database);
 	const workspaces = new SqliteWorkspaceRepository(backend.database);
@@ -83,7 +83,7 @@ describe("deployment binding to Session writable directories", () => {
 			expect(() => f.discussions.find(f.session.id, discussion.id)).toThrow("Saved deployment discussion is invalid");
 		} finally { await f.close(); }
 	});
-	it("reads historical one-root plans without treating them as approval for newly added roots", async () => {
+	it("reads historical snapshots but requires review when their sandbox scope is absent", async () => {
 		const f = await fixture();
 		try {
 			const plan = await f.service.prepare(f.session.id, "deploy-fixture.md", "app");
@@ -92,7 +92,7 @@ describe("deployment binding to Session writable directories", () => {
 			expect(f.repository.find(f.session.id, plan.id)?.plan.targetBinding.sandboxWritableRoots).toBeUndefined();
 			await expect(f.service.claimForAgent(f.session.id, plan.id, "agent")).rejects.toMatchObject({ code: "deployment_sandbox_route_changed" });
 			await f.change(["/srv/app"]);
-			await expect(f.service.claimForAgent(f.session.id, plan.id, "agent")).resolves.toMatchObject({ status: "running" });
+			await expect(f.service.claimForAgent(f.session.id, plan.id, "agent")).rejects.toMatchObject({ code: "deployment_sandbox_route_changed" });
 			expect(f.submit).not.toHaveBeenCalled();
 		} finally { await f.close(); }
 	});

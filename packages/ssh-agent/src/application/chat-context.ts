@@ -1,11 +1,12 @@
 import { type AgentMessage, createBashTool, createReadTool, createWriteTool } from "@earendil-works/pi-agent-core";
 import type { Tool } from "@earendil-works/pi-ai";
+import { deploymentAwaitsResume, type DeploymentModeView } from "../domain/deployment-session.ts";
 import { remoteServerCallDefinition } from "./tools/remote-server-call-tool.ts";
 import { sftpDownloadDefinition } from "./tools/sftp-download-tool.ts";
 import { sftpUploadDefinition } from "./tools/sftp-upload-tool.ts";
 import { terminalInteractionDefinition } from "./tools/terminal-interaction-tool.ts";
 import { askUserDecisionDefinition } from "./tools/ask-user-decision-tool.ts";
-import { deploymentExecuteNextDefinition, deploymentInspectDefinition, deploymentProposePlanDefinition, deploymentProposeRecoveryDefinition } from "./tools/deployment-agent-tool.ts";
+import { deploymentExecuteNextDefinition, deploymentFinishDefinition, deploymentInspectDefinition, deploymentProposePlanDefinition, deploymentProposeRecoveryDefinition } from "./tools/deployment-agent-tool.ts";
 import { bubblewrapInspectDefinition, bubblewrapInstallDefinition } from "./tools/bubblewrap-installation-tool.ts";
 
 export interface ChatContext {
@@ -15,7 +16,7 @@ export interface ChatContext {
 }
 
 /** Builds request metadata without opening an execution environment or binding a terminal. */
-export function createChatContext(systemPrompt: string, messages: AgentMessage[]): ChatContext {
+export function createChatContext(systemPrompt: string, messages: AgentMessage[], mode: DeploymentModeView | null = null): ChatContext {
 	const tools = [
 		createReadTool(),
 		createWriteTool(),
@@ -27,11 +28,17 @@ export function createChatContext(systemPrompt: string, messages: AgentMessage[]
 		sftpUploadDefinition,
 		sftpDownloadDefinition,
 		askUserDecisionDefinition,
-		deploymentInspectDefinition,
-		deploymentExecuteNextDefinition,
-		deploymentProposeRecoveryDefinition,
-		deploymentProposePlanDefinition,
 	];
+	if (mode && !mode.deployment.outcome) {
+		if (!mode.run) tools.push(deploymentProposePlanDefinition);
+		else {
+			tools.push(deploymentInspectDefinition);
+			const awaitingReview = mode.run.status === "preparing" || mode.run.status === "recovering" &&
+				(mode.run.recoveries?.at(-1)?.status === "pending" || deploymentAwaitsResume(mode.run));
+			if (!awaitingReview) tools.push(deploymentExecuteNextDefinition, deploymentProposeRecoveryDefinition);
+		}
+		tools.push(deploymentFinishDefinition);
+	}
 	return {
 		systemPrompt,
 		messages,

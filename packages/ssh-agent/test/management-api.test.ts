@@ -27,11 +27,11 @@ describe("SQLite management HTTP API", () => {
 		const facts = { mode: "workspace_write", backend: "landlock", enforcement: "full", abi: 8, launcherVersion: "1", sandboxRoot: "/opt/app" } as const;
 		const probe = vi.spyOn(LandlockRemoteSandboxProvider.prototype, "refreshCapabilities").mockResolvedValue(facts);
 		try {
-			await createWorkspace(backend.handleRequest, { remoteDefaultCwd: "/opt/app" });
+			await createWorkspace(backend.handleRequest, { sandboxWritableRoots: ["/opt/app"] });
 			backend.database.exec("INSERT INTO workspace_host_trusts VALUES ('id-1','ssh-ed25519','SHA256:test',1)");
 			const result = await request(backend.handleRequest, "POST", "/api/workspaces/id-1/sandbox");
 			expect(result).toEqual({ status: 200, body: facts });
-			expect(probe).toHaveBeenCalledWith(expect.objectContaining({ workspaceId: "id-1", defaultCwd: "/opt/app" }), expect.any(AbortSignal));
+			expect(probe).toHaveBeenCalledWith(expect.objectContaining({ workspaceId: "id-1", sandboxWritableRoots: ["/opt/app"] }), expect.any(AbortSignal));
 			probe.mockRejectedValueOnce(sandboxFailure("sandbox_probe_failed", "private host details"));
 			const failed = await request(backend.handleRequest, "POST", "/api/workspaces/id-1/sandbox");
 			expect(failed.status).toBeGreaterThanOrEqual(400);
@@ -39,27 +39,27 @@ describe("SQLite management HTTP API", () => {
 			expect(JSON.stringify(failed.body)).not.toContain("private host details");
 		} finally { probe.mockRestore(); backend.close(); }
 	});
-	it("initializes legacy writable defaults from cwd and preserves them on rename and cwd edits", async () => {
+	it("persists explicit writable defaults and preserves them on rename", async () => {
 		const backend = createBackend();
 		try {
-			const created = await createWorkspace(backend.handleRequest, { remoteDefaultCwd: "/opt/app" });
-			expect(created).toMatchObject({ status: 201, body: { workspace: { remoteDefaultCwd: "/opt/app" } } });
+			const created = await createWorkspace(backend.handleRequest, { sandboxWritableRoots: ["/opt/app"] });
+			expect(created).toMatchObject({ status: 201, body: { workspace: { sandboxWritableRoots: ["/opt/app"] } } });
 			const renamed = await request(backend.handleRequest, "PATCH", "/api/workspaces/id-1", { displayName: "renamed", expectedRevision: 1 });
-			expect(renamed).toMatchObject({ status: 200, body: { remoteDefaultCwd: "/opt/app" } });
-			const updated = await request(backend.handleRequest, "PATCH", "/api/workspaces/id-1", { displayName: "renamed", remoteDefaultCwd: "/srv/app", expectedRevision: 2 });
-			expect(updated).toMatchObject({ status: 200, body: { remoteDefaultCwd: "/srv/app" } });
+			expect(renamed).toMatchObject({ status: 200, body: { sandboxWritableRoots: ["/opt/app"] } });
+			const updated = await request(backend.handleRequest, "PATCH", "/api/workspaces/id-1", { displayName: "renamed", sandboxWritableRoots: ["/srv/app"], expectedRevision: 2 });
+			expect(updated).toMatchObject({ status: 200, body: { sandboxWritableRoots: ["/srv/app"] } });
 			const invalid = await request(backend.handleRequest, "PATCH", "/api/workspaces/id-1", { displayName: "renamed", sandboxWritableRoots: ["/opt/.."], expectedRevision: 3 });
 			expect(invalid.status).toBe(400);
 			expect((await request(backend.handleRequest, "PATCH", "/api/workspaces/id-1", { displayName: "renamed", remoteSandboxRoot: "/tmp", expectedRevision: 3 })).status).toBe(400);
-			expect(backend.database.prepare("SELECT remote_default_cwd FROM workspaces WHERE id='id-1'").get()?.remote_default_cwd).toBe("/srv/app");
+			expect(backend.database.prepare("SELECT sandbox_writable_roots_json FROM workspaces WHERE id='id-1'").get()?.sandbox_writable_roots_json).toBe('["/srv/app"]');
 		} finally { backend.close(); }
 	});
 	it("rejects root-wide write access and keeps old omitted directories inert", async () => {
 		const backend = createBackend();
 		try {
-			expect((await createWorkspace(backend.handleRequest, { remoteDefaultCwd: "/", sandboxWritableRoots: ["/"] })).status).toBe(400);
+			expect((await createWorkspace(backend.handleRequest, {  sandboxWritableRoots: ["/"] })).status).toBe(400);
 			await createWorkspace(backend.handleRequest);
-			expect(backend.database.prepare("SELECT remote_default_cwd FROM workspaces").get()?.remote_default_cwd).toBe("/");
+			expect(backend.database.prepare("SELECT sandbox_writable_roots_json FROM workspaces").get()?.sandbox_writable_roots_json).toBe("[]");
 		} finally { backend.close(); }
 	});
 	it("updates the workspace directory with revision checks and preserves existing Session directories", async () => {
@@ -546,10 +546,10 @@ describe("SQLite management HTTP API", () => {
 					.get("workspace-1"),
 			).toEqual({ algorithm: "ssh-ed25519", fingerprint: "SHA256:legacy", verified_at: 800 });
 			const workspaceColumns = database.prepare("PRAGMA table_info(workspaces)").all();
-			expect(workspaceColumns.map((column) => column.name)).toEqual(expect.arrayContaining(["id", "remote_default_cwd"]));
-			expect(workspaceColumns.some((column) => column.name === "remote_sandbox_root")).toBe(false);
+			expect(workspaceColumns.map((column) => column.name)).toEqual(expect.arrayContaining(["id", "sandbox_writable_roots_json"]));
+			expect(workspaceColumns.some((column) => column.name === "remote_sandbox_root" || column.name === "remote_default_cwd")).toBe(false);
 			expect(workspaceColumns.some((column) => String(column.name).startsWith("host_key_"))).toBe(false);
-			expect(database.prepare("SELECT remote_default_cwd FROM workspaces").get()?.remote_default_cwd).toBe("/");
+			expect(database.prepare("SELECT sandbox_writable_roots_json FROM workspaces").get()?.sandbox_writable_roots_json).toBe("[]");
 			expect(database.prepare("SELECT command_text,sandbox_json,agent_run_id FROM command_operations").get()).toEqual({ command_text: "legacy command", sandbox_json: null, agent_run_id: null });
 		} finally {
 			database.close();
@@ -594,7 +594,6 @@ function createBackend(databasePath = ":memory:") {
 
 interface CreateWorkspaceOptions {
 	sandboxWritableRoots?: string[];
-	remoteDefaultCwd?: string;
 	displayName?: string;
 	credentialDisplayName?: string;
 	password?: string;
@@ -618,7 +617,6 @@ function createWorkspace(
 			password: options.password ?? "password",
 		},
 		defaultCwd: "/tmp",
-		remoteDefaultCwd: options.remoteDefaultCwd,
 		sandboxWritableRoots: options.sandboxWritableRoots,
 	});
 }

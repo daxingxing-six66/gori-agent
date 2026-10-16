@@ -1,5 +1,5 @@
 import { isAbsolute, posix } from "node:path";
-import { DeploymentError } from "../domain/deployment.ts";
+import { deploymentArray, deploymentInputError, deploymentJsonSize, deploymentObject, deploymentText } from "./deployment-validation.ts";
 
 /** Exact per-release inputs proposed by the model, before path resolution and user confirmation. */
 export interface DeploymentPlanProposal {
@@ -9,73 +9,61 @@ export interface DeploymentPlanProposal {
 	verify?: { command: string; writePaths?: string[] };
 }
 
-/** Treat model Tool arguments as untrusted even when the Tool schema was checked upstream. */
+const CODE = "deployment_proposal_invalid";
+
+/** Enforce the same precise field rules for model calls and direct service callers. */
 export function validateDeploymentProposal(value: DeploymentPlanProposal): DeploymentPlanProposal {
-	if (!value || typeof value !== "object" || Array.isArray(value)) throw invalidProposal();
-	proposalKeys(value, ["buildSteps", "artifacts", "restart", "verify"]);
-	let serialized: string;
-	try { serialized = JSON.stringify(value); } catch { throw invalidProposal(); }
-	if (Buffer.byteLength(serialized, "utf8") > 96 * 1024) throw invalidProposal();
-	if (!Array.isArray(value.buildSteps) || value.buildSteps.length < 1 || value.buildSteps.length > 8 ||
-		!Array.isArray(value.artifacts) || value.artifacts.length < 1 || value.artifacts.length > 16) throw invalidProposal();
-	const buildSteps = value.buildSteps.map((step) => {
-		proposalKeys(step, ["workdir", "command"]);
-		return { workdir: proposalRelativePath(step.workdir, true), command: proposalCommand(step.command) };
+	const body = deploymentObject(value, "proposal", ["buildSteps", "artifacts", "restart", "verify"], CODE);
+	deploymentJsonSize(body, CODE);
+	const buildSteps = deploymentArray(body.buildSteps, "buildSteps", 8, CODE).map((value, index) => {
+		const field = `buildSteps[${index}]`;
+		const step = deploymentObject(value, field, ["workdir", "command"], CODE);
+		return { workdir: relativePath(step.workdir, `${field}.workdir`, true), command: deploymentText(step.command, `${field}.command`, 4_000, CODE) };
 	});
-	const targets = new Set<string>();
-	const artifacts = value.artifacts.map((artifact) => {
-		proposalKeys(artifact, ["source", "target"]);
-		const source = proposalRelativePath(artifact.source, false);
-		const target = proposalRemotePath(artifact.target);
-		if (targets.has(target)) throw new DeploymentError("deployment_proposal_invalid", "Duplicate deployment target", 400);
-		targets.add(target);
+	const targets = new Map<string, number>();
+	const artifacts = deploymentArray(body.artifacts, "artifacts", 16, CODE).map((value, index) => {
+		const field = `artifacts[${index}]`;
+		const artifact = deploymentObject(value, field, ["source", "target"], CODE);
+		const source = relativePath(artifact.source, `${field}.source`, false);
+		const target = remotePath(artifact.target, `${field}.target`, false);
+		if (targets.has(target)) deploymentInputError(CODE, `${field}.target`, `duplicates artifacts[${targets.get(target)}].target; each remote target must be unique`);
+		targets.set(target, index);
 		return { source, target };
 	});
-	proposalKeys(value.restart, ["command", "writePaths"]);
-	if (value.verify !== undefined) proposalKeys(value.verify, ["command", "writePaths"]);
-	return {
-		buildSteps, artifacts,
-		restart: proposalRemoteCommand(value.restart),
-		...(value.verify === undefined ? {} : { verify: proposalRemoteCommand(value.verify) }),
-	};
+	return { buildSteps, artifacts, restart: remoteCommand(body.restart, "restart"),
+		...(body.verify === undefined ? {} : { verify: remoteCommand(body.verify, "verify") }) };
 }
 
-function proposalRemoteCommand(value: DeploymentPlanProposal["restart"]): DeploymentPlanProposal["restart"] {
-	const command = proposalCommand(value?.command);
-	if (value.writePaths === undefined) return { command };
-	if (!Array.isArray(value.writePaths) || value.writePaths.length < 1 || value.writePaths.length > 16) throw invalidProposal();
-	const writePaths = value.writePaths.map(proposalRemoteWritePath);
-	if (new Set(writePaths).size !== writePaths.length) throw invalidProposal();
+function remoteCommand(value: unknown, field: string): DeploymentPlanProposal["restart"] {
+	const body = deploymentObject(value, field, ["command", "writePaths"], CODE);
+	const command = deploymentText(body.command, `${field}.command`, 4_000, CODE);
+	if (body.writePaths === undefined) return { command };
+	const writePaths = deploymentArray(body.writePaths, `${field}.writePaths`, 16, CODE)
+		.map((path, index) => remotePath(path, `${field}.writePaths[${index}]`, true));
+	const seen = new Map<string, number>();
+	for (const [index, path] of writePaths.entries()) {
+		if (seen.has(path)) deploymentInputError(CODE, `${field}.writePaths[${index}]`, `duplicates ${field}.writePaths[${seen.get(path)}]`);
+		seen.set(path, index);
+	}
 	return { command, writePaths };
 }
 
-function proposalKeys(value: unknown, allowed: readonly string[]): void {
-	if (!value || typeof value !== "object" || Array.isArray(value) || Object.keys(value).some((key) => !allowed.includes(key))) throw invalidProposal();
+function relativePath(value: unknown, field: string, allowRoot: boolean): string {
+	deploymentText(value, field, 2_048, CODE);
+	const path = value as string;
+	if (isAbsolute(path) || path.includes("\\")) deploymentInputError(CODE, field, "must be a forward-slash path relative to the Session project root; absolute paths are not allowed");
+	if (/[\0-\x1f]/u.test(path)) deploymentInputError(CODE, field, "must not contain control characters or newlines");
+	if (path.split("/").some((part) => !part || part === "..")) deploymentInputError(CODE, field, "must stay within the project and must not contain '..' or empty path segments");
+	if (!allowRoot && path === ".") deploymentInputError(CODE, field, "must identify a file, not the project directory");
+	return path;
 }
 
-function proposalCommand(value: unknown): string {
-	if (typeof value !== "string" || !value.trim() || value.length > 4_000 || /[\0-\x08\x0b\x0c\x0e-\x1f]/u.test(value)) throw invalidProposal();
-	return value.trim();
-}
-
-function proposalRelativePath(value: unknown, allowRoot: boolean): string {
-	if (typeof value !== "string" || !value || value.length > 2_048 || isAbsolute(value) || value.includes("\\") || /[\0-\x1f]/u.test(value) ||
-		value.split("/").some((part) => !part || part === "..") || (!allowRoot && value === ".")) throw invalidProposal();
-	return value;
-}
-
-function proposalRemotePath(value: unknown): string {
-	if (typeof value !== "string" || value.length > 2_048 || !value.startsWith("/") || value === "/" ||
-		value.endsWith("/") || posix.normalize(value) !== value || /[\0-\x1f]/u.test(value)) throw invalidProposal();
-	return value;
-}
-
-function proposalRemoteWritePath(value: unknown): string {
-	if (typeof value !== "string" || value.length > 2_048 || !value.startsWith("/") ||
-		(value !== "/" && value.endsWith("/")) || posix.normalize(value) !== value || /[\0-\x1f]/u.test(value)) throw invalidProposal();
-	return value;
-}
-
-function invalidProposal(): DeploymentError {
-	return new DeploymentError("deployment_proposal_invalid", "Deployment proposal has invalid commands or paths", 400);
+function remotePath(value: unknown, field: string, allowRoot: boolean): string {
+	deploymentText(value, field, 2_048, CODE);
+	const path = value as string;
+	if (!path.startsWith("/")) deploymentInputError(CODE, field, "must be an absolute Linux path beginning with '/'");
+	if ((!allowRoot && path === "/") || (path !== "/" && path.endsWith("/"))) deploymentInputError(CODE, field, allowRoot ? "must not end with '/' except for the root directory" : "must identify a file and must not end with '/'");
+	if (posix.normalize(path) !== path) deploymentInputError(CODE, field, "must be normalized without '.', '..' or repeated slashes");
+	if (/[\0-\x1f]/u.test(path)) deploymentInputError(CODE, field, "must not contain control characters or newlines");
+	return path;
 }

@@ -51,7 +51,7 @@ export class FileTransferService {
 	): Promise<{ workspaceId: string; path: string; entries: SftpDirectoryEntry[] }> {
 		await this.recovery;
 		const target = await this.options.targets.resolveWorkspace(workspaceId);
-		const remotePath = path ?? target.defaultCwd;
+		const remotePath = path ?? "/";
 		if (!remotePath.startsWith("/"))
 			throw new FileTransferError("not_a_directory", "Remote directory path must be absolute", 400);
 		try {

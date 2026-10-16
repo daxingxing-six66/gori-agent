@@ -80,7 +80,7 @@ const target: SshTargetSnapshot = {
 	connectTimeoutMs: 1000,
 	keepaliveIntervalMs: 1000,
 	keepaliveMaxCount: 3,
-	defaultCwd: "/tmp",
+	sandboxWritableRoots: ["/tmp"],
 };
 
 const createDatabase = (): DatabaseSync => {

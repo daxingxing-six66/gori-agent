@@ -1,6 +1,9 @@
 import type { Session } from "../domain/session.ts";
 import type { FileTransfer } from "../domain/file-transfer.ts";
-import type { DeploymentDiscussion, DeploymentRun } from "../domain/deployment.ts";
+import type { DeploymentDiscussion, DeploymentExecutableStage, DeploymentRun, DeploymentStageView } from "../domain/deployment.ts";
+import type { DeploymentModeView } from "../domain/deployment-session.ts";
+import type { DeploymentLogChunk } from "../domain/deployment-execution.ts";
+import type { ChatMessageProjection } from "../domain/chat.ts";
 import type { BackendLocale, BackendMessageKey } from "../i18n/message.ts";
 import { localizePublicValue } from "../i18n/projection.ts";
 import type { ConnectionPoolSnapshot } from "./ssh-channel-broker.ts";
@@ -44,6 +47,11 @@ export type WorkspaceEvent =
 	| { type: "session.updated"; data: Pick<Session, "id" | "workspaceId" | "displayName" | "revision" | "updatedAt"> }
 	| { type: "transfer.updated"; data: FileTransfer }
 	| { type: "deployment.updated"; data: DeploymentRun }
+	| { type: "deployment.started" | "deployment.finished"; data: DeploymentModeView }
+	| { type: "deployment.message.created"; data: { sessionId: string; message: ChatMessageProjection } }
+	| { type: "deployment.log.appended"; data: DeploymentLogChunk & { sessionId: string } }
+	| { type: "deployment.stage.updated"; data: { sessionId: string; deploymentRunId: string; stage: DeploymentExecutableStage;
+		revision: number; view: DeploymentStageView } }
 	| { type: "deployment.discussion.updated"; data: DeploymentDiscussion };
 
 export type WorkspaceEventTopic = "monitoring" | "connection" | "transfers" | "sessions" | "deployments";
@@ -172,7 +180,7 @@ export class WorkspaceEventHub {
 
 function topicFor(type: WorkspaceEvent["type"]): WorkspaceEventTopic {
 	if (type === "session.updated") return "sessions";
-	if (type === "deployment.updated" || type === "deployment.discussion.updated") return "deployments";
+	if (type.startsWith("deployment.")) return "deployments";
 	if (type.startsWith("monitor.")) return "monitoring";
 	if (type === "connection.snapshot") return "connection";
 	return "transfers";

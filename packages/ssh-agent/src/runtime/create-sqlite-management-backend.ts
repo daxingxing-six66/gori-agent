@@ -24,6 +24,7 @@ import { ContextCompactionSettingsService } from "../application/services/contex
 import { createChatService } from "../application/services/create-chat-service.ts";
 import { DefaultCredentialService } from "../application/services/credential-service.ts";
 import { DeploymentService } from "../application/services/deployment-service.ts";
+import { DeploymentModeService } from "../application/services/deployment-mode-service.ts";
 import { PiCustomLlmProviderRuntime } from "../application/services/custom-llm-provider-runtime.ts";
 import { DefaultCustomLlmProviderService } from "../application/services/custom-llm-provider-service.ts";
 import { FileTransferService } from "../application/services/file-transfer-service.ts";
@@ -62,6 +63,8 @@ import {
 import { SqliteCustomLlmProviderRepository } from "../infrastructure/sqlite/sqlite-custom-llm-provider-repository.ts";
 import { SqliteDeploymentRepository } from "../infrastructure/sqlite/sqlite-deployment-repository.ts";
 import { SqliteDeploymentDiscussionRepository } from "../infrastructure/sqlite/sqlite-deployment-discussion-repository.ts";
+import { SqliteDeploymentSessionRepository } from "../infrastructure/sqlite/sqlite-deployment-session-repository.ts";
+import { SqliteDeploymentExecutionRepository } from "../infrastructure/sqlite/sqlite-deployment-execution-repository.ts";
 import { SqliteFileTransferRepository } from "../infrastructure/sqlite/sqlite-file-transfer-repository.ts";
 import { SqliteGuardRepository } from "../infrastructure/sqlite/sqlite-guard-repository.ts";
 import { SqliteLlmModelCatalogRepository } from "../infrastructure/sqlite/sqlite-llm-model-catalog-repository.ts";
@@ -127,11 +130,15 @@ export function createSqliteManagementBackend(options: CreateSqliteManagementBac
 		const commandOperationRepository = new SqliteCommandOperationRepository(database);
 		const deploymentRepository = new SqliteDeploymentRepository(database);
 		const deploymentDiscussions = new SqliteDeploymentDiscussionRepository(database);
+		const deploymentSessions = new SqliteDeploymentSessionRepository(database);
+		const deploymentExecutions = new SqliteDeploymentExecutionRepository(database);
 		const fileTransferRepository = new SqliteFileTransferRepository(database);
 		const chatRepository = new SqliteChatRepository(database);
 		const contextCompactionSettingsRepository = new SqliteContextCompactionSettingsRepository(database);
 		const clock = options.clock ?? systemClock;
 		deploymentRepository.recoverInterrupted(Date.now());
+		deploymentExecutions.recoverInterrupted(Date.now());
+		deploymentSessions.recoverInterrupted(Date.now());
 		const ids = options.ids ?? uuidGenerator;
 		chatRepository.recoverInterrupted(clock.now());
 		const terminalRepository = new SqliteTerminalRepository(database);
@@ -159,6 +166,8 @@ export function createSqliteManagementBackend(options: CreateSqliteManagementBac
 		});
 		const targets = new DefaultSshTargetResolver({ sessions, workspaces, credentials: sshCredentials, hostTrust });
 		const events = new WorkspaceEventHub();
+		const deploymentModes = new DeploymentModeService({ sessions: deploymentSessions, discussions: deploymentDiscussions,
+			runs: deploymentRepository, transactions, events });
 		const fileTransfers = new FileTransferService({
 			transfers: fileTransferRepository,
 			targets,
@@ -206,6 +215,8 @@ export function createSqliteManagementBackend(options: CreateSqliteManagementBac
 			transfers: fileTransfers,
 			repository: deploymentRepository,
 			discussions: deploymentDiscussions,
+			modes: deploymentModes,
+			executions: deploymentExecutions,
 			transactions,
 			events,
 			localCwd,

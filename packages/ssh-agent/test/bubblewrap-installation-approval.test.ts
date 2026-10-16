@@ -1,3 +1,4 @@
+import { testSshTarget } from "./test-ssh-target.ts";
 import { describe, expect, it, vi } from "vitest";
 import { BUBBLEWRAP_INSTALL_JUSTIFICATION, BUBBLEWRAP_INSTALL_TIMEOUT_MS, bubblewrapInstallCommand } from
 	"../src/application/services/bubblewrap-installation-service.ts";
@@ -13,9 +14,9 @@ import type { RemoteCommandBroker } from "../src/application/ssh-channel-broker.
 
 const run = { id: "run-1", sessionId: "session-1", serverInteractionMode: "command" } as ChatRun;
 const plan = { packageManager: "apt-get", useSudo: true, refreshIndex: true } as const;
-const target = { workspaceId: "workspace-1", workspaceRevision: 1, hostname: "one.example",
+const target = testSshTarget({ workspaceId: "workspace-1", workspaceRevision: 1, hostname: "one.example",
 	port: 22, credentialId: "credential-1", credentialAuthVersion: 1, remoteUser: "operator",
-	defaultCwd: "/srv/app" } as SshTargetSnapshot;
+	sandboxWritableRoots: ["/srv/app"] });
 const terminalInteractions = {
 	preflightSubmit: vi.fn(), approve: vi.fn(), reject: vi.fn(),
 } as unknown as Pick<TerminalInteractionService, "preflightSubmit" | "approve" | "reject">;

@@ -4,7 +4,7 @@ import { isAbsolute, join } from "node:path";
 import { ManagementError } from "../../domain/errors.ts";
 import type { Clock, IdGenerator, SessionId, WorkspaceId } from "../../domain/ids.ts";
 import type { CreateSessionInput, DeleteSessionInput, Session, UpdateSessionInput } from "../../domain/session.ts";
-import { defaultSandboxWritableRoots, sameSandboxWritableRoots } from "../../domain/sandbox-writable-roots.ts";
+import { sameSandboxWritableRoots } from "../../domain/sandbox-writable-roots.ts";
 import { requireSandboxWritableRoots } from "../sandbox-writable-roots.ts";
 import type { CommandOperationRepository } from "../repositories/command-operation-repository.ts";
 import type { SessionRepository } from "../repositories/session-repository.ts";
@@ -75,7 +75,7 @@ export class DefaultSessionService implements SessionService {
 			autoAudit: input.autoAudit ?? false,
 			sandboxEnabled: input.sandboxEnabled ?? true,
 			sandboxWritableRoots: input.sandboxWritableRoots === undefined
-				? [...(workspace.sandboxWritableRoots ?? defaultSandboxWritableRoots(workspace.remoteDefaultCwd ?? "/"))]
+				? [...(workspace.sandboxWritableRoots ?? [])]
 				: requireSandboxWritableRoots(input.sandboxWritableRoots),
 			terminalContextCursor: 0,
 			revision: 1,

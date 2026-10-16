@@ -218,7 +218,8 @@ function validatePlan(run: Record<string, unknown>): Record<string, unknown> {
 	if (!Number.isSafeInteger(binding.port) || !Number.isSafeInteger(binding.credentialAuthVersion)) throw corrupt();
 	if (binding.workspaceRevision !== undefined && !Number.isSafeInteger(binding.workspaceRevision)) throw corrupt();
 	if (binding.hostKeyAlgorithm !== undefined) string(binding.hostKeyAlgorithm);
-	for (const key of ["hostKeyFingerprint", "credentialId", "remoteUser", "writableRoot"]) string(binding[key]);
+	for (const key of ["hostKeyFingerprint", "credentialId", "remoteUser"]) string(binding[key]);
+	if (binding.writableRoot !== undefined) string(binding.writableRoot);
 	if (binding.sandboxWritableRoots !== undefined && !validSandboxWritableRoots(binding.sandboxWritableRoots, true)) throw corrupt();
 	const module = record(plan.module);
 	string(module.id); string(module.name);
@@ -344,9 +345,23 @@ function validateStages(run: Record<string, unknown>, plan: Record<string, unkno
 	validateStageSequence(String(run.status), stages, plan.verify !== undefined);
 }
 
-function validateStageView(value: unknown): asserts value is DeploymentStageView {
+export function validateStageView(value: unknown): asserts value is DeploymentStageView {
 	const view = record(value);
 	if (!["pending", "running", "success", "failed", "skipped"].includes(String(view.status)) || typeof view.log !== "string") throw corrupt();
+	if (view.executionId !== undefined && (typeof view.executionId !== "string" || !view.executionId.trim() || view.executionId.length > 200 || /[\0-\x1f]/u.test(view.executionId))) throw corrupt();
+	if (view.logCursor !== undefined && (!Number.isSafeInteger(view.logCursor) || Number(view.logCursor) < 0)) throw corrupt();
+	if (view.logTruncated !== undefined && typeof view.logTruncated !== "boolean") throw corrupt();
+	if (view.step !== undefined) {
+		const step = record(view.step);
+		if (!Number.isSafeInteger(step.current) || !Number.isSafeInteger(step.total) || Number(step.current) < 1 || Number(step.current) > Number(step.total)) throw corrupt();
+		localPath(step.cwd); command(step.command);
+	}
+	if (view.artifact !== undefined) {
+		const artifact = record(view.artifact);
+		if (!Number.isSafeInteger(artifact.index) || !Number.isSafeInteger(artifact.count) || Number(artifact.index) < 1 || Number(artifact.index) > Number(artifact.count) ||
+			!Number.isSafeInteger(artifact.bytesTransferred) || Number(artifact.bytesTransferred) < 0 || !Number.isSafeInteger(artifact.totalBytes) || Number(artifact.totalBytes) < Number(artifact.bytesTransferred)) throw corrupt();
+		localPath(artifact.source); remoteFile(artifact.remotePath);
+	}
 	if (view.startedAt !== undefined && !Number.isSafeInteger(view.startedAt)) throw corrupt();
 	if (view.finishedAt !== undefined && !Number.isSafeInteger(view.finishedAt)) throw corrupt();
 	if (view.error !== undefined) string(view.error);

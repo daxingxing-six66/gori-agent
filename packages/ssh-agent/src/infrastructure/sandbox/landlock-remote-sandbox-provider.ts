@@ -58,7 +58,7 @@ export class LandlockRemoteSandboxProvider implements RemoteSandboxBackend {
 		const rules = await this.#prepareRules(input.target, input.signal);
 		const token = randomBytes(16).toString("hex");
 		return {
-			command: `cd -- ${quoteShell(input.target.defaultCwd)} && exec ${shellArgv([...launcherArgs(rules, token), "--", "--terminal"])}`,
+			command: `exec ${shellArgv([...launcherArgs(rules, token), "--", "--terminal"])}`,
 			sandbox: sandboxFacts(rules),
 			confirmation: `gori-landlock: confined abi=${rules.launcher.abi} token=${token}`,
 		};

@@ -201,7 +201,10 @@ export function normalizePublicError(error: unknown): PublicErrorDescriptor {
 		);
 	}
 	if (error instanceof ChatError) return known(error.code, error.status, error);
-	if (error instanceof DeploymentError) return known(error.code, error.status, error, {}, backendMessage("deployment.error", { reason: error.message }));
+	if (error instanceof DeploymentError) return known(error.code, error.status, error, {
+		...(error.field === undefined ? {} : { field: error.field }),
+		...(error.details === undefined ? {} : { details: error.details }),
+	}, backendMessage("deployment.error", { reason: error.message }));
 	if (error instanceof AttachmentError) {
 		return known(error.code, error.status, error, {
 			...(error.field === undefined ? {} : { field: error.field }),

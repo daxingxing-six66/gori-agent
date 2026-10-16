@@ -2,6 +2,7 @@ import {
 	Agent,
 	type AgentEvent,
 	type AgentMessage,
+	type AgentContext,
 	type AgentOptions,
 	AgentRunError,
 	type AgentTool,
@@ -24,8 +25,8 @@ import { runFailure } from "../failure-policy.ts";
 import { reportFailure } from "../failure-reporter.ts";
 import { type ProviderFailureMessage, providerFailureStream } from "../provider-failure.ts";
 import { remoteServerCallDefinition } from "../tools/remote-server-call-tool.ts";
-import { restrictTerminalWorkflow, terminalInteractionDefinition } from "../tools/terminal-interaction-tool.ts";
-import { authorizationFailure, unavailableTool } from "../tools/tool-authorization.ts";
+import { terminalInteractionDefinition } from "../tools/terminal-interaction-tool.ts";
+import { authorizationFailure, unavailableTool, withToolAvailability, toolRequestError } from "../tools/tool-authorization.ts";
 import type { RequestSftpDownloadOverwriteApproval } from "../tools/sftp-download-tool.ts";
 import type { RequestSftpOverwriteApproval } from "../tools/sftp-upload-tool.ts";
 import type { ChatAgentEventHandler } from "./chat-agent-event-handler.ts";
@@ -40,10 +41,7 @@ import {
 	createDeploymentAgentTools,
 	createDeploymentRecoveryTools,
 	createDeploymentPlanningTool,
-	deploymentExecuteNextDefinition,
-	deploymentInspectDefinition,
-	deploymentProposePlanDefinition,
-	deploymentProposeRecoveryDefinition,
+	createDeploymentFinishTool,
 	type AgentDeploymentService,
 } from "../tools/deployment-agent-tool.ts";
 import type { ChatUserDecisionService } from "./chat-user-decision-service.ts";
@@ -51,6 +49,8 @@ import type { BubblewrapInstallationService } from "./bubblewrap-installation-se
 import { bubblewrapInspectDefinition, bubblewrapInstallDefinition, createBubblewrapInspectionTool,
 	createBubblewrapInstallTool } from "../tools/bubblewrap-installation-tool.ts";
 import { sessionSandboxInstructions, type SessionSandboxPolicy } from "./session-sandbox-policy.ts";
+import { deploymentProviderMessages, deploymentStateInstructions } from "../deployment-runtime-context.ts";
+import { DeploymentError } from "../../domain/deployment.ts";
 
 type ToolCallCoordinator = Pick<ChatToolCallCoordinator, "beforeToolCall" | "requestSftpOverwriteApproval">;
 type QueueService = Pick<ChatQueueService, "cancelSteeringAfterTurn">;
@@ -129,6 +129,7 @@ export class ChatAgentRuntimeFactory {
 		compactionSettings?: ChatCompactionSettings;
 		deploymentRunId?: string;
 		deploymentRecovery?: boolean;
+		deploymentReview?: boolean;
 		deploymentPlanning?: { discussionId: string; revision: number };
 	}): Promise<ChatRunRuntime> {
 		if (input.deploymentRunId && input.deploymentPlanning)
@@ -153,7 +154,6 @@ export class ChatAgentRuntimeFactory {
 				return runtime;
 			};
 			const read = createReadTool();
-			const deploymentWorkflow = Boolean(input.deploymentRunId || input.deploymentPlanning);
 			const write = createWriteTool();
 			const bash = createBashTool();
 			const localTools = [
@@ -177,14 +177,14 @@ export class ChatAgentRuntimeFactory {
 				input.run.serverInteractionMode === "command"
 					? this.#createRemoteTool(input.run.sessionId, () => requireRuntime().abortAgent(), input.run.id)
 					: unavailableTool(remoteServerCallDefinition);
-			const terminalTool = restrictTerminalWorkflow(
+			const terminalTool =
 				input.run.serverInteractionMode === "terminal"
 					? this.#createTerminalTool({
 							sessionId: input.run.sessionId,
 							terminalSessionId: requireTerminalSessionId(input.run),
 							agentRunId: input.run.id,
 						})
-					: unavailableTool(terminalInteractionDefinition), deploymentWorkflow);
+					: unavailableTool(terminalInteractionDefinition);
 			const requestSftpOverwriteApproval = async (
 				toolName: "sftp_upload" | "sftp_download",
 				toolCallId: string,
@@ -233,27 +233,48 @@ export class ChatAgentRuntimeFactory {
 						signal,
 					),
 			});
-			const deploymentTools = input.deploymentRunId && this.#deployments
+			const initialDeploymentTools = input.deploymentRunId && this.#deployments
 				? input.deploymentRecovery
-					? [...createDeploymentRecoveryTools({ run: input.run, deploymentRunId: input.deploymentRunId, deployments: this.#deployments }),
-						unavailableTool(deploymentExecuteNextDefinition, "recovery discussion")]
+					? createDeploymentRecoveryTools({ run: input.run, deploymentRunId: input.deploymentRunId, deployments: this.#deployments })
 					: createDeploymentAgentTools({ run: input.run, deploymentRunId: input.deploymentRunId, deployments: this.#deployments })
-				: [unavailableTool(deploymentInspectDefinition, "current Chat workflow"),
-					unavailableTool(deploymentExecuteNextDefinition, "current Chat workflow"),
-					unavailableTool(deploymentProposeRecoveryDefinition, "current Chat workflow")];
-			const deploymentPlanningTool = input.deploymentPlanning && this.#deployments
-				? createDeploymentPlanningTool({ run: input.run, ...input.deploymentPlanning, deployments: this.#deployments })
-				: unavailableTool(deploymentProposePlanDefinition, "current Chat workflow");
-			const bubblewrapInspectTool = input.run.serverInteractionMode === "command" && !deploymentWorkflow && this.#bubblewrapInstallations
+				: [];
+			const planningTools = input.deploymentPlanning && this.#deployments
+				? [createDeploymentPlanningTool({ run: input.run, ...input.deploymentPlanning, deployments: this.#deployments })] : [];
+			const deploymentId = input.deploymentPlanning?.discussionId ?? (input.deploymentRunId
+				? this.#deployments?.get(input.run.sessionId, input.deploymentRunId).discussionId ?? input.deploymentRunId : undefined);
+			const currentMode = () => {
+				const mode = this.#deployments?.activeMode?.(input.run.sessionId) ?? null;
+				return mode?.deployment.id === deploymentId ? mode : null;
+			};
+			const deploymentTools = () => {
+				if (this.#deployments?.activeMode && !currentMode()) return [];
+				const tools = [...initialDeploymentTools.filter((tool) => !input.deploymentReview || tool.name === "deployment_inspect"), ...planningTools];
+				if (deploymentId && this.#deployments?.finishDeployment)
+					tools.push(createDeploymentFinishTool({ run: input.run, deploymentId, deployments: this.#deployments }));
+				return tools.map((tool) => withToolAvailability({ ...tool, execute: async (...args) => {
+					try { return await tool.execute(...args); }
+					catch (error) {
+						if (error instanceof DeploymentError && error.status >= 400 && error.status < 500)
+							throw toolRequestError(JSON.stringify(error));
+						throw error;
+					}
+				} }, () => {
+					if (this.#deployments?.activeMode && !currentMode()) throw toolRequestError("Deployment mode has ended");
+				}));
+			};
+			const bubblewrapInspectTool = input.run.serverInteractionMode === "command" && this.#bubblewrapInstallations
 				? createBubblewrapInspectionTool({ sessionId: input.run.sessionId, installations: this.#bubblewrapInstallations })
-				: unavailableTool(bubblewrapInspectDefinition, deploymentWorkflow ? "current deployment workflow" : undefined);
-			const bubblewrapInstallTool = input.run.serverInteractionMode === "command" && !deploymentWorkflow && this.#bubblewrapInstallations
+				: unavailableTool(bubblewrapInspectDefinition);
+			const bubblewrapInstallTool = input.run.serverInteractionMode === "command" && this.#bubblewrapInstallations
 				? createBubblewrapInstallTool({ sessionId: input.run.sessionId, agentRunId: input.run.id,
 					installations: this.#bubblewrapInstallations })
-				: unavailableTool(bubblewrapInstallDefinition, deploymentWorkflow ? "current deployment workflow" : undefined);
-			const fileTools = deploymentWorkflow
-				? [unavailableTool(sftpUploadTool, "current deployment workflow"), unavailableTool(sftpDownloadTool, "current deployment workflow")]
-				: [sftpUploadTool, sftpDownloadTool];
+				: unavailableTool(bubblewrapInstallDefinition);
+			const ordinaryTools = [...localTools, remoteTool, terminalTool, sftpUploadTool, sftpDownloadTool,
+				bubblewrapInspectTool, bubblewrapInstallTool, createAskUserDecisionTool({ run: input.run, decisions: this.#decisions })];
+			const synchronizeDeployment = (context: AgentContext): AgentContext => ({ ...context,
+				systemPrompt: `${systemPrompt}\n\n${deploymentStateInstructions(currentMode())}`,
+				tools: configureFileToolConcurrency([...ordinaryTools, ...deploymentTools()], env),
+			});
 			let requestAttempt = 0;
 			const agent = this.#createAgent({
 				onRunFailure: (error) => requireRuntime().captureFailure(error),
@@ -261,11 +282,7 @@ export class ChatAgentRuntimeFactory {
 					systemPrompt,
 					model: input.model,
 					thinkingLevel: input.run.thinkingLevel,
-					tools: configureFileToolConcurrency(
-						[...localTools, remoteTool, terminalTool, ...fileTools,
-							bubblewrapInspectTool, bubblewrapInstallTool,
-							createAskUserDecisionTool({ run: input.run, decisions: this.#decisions }), ...deploymentTools, deploymentPlanningTool], env,
-					),
+					tools: configureFileToolConcurrency([...ordinaryTools, ...deploymentTools()], env),
 					messages: input.history,
 				},
 				streamFn: async (selectedModel, context, options) => {
@@ -303,7 +320,14 @@ export class ChatAgentRuntimeFactory {
 						},
 					);
 				},
-				convertToLlm,
+				convertToLlm: (messages) => convertToLlm(deploymentProviderMessages(messages, currentMode())),
+				afterToolCall: async ({ context }) => {
+					const latest = synchronizeDeployment(context);
+					context.tools = latest.tools;
+					context.systemPrompt = latest.systemPrompt;
+					return undefined;
+				},
+				beforeProviderRequest: ({ context }) => ({ context: synchronizeDeployment(context) }),
 				...(contextService === undefined
 					? {}
 					: {
@@ -313,18 +337,18 @@ export class ChatAgentRuntimeFactory {
 									const outcome = await contextService.compactContext({
 										sessionId: input.run.sessionId,
 										run: input.run,
-										context: contextService.synchronizeRuntimeMode(
+										context: synchronizeDeployment(contextService.synchronizeRuntimeMode(
 											input.run.sessionId, context, input.run.serverInteractionMode,
-										),
+										)),
 										sessionModel: model,
 										settings: compactionSettings,
 										reason: "threshold",
 										force: false,
 										signal,
 									});
-									const synchronized = contextService.synchronizeRuntimeMode(
+										const synchronized = synchronizeDeployment(contextService.synchronizeRuntimeMode(
 										input.run.sessionId, outcome.context, input.run.serverInteractionMode,
-									);
+									));
 									contextService.recordProviderRequest(input.run.id, model, synchronized);
 									return synchronized === context ? undefined : { context: synchronized };
 								} catch (error) {
@@ -346,9 +370,9 @@ export class ChatAgentRuntimeFactory {
 										force: true,
 										signal,
 									});
-									return { context: contextService.synchronizeRuntimeMode(
+									return { context: synchronizeDeployment(contextService.synchronizeRuntimeMode(
 										input.run.sessionId, outcome.context, input.run.serverInteractionMode,
-									) };
+									)) };
 								} catch (error) {
 									throw requireRuntime().toAgentError(error, message);
 								}
@@ -359,6 +383,10 @@ export class ChatAgentRuntimeFactory {
 				toolExecution: "parallel",
 				beforeToolCall: async ({ assistantMessage, toolCall, args }, signal) => {
 					try {
+						if (toolCall.name === "deployment_execute_next" && input.deploymentRunId) {
+							const stage = (args as { stage: "build" | "upload" | "restart" | "verify" }).stage;
+							this.#deployments?.validateStageRequest?.(input.run.sessionId, input.deploymentRunId, input.run.id, stage, toolCall.id);
+						}
 						return await this.#toolCalls.beforeToolCall(
 							{
 								run: input.run,

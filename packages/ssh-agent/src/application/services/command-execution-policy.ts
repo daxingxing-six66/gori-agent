@@ -1,4 +1,4 @@
-import { defaultSandboxWritableRoots, sameSandboxWritableRoots } from "../../domain/sandbox-writable-roots.ts";
+import { sameSandboxWritableRoots } from "../../domain/sandbox-writable-roots.ts";
 import type { CommandOperation } from "../../domain/command-operation.ts";
 import type { Clock } from "../../domain/ids.ts";
 import { sandboxFailure } from "../../domain/remote-sandbox.ts";
@@ -77,7 +77,7 @@ export class CommandExecutionPolicy {
 			throw new SshAgentError({ code: "invalid_request", category: "request", phase: "validate",
 				message: "Workspace SSH identity changed after approval. The command was not executed.", retryable: false });
 		}
-		return { target, cwd: requireCwd(operation.requestedCwd ?? target.defaultCwd) };
+		return { target, cwd: requireCwd(operation.requestedCwd ?? "~") };
 	}
 }
 
@@ -98,9 +98,9 @@ function sameExecutionTarget(actual: SshTargetSnapshot, expected: SshTargetSnaps
 		actual.hostname === expected.hostname && actual.port === expected.port &&
 		actual.hostKeyAlgorithm === expected.hostKeyAlgorithm && actual.hostKeyFingerprint === expected.hostKeyFingerprint &&
 		actual.credentialId === expected.credentialId && actual.credentialAuthVersion === expected.credentialAuthVersion &&
-		actual.remoteUser === expected.remoteUser && actual.defaultCwd === expected.defaultCwd &&
-		sameSandboxWritableRoots(actual.sandboxWritableRoots ?? defaultSandboxWritableRoots(actual.defaultCwd),
-			expected.sandboxWritableRoots ?? defaultSandboxWritableRoots(expected.defaultCwd));
+		actual.remoteUser === expected.remoteUser &&
+		sameSandboxWritableRoots(actual.sandboxWritableRoots ?? [],
+			expected.sandboxWritableRoots ?? []);
 }
 
 function requireCwd(value: string): string {

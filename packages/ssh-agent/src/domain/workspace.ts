@@ -38,8 +38,6 @@ export interface Workspace {
 	activeCredentialId: CredentialId;
 	/** Local default inherited by new sessions. */
 	defaultCwd: string;
-	/** Remote SSH/SFTP default directory. */
-	remoteDefaultCwd?: string;
 	/** Default writable directories copied into new sessions. Absent on legacy adapters. */
 	sandboxWritableRoots?: string[];
 	connection: WorkspaceConnectionOptions;
@@ -55,8 +53,6 @@ export interface CreateWorkspaceInput {
 	credential: CreateCredentialInput;
 	/** Local default inherited by new sessions. */
 	defaultCwd: string;
-	/** Remote SSH/SFTP default directory. */
-	remoteDefaultCwd?: string;
 	/** Default writable directories copied into new sessions. Absent on legacy adapters. */
 	sandboxWritableRoots?: string[];
 	connection?: Partial<WorkspaceConnectionOptions>;
@@ -82,7 +78,6 @@ export interface UpdateWorkspaceInput {
 	id: WorkspaceId;
 	displayName: string;
 	defaultCwd?: string;
-	remoteDefaultCwd?: string;
 	/** Default writable directories copied into new sessions. Absent on legacy adapters. */
 	sandboxWritableRoots?: string[];
 	expectedRevision: number;

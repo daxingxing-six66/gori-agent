@@ -11,7 +11,7 @@ const run: ChatRun = { id: "run", sessionId: "session", workspaceId: "workspace"
 	terminalSessionId: null, status: "running", createdAt: 1, updatedAt: 1 };
 const target: SshTargetSnapshot = { workspaceId: "workspace", workspaceRevision: 1, hostname: "example.test", port: 22,
 	hostKeyAlgorithm: "ssh-ed25519", hostKeyFingerprint: "SHA256:test", credentialId: "credential", credentialAuthVersion: 1,
-	remoteUser: "test", defaultCwd: "/srv/app", connectTimeoutMs: 1000, keepaliveIntervalMs: 1000, keepaliveMaxCount: 3 };
+	remoteUser: "test", sandboxWritableRoots: ["/srv/app"], connectTimeoutMs: 1000, keepaliveIntervalMs: 1000, keepaliveMaxCount: 3 };
 const args: RemoteServerCallParameters = { command: "echo ok", cwd: "/srv/app", timeoutMs: 1000, write_paths: ["/srv/app/log"] };
 
 function fixture() {
@@ -80,7 +80,7 @@ describe("remote command authorization handoff", () => {
 				return { target: mutableTarget, route: { mode: "workspace_write", facts: {
 					mode: "workspace_write", backend: "landlock", enforcement: "full", abi: 5, launcherVersion: "3", sandboxRoot: "/srv/app" } } };
 			},
-			autoApprove: async () => { mutableTarget.defaultCwd = "/etc"; return true; },
+			autoApprove: async () => { mutableTarget.sandboxWritableRoots = ["/etc"]; return true; },
 		});
 		if (prepared.kind !== "approval" || !(prepared.executionContext instanceof RemoteCommandExecutionPlan))
 			throw new Error("Missing execution plan");

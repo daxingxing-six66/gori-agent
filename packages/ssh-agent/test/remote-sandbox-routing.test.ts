@@ -1,10 +1,11 @@
+import { testSshTarget } from "./test-ssh-target.ts";
 import { describe, expect, it, vi } from "vitest";
 import type { RemoteSandboxCapabilityProvider } from "../src/application/services/remote-sandbox-provider.ts";
 import { evaluateRemoteSandboxRoute } from "../src/application/services/remote-sandbox-routing.ts";
 import { sandboxFailure } from "../src/domain/remote-sandbox.ts";
 import type { SshTargetSnapshot } from "../src/domain/ssh-target.ts";
 
-const target = { defaultCwd: "/srv/app" } as SshTargetSnapshot;
+const target = testSshTarget({ sandboxWritableRoots: ["/srv/app"] });
 const signal = new AbortController().signal;
 const facts = { mode: "workspace_write", backend: "landlock", enforcement: "full", abi: 5,
 	launcherVersion: "3", sandboxRoot: "/srv/app" } as const;

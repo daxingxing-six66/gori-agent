@@ -52,7 +52,7 @@ export class BubblewrapRemoteSandboxProvider implements RemoteSandboxBackend {
 		const marker = `gori-bubblewrap: confined version=${rules.runner.version} token=${randomBytes(16).toString("hex")}`;
 		const script = `printf '%s\\n' ${quoteShell(marker)} >&2; exec /bin/bash --login -i`;
 		return {
-			command: `cd -- ${quoteShell(input.target.defaultCwd)} && exec ${shellArgv([...sandboxArgs(rules.runner.path, rules.sandboxRoots), "--", "/bin/bash", "--noprofile", "--norc", "-c", script])}`,
+			command: `exec ${shellArgv([...sandboxArgs(rules.runner.path, rules.sandboxRoots), "--", "/bin/bash", "--noprofile", "--norc", "-c", script])}`,
 			sandbox: sandboxFacts(rules), confirmation: marker,
 		};
 	}

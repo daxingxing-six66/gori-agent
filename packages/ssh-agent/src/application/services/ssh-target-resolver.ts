@@ -1,7 +1,6 @@
 import type { SessionId, WorkspaceId } from "../../domain/ids.ts";
 import { SshAgentError } from "../../domain/ssh-failure.ts";
 import type { SshTargetSnapshot } from "../../domain/ssh-target.ts";
-import { defaultSandboxWritableRoots } from "../../domain/sandbox-writable-roots.ts";
 import type { CredentialRepository } from "../repositories/credential-repository.ts";
 import type { SessionRepository } from "../repositories/session-repository.ts";
 import type { WorkspaceRepository } from "../repositories/workspace-repository.ts";
@@ -89,8 +88,7 @@ export class DefaultSshTargetResolver implements SshTargetResolver, WorkspaceSsh
 			credentialId: credential.id,
 			credentialAuthVersion: credential.authVersion,
 			remoteUser: credential.remoteUser,
-			defaultCwd: workspace.remoteDefaultCwd ?? "/",
-			sandboxWritableRoots: [...(workspace.sandboxWritableRoots ?? defaultSandboxWritableRoots(workspace.remoteDefaultCwd ?? "/"))],
+			sandboxWritableRoots: [...(workspace.sandboxWritableRoots ?? [])],
 			connectTimeoutMs: workspace.connection.connectTimeoutMs,
 			keepaliveIntervalMs: workspace.connection.keepaliveIntervalMs,
 			keepaliveMaxCount: workspace.connection.keepaliveMaxCount,

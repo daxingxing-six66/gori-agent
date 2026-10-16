@@ -7,7 +7,7 @@ import type { SshTargetSnapshot } from "../src/domain/ssh-target.ts";
 const target: SshTargetSnapshot = {
 	workspaceId: "ws", workspaceRevision: 1, hostname: "server.test", port: 22,
 	hostKeyAlgorithm: "ssh-ed25519", hostKeyFingerprint: "test", credentialId: "credential",
-	credentialAuthVersion: 1, remoteUser: "user", defaultCwd: "/", connectTimeoutMs: 1000,
+	credentialAuthVersion: 1, remoteUser: "user", sandboxWritableRoots: ["/"], connectTimeoutMs: 1000,
 	keepaliveIntervalMs: 1000, keepaliveMaxCount: 3,
 };
 

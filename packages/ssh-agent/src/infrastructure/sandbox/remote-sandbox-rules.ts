@@ -1,11 +1,11 @@
 import { canonicalRemoteSandboxRoot, sandboxFailure, validRemoteSandboxRoot } from "../../domain/remote-sandbox.ts";
-import { defaultSandboxWritableRoots, MAX_SANDBOX_WRITABLE_ROOTS } from "../../domain/sandbox-writable-roots.ts";
+import { MAX_SANDBOX_WRITABLE_ROOTS } from "../../domain/sandbox-writable-roots.ts";
 import type { SshTargetSnapshot } from "../../domain/ssh-target.ts";
 import type { SandboxCommandRunner } from "./sandbox-command-runner.ts";
 import { quoteShell } from "./shell-command.ts";
 
 export function requireSandboxRoots(target: SshTargetSnapshot): readonly string[] {
-	const roots = target.sandboxWritableRoots ?? defaultSandboxWritableRoots(target.defaultCwd);
+	const roots = target.sandboxWritableRoots ?? [];
 	if (roots.length === 0 || roots.length > MAX_SANDBOX_WRITABLE_ROOTS || !roots.every(validRemoteSandboxRoot)) {
 		throw sandboxFailure("sandbox_root_invalid", "Configure 1 to 16 remote writable directories other than / before using workspace_write. The command was not executed.");
 	}

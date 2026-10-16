@@ -1,4 +1,3 @@
-import { defaultSandboxWritableRoots } from "../../domain/sandbox-writable-roots.ts";
 import type { SshTargetSnapshot } from "../../domain/ssh-target.ts";
 
 export interface FullAccessRequest {
@@ -43,5 +42,5 @@ export class RemoteSandboxApprovalStore {
 function targetSignature(target: SshTargetSnapshot): string {
 	return JSON.stringify([target.workspaceId, target.workspaceRevision, target.hostname, target.port,
 		target.hostKeyAlgorithm, target.hostKeyFingerprint, target.credentialId, target.credentialAuthVersion,
-		target.remoteUser, target.defaultCwd, target.sandboxWritableRoots ?? defaultSandboxWritableRoots(target.defaultCwd)]);
+		target.remoteUser, target.sandboxWritableRoots ?? []]);
 }

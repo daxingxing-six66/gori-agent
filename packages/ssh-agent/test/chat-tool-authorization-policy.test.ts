@@ -1,3 +1,4 @@
+import { testSshTarget } from "./test-ssh-target.ts";
 import { describe, expect, it, vi } from "vitest";
 import { ChatToolAuthorizationPolicy } from "../src/application/services/chat-tool-authorization-policy.ts";
 import type { TerminalInteractionService } from "../src/application/services/terminal-interaction-service.ts";
@@ -49,13 +50,13 @@ function createPolicy(options: { autoAudit?: boolean; sandboxEnabled?: boolean; 
 		allowed: options.remoteAllowed ?? true,
 		...(options.remoteAllowed === false ? { reason: "remote blocked" } : {}),
 	}));
-	const assessRemoteSandbox = vi.fn(async () => ({ target: { defaultCwd: "/srv/app" } as SshTargetSnapshot,
+	const assessRemoteSandbox = vi.fn(async () => ({ target: testSshTarget({ sandboxWritableRoots: ["/srv/app"] }),
 		route: options.remoteRoute ?? { mode: "workspace_write" as const,
 			facts: { mode: "workspace_write" as const, backend: "landlock" as const, enforcement: "full" as const,
 				sandboxRoot: "/srv/app", abi: 5, launcherVersion: "3" } } }));
 	const previewDeploymentRemoteStage = vi.fn(() => ({ command: "cd /srv/app && ./restart.sh",
 		mode: options.deploymentStageMode ?? "workspace_write", sessionAuthorized: options.deploymentSessionAuthorized }));
-	const resolveRemoteTarget = vi.fn(async () => ({ defaultCwd: "/srv/app" }) as SshTargetSnapshot);
+	const resolveRemoteTarget = vi.fn(async () => testSshTarget({ sandboxWritableRoots: ["/srv/app"] }));
 	return {
 		policy: new ChatToolAuthorizationPolicy({
 			sessions: { findById },
@@ -262,7 +263,7 @@ describe("ChatToolAuthorizationPolicy", () => {
 			kind: "approval", autoApprove: false,
 			approvalToolName: "remote_sandbox_exception",
 			remoteFullAccess: { command: args.command, justification: args.justification },
-			remoteFullAccessTarget: { defaultCwd: "/srv/app" },
+			remoteFullAccessTarget: { sandboxWritableRoots: ["/srv/app"] },
 		});
 		expect(context.resolveRemoteTarget).toHaveBeenCalledWith("session-1");
 	});

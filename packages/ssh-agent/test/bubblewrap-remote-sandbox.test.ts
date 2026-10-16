@@ -1,12 +1,13 @@
+import { testSshTarget } from "./test-ssh-target.ts";
 import { describe, expect, it, vi } from "vitest";
 import type { RemoteCommandBroker } from "../src/application/ssh-channel-broker.ts";
 import { BubblewrapRemoteSandboxProvider } from "../src/infrastructure/sandbox/bubblewrap-remote-sandbox-provider.ts";
 import type { SshTargetSnapshot } from "../src/domain/ssh-target.ts";
 
-const target = {
-	workspaceId: "workspace-1", defaultCwd: "/srv/app", hostname: "host", port: 22,
+const target = testSshTarget({
+	workspaceId: "workspace-1", sandboxWritableRoots: ["/srv/app"], hostname: "host", port: 22,
 	credentialId: "credential-1", credentialAuthVersion: 1, workspaceRevision: 1,
-} as SshTargetSnapshot;
+});
 
 function broker(options: { installed?: boolean; version?: string; probeSucceeds?: boolean; root?: string; hostPidNamespace?: string; hostNetworkNamespace?: string } = {}) {
 	const commands: string[] = [];
@@ -136,7 +137,7 @@ describe("Bubblewrap remote sandbox", () => {
 
 	it("preserves a canonical writable root with trailing spaces", async () => {
 		const sandbox = new BubblewrapRemoteSandboxProvider({ broker: broker({ root: "/srv/app " }) });
-		const prepared = await sandbox.prepare({ target: { ...target, defaultCwd: "/srv/app " },
+		const prepared = await sandbox.prepare({ target: { ...target, sandboxWritableRoots: ["/srv/app "] },
 			cwd: "/srv/app ", command: "true", signal: new AbortController().signal });
 		expect(prepared.sandbox.sandboxRoot).toBe("/srv/app ");
 		expect(prepared.command).toContain("'--bind' '/srv/app ' '/srv/app '");

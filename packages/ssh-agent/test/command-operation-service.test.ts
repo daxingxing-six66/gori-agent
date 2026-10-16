@@ -98,7 +98,7 @@ describe("SSH command Operation execution", () => {
 			const [firstResult, secondResult] = await Promise.all([first, second]);
 			expect(firstResult.operation.status).toBe("completed");
 			expect(secondResult.operation.status).toBe("completed");
-			expect(fixture.broker.commands).toEqual([wrapRemoteCommand("/srv/app", "echo first"), wrapRemoteCommand("/srv/app", "echo second")]);
+			expect(fixture.broker.commands).toEqual([wrapRemoteCommand("~", "echo first"), wrapRemoteCommand("~", "echo second")]);
 			expect(firstResult.outputTail).toBe("output-1");
 			expect(secondResult.outputTail).toBe("output-2");
 		} finally {
@@ -321,7 +321,7 @@ describe("SSH command Operation execution", () => {
 				const row = fixture.backend.database.prepare("SELECT id FROM command_operations WHERE tool_call_id = ?")
 					.get("ordered");
 				expect(await fixture.operations.findById(String(row?.id))).toMatchObject({
-					status: "running", guardRevision: 9, resolvedCwd: "/srv/app",
+					status: "running", guardRevision: 9, resolvedCwd: "~",
 					sandbox: { enforcement: "none", commandMayHaveRun: true },
 				});
 				return { exitCode: 0 };
@@ -552,7 +552,7 @@ async function createFixture(options: { maxConcurrentOperations?: number } = {})
 		},
 		credential: { displayName: "root", remoteUser: "root", type: "password", password: "secret" },
 		defaultCwd: workDir,
-		remoteDefaultCwd: "/srv/app",
+		sandboxWritableRoots: ["/srv/app"],
 		connection: { connectTimeoutMs: 10_000 },
 	});
 	await request(backend.handleRequest, "POST", "/api/workspaces/id-1/sessions", { displayName: "Session", workDir });
@@ -564,7 +564,7 @@ async function createFixture(options: { maxConcurrentOperations?: number } = {})
 		prepareTerminal: async () => { throw new Error("Unexpected Terminal preparation"); },
 		prepare: async ({ cwd, command, target }) => ({ command: wrapRemoteCommand(cwd, command),
 			sandbox: { mode: "workspace_write", backend: "landlock", enforcement: "full", abi: 5,
-				launcherVersion: "3", sandboxRoot: target.defaultCwd } }),
+				launcherVersion: "3", sandboxRoot: target.sandboxWritableRoots![0]! } }),
 	};
 	const service = new CommandOperationService({
 		operations,

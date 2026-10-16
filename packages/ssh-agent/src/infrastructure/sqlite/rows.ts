@@ -51,7 +51,6 @@ export interface WorkspaceRow {
 	host_key_verified_at: number | null;
 	active_credential_id: string;
 	default_cwd: string;
-	remote_default_cwd: string;
 	sandbox_writable_roots_json: string | null;
 	connect_timeout_ms: number;
 	keepalive_interval_ms: number;
@@ -77,7 +76,6 @@ export function workspaceFromRow(row: WorkspaceRow): Workspace {
 		},
 		activeCredentialId: row.active_credential_id,
 		defaultCwd: row.default_cwd,
-		remoteDefaultCwd: row.remote_default_cwd,
 		sandboxWritableRoots: readStoredSandboxWritableRoots(row.sandbox_writable_roots_json),
 		connection: {
 			connectTimeoutMs: row.connect_timeout_ms,

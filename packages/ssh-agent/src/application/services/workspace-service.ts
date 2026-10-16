@@ -1,5 +1,4 @@
 import { ManagementError } from "../../domain/errors.ts";
-import { defaultSandboxWritableRoots } from "../../domain/sandbox-writable-roots.ts";
 import { requireSandboxWritableRoots } from "../sandbox-writable-roots.ts";
 import type { Guard } from "../../domain/guard.ts";
 import type { Clock, IdGenerator, WorkspaceId } from "../../domain/ids.ts";
@@ -73,7 +72,6 @@ export class DefaultWorkspaceService implements WorkspaceService {
 			throw new ManagementError("validation_error", "environment is invalid", "environment");
 		}
 		const defaultCwd = requireNonEmpty(input.defaultCwd, "defaultCwd", 4096);
-		const remoteDefaultCwd = input.remoteDefaultCwd === undefined ? "/" : requireRemoteDirectory(input.remoteDefaultCwd);
 
 		const now = this.clock.now();
 		const workspaceId = this.ids.next();
@@ -93,9 +91,8 @@ export class DefaultWorkspaceService implements WorkspaceService {
 			},
 			activeCredentialId: activeCredential.id,
 			defaultCwd,
-			remoteDefaultCwd,
 			sandboxWritableRoots: input.sandboxWritableRoots === undefined
-				? defaultSandboxWritableRoots(remoteDefaultCwd) : requireSandboxWritableRoots(input.sandboxWritableRoots),
+				? [] : requireSandboxWritableRoots(input.sandboxWritableRoots),
 			connection,
 			revision: 1,
 			createdAt: now,
@@ -171,9 +168,8 @@ export class DefaultWorkspaceService implements WorkspaceService {
 			...current,
 			displayName: requireDisplayName(input.displayName),
 			defaultCwd: input.defaultCwd === undefined ? current.defaultCwd : requireNonEmpty(input.defaultCwd, "defaultCwd", 4096),
-			remoteDefaultCwd: input.remoteDefaultCwd === undefined ? current.remoteDefaultCwd ?? "/" : requireRemoteDirectory(input.remoteDefaultCwd),
 			sandboxWritableRoots: input.sandboxWritableRoots === undefined
-				? current.sandboxWritableRoots ?? defaultSandboxWritableRoots(current.remoteDefaultCwd ?? "/")
+				? current.sandboxWritableRoots ?? []
 				: requireSandboxWritableRoots(input.sandboxWritableRoots),
 			revision: current.revision + 1,
 			updatedAt: this.clock.now(),
@@ -202,12 +198,4 @@ export class DefaultWorkspaceService implements WorkspaceService {
 
 function isWorkspaceEnvironment(value: string): value is Workspace["environment"] {
 	return value === "production" || value === "staging" || value === "development" || value === "other";
-}
-
-function requireRemoteDirectory(value: string): string {
-	const path = requireNonEmpty(value, "remoteDefaultCwd", 4096);
-	if (!path.startsWith("/") || path.includes("\0") || path.includes("\n")) {
-		throw new ManagementError("validation_error", "remoteDefaultCwd must be an absolute remote directory", "remoteDefaultCwd");
-	}
-	return path;
 }

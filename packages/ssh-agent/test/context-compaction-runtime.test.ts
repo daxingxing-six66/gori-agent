@@ -394,10 +394,15 @@ describe("context compaction runtime", () => {
 			}
 			const latest = frames.filter((frame) => frame.includes("event: context.updated")).at(-1)!;
 			const snapshot = JSON.parse(latest.match(/data: ([^\n]+)/)![1]);
-			expect(await request(backend.handleRequest, "GET", path)).toEqual({
+			// Idle estimates omit transient trusted runtime instructions but keep the same model and history.
+			const idle = await request(backend.handleRequest, "GET", path);
+			expect(idle).toMatchObject({
 				status: 200,
-				body: { contextUsage: snapshot },
+				body: { contextUsage: { source: snapshot.source, providerId: snapshot.providerId,
+					modelId: snapshot.modelId, contextWindow: snapshot.contextWindow, contextTokens: expect.any(Number) } },
 			});
+			expect((idle.body as { contextUsage: { contextTokens: number } }).contextUsage.contextTokens).toBeGreaterThan(0);
+			expect(await request(backend.handleRequest, "GET", path)).toEqual(idle);
 			expect(snapshot).toMatchObject({ source: "estimated", providerId: "usage-turns", contextWindow: 128_000 });
 			expect(snapshot.contextTokens).toBeGreaterThan(0);
 			expect(faux.state.callCount).toBe(2);
@@ -472,7 +477,8 @@ describe("context compaction runtime", () => {
 	it("compacts and retries once after an uncommitted provider overflow", async () => {
 		const faux = fauxProvider({
 			provider: "compaction-overflow",
-			models: [{ id: "model", contextWindow: 4_000, maxTokens: 1_000 }],
+			// Complete tool schemas plus history fit below the 4,800-token preflight threshold.
+			models: [{ id: "model", contextWindow: 6_000, maxTokens: 1_000 }],
 		});
 		faux.setResponses([
 			fauxAssistantMessage("", {
@@ -480,7 +486,6 @@ describe("context compaction runtime", () => {
 				errorMessage: "400 prompt too long; exceeded max context length by 1000 tokens",
 			}),
 			fauxAssistantMessage("history summary"),
-			fauxAssistantMessage("turn summary"),
 			fauxAssistantMessage("recovered"),
 		]);
 		const backend = createBackend(faux);
@@ -509,6 +514,7 @@ describe("context compaction runtime", () => {
 				.prepare("SELECT message_type, message_json FROM chat_messages WHERE run_id = ? ORDER BY sequence")
 				.all(runId) as Array<Record<string, unknown>>;
 			expect(currentRunMessages.map((row) => row.message_type)).toEqual(["user", "compact", "assistant"]);
+			expect(JSON.parse(String(currentRunMessages[1]?.message_json))).toMatchObject({ reason: "overflow", attempt: 1 });
 			expect(
 				currentRunMessages.some((row) => JSON.parse(String(row.message_json)).errorCode === "context_overflow"),
 			).toBe(false);
@@ -516,7 +522,7 @@ describe("context compaction runtime", () => {
 				stopReason: "stop",
 				content: [{ type: "text", text: "recovered" }],
 			});
-			expect(faux.state.callCount).toBe(4);
+			expect(faux.state.callCount).toBe(3);
 		} finally {
 			await backend.close();
 		}
@@ -525,7 +531,7 @@ describe("context compaction runtime", () => {
 	it("uses the same compactor for a manual request and keeps run_id null", async () => {
 		const faux = fauxProvider({
 			provider: "compaction-manual",
-			models: [{ id: "model", contextWindow: 4_000, maxTokens: 1_000 }],
+			models: [{ id: "model", contextWindow: 6_000, maxTokens: 1_000 }],
 		});
 		faux.setResponses([fauxAssistantMessage("history summary"), fauxAssistantMessage("turn summary")]);
 		const backend = createBackend(faux);
@@ -558,7 +564,7 @@ describe("context compaction runtime", () => {
 				status: 200,
 				body: {
 					status: "completed",
-					contextUsage: { source: "estimated", providerId: "compaction-manual", contextWindow: 4_000 },
+					contextUsage: { source: "estimated", providerId: "compaction-manual", contextWindow: 6_000 },
 					reason: "manual",
 					attempts: 1,
 					message: { message: { role: "compactionSummary", reason: "manual" } },

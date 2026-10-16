@@ -4,6 +4,7 @@ import type { ChatRun } from "../../domain/chat.ts";
 import { SshAgentError } from "../../domain/ssh-failure.ts";
 import type { SshTargetSnapshot } from "../../domain/ssh-target.ts";
 import { TerminalError } from "../../domain/terminal.ts";
+import { DeploymentError } from "../../domain/deployment.ts";
 import type { BackendMessageDescriptor } from "../../i18n/message.ts";
 import type { FullAccessRequest } from "../services/remote-sandbox-approval-store.ts";
 
@@ -39,6 +40,8 @@ export function authorizationFailure(error: unknown): Extract<PreparedToolAuthor
 	if (error instanceof AgentToolError) {
 		return { kind: "block", block: true, reason: error.message, terminate: error.terminate === true };
 	}
+	if (error instanceof DeploymentError && error.status >= 400 && error.status < 500)
+		return { kind: "block", block: true, reason: JSON.stringify(error), terminate: false };
 	if (
 		(error instanceof SshAgentError && error.failure.code === "invalid_request") ||
 		(error instanceof TerminalError && (error.code === "terminal_input_invalid" || error.code === "terminal_input_too_large"))

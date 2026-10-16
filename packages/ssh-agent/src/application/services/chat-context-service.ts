@@ -26,6 +26,7 @@ import type { ChatRepository } from "../repositories/chat-repository.ts";
 import type { ChatAttachmentService } from "./chat-attachment-service.ts";
 import type { LlmModelCatalog } from "./llm-model-catalog.ts";
 import { addOpenCodeGoSessionHeaders } from "./opencode-go-session.ts";
+import { isDeploymentHistoryMessage, modelVisibleMessages } from "../deployment-history-message.ts";
 
 const TARGET_PERCENT = 30;
 const MINIMUM_REDUCTION_PERCENT = 30;
@@ -95,12 +96,12 @@ export class ChatContextService {
 
 	load(sessionId: string): AgentMessage[] {
 		const entry = this.#repository.latestCompaction(sessionId);
-		if (!entry) return this.#repository.listMessages(sessionId).map((message) => message.message);
-		return [
+		if (!entry) return modelVisibleMessages(this.#repository.listMessages(sessionId).map((message) => message.message));
+		return modelVisibleMessages([
 			entry.message,
 			...entry.message.retainedTail,
 			...this.#repository.listMessages(sessionId, entry.sequence).map((message) => message.message),
-		];
+		]);
 	}
 
 	/** Terminal loss may happen between tool turns; append its committed event once. */
@@ -148,7 +149,7 @@ export class ChatContextService {
 	estimate(model: Model<Api>, context: ChatContext): EstimateSnapshot {
 		const raw = estimateContextTokens({
 			systemPrompt: context.systemPrompt,
-			messages: convertToLlm(context.messages.map((message) => this.#attachments.compactionProjection(message))),
+			messages: convertToLlm(modelVisibleMessages(context.messages).map((message) => this.#attachments.compactionProjection(message))),
 			tools: context.tools?.map(({ name, description, parameters }) => ({ name, description, parameters })),
 		}).tokens;
 		const factor = this.#calibration.get(modelKey(model)) ?? 1;
@@ -215,14 +216,14 @@ export class ChatContextService {
 				attempt === 1
 					? targetTokens
 					: Math.max(1, Math.floor(targetTokens * (SECOND_ATTEMPT_KEEP_RECENT_PERCENT / 100)));
-			const projections = this.#repository.listMessages(input.sessionId);
+			const projections = this.#repository.listMessages(input.sessionId).filter((projection) => !isDeploymentHistoryMessage(projection.message));
 			const projectionAttachments = projections.flatMap((projection) => projection.attachments ?? []);
 			const entries = projections.map((projection, index) =>
 				toCompactionEntry(projection, index === 0 ? null : projections[index - 1]!.id, (message) =>
 					this.#attachments.compactionProjection(message, projectionAttachments),
 				),
 			);
-			const projectedMessages = context.messages.map((message) =>
+			const projectedMessages = modelVisibleMessages(context.messages).map((message) =>
 				this.#attachments.compactionProjection(message, projectionAttachments),
 			);
 			const usageEstimate = estimateContextTokens(convertToLlm(projectedMessages));

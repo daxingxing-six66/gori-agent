@@ -72,7 +72,7 @@ async function fixture() {
 	const target: SshTargetSnapshot = {
 		workspaceId: "workspace", workspaceRevision: 1, hostname: "127.0.0.1", port: (server.address() as AddressInfo).port,
 		hostKeyAlgorithm: "ssh-ed25519", hostKeyFingerprint: `SHA256:${createHash("sha256").update(parsed.getPublicSSH()).digest("base64").replace(/=+$/, "")}`,
-		credentialId: "credential", credentialAuthVersion: 1, remoteUser: "user", defaultCwd: "/",
+		credentialId: "credential", credentialAuthVersion: 1, remoteUser: "user", sandboxWritableRoots: ["/"],
 		connectTimeoutMs: 2000, keepaliveIntervalMs: 0, keepaliveMaxCount: 3,
 	};
 	const broker = new Ssh2ChannelBroker({ get: async () => ({ type: "password", password: "test" }), put: async () => {}, deleteAll: async () => {} },

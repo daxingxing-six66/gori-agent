@@ -1,8 +1,8 @@
-import { defaultSandboxWritableRoots, sameSandboxWritableRoots } from "../../domain/sandbox-writable-roots.ts";
+import { sameSandboxWritableRoots } from "../../domain/sandbox-writable-roots.ts";
 import { createHash, randomUUID } from "node:crypto";
 import { createReadStream } from "node:fs";
+import { FileTransferError } from "../../domain/file-transfer.ts";
 import { lstat, readFile, readdir, realpath, stat } from "node:fs/promises";
-import { spawn } from "node:child_process";
 import { isAbsolute, join, posix, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -29,6 +29,15 @@ import { validateDeploymentProposal, type DeploymentPlanProposal } from "../depl
 import { validateRecoveryInput, type DeploymentRecoveryInput } from "../deployment-recovery-proposal.ts";
 import type { RemoteSandboxRoute } from "./remote-sandbox-routing.ts";
 import { SessionSandboxPolicy } from "./session-sandbox-policy.ts";
+import type { DeploymentModeService } from "./deployment-mode-service.ts";
+import { executeDeploymentBuild } from "./deployment-local-build.ts";
+import type { DeploymentModeView, DeploymentOutcome } from "../../domain/deployment-session.ts";
+import { deploymentAwaitsResume } from "../../domain/deployment-session.ts";
+import type { DeploymentLogPage, DeploymentStageExecution } from "../../domain/deployment-execution.ts";
+import type { DeploymentExecutionRepository } from "../repositories/deployment-execution-repository.ts";
+import { DeploymentExecutionRecorder } from "./deployment-execution-recorder.ts";
+import { deploymentFileSystemError } from "../deployment-file-system-error.ts";
+import { assertDeploymentStageOrder, invalidateDeploymentStages } from "../deployment-stage-state.ts";
 
 const LOG_LIMIT = 128 * 1024;
 const FULL_ACCESS_APPROVAL_TTL_MS = 5 * 60_000;
@@ -46,8 +55,9 @@ export interface DeploymentProfileSummary {
 type AgentDeployStage = DeploymentExecutableStage;
 const AGENT_STAGES: readonly AgentDeployStage[] = ["build", "upload", "restart", "verify"];
 
-interface ActiveDeployment { stage: AgentDeployStage; controller: AbortController; task: Promise<DeploymentRun> }
-interface ClaimedDeployment { lease?: SessionUseLease; sessionId: string; agentRunId: string }
+interface ActiveDeployment { stage: AgentDeployStage; requestId?: string; executionId?: string; controller: AbortController; task: Promise<DeploymentRun> }
+interface ClaimedDeployment { lease?: SessionUseLease; sessionId: string; agentRunId: string;
+	authorizedApprovals?: Set<string>; consumedApprovals?: Set<string> }
 
 interface DeploymentServiceOptions {
 	sessions: SessionRepository;
@@ -58,6 +68,8 @@ interface DeploymentServiceOptions {
 	transfers: Pick<FileTransferService, "create" | "upload" | "get" | "listDirectory">;
 	repository: DeploymentRepository;
 	discussions?: DeploymentDiscussionRepository;
+	modes?: DeploymentModeService;
+	executions?: DeploymentExecutionRepository;
 	transactions?: TransactionRunner;
 	events: WorkspaceEventHub;
 	localCwd: string;
@@ -73,7 +85,7 @@ class DeploymentStageCommandError extends DeploymentError {
 	readonly safeDetails?: Record<string, SshSafeDetail>;
 
 	constructor(operation: Pick<CommandOperation, "exitCode" | "failure">, stage: DeploymentRemoteStage) {
-		super("deployment_remote_failed", operation.failure?.message ?? `Remote ${stage} command failed`, 409);
+		super("deployment_remote_failed", `${stage}.command: ${operation.failure?.message ?? `Remote command exited with status ${operation.exitCode ?? "unknown"}`}`, 409, { field: `${stage}.command` });
 		this.exitCode = operation.exitCode;
 		this.failureCode = operation.failure?.code;
 		this.safeDetails = operation.failure?.safeDetails === undefined ? undefined : { ...operation.failure.safeDetails };
@@ -89,10 +101,14 @@ export class DeploymentService {
 	private closing = false;
 	private readonly options: DeploymentServiceOptions;
 	private readonly sandboxPolicy: SessionSandboxPolicy;
+	private readonly executionRecorder?: DeploymentExecutionRecorder;
 
 	constructor(options: DeploymentServiceOptions) {
 		this.options = options;
 		this.sandboxPolicy = new SessionSandboxPolicy(options.sessions);
+		if (options.executions && options.transactions) this.executionRecorder = new DeploymentExecutionRecorder({
+			executions: options.executions, runs: options.repository, transactions: options.transactions, events: options.events,
+		});
 	}
 
 	private async resolveRemoteCommand(sessionId: string, target: SshTargetSnapshot, proposed: { command: string; writePaths?: string[] },
@@ -145,7 +161,66 @@ export class DeploymentService {
 	}
 
 	activeDiscussion(sessionId: string): DeploymentDiscussion | null {
-		return this.options.discussions?.findActive(sessionId) ?? null;
+		const discussion = this.options.discussions?.findActive(sessionId) ?? null;
+		const mode = this.options.modes?.active(sessionId);
+		if (mode && mode.deployment.id !== discussion?.id) return null;
+		return discussion;
+	}
+
+	activeMode(sessionId: string): DeploymentModeView | null { return this.options.modes?.active(sessionId) ?? null; }
+
+	getMode(sessionId: string, id: string): DeploymentModeView {
+		if (!this.options.modes) throw new DeploymentError("deployment_unavailable", "Deployment modes are unavailable", 503);
+		return this.options.modes.get(sessionId, id);
+	}
+
+	async bindModeRun(sessionId: string, id: string, agentRunId: string): Promise<void> {
+		if (!validAgentRunId(agentRunId)) throw new DeploymentError("deployment_agent_invalid", "Agent Run ID is invalid");
+		await this.discussionTransaction(() => {
+			this.options.modes?.assertActive(sessionId, id);
+			const repository = this.discussionRepository();
+			const prior = repository.findRunBinding(sessionId, agentRunId);
+			if (prior) {
+				if (prior.discussionId !== id) throw discussionConflict();
+				return;
+			}
+			const revision = (repository.findLatestRunBinding(id)?.revision ?? this.getDiscussion(sessionId, id).revision) + 1;
+			repository.insertRunBinding({ sessionId, discussionId: id, agentRunId, revision });
+		});
+	}
+
+	async finishDeployment(sessionId: string, id: string, outcome: DeploymentOutcome, reason?: string,
+		agentRunId?: string): Promise<DeploymentModeView> {
+		const modes = this.options.modes;
+		if (!modes) throw new DeploymentError("deployment_unavailable", "Deployment modes are unavailable", 503);
+		const initial = modes.get(sessionId, id);
+		if (agentRunId && !initial.deployment.outcome) {
+			const binding = this.discussionRepository().findLatestRunBinding(id);
+			if (initial.run?.agentRunId !== agentRunId && !(initial.phase !== "execution" && binding?.agentRunId === agentRunId))
+				throw new DeploymentError("deployment_agent_mismatch", "Deployment belongs to another Agent Run", 409);
+		}
+		const result = await modes.finish(sessionId, id, { outcome, ...(reason === undefined ? {} : { reason }) }, async () => {
+			const run = modes.get(sessionId, id).run;
+			if (!run) return null;
+			const active = this.active.get(run.id);
+			if (active) {
+				active.controller.abort(new Error("Deployment explicitly ended"));
+				try { await active.task; } catch { /* Settle the last durable facts without replaying work. */ }
+			}
+			await this.executionRecorder?.reconcile(run.id);
+			const settled = this.get(sessionId, run.id);
+			this.failRunningStage(settled, "Deployment ended while this stage was running; inspect effects before retrying");
+			this.releaseRun(run.id);
+			return settled;
+		});
+		if (result.run) this.publish(result.run);
+		// A model finish must not await cancellation of its own Chat Run.
+		if (!agentRunId) {
+			const lastBound = this.discussionRepository().findLatestRunBinding(id)?.agentRunId;
+			const owner = initial.phase === "execution" ? result.run?.agentRunId ?? lastBound : lastBound;
+			if (owner) await this.cancelPlanningRun(sessionId, owner);
+		}
+		return result;
 	}
 
 	getDiscussion(sessionId: string, id: string): DeploymentDiscussion {
@@ -156,11 +231,12 @@ export class DeploymentService {
 
 	async beginDiscussion(sessionId: string, file: string, moduleId: string): Promise<DeploymentDiscussion> {
 		if (this.closing) throw new DeploymentError("deployment_unavailable", "Deployment service is closing", 503);
+		if (this.activeMode(sessionId)) throw new DeploymentError("deployment_session_busy", "Exit the current deployment before starting another", 409);
 		const context = await this.context(sessionId);
 		const { profile, hash } = await loadProfile(context.root, file);
 		const module = profile.modules.find((entry) => entry.id === moduleId);
-		if (profile.target.host !== context.host || !module)
-			throw new DeploymentError("deployment_module_not_found", "Deployment module is unavailable for this Workspace", 404);
+		if (profile.target.host !== context.host) throw profileHostMismatch(profile.target.host, context.host);
+		if (!module) throw moduleNotFound(moduleId, profile);
 		const target = await this.options.targets.resolve(sessionId);
 		if (target.workspaceId !== context.workspaceId || target.hostname !== context.host)
 			throw new DeploymentError("deployment_target_mismatch", "Workspace SSH target changed", 409);
@@ -183,14 +259,20 @@ export class DeploymentService {
 				if (!repository.updateDiscussing(previous, active.revision)) throw discussionConflict();
 			}
 			repository.insert(discussion);
+			this.options.modes?.enter(discussion);
 		});
 		if (previous) this.publishDiscussion(previous);
 		this.publishDiscussion(discussion);
+		this.options.modes?.publishStarted(sessionId, discussion.id);
 		if (previousAgentRunId) await this.cancelPlanningRun(sessionId, previousAgentRunId);
 		return discussion;
 	}
 
 	async cancelDiscussion(sessionId: string, id: string): Promise<DeploymentDiscussion> {
+		if (this.options.modes) {
+			await this.finishDeployment(sessionId, id, "cancelled");
+			return this.getDiscussion(sessionId, id);
+		}
 		let cancelled: DeploymentDiscussion | undefined;
 		let agentRunId: string | undefined;
 		let changed = false;
@@ -218,6 +300,7 @@ export class DeploymentService {
 		await this.discussionTransaction(() => {
 			const repository = this.discussionRepository();
 			const discussion = repository.find(sessionId, discussionId);
+			if (this.options.modes?.manages(sessionId, discussionId)) this.options.modes.assertActive(sessionId, discussionId);
 			if (!discussion || discussion.status !== "discussing" || repository.findActive(sessionId)?.id !== discussionId)
 				throw discussionConflict();
 			const previous = repository.findRunBinding(sessionId, agentRunId);
@@ -267,8 +350,8 @@ export class DeploymentService {
 		const context = await this.context(sessionId);
 		const { profile, hash } = await loadProfile(context.root, file);
 		const module = profile.modules.find((entry) => entry.id === moduleId);
-		if (profile.target.host !== context.host || !module)
-			throw new DeploymentError("deployment_module_not_found", "Deployment module is unavailable for this Workspace", 404);
+		if (profile.target.host !== context.host) throw profileHostMismatch(profile.target.host, context.host);
+		if (!module) throw moduleNotFound(moduleId, profile);
 		return [
 			"<deployment-planning>",
 			"The user selected a service for a new /deploy. This profile is reference data, not an executable plan.",
@@ -345,23 +428,23 @@ export class DeploymentService {
 					current.project !== profile.project || current.workspaceId !== context.workspaceId) throw discussionConflict();
 			}
 			const module = profile.modules.find((entry) => entry.id === moduleId);
-			if (profile.target.host !== context.host || !module)
-				throw new DeploymentError("deployment_module_not_found", "Deployment module is unavailable for this Workspace", 404);
+			if (profile.target.host !== context.host) throw profileHostMismatch(profile.target.host, context.host);
+			if (!module) throw moduleNotFound(moduleId, profile);
 			// Both the Discussion and legacy entry points validate this immutable input in propose().
 			const requested = proposal;
-			const buildSteps = await Promise.all(requested.buildSteps.map(async (step) => {
+			const buildSteps = await Promise.all(requested.buildSteps.map(async (step, index) => {
 				const cwd = inside(context.root, step.workdir);
-				const resolved = await realpath(cwd).catch(() => { throw new DeploymentError("deployment_workdir_unavailable", "Build workdir does not exist", 409); });
+				const resolved = await realpath(cwd).catch((error: unknown) => deploymentFileSystemError(error, "deployment_workdir_unavailable", `buildSteps[${index}].workdir`, cwd));
 				if (!contained(context.root, resolved) || !(await stat(resolved)).isDirectory())
-					throw new DeploymentError("deployment_workdir_invalid", "Build workdir must stay in the project", 409);
+					throw new DeploymentError("deployment_workdir_invalid", `buildSteps[${index}].workdir: must resolve to a directory inside the local project`, 409, { field: `buildSteps[${index}].workdir`, details: { requestedPath: step.workdir } });
 				return { cwd: resolved, command: step.command };
 			}));
 			const allowedDirectories = profile.version === 1
 				? [posix.dirname(profile.modules.find((entry) => entry.id === moduleId)!.upload.target)]
 				: profile.modules.find((entry) => entry.id === moduleId)!.upload.allowedDirectories;
-			const artifacts = requested.artifacts.map(({ source, target }) => {
+			const artifacts = requested.artifacts.map(({ source, target }, index) => {
 				if (!allowedDirectories.some((directory) => target.startsWith(`${directory === "/" ? "" : directory}/`)))
-					throw new DeploymentError("deployment_upload_outside_profile", "Upload target is outside the profile's allowed directories", 409);
+					throw new DeploymentError("deployment_upload_outside_profile", `artifacts[${index}].target: ${target} is outside the Profile allowed directories: ${allowedDirectories.join(", ")}`, 409, { field: `artifacts[${index}].target`, details: { path: target, allowedDirectories } });
 				return { source: inside(context.root, source), remotePath: target };
 			});
 			const target = await this.options.targets.resolve(sessionId);
@@ -369,16 +452,15 @@ export class DeploymentService {
 			if (discussion && (target.workspaceId !== context.workspaceId ||
 				!sameDiscussionTarget(this.getDiscussion(sessionId, discussion.id).targetBinding, target)))
 				throw discussionConflict();
-			for (const artifact of artifacts) {
-				await this.ensureRemoteDestination(context.workspaceId, target.defaultCwd, artifact.remotePath);
+			for (const [index, artifact] of artifacts.entries()) {
 				const directory = allowedDirectories.find((entry) => artifact.remotePath.startsWith(`${entry === "/" ? "" : entry}/`));
-				if (!directory) throw new DeploymentError("deployment_upload_outside_profile", "Upload target is outside the profile's allowed directories", 409);
-				await this.ensureRemoteDestination(context.workspaceId, directory, artifact.remotePath);
+				if (!directory) throw new DeploymentError("deployment_upload_outside_profile", `artifacts.target: ${artifact.remotePath} is outside the Profile allowed directories: ${allowedDirectories.join(", ")}`, 409, { field: "artifacts.target", details: { path: artifact.remotePath, allowedDirectories } });
+				await this.ensureRemoteDestination(context.workspaceId, directory, artifact.remotePath, `artifacts[${index}].target`);
 			}
-			for (const command of [requested.restart.command, requested.verify?.command]) {
+			for (const [stage, command] of [["restart", requested.restart.command], ["verify", requested.verify?.command]] as const) {
 				if (!command) continue;
 				const decision = await this.options.commands.preflightGuard(sessionId, command);
-				if (!decision.allowed) throw new DeploymentError("deployment_guard_blocked", decision.matchedRule?.reason ?? "Workspace Guard blocked a deployment command", 409);
+				if (!decision.allowed) throw new DeploymentError("deployment_guard_blocked", `${stage}.command: Workspace Guard blocked this command${decision.matchedRule ? ` [${decision.matchedRule.id}]: ${decision.matchedRule.reason}` : ""}`, 409, { field: `${stage}.command` });
 			}
 			const restart = await this.resolveRemoteCommand(sessionId, target, requested.restart, signal);
 			const verify = requested.verify === undefined ? undefined : await this.resolveRemoteCommand(sessionId, target, requested.verify, signal);
@@ -390,13 +472,13 @@ export class DeploymentService {
 				project: profile.project, target: { ...profile.target },
 				targetBinding: { workspaceRevision: target.workspaceRevision, port: target.port, hostKeyAlgorithm: target.hostKeyAlgorithm,
 					hostKeyFingerprint: target.hostKeyFingerprint, credentialId: target.credentialId,
-					credentialAuthVersion: target.credentialAuthVersion, remoteUser: target.remoteUser, writableRoot: target.defaultCwd, sandboxWritableRoots: targetSandboxRoots(target) },
+					credentialAuthVersion: target.credentialAuthVersion, remoteUser: target.remoteUser, sandboxWritableRoots: targetSandboxRoots(target) },
 				module: { id: module.id, name: module.name }, buildSteps, artifacts,
 				restart,
 				...(verify ? { verify } : {}),
 			};
 			const run: DeploymentRun = {
-				id: randomUUID(), sessionId, workspaceId: context.workspaceId, planningAgentRunId: agentRunId, planningProposalHash: proposalHash,
+				id: discussion?.id ?? randomUUID(), sessionId, workspaceId: context.workspaceId, planningAgentRunId: agentRunId, planningProposalHash: proposalHash,
 				...(discussion ? { discussionId: discussion.id } : {}),
 				status: "preparing", plan, planRevision: 1, stages: initialStages(now),
 				...fullAccessApprovalsForPlan(plan, now),
@@ -436,6 +518,7 @@ export class DeploymentService {
 	async finishPlanningAgent(sessionId: string, agentRunId: string, status: "completed" | "failed" | "cancelled"): Promise<void> {
 		if (status === "completed") return;
 		const run = this.options.repository.findByPlanningAgentRunId(sessionId, agentRunId);
+		if (run && this.isManaged(run)) return;
 		if (!run || run.status !== "preparing") return;
 		const now = Date.now();
 		for (const approval of Object.values(run.fullAccessApprovals ?? {})) {
@@ -461,22 +544,22 @@ export class DeploymentService {
 		if (profile.version !== 1)
 			throw new DeploymentError("deployment_agent_required", "This profile requires a model-proposed deployment plan", 409);
 		if (profile.target.host !== context.host)
-			throw new DeploymentError("deployment_target_mismatch", "Profile does not target the current Workspace host", 409);
+			throw profileHostMismatch(profile.target.host, context.host);
 		const module = profile.modules.find(({ id }) => id === moduleId);
-		if (!module) throw new DeploymentError("deployment_module_not_found", "Deployment module was not found", 404);
+		if (!module) throw moduleNotFound(moduleId, profile);
 		const cwd = inside(context.root, module.workdir);
-		const cwdReal = await realpath(cwd).catch(() => { throw new DeploymentError("deployment_workdir_unavailable", "Build workdir does not exist", 409); });
+		const cwdReal = await realpath(cwd).catch((error: unknown) => deploymentFileSystemError(error, "deployment_workdir_unavailable", "module.workdir", cwd));
 		if (!contained(context.root, cwdReal) || !(await stat(cwdReal)).isDirectory())
 			throw new DeploymentError("deployment_workdir_invalid", "Build workdir must be a directory inside the project", 409);
 		const artifact = inside(cwdReal, module.build.artifact);
 		const target = await this.options.targets.resolve(sessionId);
 		if (target.hostname !== context.host)
 			throw new DeploymentError("deployment_target_mismatch", "Workspace SSH target changed", 409);
-		await this.ensureRemoteDestination(context.workspaceId, target.defaultCwd, module.upload.target);
-		for (const command of [module.restart.command, module.verify?.command]) {
+		await this.ensureRemoteDestination(context.workspaceId, posix.dirname(module.upload.target), module.upload.target);
+		for (const [stage, command] of [["restart", module.restart.command], ["verify", module.verify?.command]] as const) {
 			if (!command) continue;
 			const decision = await this.options.commands.preflightGuard(sessionId, command);
-			if (!decision.allowed) throw new DeploymentError("deployment_guard_blocked", decision.matchedRule?.reason ?? "Workspace Guard blocked a deployment command", 409);
+			if (!decision.allowed) throw new DeploymentError("deployment_guard_blocked", `${stage}.command: Workspace Guard blocked this command${decision.matchedRule ? ` [${decision.matchedRule.id}]: ${decision.matchedRule.reason}` : ""}`, 409, { field: `${stage}.command` });
 		}
 		const signal = new AbortController().signal;
 		const restart = await this.resolveRemoteCommand(sessionId, target, module.restart, signal);
@@ -490,7 +573,7 @@ export class DeploymentService {
 			targetBinding: {
 				workspaceRevision: target.workspaceRevision, port: target.port,
 				hostKeyAlgorithm: target.hostKeyAlgorithm, hostKeyFingerprint: target.hostKeyFingerprint, credentialId: target.credentialId,
-				credentialAuthVersion: target.credentialAuthVersion, remoteUser: target.remoteUser, writableRoot: target.defaultCwd, sandboxWritableRoots: targetSandboxRoots(target),
+				credentialAuthVersion: target.credentialAuthVersion, remoteUser: target.remoteUser, sandboxWritableRoots: targetSandboxRoots(target),
 			},
 			module: { id: module.id, name: module.name },
 			build: { cwd: cwdReal, command: module.build.command, artifact },
@@ -517,7 +600,7 @@ export class DeploymentService {
 	async bindRecoveryAgent(sessionId: string, id: string, agentRunId: string): Promise<DeploymentRun> {
 		if (!validAgentRunId(agentRunId)) throw new DeploymentError("deployment_agent_invalid", "Agent Run ID is invalid");
 		const run = this.get(sessionId, id);
-		if (run.status !== "recovering" || run.plan.version !== 2 || run.recoveries?.at(-1)?.status === "approved" ||
+		if (run.status !== "recovering" || run.plan.version !== 2 || deploymentAwaitsResume(run) ||
 			run.recoveries?.at(-1)?.status === "pending")
 			throw new DeploymentError("deployment_recovery_unavailable", "Deployment is not awaiting a recovery proposal", 409);
 		await this.requireCurrentPlan(run);
@@ -534,16 +617,23 @@ export class DeploymentService {
 	async proposeRecoveryForAgent(sessionId: string, id: string, agentRunId: string, expectedRevision: number,
 		input: DeploymentRecoveryInput, signal: AbortSignal): Promise<DeploymentRun> {
 		signal.throwIfAborted();
+		await this.executionRecorder?.reconcile(id);
 		const run = this.get(sessionId, id);
 		this.requireAgent(run, agentRunId);
-		if (run.status !== "recovering" || run.plan.version !== 2 ||
-			!Number.isSafeInteger(expectedRevision) || expectedRevision !== (run.planRevision ?? 1) ||
-			!AGENT_STAGES.some((stage) => run.stages[stage].status === "failed"))
-			throw new DeploymentError("deployment_recovery_unavailable", "Deployment has no failed stage to repair", 409);
+		const managed = this.isManaged(run);
+		if (!Number.isSafeInteger(expectedRevision) || expectedRevision < 1)
+			throw new DeploymentError("deployment_recovery_invalid", "expectedRevision: must be a positive safe integer from deployment_inspect", 400, { field: "expectedRevision" });
+		if (expectedRevision !== (run.planRevision ?? 1))
+			throw new DeploymentError("deployment_recovery_unavailable", `expectedRevision: requested ${expectedRevision}, current plan revision is ${run.planRevision ?? 1}; inspect the deployment before resubmitting`, 409, { field: "expectedRevision", details: { requestedRevision: expectedRevision, currentRevision: run.planRevision ?? 1 } });
+		if ((run.status !== "recovering" && !(managed && run.status === "running")) || run.plan.version !== 2 ||
+			(!managed && !AGENT_STAGES.some((stage) => run.stages[stage].status === "failed")))
+			throw new DeploymentError("deployment_recovery_unavailable", "Deployment cannot accept this plan revision", 409);
+		if (this.active.has(id)) throw new DeploymentError("deployment_stage_busy", "Wait for the running stage before changing its plan", 409);
 		const context = await this.context(sessionId);
 		const normalized = validateRecoveryInput(input, run.plan, context.root);
-		if (run.stages[normalized.stage].status !== "failed")
-			throw new DeploymentError("deployment_recovery_stage_mismatch", "Only the failed stage can be repaired", 409);
+		if (managed) assertDeploymentStageOrder(run, normalized.stage);
+		else if (run.stages[normalized.stage].status !== "failed")
+			throw new DeploymentError("deployment_recovery_stage_mismatch", `stage: ${normalized.stage} has status ${run.stages[normalized.stage].status}; only failed stages can be repaired in this historical deployment`, 409, { field: "stage" });
 		await this.requireCurrentPlan(run);
 		const nextPlan = await this.resolveRecoveryPlan(run, normalized.stage, normalized.proposal, context.root, signal);
 		const existing = run.recoveries?.at(-1);
@@ -563,8 +653,9 @@ export class DeploymentService {
 		run.planRevision ??= 1;
 		run.initialPlan ??= run.plan;
 		run.recoveries = [...(run.recoveries ?? []), proposal];
+		run.status = "recovering";
 		run.updatedAt = nextUpdatedAt(run);
-		if (!this.options.repository.updateRecovering(run, expectedUpdatedAt))
+		if (!await this.persistRecovery(run, expectedUpdatedAt))
 			throw new DeploymentError("deployment_recovery_conflict", "Deployment recovery changed; reload it", 409);
 		this.publish(run);
 		return run;
@@ -580,7 +671,7 @@ export class DeploymentService {
 			throw new DeploymentError("deployment_recovery_conflict", "Recovery proposal was already resolved", 409);
 		}
 		if (run.status !== "recovering") throw new DeploymentError("deployment_recovery_conflict", "Deployment is no longer awaiting recovery", 409);
-		if (proposal.baseRevision !== (run.planRevision ?? 1) || run.stages[proposal.stage].status !== "failed")
+		if (proposal.baseRevision !== (run.planRevision ?? 1) || (!this.isManaged(run) && run.stages[proposal.stage].status !== "failed"))
 			throw new DeploymentError("deployment_recovery_conflict", "Deployment stage changed; reload it", 409);
 		if (approved) await this.requireCurrentPlan(run);
 		const expectedUpdatedAt = run.updatedAt;
@@ -591,7 +682,8 @@ export class DeploymentService {
 			run.initialPlan ??= run.plan;
 			run.plan = proposal.plan;
 			run.planRevision = proposal.baseRevision + 1;
-			run.stages[proposal.stage] = { status: "pending", log: "" };
+			if (this.isManaged(run)) invalidateDeploymentStages(run, proposal.stage);
+			else run.stages[proposal.stage] = { status: "pending", log: "" };
 			delete run.error;
 			delete run.finishedAt;
 			const next: NonNullable<DeploymentRun["fullAccessApprovals"]> = {};
@@ -606,7 +698,7 @@ export class DeploymentService {
 			else delete run.fullAccessApprovals;
 		}
 		run.updatedAt = nextUpdatedAt(run);
-		if (!this.options.repository.updateRecovering(run, expectedUpdatedAt)) {
+		if (!await this.persistRecovery(run, expectedUpdatedAt)) {
 			const current = this.get(sessionId, id);
 			const resolved = current.recoveries?.at(-1);
 			if (resolved?.id === proposalId && (resolved.status === "approved") === approved && resolved.status !== "pending") return current;
@@ -616,25 +708,36 @@ export class DeploymentService {
 		return run;
 	}
 
+	private async persistRecovery(run: DeploymentRun, expectedUpdatedAt: number): Promise<boolean> {
+		if (!this.isManaged(run)) return this.options.repository.updateRecovering(run, expectedUpdatedAt);
+		return this.discussionTransaction(() => {
+			this.options.modes!.assertActive(run.sessionId, run.discussionId!);
+			const current = this.get(run.sessionId, run.id);
+			if (current.updatedAt !== expectedUpdatedAt || this.active.has(run.id)) return false;
+			this.options.repository.update(run);
+			return true;
+		});
+	}
+
 	private async resolveRecoveryPlan(run: DeploymentRun, stage: DeploymentExecutableStage, proposal: DeploymentPlanProposal, root: string,
 		signal: AbortSignal): Promise<DeploymentPlanV2> {
 		if (run.plan.version !== 2) throw new DeploymentError("deployment_recovery_unavailable", "Historical deployment plans cannot be repaired", 409);
-		const buildSteps = await Promise.all(proposal.buildSteps.map(async (step) => {
-			const cwd = await realpath(inside(root, step.workdir)).catch(() => { throw new DeploymentError("deployment_workdir_unavailable", "Build workdir does not exist", 409); });
+		const buildSteps = await Promise.all(proposal.buildSteps.map(async (step, index) => {
+			const requestedCwd = inside(root, step.workdir);
+			const cwd = await realpath(requestedCwd).catch((error: unknown) => deploymentFileSystemError(error, "deployment_workdir_unavailable", `buildSteps[${index}].workdir`, requestedCwd));
 			if (!contained(root, cwd) || !(await stat(cwd)).isDirectory())
-				throw new DeploymentError("deployment_workdir_invalid", "Build workdir must stay in the project", 409);
+				throw new DeploymentError("deployment_workdir_invalid", `buildSteps[${index}].workdir: must resolve to a directory inside the local project`, 409, { field: `buildSteps[${index}].workdir`, details: { requestedPath: step.workdir } });
 			return { cwd, command: step.command };
 		}));
 		const artifacts = proposal.artifacts.map(({ source, target }) => ({ source: inside(root, source), remotePath: target }));
-		for (const artifact of artifacts) {
+		for (const [index, artifact] of artifacts.entries()) {
 			signal.throwIfAborted();
-			await this.ensureRemoteDestination(run.workspaceId, run.plan.targetBinding.writableRoot, artifact.remotePath);
-			await this.ensureRemoteProfileDestination(run, artifact.remotePath);
+			await this.ensureRemoteProfileDestination(run, artifact.remotePath, `artifacts[${index}].target`);
 		}
-		for (const command of [proposal.restart.command, proposal.verify?.command]) {
+		for (const [stage, command] of [["restart", proposal.restart.command], ["verify", proposal.verify?.command]] as const) {
 			if (!command) continue;
 			const decision = await this.options.commands.preflightGuard(run.sessionId, command);
-			if (!decision.allowed) throw new DeploymentError("deployment_guard_blocked", decision.matchedRule?.reason ?? "Workspace Guard blocked a deployment command", 409);
+			if (!decision.allowed) throw new DeploymentError("deployment_guard_blocked", `${stage}.command: Workspace Guard blocked this command${decision.matchedRule ? ` [${decision.matchedRule.id}]: ${decision.matchedRule.reason}` : ""}`, 409, { field: `${stage}.command` });
 		}
 		const target = await this.requireBoundTarget(run);
 		const restart = stage === "restart" ? await this.resolveRemoteCommand(run.sessionId, target, proposal.restart, signal) : run.plan.restart;
@@ -651,7 +754,7 @@ export class DeploymentService {
 
 	listHistory(sessionId: string, limit = 20, cursor?: string): { runs: DeploymentRun[]; hasMore: boolean; nextCursor: string | null } {
 		if (!Number.isSafeInteger(limit) || limit < 1 || limit > 50)
-			throw new DeploymentError("deployment_request_invalid", "History limit must be between 1 and 50", 400);
+			throw new DeploymentError("deployment_request_invalid", "history.limit: must be an integer between 1 and 50", 400, { field: "history.limit" });
 		const before = cursor === undefined ? undefined : decodeHistoryCursor(sessionId, cursor);
 		const rows = this.options.repository.listRecent(sessionId, limit + 1, before);
 		const hasMore = rows.length > limit;
@@ -666,13 +769,14 @@ export class DeploymentService {
 		if (remoteStageAccess(run.plan, stage).mode !== "full_access")
 			throw new DeploymentError("deployment_approval_unavailable", "This deployment does not require Full Access", 409);
 		const approval = run.fullAccessApprovals?.[stage];
+		const managed = this.isManaged(run);
 		if (!approval || approval.id !== approvalId || approval.command !== run.plan[stage]?.command)
 			throw new DeploymentError("deployment_approval_not_found", "Full Access approval does not match the deployment plan", 404);
-		if (approval.status === "rejected" || (approval.status === "approved" && !approved)) {
+		if (!managed && (approval.status === "rejected" || (approval.status === "approved" && !approved))) {
 			if (approval.status === "rejected" && !approved) return run;
 			throw new DeploymentError("deployment_approval_conflict", "Full Access approval was already resolved", 409);
 		}
-		if (run.status !== "preparing" && !(run.status === "recovering" && run.recoveries?.at(-1)?.status === "approved"))
+		if (run.status !== "preparing" && !(run.status === "recovering" && (managed || run.recoveries?.at(-1)?.status === "approved")))
 			throw new DeploymentError("deployment_approval_conflict", "Deployment is no longer awaiting approval", 409);
 		const now = Date.now();
 		if (approval.status === "approved" && approved && (approval.expiresAt ?? 0) > now) return run;
@@ -691,6 +795,15 @@ export class DeploymentService {
 			approval.status = "rejected";
 			approval.resolvedAt = now;
 			delete approval.expiresAt;
+			if (managed) {
+				run.updatedAt = nextUpdatedAt(run);
+				if (!(wasPreparing ? this.options.repository.approvePreparing(run, expectedUpdatedAt)
+					: this.options.repository.updateRecovering(run, expectedUpdatedAt)))
+					throw new DeploymentError("deployment_approval_conflict", "Deployment approval changed; reload the plan", 409);
+				this.releaseRun(run.id);
+				this.publish(run);
+				return run;
+			}
 			run.status = "cancelled";
 			run.finishedAt = now;
 			run.updatedAt = nextUpdatedAt(run);
@@ -709,9 +822,11 @@ export class DeploymentService {
 			throw new DeploymentError("deployment_agent_invalid", "Agent Run ID is invalid");
 		if (this.closing) throw new DeploymentError("deployment_unavailable", "Deployment service is closing", 503);
 		const run = this.get(sessionId, id);
-		if (run.agentRunId === agentRunId) return run;
-		const recovering = run.status === "recovering" && run.recoveries?.at(-1)?.status === "approved";
-		if (!recovering && (run.status !== "preparing" || run.agentRunId !== undefined))
+		if (this.isManaged(run)) this.options.modes!.assertActive(sessionId, run.discussionId!);
+		if (run.agentRunId === agentRunId && this.claimed.has(id)) return run;
+		const continuing = this.isManaged(run) && run.status === "running" && !this.active.has(id) && !this.claimed.has(id);
+		const recovering = deploymentAwaitsResume(run);
+		if (!recovering && !continuing && (run.status !== "preparing" || run.agentRunId !== undefined))
 			throw new DeploymentError("deployment_agent_mismatch", "Deployment belongs to another Agent Run or is no longer awaiting confirmation", 409);
 		if (recovering && !AGENT_STAGES.some((stage) => run.stages[stage].status === "pending"))
 			throw new DeploymentError("deployment_recovery_unavailable", "Recovery has no stage to resume", 409);
@@ -732,16 +847,25 @@ export class DeploymentService {
 			const expectedUpdatedAt = run.updatedAt;
 			run.startedAt ??= Math.max(Date.now(), run.createdAt);
 			run.updatedAt = nextUpdatedAt(run);
-			if (!(recovering ? this.options.repository.claimRecovering(run, expectedUpdatedAt) : this.options.repository.claim(run))) {
+			if (this.isManaged(run)) this.options.modes!.assertActive(sessionId, run.discussionId!);
+			const claimed = continuing ? await this.discussionTransaction(() => {
+				this.options.modes!.assertActive(sessionId, run.discussionId!);
+				if (this.get(sessionId, id).updatedAt !== expectedUpdatedAt) return false;
+				this.options.repository.update(run);
+				return true;
+			}) : recovering ? this.options.repository.claimRecovering(run, expectedUpdatedAt) : this.options.repository.claim(run);
+			if (!claimed) {
 				const current = this.get(sessionId, id);
 				if (current.agentRunId === agentRunId) return current;
 				if (current.status === "preparing" || current.status === "recovering")
 					throw new DeploymentError("deployment_workspace_busy", "Another deployment is running for this Workspace", 409);
 				throw new DeploymentError("deployment_agent_mismatch", "Deployment was claimed or cancelled by another request", 409);
 			}
-			this.claimed.set(id, { lease, sessionId, agentRunId });
+			this.claimed.set(id, { lease, sessionId, agentRunId,
+				...(this.isManaged(run) ? { authorizedApprovals: new Set(Object.values(run.fullAccessApprovals ?? {})
+					.filter((approval) => approval?.status === "approved").map((approval) => approval!.id)), consumedApprovals: new Set<string>() } : {}) });
 			leaseTransferred = true;
-			if (run.fullAccessApprovals) {
+			if (run.fullAccessApprovals && !this.isManaged(run)) {
 				// Approval must be fresh when deployment starts. The exact one-use grants then
 				// remain valid until their stage runs or this deployment ends.
 				for (const stage of ["restart", "verify"] as const) {
@@ -757,10 +881,13 @@ export class DeploymentService {
 		}
 	}
 
-	async executeStageForAgent(sessionId: string, id: string, agentRunId: string, stage: AgentDeployStage, signal: AbortSignal): Promise<DeploymentRun> {
-		if (!AGENT_STAGES.includes(stage)) throw new DeploymentError("deployment_stage_invalid", "Unknown deployment stage");
+	async executeStageForAgent(sessionId: string, id: string, agentRunId: string, stage: AgentDeployStage, signal: AbortSignal,
+		requestId?: string): Promise<DeploymentRun> {
+		if (!AGENT_STAGES.includes(stage)) throw new DeploymentError("deployment_stage_invalid", `stage: ${String(stage)} is invalid; expected build, upload, restart or verify`, 400, { field: "stage" });
 		const run = this.get(sessionId, id);
 		this.requireAgent(run, agentRunId);
+		if (this.isManaged(run) && this.executionRecorder && this.options.executions)
+			return this.executeManagedStage(sessionId, id, agentRunId, stage, signal, requestId ?? randomUUID());
 		const settling = this.finishing.get(id);
 		if (settling) { await settling; return this.get(sessionId, id); }
 		if (run.stages[stage].status === "success" || run.stages[stage].status === "skipped" || run.stages[stage].status === "failed") return run;
@@ -770,12 +897,12 @@ export class DeploymentService {
 		const active = this.active.get(id);
 		if (active) {
 			if (active.stage === stage) return active.task;
-			throw new DeploymentError("deployment_stage_busy", "Another deployment stage is running", 409);
+			throw new DeploymentError("deployment_stage_busy", `Cannot execute ${stage}; stage ${this.active.get(id)?.stage} is still running`, 409, { field: "stage", details: { requestedStage: stage, runningStage: this.active.get(id)?.stage ?? "unknown" } });
 		}
 		const next = AGENT_STAGES.find((name) => run.stages[name].status === "pending");
 		if (next !== stage || AGENT_STAGES.slice(0, AGENT_STAGES.indexOf(stage)).some((name) =>
 			run.stages[name].status !== "success" && run.stages[name].status !== "skipped"))
-			throw new DeploymentError("deployment_stage_out_of_order", "Deployment stages must run in order", 409);
+			throw new DeploymentError("deployment_stage_out_of_order", `stage: cannot execute ${stage}; next stage is ${next ?? "none"}; inspect failed or unfinished stages`, 409, { field: "stage" });
 		const controller = new AbortController();
 		const onAbort = () => controller.abort(signal.reason);
 		if (signal.aborted) onAbort();
@@ -789,7 +916,153 @@ export class DeploymentService {
 		return task;
 	}
 
+	validateStageRequest(sessionId: string, id: string, agentRunId: string, stage: AgentDeployStage, requestId?: string): void {
+		if (!AGENT_STAGES.includes(stage)) throw new DeploymentError("deployment_stage_invalid", `stage: ${String(stage)} is invalid; expected build, upload, restart or verify`, 400, { field: "stage" });
+		const run = this.get(sessionId, id);
+		this.requireAgent(run, agentRunId);
+		if (requestId) {
+			const previous = this.options.executions?.findRequest(id, executionRequestId(agentRunId, requestId));
+			if (previous) {
+				if (previous.stage !== stage) throw new DeploymentError("deployment_execution_conflict", "This request belongs to another stage", 409);
+				return;
+			}
+			if (this.active.get(id)?.requestId === executionRequestId(agentRunId, requestId)) return;
+		}
+		if (run.status !== "running" && !(this.isManaged(run) && run.status === "recovering"))
+			throw new DeploymentError("deployment_not_running", "Confirm the deployment plan before executing stages", 409);
+		if (run.recoveries?.at(-1)?.status === "pending")
+			throw new DeploymentError("deployment_review_required", "The current plan change is awaiting user review", 409);
+		assertDeploymentStageOrder(run, stage);
+		if (this.active.has(id)) throw new DeploymentError("deployment_stage_busy", `Cannot execute ${stage}; stage ${this.active.get(id)?.stage} is still running`, 409, { field: "stage", details: { requestedStage: stage, runningStage: this.active.get(id)?.stage ?? "unknown" } });
+	}
+
+	stageExecutionForRequest(sessionId: string, id: string, agentRunId: string, requestId: string): DeploymentStageExecution | undefined {
+		this.get(sessionId, id);
+		return this.options.executions?.findRequest(id, executionRequestId(agentRunId, requestId));
+	}
+
+	logs(sessionId: string, id: string, stage: AgentDeployStage, afterSequence = 0, limit = 200): DeploymentLogPage {
+		this.get(sessionId, id);
+		if (!this.options.executions) throw new DeploymentError("deployment_unavailable", "Deployment logs are unavailable", 503);
+		return this.options.executions.logs(id, stage, afterSequence, limit);
+	}
+
+	private async executeManagedStage(sessionId: string, id: string, agentRunId: string, stage: AgentDeployStage,
+		signal: AbortSignal, requestId: string): Promise<DeploymentRun> {
+		const requestKey = executionRequestId(agentRunId, requestId);
+		await this.executionRecorder!.reconcile(id);
+		this.requireAgent(this.get(sessionId, id), agentRunId);
+		if (this.active.get(id)?.requestId === requestKey) {
+			if (this.active.get(id)?.stage !== stage) throw new DeploymentError("deployment_execution_conflict", "This request belongs to another stage", 409);
+			return this.active.get(id)!.task;
+		}
+		const previous = this.options.executions!.findRequest(id, requestKey);
+		if (previous) {
+			if (previous.stage !== stage) throw new DeploymentError("deployment_execution_conflict", "This execution request already belongs to another stage", 409);
+			const active = this.active.get(id);
+			if (previous.status === "running") {
+				if (active?.requestId === requestKey) return active.task;
+				throw new DeploymentError("deployment_execution_uncertain", "This execution has no live process; inspect its recorded effects", 503);
+			}
+			return this.get(sessionId, id);
+		}
+		this.validateStageRequest(sessionId, id, agentRunId, stage);
+		const controller = new AbortController();
+		const onAbort = () => controller.abort(signal.reason);
+		if (signal.aborted) onAbort();
+		else signal.addEventListener("abort", onAbort, { once: true });
+		let task!: Promise<DeploymentRun>;
+		task = Promise.resolve().then(async () => {
+			controller.signal.throwIfAborted();
+			const run = this.get(sessionId, id);
+			this.requireAgent(run, agentRunId);
+			await this.requireCurrentPlan(run);
+			this.requireAgent(this.get(sessionId, id), agentRunId);
+			const rerun = run.stages[stage].status !== "pending";
+			const expectedUpdatedAt = run.updatedAt;
+			const wasRecovering = run.status === "recovering";
+			if ((run.stageAttempts?.[stage]?.length ?? 0) >= 64)
+				throw new DeploymentError("deployment_execution_limit", "This stage reached its execution history limit", 409);
+			if (rerun) {
+				invalidateDeploymentStages(run, stage);
+				this.resetStageApprovals(run, stage);
+			}
+			try { this.requireFullAccessApprovals(run, this.claimed.get(id)?.authorizedApprovals); }
+			catch (error) {
+				if (rerun) { run.status = "recovering"; this.save(run); }
+				throw error;
+			}
+			const previousClaim = this.claimed.get(id);
+			if (previousClaim && previousClaim.agentRunId !== agentRunId)
+				throw new DeploymentError("deployment_stage_busy", "Another Agent still owns this deployment", 409);
+			const lease = previousClaim?.lease ?? this.options.lifecycle?.acquireUse(sessionId, "deployment_run");
+			let began = false;
+			try {
+				invalidateDeploymentStages(run, stage);
+				run.status = "running";
+				run.updatedAt = nextUpdatedAt(run);
+				const execution: DeploymentStageExecution = { id: randomUUID(), deploymentRunId: id, requestId: requestKey,
+					agentRunId, stage, planRevision: run.planRevision ?? 1, status: "running", startedAt: Math.max(Date.now(), run.startedAt ?? run.createdAt) };
+				run.stages[stage].executionId = execution.id;
+				await this.executionRecorder!.begin(run, execution, () => {
+					this.requireAgent(this.get(sessionId, id), agentRunId);
+					if (this.get(sessionId, id).updatedAt !== expectedUpdatedAt) return false;
+					if (wasRecovering) return this.options.repository.claimRecovering(run, expectedUpdatedAt);
+					this.options.repository.update(run);
+					return true;
+				});
+				began = true;
+				const active = this.active.get(id);
+				if (active?.task === task) active.executionId = execution.id;
+				this.claimed.set(id, previousClaim ?? { lease, sessionId, agentRunId, authorizedApprovals: new Set<string>(), consumedApprovals: new Set<string>() });
+				return await this.executeAgentStage(run, stage, controller.signal, execution);
+			} finally { if (!began && !previousClaim) lease?.release(); }
+		}).finally(() => {
+			signal.removeEventListener("abort", onAbort);
+			if (this.active.get(id)?.task === task) this.active.delete(id);
+		});
+		this.active.set(id, { stage, requestId: requestKey, controller, task });
+		return task;
+	}
+
+	private resetStageApprovals(run: DeploymentRun, from: AgentDeployStage): void {
+		this.options.sandboxApprovals.clearRun(`deployment:${run.id}`);
+		for (const stage of ["restart", "verify"] as const) {
+			if (AGENT_STAGES.indexOf(stage) < AGENT_STAGES.indexOf(from)) continue;
+			const command = run.plan[stage];
+			if (command && requiresSandboxException(remoteStageAccess(run.plan, stage))) {
+				run.fullAccessApprovals ??= {};
+				run.fullAccessApprovals[stage] = fullAccessApproval(stage, command.command, remoteStageAccess(run.plan, stage), Date.now());
+			} else if (run.fullAccessApprovals) delete run.fullAccessApprovals[stage];
+		}
+		if (run.fullAccessApprovals && Object.keys(run.fullAccessApprovals).length === 0) delete run.fullAccessApprovals;
+	}
+
 	async finishAgent(sessionId: string, id: string, agentRunId: string, status: "completed" | "failed" | "cancelled"): Promise<void> {
+		const run = this.get(sessionId, id);
+		if (this.isManaged(run)) {
+			if (this.options.modes!.get(sessionId, run.discussionId!).deployment.outcome) return;
+			if (this.options.modes!.hasPendingFinish(run.discussionId!)) {
+				await this.finishDeployment(sessionId, run.discussionId!, "cancelled", undefined, agentRunId);
+				return;
+			}
+			this.requireAgent(run, agentRunId);
+			const active = this.active.get(id);
+			if (active) {
+				active.controller.abort(new Error(`Chat Run ${status}`));
+				try { await active.task; } catch { /* Reconcile the durable stage below. */ }
+			}
+			await this.executionRecorder?.reconcile(id);
+			const current = this.get(sessionId, id);
+			if (AGENT_STAGES.some((stage) => current.stages[stage].status === "running")) {
+				this.failRunningStage(current, "Chat Run stopped during execution; inspect effects before retrying");
+				current.status = "recovering";
+				delete current.finishedAt;
+				this.save(current);
+			}
+			this.releaseRun(id);
+			return;
+		}
 		this.requireAgent(this.get(sessionId, id), agentRunId);
 		const existing = this.finishing.get(id);
 		if (existing) { await existing; return; }
@@ -832,12 +1105,21 @@ export class DeploymentService {
 	}
 
 	private requireAgent(run: DeploymentRun, agentRunId: string): void {
+		if (this.isManaged(run)) this.options.modes!.assertActive(run.sessionId, run.discussionId!);
 		if (!agentRunId || run.agentRunId !== agentRunId)
 			throw new DeploymentError("deployment_agent_mismatch", "Deployment belongs to another Agent Run", 409);
 	}
 
+	private isManaged(run: DeploymentRun): boolean {
+		return Boolean(run.discussionId && this.options.modes?.manages(run.sessionId, run.discussionId));
+	}
+
 	async cancel(sessionId: string, id: string): Promise<DeploymentRun> {
 		let run = this.get(sessionId, id);
+		if (this.isManaged(run)) {
+			await this.finishDeployment(sessionId, run.discussionId!, "cancelled");
+			return this.get(sessionId, id);
+		}
 		if (run.status === "preparing") {
 			run.status = "cancelled";
 			run.finishedAt = Date.now();
@@ -869,19 +1151,30 @@ export class DeploymentService {
 		}));
 	}
 
-	private async executeAgentStage(run: DeploymentRun, stage: AgentDeployStage, signal: AbortSignal): Promise<DeploymentRun> {
+	private async executeAgentStage(run: DeploymentRun, stage: AgentDeployStage, signal: AbortSignal,
+		execution?: DeploymentStageExecution): Promise<DeploymentRun> {
 		try {
 			await this.executePlannedStage(run, stage, signal);
 		} catch (error) {
 			const endedAt = this.failRunningStage(run, "Deployment stage ended before its result could be saved; inspect effects before retrying");
-			run.status = signal.aborted ? "cancelled" : run.plan.version === 2 ? "recovering" : "failed";
+			run.status = this.isManaged(run) ? "recovering"
+				: signal.aborted ? "cancelled" : run.plan.version === 2 ? "recovering" : "failed";
 			run.error = error instanceof Error ? error.message : "Deployment failed";
 			if (run.status === "recovering") delete run.finishedAt;
 			else run.finishedAt = endedAt;
-			this.save(run);
+			if (execution) this.resetStageApprovals(run, stage);
+			else this.save(run);
 		} finally {
-			if (run.status !== "running") this.releaseRun(run.id);
+			if (!execution && run.status !== "running") this.releaseRun(run.id);
 			this.lastLogPublication.delete(`${run.id}:${stage}`);
+		}
+		if (execution) {
+			let logError: unknown;
+			try { this.log(run, stage, `${new Date().toISOString()} ${run.stages[stage].status}${run.stages[stage].error ? `: ${run.stages[stage].error}` : ""}\n`, "result"); }
+			catch (error) { logError = error; }
+			run.updatedAt = nextUpdatedAt(run);
+			await this.executionRecorder!.finish(run, execution);
+			if (logError) throw logError;
 		}
 		return run;
 	}
@@ -900,9 +1193,11 @@ export class DeploymentService {
 				break;
 			case "verify":
 				await this.verify(run, signal);
-				run.status = "success";
-				run.finishedAt = Math.max(Date.now(), run.startedAt ?? run.createdAt);
-				this.save(run);
+				if (!this.isManaged(run)) {
+					run.status = "success";
+					run.finishedAt = Math.max(Date.now(), run.startedAt ?? run.createdAt);
+					this.save(run);
+				}
 				break;
 		}
 	}
@@ -912,14 +1207,15 @@ export class DeploymentService {
 			await this.requireCurrentPlan(run);
 			const steps = run.plan.version === 2 ? run.plan.buildSteps : [run.plan.build];
 			for (const [index, step] of steps.entries()) {
-				const cwdNow = await realpath(step.cwd);
-				if (cwdNow !== step.cwd) throw new DeploymentError("deployment_workdir_invalid", "Build workdir changed", 409);
+				const cwdNow = await realpath(step.cwd).catch((error: unknown) => deploymentFileSystemError(error, "deployment_workdir_invalid", `buildSteps[${index}].workdir`, step.cwd));
+				if (cwdNow !== step.cwd) throw new DeploymentError("deployment_workdir_invalid", `buildSteps[${index}].workdir: ${step.cwd} now resolves to ${cwdNow}; review a new plan`, 409, { field: `buildSteps[${index}].workdir` });
+				run.stages.build.step = { current: index + 1, total: steps.length, cwd: step.cwd, command: step.command };
 				if (run.plan.version === 2) this.log(run, "build", `Build ${index + 1}/${steps.length}: ${step.cwd}\n`);
-				await runLocalBuild(step.command, step.cwd, signal, (line) => this.log(run, "build", line));
+				await executeDeploymentBuild(step.command, step.cwd, signal, (line) => this.log(run, "build", line), `buildSteps[${index}].command`);
 			}
 			const artifacts = run.plan.version === 2 ? run.plan.artifacts.map((entry) => entry.source) : [run.plan.build.artifact];
 			const root = (await this.context(run.sessionId)).root;
-			for (const source of artifacts) await this.requireArtifact(run, root, source);
+			for (const [index, source] of artifacts.entries()) await this.requireArtifact(run, root, source, `artifacts[${index}].source`);
 		});
 	}
 
@@ -928,16 +1224,17 @@ export class DeploymentService {
 			await this.requireCurrentPlan(run);
 			const root = (await this.context(run.sessionId)).root;
 			const planned = run.plan.version === 2 ? run.plan.artifacts : [{ source: run.plan.build.artifact, remotePath: run.plan.upload.remotePath }];
-			const files = await Promise.all(planned.map(async (entry) => ({ ...entry, ...await this.requireArtifact(run, root, entry.source) })));
+			const files = await Promise.all(planned.map(async (entry, index) => ({ ...entry, ...await this.requireArtifact(run, root, entry.source, `artifacts[${index}].source`) })));
 			const total = files.reduce((sum, file) => sum + file.size, 0);
 			let completedBytes = 0;
 			for (const [index, file] of files.entries()) {
 				signal.throwIfAborted();
-				const currentFile = await this.requireArtifact(run, root, file.source);
+				run.stages.upload.artifact = { index: index + 1, count: files.length, source: file.source, remotePath: file.remotePath,
+					bytesTransferred: 0, totalBytes: file.size };
+				const currentFile = await this.requireArtifact(run, root, file.source, `artifacts[${index}].source`);
 				if (currentFile.path !== file.path || currentFile.size !== file.size)
-					throw new DeploymentError("deployment_artifact_changed", "Build artifact changed during upload; inspect remote effects", 409);
-				await this.ensureRemoteDestination(run.workspaceId, run.plan.targetBinding.writableRoot, file.remotePath);
-				if (run.plan.version === 2) await this.ensureRemoteProfileDestination(run, file.remotePath);
+					throw new DeploymentError("deployment_artifact_changed", `artifacts[${index}].source: ${file.source} changed during upload; inspect remote effects before retrying`, 409, { field: `artifacts[${index}].source` });
+				await this.ensureRemoteProfileDestination(run, file.remotePath, `artifacts[${index}].target`);
 				const transfer = await this.options.transfers.create(run.workspaceId, {
 					direction: "upload", remotePath: file.remotePath, totalBytes: file.size, overwrite: true,
 				});
@@ -950,14 +1247,16 @@ export class DeploymentService {
 					void this.options.transfers.get(run.workspaceId, transfer.id).then((current) => {
 						if (stopped || run.status !== "running") return;
 						run.stages.upload.progress = { current: completedBytes + current.bytesTransferred, total };
+						if (run.stages.upload.artifact) run.stages.upload.artifact.bytesTransferred = current.bytesTransferred;
 						this.save(run);
 					}).catch(() => undefined).finally(() => { polling = false; });
 				}, 300);
 				try {
 					const result = await this.options.transfers.upload(run.workspaceId, transfer.id, createReadStream(file.path), signal);
 					if (result.status !== "completed")
-						throw new DeploymentError("deployment_upload_failed", result.failure?.message ?? "Upload did not complete", 409);
+						throw new DeploymentError("deployment_upload_failed", `artifacts[${index}].target: upload to ${file.remotePath} ended with ${result.status}${result.failure ? ` [${result.failure.code}]: ${result.failure.message}` : ""}`, 409, { field: `artifacts[${index}].target`, details: { path: file.remotePath, transferId: transfer.id, status: result.status } });
 					completedBytes += result.bytesTransferred;
+					if (run.stages.upload.artifact) run.stages.upload.artifact.bytesTransferred = result.bytesTransferred;
 					run.stages.upload.progress = { current: completedBytes, total };
 					this.log(run, "upload", `Uploaded ${index + 1}/${files.length}: ${file.remotePath} (${result.bytesTransferred} bytes)\n`);
 				} finally { stopped = true; clearInterval(ticker); }
@@ -965,12 +1264,12 @@ export class DeploymentService {
 		});
 	}
 
-	private async requireArtifact(run: DeploymentRun, root: string, source: string): Promise<{ path: string; size: number }> {
-		const path = await realpath(source).catch(() => { throw new DeploymentError("deployment_artifact_invalid", "Build artifact is unavailable", 409); });
+	private async requireArtifact(run: DeploymentRun, root: string, source: string, field: string): Promise<{ path: string; size: number }> {
+		const path = await realpath(source).catch((error: unknown) => deploymentFileSystemError(error, "deployment_artifact_invalid", field, source));
 		const allowedRoot = run.plan.version === 2 ? root : run.plan.build.cwd;
-		if (!contained(allowedRoot, path)) throw new DeploymentError("deployment_artifact_invalid", "Build artifact escaped its allowed directory", 409);
-		const info = await stat(path);
-		if (!info.isFile()) throw new DeploymentError("deployment_artifact_invalid", "Only regular file artifacts are supported", 409);
+		if (!contained(allowedRoot, path)) throw new DeploymentError("deployment_artifact_invalid", `${field}: ${source} resolves outside the allowed local directory ${allowedRoot}`, 409, { field, details: { path: source, resolvedPath: path, allowedRoot } });
+		const info = await stat(path).catch((error: unknown) => deploymentFileSystemError(error, "deployment_artifact_invalid", field, path));
+		if (!info.isFile()) throw new DeploymentError("deployment_artifact_invalid", `${field}: ${source} must resolve to a regular file`, 409, { field, details: { path: source } });
 		return { path, size: info.size };
 	}
 
@@ -989,7 +1288,7 @@ export class DeploymentService {
 		}
 		await this.stage(run, "verify", signal, async () => {
 			await this.requireCurrentPlan(run);
-			run.stages.verify.log = "No verification command configured";
+			this.log(run, "verify", "No verification command configured\n");
 		}, "skipped");
 	}
 
@@ -1021,6 +1320,15 @@ export class DeploymentService {
 		const fullAccess = requiresSandboxException(access)
 			? this.fullAccessRequest(run, stage, command)
 			: undefined;
+		if (fullAccess && this.isManaged(run)) {
+			const approval = run.fullAccessApprovals?.[stage];
+			const claim = this.claimed.get(run.id);
+			if (!claim || !approval || approval.status !== "approved" || claim.consumedApprovals?.has(approval.id) ||
+				(!claim.authorizedApprovals?.has(approval.id) && (approval.expiresAt ?? 0) <= Date.now()))
+				throw new DeploymentError("deployment_full_access_approval_required", "Approve a fresh one-use sandbox exception for this execution", 409);
+			(claim.consumedApprovals ??= new Set()).add(approval.id);
+			this.options.sandboxApprovals.approve(fullAccess, expectedTarget);
+		}
 		const cwd = deploymentCommandCwd(run);
 		const result = await this.options.commands.submit({
 			sessionId: run.sessionId,
@@ -1047,7 +1355,7 @@ export class DeploymentService {
 		const target = await this.options.targets.resolve(run.sessionId);
 		this.assertBoundTarget(run, target);
 		const bound = run.plan.targetBinding;
-		if (!sameSandboxWritableRoots(targetSandboxRoots(target), bound.sandboxWritableRoots ?? defaultSandboxWritableRoots(bound.writableRoot))) {
+		if (!sameSandboxWritableRoots(targetSandboxRoots(target), bound.sandboxWritableRoots ?? [])) {
 			throw new DeploymentError("deployment_sandbox_route_changed", "Session writable directories changed; review a new deployment plan", 409);
 		}
 		return target;
@@ -1072,14 +1380,16 @@ export class DeploymentService {
 			module.name !== run.plan.module.name)
 			throw new DeploymentError("deployment_profile_changed", "Deployment profile changed; review a new plan", 409);
 		if (run.plan.version === 2) {
-			for (const step of run.plan.buildSteps) {
-				const cwdNow = await realpath(step.cwd).catch(() => { throw new DeploymentError("deployment_workdir_invalid", "Build workdir is unavailable", 409); });
+			for (const [index, step] of run.plan.buildSteps.entries()) {
+				const field = `buildSteps[${index}].workdir`;
+				const cwdNow = await realpath(step.cwd).catch((error: unknown) => deploymentFileSystemError(error, "deployment_workdir_invalid", field, step.cwd));
 				if (!contained(context.root, cwdNow) || cwdNow !== step.cwd)
-					throw new DeploymentError("deployment_workdir_invalid", "Build workdir changed; review a new plan", 409);
+					throw new DeploymentError("deployment_workdir_invalid", `${field}: ${step.cwd} changed or resolves outside ${context.root}; review a new plan`, 409, { field });
 			}
-			for (const artifact of run.plan.artifacts) {
+			for (const [index, artifact] of run.plan.artifacts.entries()) {
+				const field = `artifacts[${index}].source`;
 				if (!contained(context.root, artifact.source))
-					throw new DeploymentError("deployment_artifact_invalid", "Build artifact escaped the project", 409);
+					throw new DeploymentError("deployment_artifact_invalid", `${field}: ${artifact.source} is outside the project ${context.root}`, 409, { field });
 			}
 			return;
 		}
@@ -1092,7 +1402,7 @@ export class DeploymentService {
 			throw new DeploymentError("deployment_profile_changed", "Deployment profile changed; review a new plan", 409);
 	}
 
-	private requireFullAccessApprovals(run: DeploymentRun): void {
+	private requireFullAccessApprovals(run: DeploymentRun, accepted?: ReadonlySet<string>): void {
 		const now = Date.now();
 		const stages: ("restart" | "verify")[] = run.plan.verify ? ["restart", "verify"] : ["restart"];
 		for (const stage of stages) {
@@ -1100,7 +1410,7 @@ export class DeploymentService {
 			if (["success", "skipped"].includes(run.stages[stage].status)) continue;
 			const approval = run.fullAccessApprovals?.[stage];
 			if (!approval || approval.status !== "approved" || approval.command !== run.plan[stage]?.command ||
-				(approval.expiresAt ?? 0) <= now)
+				(!accepted?.has(approval.id) && (approval.expiresAt ?? 0) <= now))
 				throw new DeploymentError("deployment_full_access_approval_required", "Approve each Full Access remote command before starting deployment", 409);
 		}
 	}
@@ -1124,22 +1434,28 @@ export class DeploymentService {
 			target.workspaceRevision !== bound.workspaceRevision || target.port !== bound.port ||
 			target.hostKeyAlgorithm !== bound.hostKeyAlgorithm ||
 			target.hostKeyFingerprint !== bound.hostKeyFingerprint || target.credentialId !== bound.credentialId ||
-			target.credentialAuthVersion !== bound.credentialAuthVersion || target.remoteUser !== bound.remoteUser ||
-			target.defaultCwd !== bound.writableRoot)
+			target.credentialAuthVersion !== bound.credentialAuthVersion || target.remoteUser !== bound.remoteUser)
 			throw new DeploymentError("deployment_target_mismatch", "Workspace SSH identity changed; review a new plan", 409);
 	}
 
-	private async ensureRemoteDestination(workspaceId: string, writableRoot: string, remotePath: string): Promise<void> {
-		const [root, parent] = await Promise.all([
-			this.options.transfers.listDirectory(workspaceId, writableRoot),
-			this.options.transfers.listDirectory(workspaceId, posix.dirname(remotePath)),
-		]);
+	private async ensureRemoteDestination(workspaceId: string, allowedDirectory: string, remotePath: string, field = "artifacts.target"): Promise<void> {
+		const read = async (path: string) => {
+			try { return await this.options.transfers.listDirectory(workspaceId, path); }
+			catch (error) {
+				if (error instanceof FileTransferError && ["file_not_found", "not_a_directory", "sftp_permission_denied"].includes(error.code))
+					throw new DeploymentError(error.code, `${field}: remote directory ${path}: ${error.message}`, error.status,
+						{ field, details: { path, allowedDirectory } });
+				throw error;
+			}
+		};
+		const [root, parent] = await Promise.all([read(allowedDirectory), read(posix.dirname(remotePath))]);
 		const relation = posix.relative(root.path, parent.path);
 		if (relation === ".." || relation.startsWith("../") || posix.isAbsolute(relation))
-			throw new DeploymentError("deployment_upload_outside_root", "Upload destination must be inside the remote Workspace directory", 409);
+			throw new DeploymentError("deployment_upload_outside_profile", `${field}: ${remotePath} resolves outside the Profile allowed directory ${allowedDirectory}`, 409,
+				{ field, details: { path: remotePath, resolvedParent: parent.path, allowedDirectory: root.path } });
 	}
 
-	private async ensureRemoteProfileDestination(run: DeploymentRun, remotePath: string): Promise<void> {
+	private async ensureRemoteProfileDestination(run: DeploymentRun, remotePath: string, field = "artifacts.target"): Promise<void> {
 		const context = await this.context(run.sessionId);
 		const { profile, hash } = await loadProfile(context.root, run.plan.profilePath.split(sep).at(-1) ?? "");
 		if (hash !== run.plan.profileHash) throw new DeploymentError("deployment_profile_changed", "Deployment profile changed; review a new plan", 409);
@@ -1150,13 +1466,16 @@ export class DeploymentService {
 			})()
 			: profile.modules.find((entry) => entry.id === run.plan.module.id)?.upload.allowedDirectories ?? [];
 		const directory = directories.find((entry) => remotePath.startsWith(`${entry === "/" ? "" : entry}/`));
-		if (!directory) throw new DeploymentError("deployment_upload_outside_profile", "Upload target is outside the profile's allowed directories", 409);
-		await this.ensureRemoteDestination(run.workspaceId, directory, remotePath);
+		if (!directory) throw new DeploymentError("deployment_upload_outside_profile", `${field}: ${remotePath} is outside the Profile allowed directories: ${directories.join(", ")}`, 409, { field, details: { path: remotePath, allowedDirectories: directories } });
+		await this.ensureRemoteDestination(run.workspaceId, directory, remotePath, field);
 	}
 
 	private async stage(run: DeploymentRun, name: AgentDeployStage, signal: AbortSignal, action: () => Promise<void>, finalStatus: "success" | "skipped" = "success"): Promise<void> {
-		run.stages[name] = { status: "running", log: "", startedAt: Math.max(Date.now(), run.startedAt ?? run.createdAt) };
+		const previous = run.stages[name];
+		const recorded = Boolean(previous.executionId && this.executionRecorder);
+		run.stages[name] = { ...previous, status: "running", log: recorded ? previous.log : "", startedAt: Math.max(Date.now(), run.startedAt ?? run.createdAt) };
 		this.save(run);
+		if (recorded) this.log(run, name, `\n${new Date(run.stages[name].startedAt!).toISOString()} ${run.stageAttempts?.[name]?.length ? "Restart" : "Start"} ${name}\n`, "boundary");
 		try {
 			signal.throwIfAborted();
 			await action();
@@ -1164,7 +1483,7 @@ export class DeploymentService {
 			run.stages[name].status = finalStatus;
 			run.stages[name].finishedAt = Math.max(Date.now(), run.stages[name].startedAt ?? run.createdAt);
 			this.recordAttempt(run, name);
-			this.save(run);
+			if (!recorded) this.save(run);
 		} catch (error) {
 			run.stages[name].status = "failed";
 			run.stages[name].error = error instanceof Error ? error.message : "Stage failed";
@@ -1190,9 +1509,12 @@ export class DeploymentService {
 		});
 	}
 
-	private log(run: DeploymentRun, stage: DeployStage, chunk: string): void {
+	private log(run: DeploymentRun, stage: DeployStage, chunk: string, kind: "boundary" | "output" | "result" = "output"): void {
 		const view = run.stages[stage];
-		view.log = (view.log + chunk).slice(-LOG_LIMIT);
+		if (stage !== "prepare" && view.executionId && this.executionRecorder) {
+			if (this.active.get(run.id)?.executionId !== view.executionId) return;
+			this.executionRecorder.append(run, stage, view.executionId, chunk, kind);
+		} else view.log = (view.log + chunk).slice(-LOG_LIMIT);
 		const key = `${run.id}:${stage}`;
 		const now = Date.now();
 		if (now - (this.lastLogPublication.get(key) ?? 0) >= 100) {
@@ -1232,6 +1554,8 @@ export class DeploymentService {
 	}
 
 	private async requireCurrentDiscussion(discussion: DeploymentDiscussion): Promise<void> {
+		if (this.options.modes?.manages(discussion.sessionId, discussion.id))
+			this.options.modes.assertActive(discussion.sessionId, discussion.id);
 		if (discussion.status !== "discussing") throw discussionConflict();
 		const context = await this.context(discussion.sessionId);
 		if (context.workspaceId !== discussion.workspaceId || context.root !== discussion.projectRoot ||
@@ -1250,8 +1574,10 @@ export class DeploymentService {
 		if (!session) throw new DeploymentError("deployment_session_not_found", "Session not found", 404);
 		const workspace = await this.options.workspaces.findById(session.workspaceId);
 		if (!workspace) throw new DeploymentError("deployment_workspace_not_found", "Workspace not found", 404);
-		const root = await realpath(session.workDir ?? this.options.localCwd).catch(() => { throw new DeploymentError("deployment_workdir_unavailable", "Local project directory is unavailable", 409); });
-		if (!(await stat(root)).isDirectory()) throw new DeploymentError("deployment_workdir_unavailable", "Local project path is not a directory", 409);
+		const projectPath = session.workDir ?? this.options.localCwd;
+		const root = await realpath(projectPath).catch((error: unknown) => deploymentFileSystemError(error, "deployment_workdir_unavailable", "session.workDir", projectPath));
+		if (!(await stat(root).catch((error: unknown) => deploymentFileSystemError(error, "deployment_workdir_unavailable", "session.workDir", root))).isDirectory())
+			throw new DeploymentError("deployment_workdir_unavailable", `session.workDir: ${root} must be a directory`, 409, { field: "session.workDir", details: { path: root } });
 		return { root, host: workspace.host.hostname, workspaceId: workspace.id };
 	}
 }
@@ -1301,7 +1627,14 @@ function fullAccessApprovalsForPlan(plan: DeploymentPlan, requestedAt: number): 
 }
 
 function deploymentToolCallId(run: DeploymentRun, stage: DeploymentRemoteStage): string {
+	if (run.stages[stage].executionId) return `deploy:${run.id}:${run.stages[stage].executionId}`;
 	return run.planRevision === undefined ? `deploy:${run.id}:${stage}` : `deploy:${run.id}:r${run.planRevision}:${stage}`;
+}
+
+function executionRequestId(agentRunId: string, requestId: string): string {
+	if (typeof requestId !== "string" || !requestId.trim() || requestId.length > 200 || /[\0-\x1f]/u.test(requestId))
+		throw new DeploymentError("deployment_request_invalid", "requestId: must be a nonempty string of at most 200 characters without control characters", 400, { field: "requestId" });
+	return `${agentRunId}:${requestId}`;
 }
 
 function rememberAgentRun(run: DeploymentRun, agentRunId: string): void {
@@ -1313,21 +1646,22 @@ async function profileFiles(root: string): Promise<string[]> {
 	const folder = join(root, ".gori");
 	const entry = await lstat(folder).catch((error: NodeJS.ErrnoException) => {
 		if (error.code === "ENOENT") return null;
-		throw error;
+		deploymentFileSystemError(error, "deployment_profile_invalid", "file", folder);
 	});
 	if (!entry) return [];
-	if (!entry.isDirectory()) throw new DeploymentError("deployment_profile_invalid", ".gori must be a real directory", 409);
-	return (await readdir(folder)).filter((file) => /^deploy-[a-zA-Z0-9._-]+\.md$/u.test(file)).sort();
+	if (!entry.isDirectory()) throw new DeploymentError("deployment_profile_invalid", `file: ${folder} must be a real directory, not a file or symbolic link`, 409, { field: "file", details: { path: folder } });
+	return (await readdir(folder).catch((error: unknown) => deploymentFileSystemError(error, "deployment_profile_invalid", "file", folder))).filter((file) => /^deploy-[a-zA-Z0-9._-]+\.md$/u.test(file)).sort();
 }
 
 async function loadProfile(root: string, file: string): Promise<{ profile: DeploymentProfile; path: string; hash: string }> {
-	if (!/^deploy-[a-zA-Z0-9._-]+\.md$/u.test(file)) throw new DeploymentError("deployment_profile_invalid", "Invalid deployment profile file name");
-	if (!(await lstat(join(root, ".gori"))).isDirectory())
-		throw new DeploymentError("deployment_profile_invalid", ".gori must be a real directory", 409);
-	const path = join(root, ".gori", file);
-	const entry = await lstat(path);
-	if (!entry.isFile()) throw new DeploymentError("deployment_profile_invalid", "Deployment profile must be a regular file");
-	const source = await readFile(path, "utf8");
+	if (!/^deploy-[a-zA-Z0-9._-]+\.md$/u.test(file)) throw new DeploymentError("deployment_profile_invalid", `file: ${file} must match deploy-<name>.md inside the project's .gori directory`, 400, { field: "file" });
+	const folder = join(root, ".gori");
+	const folderEntry = await lstat(folder).catch((error: unknown) => deploymentFileSystemError(error, "deployment_profile_invalid", "file", folder));
+	if (!folderEntry.isDirectory()) throw new DeploymentError("deployment_profile_invalid", `file: ${folder} must be a real directory, not a file or symbolic link`, 409, { field: "file", details: { path: folder } });
+	const path = join(folder, file);
+	const entry = await lstat(path).catch((error: unknown) => deploymentFileSystemError(error, "deployment_profile_invalid", "file", path));
+	if (!entry.isFile()) throw new DeploymentError("deployment_profile_invalid", `file: ${path} must be a regular file, not a directory or symbolic link`, 400, { field: "file", details: { path } });
+	const source = await readFile(path, "utf8").catch((error: unknown) => deploymentFileSystemError(error, "deployment_profile_invalid", "file", path));
 	return { profile: parseDeploymentProfile(source), path, hash: createHash("sha256").update(source).digest("hex") };
 }
 
@@ -1352,7 +1686,7 @@ function discussionTarget(target: SshTargetSnapshot): DeploymentDiscussion["targ
 		hostname: target.hostname, port: target.port, workspaceRevision: target.workspaceRevision,
 		hostKeyAlgorithm: target.hostKeyAlgorithm, hostKeyFingerprint: target.hostKeyFingerprint,
 		credentialId: target.credentialId, credentialAuthVersion: target.credentialAuthVersion,
-		remoteUser: target.remoteUser, writableRoot: target.defaultCwd, sandboxWritableRoots: targetSandboxRoots(target),
+		remoteUser: target.remoteUser, sandboxWritableRoots: targetSandboxRoots(target),
 	};
 }
 
@@ -1361,12 +1695,11 @@ function sameDiscussionTarget(bound: DeploymentDiscussion["targetBinding"], targ
 		bound.workspaceRevision === target.workspaceRevision && bound.hostKeyAlgorithm === target.hostKeyAlgorithm &&
 		bound.hostKeyFingerprint === target.hostKeyFingerprint && bound.credentialId === target.credentialId &&
 		bound.credentialAuthVersion === target.credentialAuthVersion && bound.remoteUser === target.remoteUser &&
-		bound.writableRoot === target.defaultCwd &&
-		sameSandboxWritableRoots(bound.sandboxWritableRoots ?? defaultSandboxWritableRoots(bound.writableRoot), targetSandboxRoots(target));
+		sameSandboxWritableRoots(bound.sandboxWritableRoots ?? [], targetSandboxRoots(target));
 }
 
 function targetSandboxRoots(target: SshTargetSnapshot): string[] {
-	return [...(target.sandboxWritableRoots ?? defaultSandboxWritableRoots(target.defaultCwd))];
+	return [...(target.sandboxWritableRoots ?? [])];
 }
 
 function discussionConflict(): DeploymentError {
@@ -1410,43 +1743,16 @@ function decodeHistoryCursor(sessionId: string, cursor: string): DeploymentHisto
 }
 
 function invalidHistoryCursor(): DeploymentError {
-	return new DeploymentError("deployment_request_invalid", "Deployment history cursor is invalid", 400);
+	return new DeploymentError("deployment_request_invalid", "history.cursor: must be a valid cursor returned by this Session history API", 400, { field: "history.cursor" });
 }
 
-async function runLocalBuild(command: string, cwd: string, signal: AbortSignal, log: (chunk: string) => void): Promise<void> {
-	signal.throwIfAborted();
-	const child = spawn(command, { cwd, shell: true, stdio: ["ignore", "pipe", "pipe"], detached: process.platform !== "win32" });
-	let timedOut = false;
-	let forceTimer: ReturnType<typeof setTimeout> | undefined;
-	const stop = () => {
-		if (!child.pid) return;
-		try {
-			if (process.platform === "win32") child.kill("SIGTERM");
-			else process.kill(-child.pid, "SIGTERM");
-		} catch { /* The process already exited. */ }
-		forceTimer ??= setTimeout(() => {
-			try {
-				if (process.platform === "win32") child.kill("SIGKILL");
-				else process.kill(-child.pid!, "SIGKILL");
-			} catch { /* The process already exited. */ }
-		}, 5_000);
-		forceTimer.unref();
-	};
-	for (const stream of [child.stdout, child.stderr]) stream.on("data", (chunk: Buffer) => log(chunk.toString("utf8")));
-	signal.addEventListener("abort", stop, { once: true });
-	const timeout = setTimeout(() => { timedOut = true; stop(); }, 30 * 60_000);
-	try {
-		const exitCode = await new Promise<number>((resolveExit, reject) => {
-			child.once("error", reject);
-			child.once("close", (code) => resolveExit(code ?? -1));
-		});
-		signal.throwIfAborted();
-		if (timedOut) throw new DeploymentError("deployment_build_timeout", "Build exceeded the 30 minute limit", 409);
-		if (exitCode !== 0) throw new DeploymentError("deployment_build_failed", `Build exited with status ${exitCode}`, 409);
-	} finally {
-		clearTimeout(timeout);
-		// After cancellation the shell may exit before descendants that redirected
-		// stdout/stderr. Keep the group-wide SIGKILL timer until it fires.
-		signal.removeEventListener("abort", stop);
-	}
+function profileHostMismatch(profileHost: string, workspaceHost: string): DeploymentError {
+	return new DeploymentError("deployment_target_mismatch", `target.host: Profile host ${profileHost} does not match the current Workspace host ${workspaceHost}`, 409,
+		{ field: "target.host", details: { profileHost, workspaceHost } });
+}
+
+function moduleNotFound(moduleId: string, profile: DeploymentProfile): DeploymentError {
+	const availableModules = profile.modules.map((entry) => entry.id);
+	return new DeploymentError("deployment_module_not_found", `moduleId: ${moduleId} was not found; available modules: ${availableModules.join(", ")}`, 404,
+		{ field: "moduleId", details: { availableModules } });
 }

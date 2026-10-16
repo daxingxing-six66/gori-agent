@@ -83,6 +83,7 @@ export class ChatToolAuthorizationPolicy {
 			case "deployment_inspect":
 			case "deployment_propose_plan":
 			case "deployment_propose_recovery":
+			case "deployment_finish":
 				return { kind: "allow" };
 			default:
 				return {

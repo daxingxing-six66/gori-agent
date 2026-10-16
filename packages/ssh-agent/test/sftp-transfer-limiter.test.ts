@@ -7,7 +7,7 @@ import type { SshTargetSnapshot } from "../src/domain/ssh-target.ts";
 const target: SshTargetSnapshot = {
 	workspaceId: "w", workspaceRevision: 1, hostname: "host", port: 22, hostKeyAlgorithm: "ssh-ed25519",
 	hostKeyFingerprint: "fingerprint", credentialId: "c", credentialAuthVersion: 1, remoteUser: "user",
-	defaultCwd: "/", connectTimeoutMs: 1000, keepaliveIntervalMs: 0, keepaliveMaxCount: 0,
+	sandboxWritableRoots: ["/"], connectTimeoutMs: 1000, keepaliveIntervalMs: 0, keepaliveMaxCount: 0,
 };
 function deferred() {
 	let release!: () => void;

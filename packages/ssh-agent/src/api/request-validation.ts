@@ -208,12 +208,11 @@ function parseCredential(value: unknown, prefix: string): CreateCredentialInput 
 
 export function parseCreateWorkspace(value: unknown): CreateWorkspaceInput {
 	const body = object(value, "body");
-	exactKeys(body, ["displayName", "environment", "host", "credential", "defaultCwd", "remoteDefaultCwd", "sandboxWritableRoots", "connection"]);
+	exactKeys(body, ["displayName", "environment", "host", "credential", "defaultCwd", "sandboxWritableRoots", "connection"]);
 	return {
 		displayName: string(body, "displayName"),
 		environment: parseEnvironment(string(body, "environment")),
 		defaultCwd: string(body, "defaultCwd"),
-		remoteDefaultCwd: optionalString(body, "remoteDefaultCwd"),
 		sandboxWritableRoots: optionalStringArray(body, "sandboxWritableRoots"),
 		...parseWorkspaceConnectionFields(body),
 	};
@@ -266,10 +265,10 @@ export function parseActivateCredential(value: unknown): { credentialId: string;
 	};
 }
 
-export function parseUpdateWorkspace(value: unknown): { displayName: string; defaultCwd?: string; remoteDefaultCwd?: string; sandboxWritableRoots?: string[]; expectedRevision: number } {
+export function parseUpdateWorkspace(value: unknown): { displayName: string; defaultCwd?: string; sandboxWritableRoots?: string[]; expectedRevision: number } {
 	const body = object(value, "body");
-	exactKeys(body, ["displayName", "defaultCwd", "remoteDefaultCwd", "sandboxWritableRoots", "expectedRevision"]);
-	return { displayName: string(body, "displayName"), defaultCwd: optionalString(body, "defaultCwd"), remoteDefaultCwd: optionalString(body, "remoteDefaultCwd"),
+	exactKeys(body, ["displayName", "defaultCwd", "sandboxWritableRoots", "expectedRevision"]);
+	return { displayName: string(body, "displayName"), defaultCwd: optionalString(body, "defaultCwd"),
 		sandboxWritableRoots: optionalStringArray(body, "sandboxWritableRoots"),
 		expectedRevision: number(body, "expectedRevision") };
 }

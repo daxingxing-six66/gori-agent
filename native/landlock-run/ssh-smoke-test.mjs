@@ -18,13 +18,13 @@ async function request(path, body) {
 try {
 	const { workspace } = await request("/workspaces", { displayName: "Disposable sandbox fixture", environment: "development",
 		host: { hostname: "127.0.0.1", port }, credential: { displayName: "synthetic", remoteUser: "goritest", type: "password", password: "gori-synthetic-test-password" },
-		defaultCwd: "/tmp", remoteDefaultCwd: "/opt/app" });
+		defaultCwd: "/tmp", sandboxWritableRoots: ["/opt/app"] });
 	const session = await request(`/workspaces/${workspace.id}/sessions`, { displayName: "fixture" });
 	const facts = await request(`/workspaces/${workspace.id}/sandbox`);
 	assert.equal(facts.enforcement, "full");
 	assert(facts.abi >= 5);
 	let id = 0;
-	const command = (script, extra = {}) => backend.commandOperations.submit({ sessionId: session.id, toolCallId: `smoke-${++id}`, command: script, ...extra });
+	const command = (script, extra = {}) => backend.commandOperations.submit({ sessionId: session.id, toolCallId: `smoke-${++id}`, command: script, cwd: "/opt/app", ...extra });
 	const allowed = await command("cat /etc/hosts >/dev/null; echo allowed > allowed; /bin/sh -c 'echo child > child'");
 	assert.equal(allowed.operation.status, "completed", JSON.stringify(allowed));
 	assert.equal(allowed.operation.sandbox.enforcement, "full");

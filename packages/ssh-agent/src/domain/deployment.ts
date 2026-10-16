@@ -75,7 +75,7 @@ interface DeploymentPlanBase {
 	remoteAccess: DeploymentRemoteAccess;
 	project: string;
 	target: { host: string; name?: string };
-	targetBinding: { workspaceRevision?: number; port: number; hostKeyAlgorithm?: string; hostKeyFingerprint: string; credentialId: string; credentialAuthVersion: number; remoteUser: string; writableRoot: string; sandboxWritableRoots?: string[] };
+	targetBinding: { workspaceRevision?: number; port: number; hostKeyAlgorithm?: string; hostKeyFingerprint: string; credentialId: string; credentialAuthVersion: number; remoteUser: string; /** Legacy audit metadata only; never used as an upload or sandbox boundary. */ writableRoot?: string; sandboxWritableRoots?: string[] };
 	module: { id: string; name: string };
 	restart: DeploymentRemoteCommand;
 	verify?: DeploymentRemoteCommand;
@@ -98,10 +98,16 @@ export type DeploymentPlan = DeploymentPlanV1 | DeploymentPlanV2;
 
 export interface DeploymentStageView {
 	status: DeployStageStatus;
+	executionId?: string;
+	/** Last durable chunk in deployment_logs; log is a bounded display/model tail. */
+	logCursor?: number;
+	logTruncated?: boolean;
 	startedAt?: number;
 	finishedAt?: number;
 	log: string;
 	progress?: { current: number; total: number };
+	step?: { current: number; total: number; cwd: string; command: string };
+	artifact?: { index: number; count: number; source: string; remotePath: string; bytesTransferred: number; totalBytes: number };
 	error?: string;
 	exitCode?: number;
 	failureCode?: SshFailureCode;
@@ -183,7 +189,8 @@ export interface DeploymentDiscussion {
 		credentialId: string;
 		credentialAuthVersion: number;
 		remoteUser: string;
-		writableRoot: string;
+		/** Legacy audit metadata only; new discussions omit this field. */
+		writableRoot?: string;
 		sandboxWritableRoots?: string[];
 	};
 	createdAt: number;
@@ -194,41 +201,53 @@ export interface DeploymentDiscussion {
 export class DeploymentError extends Error {
 	readonly code: string;
 	readonly status: number;
-	constructor(code: string, message: string, status = 400) {
+	readonly field?: string;
+	readonly details?: Record<string, string | number | boolean | readonly string[]>;
+	constructor(code: string, message: string, status = 400, context: {
+		field?: string; details?: Record<string, string | number | boolean | readonly string[]>;
+	} = {}) {
 		super(message);
 		this.name = "DeploymentError";
 		this.code = code;
 		this.status = status;
+		this.field = context.field;
+		this.details = context.details;
+	}
+
+	toJSON() {
+		return { code: this.code, message: this.message,
+			...(this.field === undefined ? {} : { field: this.field }),
+			...(this.details === undefined ? {} : { details: this.details }) };
 	}
 }
 
 /** Parse only the machine-readable front matter. Human notes are never executable. */
 export function parseDeploymentProfile(source: string): DeploymentProfile {
 	if (Buffer.byteLength(source, "utf8") > 128 * 1024)
-		throw new DeploymentError("deployment_profile_invalid", "Deployment profile is too large");
+		profileError("file", "must be at most 128 KiB");
 	const frontMatter = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/u.exec(source)?.[1];
 	if (frontMatter === undefined)
-		throw new DeploymentError("deployment_profile_invalid", "Deployment profile needs YAML front matter");
+		profileError("file", "needs YAML front matter between --- delimiters");
 	const document = parseDocument(frontMatter, { uniqueKeys: true, strict: true });
 	if (document.errors.length > 0)
-		throw new DeploymentError("deployment_profile_invalid", `Invalid deployment YAML: ${document.errors[0]?.message}`);
+		profileError("file", `invalid deployment YAML: ${document.errors[0]?.message}`);
 	const root = record(document.toJS({ maxAliasCount: 0 }), "profile");
 	keys(root, ["version", "project", "target", "connection", "modules"], "profile");
-	if (root.version !== 1 && root.version !== 2) throw new DeploymentError("deployment_profile_invalid", "Unsupported deployment profile version");
+	if (root.version !== 1 && root.version !== 2) profileError("version", "must be 1 or 2");
 	const target = record(root.target, "target");
 	keys(target, ["host", "name"], "target");
 	const connection = record(root.connection, "connection");
 	keys(connection, ["profile"], "connection");
 	if (!Array.isArray(root.modules) || root.modules.length === 0 || root.modules.length > 50)
-		throw new DeploymentError("deployment_profile_invalid", "modules must contain 1 to 50 entries");
+		profileError("modules", "must be an array containing 1 to 50 entries");
 	const ids = new Set<string>();
 	const modules = root.modules.map((value, index): DeployModuleV1 | DeployModuleV2 => {
 		const label = `modules[${index}]`;
 		const module = record(value, label);
 		keys(module, ["id", "name", "workdir", "build", "upload", "restart", "verify"], label);
 		const id = field(module.id, `${label}.id`, 80);
-		if (!/^[a-z0-9][a-z0-9_-]*$/u.test(id) || ids.has(id))
-			throw new DeploymentError("deployment_profile_invalid", `Invalid or duplicate ${label}.id`);
+		if (!/^[a-z0-9][a-z0-9_-]*$/u.test(id)) profileError(`${label}.id`, "must start with a lowercase letter or digit and contain only lowercase letters, digits, underscores or hyphens");
+		if (ids.has(id)) profileError(`${label}.id`, `duplicates an earlier module id: ${id}`);
 		ids.add(id);
 		const build = record(module.build, `${label}.build`);
 		const upload = record(module.upload, `${label}.upload`);
@@ -246,10 +265,10 @@ export function parseDeploymentProfile(source: string): DeploymentProfile {
 			if (verify) keys(verify, ["instructions"], `${label}.verify`);
 			const directories = upload.allowedDirectories;
 			if (!Array.isArray(directories) || directories.length === 0 || directories.length > 16)
-				throw new DeploymentError("deployment_profile_invalid", `${label}.upload.allowedDirectories must contain 1 to 16 directories`);
+				profileError(`${label}.upload.allowedDirectories`, "must be an array containing 1 to 16 directories");
 			const allowedDirectories = directories.map((directory, directoryIndex) => absoluteRemotePath(directory, `${label}.upload.allowedDirectories[${directoryIndex}]`, true));
 			if (new Set(allowedDirectories).size !== allowedDirectories.length)
-				throw new DeploymentError("deployment_profile_invalid", `${label}.upload.allowedDirectories contains duplicates`);
+				profileError(`${label}.upload.allowedDirectories`, "contains duplicates; each directory must be unique");
 			return {
 				...common,
 				build: { instructions: field(build.instructions, `${label}.build.instructions`, 4000) },
@@ -284,24 +303,26 @@ function absoluteRemotePath(value: unknown, name: string, directory: boolean): s
 	const path = field(value, name, 2048);
 	if (!path.startsWith("/") || (!directory && path === "/") ||
 		(path !== "/" && path.endsWith("/")) || posix.normalize(path) !== path)
-		throw new DeploymentError("deployment_profile_invalid", `${name} must be a normalized absolute ${directory ? "directory" : "file"} path`);
+		profileError(name, `must be a normalized absolute ${directory ? "directory" : "file"} path without dot segments, repeated slashes or a trailing slash`);
 	return path;
 }
 
 function record(value: unknown, name: string): Record<string, unknown> {
 	if (!value || typeof value !== "object" || Array.isArray(value))
-		throw new DeploymentError("deployment_profile_invalid", `${name} must be an object`);
+		profileError(name, "must be an object");
 	return value as Record<string, unknown>;
 }
 
 function keys(value: Record<string, unknown>, allowed: readonly string[], name: string): void {
 	const extra = Object.keys(value).find((key) => !allowed.includes(key));
-	if (extra) throw new DeploymentError("deployment_profile_invalid", `${name}.${extra} is not supported`);
+	if (extra) profileError(`${name}.${extra}`, `is not supported; allowed fields: ${allowed.join(", ")}`);
 }
 
 function field(value: unknown, name: string, maximum: number): string {
-	if (typeof value !== "string" || !value.trim() || value.length > maximum || /[\0-\x08\x0b\x0c\x0e-\x1f]/u.test(value))
-		throw new DeploymentError("deployment_profile_invalid", `${name} must be non-empty text`);
+	if (typeof value !== "string") profileError(name, "must be text");
+	if (!value.trim()) profileError(name, "must be non-empty text");
+	if (value.length > maximum) profileError(name, `must be at most ${maximum} characters; received ${value.length}`);
+	if (/[\0-\x08\x0b\x0c\x0e-\x1f]/u.test(value)) profileError(name, "must not contain control characters");
 	return value.trim();
 }
 
@@ -309,6 +330,10 @@ function relativePath(value: unknown, name: string): string {
 	const path = field(value, name, 2048);
 	const parts = path.split(/[\\/]/u);
 	if (path.startsWith("/") || parts.includes("..") || parts.includes("") || path.includes("\\"))
-		throw new DeploymentError("deployment_profile_invalid", `${name} must stay within the project`);
+		profileError(name, "must stay within the project and be relative without backslashes, empty segments or parent traversal");
 	return path;
+}
+
+function profileError(field: string, reason: string): never {
+	throw new DeploymentError("deployment_profile_invalid", `${field}: ${reason}`, 400, { field });
 }

@@ -1,5 +1,5 @@
 import { DatabaseSync } from "node:sqlite";
-import { mkdtemp, mkdir, rm, stat, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, realpath, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -16,7 +16,7 @@ import { SqliteDeploymentRepository } from "../src/infrastructure/sqlite/sqlite-
 const temporary: string[] = [];
 afterEach(async () => { for (const path of temporary.splice(0)) await rm(path, { recursive: true, force: true }); });
 
-async function harness(overrides: { sandboxEnabledRef?: { current: boolean }; host?: string; remoteRoot?: string; guard?: boolean; remoteFails?: boolean; remoteFailureRef?: { current: boolean }; remoteFailureCode?: "remote_exit_non_zero" | "sandbox_partial_enforcement"; transferHost?: string; buildCommand?: string; uploadGate?: Promise<void>; includeVerify?: boolean; cancelAgentRun?: (sessionId: string, agentRunId: string) => Promise<void>; assessRemoteSandbox?: (paths: readonly string[]) => RemoteSandboxRoute } = {}) {
+async function harness(overrides: { sandboxEnabledRef?: { current: boolean }; host?: string; remoteRoot?: string; resolveRemoteDirectory?: (path: string) => string; guard?: boolean; remoteFails?: boolean; remoteFailureRef?: { current: boolean }; remoteFailureCode?: "remote_exit_non_zero" | "sandbox_partial_enforcement"; transferHost?: string; buildCommand?: string; uploadGate?: Promise<void>; includeVerify?: boolean; cancelAgentRun?: (sessionId: string, agentRunId: string) => Promise<void>; assessRemoteSandbox?: (paths: readonly string[]) => RemoteSandboxRoute } = {}) {
 	const root = await mkdtemp(join(tmpdir(), "gori-deploy-test-"));
 	temporary.push(root);
 	await mkdir(join(root, ".gori"));
@@ -73,7 +73,7 @@ ${overrides.includeVerify === false ? "" : "    verify:\n      command: systemct
 	});
 	const target = { workspaceId: "workspace-1", workspaceRevision: 1, hostname: overrides.host ?? "example.org", port: 22,
 		hostKeyAlgorithm: "ssh-ed25519", hostKeyFingerprint: "SHA256:test", credentialId: "credential-1",
-		credentialAuthVersion: 1, remoteUser: "test", defaultCwd: overrides.remoteRoot ?? "/srv/api",
+		credentialAuthVersion: 1, remoteUser: "test", sandboxWritableRoots: [overrides.remoteRoot ?? "/srv/api"],
 		connectTimeoutMs: 1000, keepaliveIntervalMs: 1000, keepaliveMaxCount: 3 };
 	const service = new DeploymentService({
 		sessions: { findById: async () => ({ id: "session-1", workspaceId: "workspace-1", workDir: root, sandboxEnabled: overrides.sandboxEnabledRef?.current ?? true }) } as never,
@@ -82,7 +82,7 @@ ${overrides.includeVerify === false ? "" : "    verify:\n      command: systemct
 		commands: { submit, preflightGuard: async () => ({ allowed: overrides.guard !== false }) } as never,
 		sandboxApprovals,
 		transfers: {
-			listDirectory: async (_workspaceId: string, path: string) => ({ path, entries: [] }),
+			listDirectory: async (_workspaceId: string, path: string) => ({ path: overrides.resolveRemoteDirectory?.(path) ?? path, entries: [] }),
 			create: async () => ({ id: "transfer-1", target: { ...target, hostname: overrides.transferHost ?? target.hostname } }), upload,
 			get: async () => ({ bytesTransferred: 0, totalBytes: 4 }),
 		} as never,
@@ -147,6 +147,57 @@ function approveDeployment(service: DeploymentService, id: string, sessionId = "
 }
 
 describe("deployment workflow", () => {
+	it("explains canonical Profile escapes in initial proposals, uploads and repair proposals", async () => {
+		let escaped = true;
+		const { service, database, upload } = await harness({ remoteRoot: "/root",
+			resolveRemoteDirectory: (path) => escaped && path === "/srv/api/lib" ? "/outside/lib" : path });
+		const proposal = { buildSteps: [{ workdir: ".", command: "node -e \"require('node:fs').writeFileSync('artifact.tar.gz','data')\"" }],
+			artifacts: [{ source: "artifact.tar.gz", target: "/srv/api/lib/artifact.tar.gz" }], restart: { command: "true" } };
+		try {
+			const expected = { code: "deployment_upload_outside_profile", field: "artifacts[0].target",
+				details: { path: "/srv/api/lib/artifact.tar.gz", resolvedParent: "/outside/lib", allowedDirectory: "/srv/api" } };
+			await expect(service.proposeForAgent("session-1", "planner", "deploy-example.org.md", "api", proposal, agentSignal()))
+				.rejects.toMatchObject(expected);
+			escaped = false;
+			const run = await service.proposeForAgent("session-1", "planner", "deploy-example.org.md", "api", proposal, agentSignal());
+			expect(run.plan.targetBinding).not.toHaveProperty("writableRoot");
+			approveDeployment(service, run.id);
+			await service.claimForAgent("session-1", run.id, AGENT_RUN_ID);
+			await service.executeStageForAgent("session-1", run.id, AGENT_RUN_ID, "build", agentSignal());
+			escaped = true;
+			const failed = await service.executeStageForAgent("session-1", run.id, AGENT_RUN_ID, "upload", agentSignal());
+			expect(failed.stages.upload).toMatchObject({ status: "failed", error: expect.stringContaining("artifacts[0].target: /srv/api/lib/artifact.tar.gz resolves outside") });
+			await expect(service.proposeRecoveryForAgent("session-1", run.id, AGENT_RUN_ID, 1,
+				{ stage: "upload", reason: "Repair upload", artifacts: proposal.artifacts }, agentSignal())).rejects.toMatchObject(expected);
+			expect(upload).not.toHaveBeenCalled();
+		} finally { await service.close(); database.close(); }
+	});
+
+	it("names the missing Profile and rejected build directory before creating a plan", async () => {
+		const { service, database, root, upload, submit } = await harness();
+		try {
+			await expect(service.prepare("session-1", "deploy-missing.md", "api")).rejects.toMatchObject({
+				code: "deployment_profile_invalid", field: "file", details: { path: join(await realpath(root), ".gori/deploy-missing.md"), filesystemCode: "ENOENT" },
+			});
+			await expect(service.proposeForAgent("session-1", "missing-build", "deploy-example.org.md", "api", {
+				buildSteps: [{ workdir: "missing-directory", command: "true" }], artifacts: [{ source: "artifact.tar.gz", target: "/srv/api/artifact.tar.gz" }], restart: { command: "true" },
+			}, agentSignal())).rejects.toMatchObject({ code: "deployment_workdir_unavailable", field: "buildSteps[0].workdir",
+				details: { path: join(await realpath(root), "missing-directory"), filesystemCode: "ENOENT" } });
+			expect(service.latest("session-1")).toBeNull();
+			expect(upload).not.toHaveBeenCalled(); expect(submit).not.toHaveBeenCalled();
+		} finally { await service.close(); database.close(); }
+	});
+
+	it("keeps the exact missing artifact path in a failed stage result", async () => {
+		const { service, database, root, upload } = await harness({ buildCommand: "'true'" });
+		try {
+			const plan = await service.prepare("session-1", "deploy-example.org.md", "api");
+			const result = await claimAndRun(service, plan.id);
+			expect(result.stages.build).toMatchObject({ status: "failed", error: expect.stringContaining(`artifacts[0].source: ${join(await realpath(root), "artifact.tar.gz")}`) });
+			expect(result.stages.build.error).toContain("ENOENT");
+			expect(upload).not.toHaveBeenCalled();
+		} finally { await service.close(); database.close(); }
+	});
 	it("skips all sandbox assessments and exception grants for a disabled Session", async () => {
 		const assessRemoteSandbox = vi.fn(() => sandboxReady);
 		const { service, database, submit } = await harness({ sandboxEnabledRef: { current: false }, assessRemoteSandbox });
@@ -301,7 +352,7 @@ describe("deployment workflow", () => {
 		await service.close(); database.close();
 	});
 	it("keeps a failed model-planned build recoverable and resumes the same deployment after review", async () => {
-		const { service, database, root, upload } = await harness();
+		const { service, database, root, upload } = await harness({ remoteRoot: "/root" });
 		await writeFile(join(root, ".gori", "deploy-example.org.md"), `---
 version: 2
 project: test
@@ -433,7 +484,7 @@ modules:
 		await service.close(); database.close();
 	});
 	it("freezes a model-proposed multi-artifact release and executes only after exact remote approvals", async () => {
-		const { service, database, root, upload, submit } = await harness();
+		const { service, database, root, upload, submit } = await harness({ remoteRoot: "/root" });
 		await writeFile(join(root, ".gori", "deploy-example.org.md"), `---
 version: 2
 project: test
@@ -534,12 +585,16 @@ modules:
 		await service.close(); database.close();
 	});
 
-	it("refuses a mismatched host and remote destination outside the writable root", async () => {
+	it("refuses a mismatched host and permits the Profile upload destination independently of sandbox roots", async () => {
 		const wrongHost = await harness({ host: "other.example.org" });
 		await expect(wrongHost.service.prepare("session-1", "deploy-example.org.md", "api")).rejects.toThrow("current Workspace host");
 		await wrongHost.service.close(); wrongHost.database.close();
 		const wrongRoot = await harness({ remoteRoot: "/srv/other" });
-		await expect(wrongRoot.service.prepare("session-1", "deploy-example.org.md", "api")).rejects.toThrow("inside the remote Workspace directory");
+		const run = await wrongRoot.service.prepare("session-1", "deploy-example.org.md", "api");
+		expect(run.plan.targetBinding).not.toHaveProperty("writableRoot");
+		expect(run.plan.targetBinding.sandboxWritableRoots).toEqual(["/srv/other"]);
+		expect((await claimAndRun(wrongRoot.service, run.id)).status).toBe("success");
+		expect(wrongRoot.upload).toHaveBeenCalledTimes(1);
 		await wrongRoot.service.close(); wrongRoot.database.close();
 	});
 
@@ -882,8 +937,8 @@ modules:
 		expect(older).toMatchObject({ hasMore: false, nextCursor: null });
 		expect([page.runs[0]!.id, older.runs[0]!.id].sort()).toEqual([first.id, second.id].sort());
 		expect(service.listHistory("other-session").runs).toEqual([]);
-		expect(() => service.listHistory("other-session", 1, page.nextCursor!)).toThrow("cursor is invalid");
-		expect(() => service.listHistory("session-1", 1, "tampered!")).toThrow("cursor is invalid");
+		expect(() => service.listHistory("other-session", 1, page.nextCursor!)).toThrow(expect.objectContaining({ field: "history.cursor" }));
+		expect(() => service.listHistory("session-1", 1, "tampered!")).toThrow(expect.objectContaining({ field: "history.cursor" }));
 		expect(() => repository.listRecent("session-1", 0)).toThrow();
 		await service.close(); database.close();
 	});

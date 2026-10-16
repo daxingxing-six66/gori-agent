@@ -18,7 +18,7 @@ import { parseCreateSession, parseUpdateSession } from "../src/api/request-valid
 
 const target: SshTargetSnapshot = { workspaceId: "workspace", workspaceRevision: 1, credentialId: "credential",
 	credentialAuthVersion: 1, hostname: "test.invalid", port: 22, remoteUser: "test", hostKeyAlgorithm: "ssh-ed25519",
-	hostKeyFingerprint: "SHA256:test", defaultCwd: "/srv/app", connectTimeoutMs: 1000, keepaliveIntervalMs: 1000, keepaliveMaxCount: 3 };
+	hostKeyFingerprint: "SHA256:test", sandboxWritableRoots: ["/srv/app"], connectTimeoutMs: 1000, keepaliveIntervalMs: 1000, keepaliveMaxCount: 3 };
 const cleanups: (() => Promise<void>)[] = [];
 afterEach(async () => { for (const close of cleanups.splice(0)) await close(); });
 
@@ -59,7 +59,7 @@ function fixture(options: { commandSandbox?: boolean } = {}) {
 	const guards = { evaluate: vi.fn(async () => ({ allowed: true })) };
 	const prepare = vi.fn(async (input: { cwd: string; command: string }) => ({ command: `confined:${wrapRemoteCommand(input.cwd, input.command)}`,
 		confirmation: "test: confined", sandbox: { mode: "workspace_write" as const, backend: "landlock" as const,
-			enforcement: "full" as const, abi: 8, launcherVersion: "3", sandboxRoot: target.defaultCwd } }));
+			enforcement: "full" as const, abi: 8, launcherVersion: "3", sandboxRoot: target.sandboxWritableRoots![0]! } }));
 	const prepareTerminal = vi.fn(terminalTestSandbox.prepareTerminal);
 	const sandbox = { prepare, prepareTerminal };
 	const execute = vi.fn(async (input: ExecuteRemoteCommandInput) => {

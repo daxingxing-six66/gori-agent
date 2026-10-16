@@ -22,7 +22,7 @@ function tool(name: string): AgentTool {
 		execute: async () => ({ content: [], details: {} }) };
 }
 
-async function createRuntime(request: typeof fetch) {
+async function createRuntime(request: typeof fetch, remote = tool("remote_server_call")) {
 	const models = createModels();
 	models.setProvider(createProvider<"openai-completions">({
 		id: model.provider, name: "Retry test provider", models: [model],
@@ -42,7 +42,7 @@ async function createRuntime(request: typeof fetch) {
 		agentEvents: { handle: () => undefined },
 		attachments: { hydrateProviderContext: async (_sessionId, context) => context },
 		decisions: { request: async () => [{ kind: "skipped" }] },
-		createRemoteTool: () => tool("remote_server_call"),
+		createRemoteTool: () => remote,
 		createTerminalTool: () => tool("terminal_interaction"),
 		createSftpTool: () => tool("sftp_upload"),
 		createSftpDownloadTool: () => tool("sftp_download"),
@@ -158,15 +158,16 @@ describe("main chat provider HTTP retries", () => {
 			.mockResolvedValueOnce(errorResponse(503))
 			.mockResolvedValueOnce(errorResponse(503))
 			.mockResolvedValueOnce(completionResponse());
-		const runtime = await createRuntime(request);
-		const remote = runtime.context.tools!.find((entry) => entry.name === "remote_server_call")!;
+		const remote = tool("remote_server_call");
 		const execute = vi.spyOn(remote, "execute");
+		const runtime = await createRuntime(request, remote);
 		try {
 			const pending = runtime.prompt(prompt);
 			await vi.advanceTimersByTimeAsync(14_000);
 			await pending;
 			expect(request).toHaveBeenCalledTimes(5);
 			expect(execute).toHaveBeenCalledOnce();
+			expect(runtime.context.messages.filter((message) => message.role === "toolResult")).toHaveLength(1);
 			expect(runtime.publicFailure).toBeUndefined();
 		} finally { await runtime.dispose(); }
 	});

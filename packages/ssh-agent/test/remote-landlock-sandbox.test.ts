@@ -22,7 +22,7 @@ import { SqliteSessionRepository } from "../src/infrastructure/sqlite/sqlite-ses
 
 const target: SshTargetSnapshot = { workspaceId: "w", workspaceRevision: 1, hostname: "example.test", port: 22,
  hostKeyAlgorithm: "ssh-ed25519", hostKeyFingerprint: "SHA256:test", credentialId: "c", credentialAuthVersion: 1,
- remoteUser: "test", defaultCwd: "/opt/app", connectTimeoutMs: 1000,
+ remoteUser: "test", sandboxWritableRoots: ["/opt/app"], connectTimeoutMs: 1000,
  keepaliveIntervalMs: 1000, keepaliveMaxCount: 3 };
 const binary = Buffer.from("test launcher binary");
 const hash = createHash("sha256").update(binary).digest("hex");
@@ -79,7 +79,7 @@ function providerFixture() {
  const host = new RemoteHost();
  const loadBinary = vi.fn(async () => binary);
  const provider = new LandlockRemoteSandboxProvider({ broker: host, loadBinary });
- const prepare = (root = "/opt/app") => provider.prepare({ target: { ...target, defaultCwd: root }, cwd: "/opt/app/current",
+ const prepare = (root = "/opt/app") => provider.prepare({ target: { ...target, sandboxWritableRoots: [root] }, cwd: "/opt/app/current",
   command: "python -c 'print(1)'", signal: new AbortController().signal });
  return { host, provider, loadBinary, prepare };
 }
@@ -126,7 +126,7 @@ describe("Remote launcher distribution and capability", () => {
 		const prepared = await f.provider.prepareTerminal({ target, signal: new AbortController().signal });
 		expect(prepared.sandbox).toMatchObject({ mode: "workspace_write", backend: "landlock", enforcement: "full", abi: 5, launcherVersion: "3", sandboxRoot: "/opt/app" });
 		expect(prepared.command).toContain("'--ro' '/' '--rw' '/dev/null' '--rw' '/tmp' '--rw' '/opt/app'");
-		expect(prepared.command).toMatch(/^cd -- '\/opt\/app' && exec /);
+		expect(prepared.command).toMatch(/^exec /);
 		expect(prepared.command).toContain("'--' '--terminal'");
 		expect(prepared.command).not.toContain("/bin/bash");
 		const token = /token=([0-9a-f]{32})$/.exec(prepared.confirmation)?.[1];
@@ -218,7 +218,7 @@ describe("Remote launcher distribution and capability", () => {
 	it("recognizes a kernel-disabled Landlock probe before requiring a writable root", async () => {
 		const f = providerFixture();
 		f.host.unavailable = true;
-		await expect(f.provider.prepareTerminal({ target: { ...target, defaultCwd: "/" }, signal: new AbortController().signal }))
+		await expect(f.provider.prepareTerminal({ target: { ...target, sandboxWritableRoots: ["/"] }, signal: new AbortController().signal }))
 			.rejects.toMatchObject({ failure: { code: "sandbox_unavailable" } });
 		expect(f.host.commands.some((command) => command.includes("realpath -e"))).toBe(false);
 	});
@@ -267,7 +267,7 @@ afterEach(() => { for (const dispose of disposers.splice(0)) dispose(); });
 function operationFixture(options: { sandbox?: RemoteSandboxProvider; noProvider?: boolean; databasePath?: string;
  remoteRoute?: "unavailable" | "outside" } = {}) {
  const db = openSshAgentDatabase(options.databasePath ?? ":memory:");
- db.exec(`INSERT INTO workspaces (id,display_name,environment,hostname,port,default_cwd,remote_default_cwd,connect_timeout_ms,keepalive_interval_ms,keepalive_max_count,revision,created_at,updated_at) VALUES ('w','test','development','example.test',22,'/','/opt/app',1000,1000,3,1,1,1);
+ db.exec(`INSERT INTO workspaces (id,display_name,environment,hostname,port,default_cwd,sandbox_writable_roots_json,connect_timeout_ms,keepalive_interval_ms,keepalive_max_count,revision,created_at,updated_at) VALUES ('w','test','development','example.test',22,'/','["/opt/app"]',1000,1000,3,1,1,1);
  INSERT INTO credentials (id,workspace_id,display_name,type,remote_user,is_active,auth_version,revision,created_at,updated_at) VALUES ('c','w','test','password','test',1,1,1,1,1);
  INSERT INTO sessions (id,workspace_id,display_name,revision,created_at,updated_at,auto_audit) VALUES ('s','w','test',1,1,1,1);`);
  const sessions = new SqliteSessionRepository(db);
@@ -286,7 +286,7 @@ function operationFixture(options: { sandbox?: RemoteSandboxProvider; noProvider
   command: policy.mode === "full_access" ? `unconfined ${command}` : `confined ${command}`,
   sandbox: policy.mode === "full_access"
    ? { mode: "full_access", backend: "none", enforcement: "none" }
-   : { mode: "workspace_write", backend: "landlock", enforcement: "full", abi: 5, launcherVersion: "3", sandboxRoot: target.defaultCwd },
+   : { mode: "workspace_write", backend: "landlock", enforcement: "full", abi: 5, launcherVersion: "3", sandboxRoot: target.sandboxWritableRoots![0]! },
   confirmation: policy.mode === "full_access" ? undefined : "gori-landlock: confined abi=5\n",
  })) };
  let id = 0;
@@ -318,14 +318,14 @@ describe("Command execution and one-shot authorization", () => {
 			preflightRemoteGuard: async () => ({ allowed: true }),
 			assessRemoteSandbox: async () => ({ target, route: remoteRoute === "outside"
 				? { mode: "full_access", reason: "write_path_outside_sandbox", details: "Outside writable roots" }
-				: { mode: "workspace_write", facts: { mode: "workspace_write", backend: "landlock", enforcement: "full", abi: 5, sandboxRoot: target.defaultCwd } } }),
+				: { mode: "workspace_write", facts: { mode: "workspace_write", backend: "landlock", enforcement: "full", abi: 5, sandboxRoot: target.sandboxWritableRoots![0]! } } }),
 		});
 		const coordinator = new ChatToolCallCoordinator({ authorization,
 			approvals: { request: async () => ({ approved: true, source: "user" }) } });
 		const args = { command: "write config" };
 		const approved = await coordinator.beforeToolCall({ run: f.run, toolCallId: "tool", toolName: "remote_server_call",
 			assistantMessageId: "message", args, onApprovalRejection: vi.fn() });
-		f.changeTarget({ ...target, defaultCwd: "/other/app", workspaceRevision: 2 });
+		f.changeTarget({ ...target, sandboxWritableRoots: ["/other/app"], workspaceRevision: 2 });
 		const tool = createRemoteServerCallTool({ sessionId: "s", agentRunId: "run", operations: f.service });
 		await expect(tool.execute("tool", args, undefined, undefined, approved?.executionContext)).rejects.toMatchObject({
 			details: { failure: { code: remoteRoute === "outside" ? "sandbox_approval_required" : "invalid_request" } },

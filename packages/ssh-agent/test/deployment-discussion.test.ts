@@ -53,7 +53,7 @@ modules:
 	const discussions = new SqliteDeploymentDiscussionRepository(database);
 	const target = { workspaceId: "workspace-1", workspaceRevision: 1, hostname: "example.org", port: 22,
 		hostKeyAlgorithm: "ssh-ed25519", hostKeyFingerprint: "SHA256:test", credentialId: "credential-1",
-		credentialAuthVersion: 1, remoteUser: "test", defaultCwd: "/srv/api",
+		credentialAuthVersion: 1, remoteUser: "test", sandboxWritableRoots: ["/srv/api"],
 		connectTimeoutMs: 1000, keepaliveIntervalMs: 1000, keepaliveMaxCount: 3 };
 	const cancelAgentRun = vi.fn(async () => undefined);
 	const createService = (repository: SqliteDeploymentRepository, discussions: SqliteDeploymentDiscussionRepository,
