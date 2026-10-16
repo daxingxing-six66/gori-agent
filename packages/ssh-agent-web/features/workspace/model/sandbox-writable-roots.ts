@@ -26,9 +26,8 @@ export function validSandboxWritableRoots(value: unknown, allowEmpty = false): v
 		value.every((root) => typeof root === "string" && isRemoteSandboxRoot(root)) && new Set(value).size === value.length;
 }
 
-export function configuredSandboxWritableRoots(config: { sandboxWritableRoots?: string[]; remoteDefaultCwd?: string }): string[] {
-	const cwd = config.remoteDefaultCwd ?? "/";
-	return [...(config.sandboxWritableRoots ?? (isRemoteSandboxRoot(cwd) ? [cwd] : []))];
+export function configuredSandboxWritableRoots(config: { sandboxWritableRoots?: string[] }): string[] {
+	return [...(config.sandboxWritableRoots ?? [])];
 }
 
 export function validSandboxFactRoots(facts: { sandboxRoot?: unknown; sandboxRoots?: unknown }): boolean {

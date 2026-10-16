@@ -47,7 +47,7 @@ export function SessionDialog({ session, workspace, onClose, onReload, onSubmit 
 	const close = () => { if (!pending) onClose(); };
 
 	if (picker === "local") return <LocalDirectoryPicker initialPath={workDir || undefined} onClose={() => setPicker(null)} onSelect={(path) => { setWorkDir(path); setPicker(null); }} />;
-	if (picker === "remote" && workspace) return <RemoteDirectoryPicker initialPath={workspace.remoteDefaultCwd ?? "/"} load={loadRemote}
+	if (picker === "remote" && workspace) return <RemoteDirectoryPicker initialPath={roots[0] ?? "/"} load={loadRemote}
 		onClose={() => setPicker(null)} multiple={{ initialPaths: roots, onSelect: (selected) => { setRoots(selected); setPicker(null); } }} />;
 
 	return (

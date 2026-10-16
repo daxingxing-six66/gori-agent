@@ -340,6 +340,9 @@ function messageKey(message: AgentMessage): string {
 
 function messageFingerprint(message: AgentMessage): string {
 	if (message.role === "system" && message.runtimeEventId) return `system:${message.runtimeEventId}`;
+	if (message.role === "custom" && message.customType === "deployment" &&
+		isRecord(message.details) && typeof message.details.deploymentId === "string")
+		return `deployment:${message.details.deploymentId}`;
 	return `${message.role}:${message.timestamp}${message.role === "toolResult" ? `:${message.toolCallId}` : ""}`;
 }
 

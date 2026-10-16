@@ -1,0 +1,51 @@
+.deploy-task-page { display: flex; flex-direction: column; height: 100%; min-width: 0; min-height: 0; padding: 24px; gap: 24px; color: var(--ink); background: var(--surface); overflow: auto; }
+.deploy-task-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.deploy-task-heading h2 { font-size: 20px; font-weight: 600; letter-spacing: -.025em; overflow-wrap: anywhere; }
+.deploy-task-heading p { margin-top: 6px; font-size: 12px; color: var(--text-muted); overflow-wrap: anywhere; }
+.deploy-task-state { display: flex; align-items: center; gap: 7px; font-size: 12px; white-space: nowrap; color: var(--accent); }
+.deploy-task-state[data-status="failed"], .deploy-task-error { color: var(--danger); }
+.deploy-task-state[data-status="recovering"], .deploy-task-pending { color: var(--warning); }
+.deploy-stage-overview { display: grid; grid-template-columns: repeat(5, minmax(0,1fr)); gap: 6px; }
+.deploy-stage-overview li { border-top: 3px solid var(--line); padding-top: 10px; color: var(--text-muted); }
+.deploy-stage-overview li[data-status="success"], .deploy-stage-overview li[data-status="running"] { border-color: var(--accent); }
+.deploy-stage-overview li[data-status="failed"] { border-color: var(--danger); color: var(--danger); }
+.deploy-stage-overview li[data-current="true"] { color: var(--accent); }
+.deploy-stage-overview button { display: flex; align-items: center; gap: 6px; padding: 4px 0; font-size: 12px; width: 100%; }
+.deploy-stage-overview li[data-selected="true"] button { font-weight: 600; }
+.deploy-stage-facts { border-top: 1px solid var(--line); padding-top: 20px; }
+.deploy-stage-title { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px; }
+.deploy-stage-title h3 { font-size: 16px; font-weight: 600; }
+.deploy-stage-title span, .deploy-build-step > span { color: var(--text-muted); font-size: 11px; }
+.deploy-build-step { margin-top: 16px; display: grid; gap: 8px; }
+.deploy-build-step code { font-size: 12px; overflow-wrap: anywhere; }
+.deploy-artifact { margin-top: 20px; }
+.deploy-artifact > div { display: flex; justify-content: space-between; gap: 12px; font-size: 12px; }
+.deploy-artifact strong { font-size: 15px; font-weight: 500; overflow-wrap: anywhere; }
+.deploy-artifact p { color: var(--text-muted); font-size: 12px; margin-top: 5px; overflow-wrap: anywhere; }
+.deploy-artifact progress { width: 100%; height: 5px; margin: 16px 0 10px; accent-color: var(--accent); }
+.deploy-stage-logs { display: flex; flex: 1; min-height: 180px; }
+.deploy-stage-log-page { display: flex; flex: 1; min-height: 0; min-width: 0; }
+.deploy-stage-log-page[hidden], .deploy-task-composer[hidden] { display: none; }
+.deploy-logs { display: flex; flex: 1; flex-direction: column; min-width: 0; min-height: 0; }
+.deploy-log-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 12px; font-size: 12px; }
+.deploy-log-toolbar h3 { font-weight: 500; }
+.deploy-log-toolbar > div { display: flex; gap: 12px; color: var(--text-muted); font-size: 11px; }
+.deploy-log-toolbar button[aria-pressed="true"] { color: var(--accent); }
+.deploy-log-viewport { flex: 1; min-height: 120px; overflow: auto; border: 1px solid var(--line); border-radius: 9px; background: var(--surface-muted); font: 11px/1.8 var(--font-mono, monospace); }
+.deploy-log-group-toggle { position: sticky; top: 0; display: flex; align-items: center; gap: 8px; width: 100%; padding: 8px 12px; color: var(--text-muted); background: var(--surface-muted); border-bottom: 1px solid var(--line); text-align: left; }
+.deploy-log-viewport pre { white-space: pre-wrap; overflow-wrap: anywhere; padding: 0 12px; margin: 0; display: inline; }
+.deploy-log-viewport .deploy-log-boundary, .deploy-log-viewport .deploy-log-result { display: block; color: var(--text-muted); }
+.deploy-log-chunk[data-log-error="true"] { color: var(--danger); }
+.deploy-log-note, .deploy-log-error { font-size: 11px; padding: 12px; color: var(--text-muted); }
+.deploy-task-footer { display: flex; align-items: center; gap: 16px; margin-top: auto; font-size: 11px; color: var(--text-muted); }
+.deploy-task-footer button:last-child { margin-left: auto; }
+.deploy-task-composer { display: flex; align-items: flex-end; gap: 12px; border: 1px solid var(--line); border-radius: 12px; padding: 12px; }
+.deploy-task-composer textarea { width: 100%; resize: vertical; outline: none; font-size: 13px; background: transparent; }
+.deploy-task-composer button { padding: 6px; color: var(--accent); }
+.deploy-task-page button:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.deploy-task-page button:disabled { opacity: .45; cursor: not-allowed; }
+.deploy-task-picker { display: grid; gap: 20px; }
+.deploy-task-button { justify-self: start; font-size: 12px; color: var(--accent); }
+.deploy-task-empty { padding: 20px 0; color: var(--text-muted); font-size: 13px; }
+.deploy-task-error { font-size: 12px; overflow-wrap: anywhere; }
+@media (max-width: 700px) { .deploy-task-page { padding: 16px; gap: 18px; } .deploy-stage-overview { gap: 4px; } .deploy-stage-overview button { gap: 4px; font-size: 11px; } }

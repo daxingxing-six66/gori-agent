@@ -10,7 +10,7 @@ import { isRemoteSandboxRoot, type Workspace } from "../features/workspace/model
 const workspace: Workspace = {
 	id: "remote /host", displayName: "test", environment: "development",
 	host: { hostname: "example.test", port: 22, hostKey: null },
-	activeCredentialId: "credential", defaultCwd: "/local", remoteDefaultCwd: "/opt/app",
+	activeCredentialId: "credential", defaultCwd: "/local", sandboxWritableRoots: ["/opt/app"],
 	connection: { connectTimeoutMs: 10000, keepaliveIntervalMs: 15000, keepaliveMaxCount: 3 },
 	revision: 1, createdAt: 0, updatedAt: 0,
 };
@@ -30,8 +30,8 @@ describe("remote sandbox configuration", () => {
 		expect(html).toContain("/opt/app");
 		expect(html).toContain(messages["workspace.sandbox.scope"]);
 	});
-	it("requires writable directories independently of the default cwd for legacy workspaces", () => {
-		const legacy = { ...workspace, remoteDefaultCwd: "/" };
+	it("requires explicitly configured writable directories for legacy workspaces", () => {
+		const legacy = { ...workspace, sandboxWritableRoots: undefined };
 		const messages = messagesByLocale["en-US"];
 		const panel = renderToStaticMarkup(<IntlProvider locale="en-US" messages={messages}><RemoteSandboxPanel workspace={legacy} /></IntlProvider>);
 		expect(panel).toMatch(/<button[^>]*disabled=""/);

@@ -96,22 +96,22 @@ describe("workspace connection test", () => {
 			expect(fetchMock.mock.calls[0]![1]).toMatchObject({ method: "POST", signal: abort.signal, body: JSON.stringify(draft), cache: "no-store" });
 		} finally { vi.unstubAllGlobals(); }
 	});
-	it("uses read-only remote directory selectors in create and edit forms", () => {
+	it("keeps sandbox directory selection while removing remote working-directory configuration", () => {
 		const render = (node: React.ReactNode) => renderToStaticMarkup(<IntlProvider locale="en-US" messages={enUSMessages}>{node}</IntlProvider>);
 		const create = render(<WorkspaceDialog onClose={() => {}} onCreated={() => {}} />);
-		const edit = render(<WorkspaceEditDialog workspace={{ id: "w", displayName: "W", environment: "development", host: { hostname: "example", port: 22, hostKey: null }, activeCredentialId: "c", defaultCwd: "/", remoteDefaultCwd: "/srv/app", connection: { connectTimeoutMs: 10000, keepaliveIntervalMs: 15000, keepaliveMaxCount: 3 }, revision: 1, createdAt: 1, updatedAt: 1 }} onClose={() => {}} onSubmit={async () => {}} />);
+		const edit = render(<WorkspaceEditDialog workspace={{ id: "w", displayName: "W", environment: "development", host: { hostname: "example", port: 22, hostKey: null }, activeCredentialId: "c", defaultCwd: "/", connection: { connectTimeoutMs: 10000, keepaliveIntervalMs: 15000, keepaliveMaxCount: 3 }, revision: 1, createdAt: 1, updatedAt: 1 }} onClose={() => {}} onSubmit={async () => {}} />);
 		for (const html of [create, edit]) {
-			expect(html).toContain('aria-label="Choose remote working directory"');
-			expect(html).not.toMatch(/<input[^>]*aria-label="Default remote working directory"/);
-			expect(html).not.toContain("Remote sandbox writable root");
+			expect(html).toContain('aria-label="Sandbox writable directories"');
+			expect(html).not.toContain("Default remote working directory");
+			expect(html).not.toContain('aria-label="Choose remote working directory"');
 		}
-		expect(create).toMatch(/<button[^>]*disabled=""[^>]*aria-label="Choose remote working directory"/);
-		expect(edit).toContain("/srv/app");
+		expect(create).toContain("No writable directories selected");
+		expect(edit).toContain("No writable directories selected");
 	});
 	it("renders remote SFTP picker with directory-only selection", () => {
 		const html = renderToStaticMarkup(<IntlProvider locale="en-US" messages={enUSMessages}><RemoteDirectoryPicker initialPath="/" load={async () => ({ path: "/", entries: [] })} onClose={() => {}} onSelect={() => {}} /></IntlProvider>);
 		expect(html).toContain('role="dialog"');
-		expect(html).toContain("Choose remote working directory");
+		expect(html).toContain("Choose remote directory");
 		expect(html).toContain("Choose current directory");
 	});
 	it("sends draft credentials and path to the temporary browse API with cancellation", async () => {

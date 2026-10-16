@@ -14,7 +14,7 @@ import { messagesByLocale } from "../features/i18n/messages/messages";
 
 const roots = ["/srv/app", "/var/log/app"];
 const workspace: Workspace = { id: "workspace", displayName: "test", environment: "development", host: { hostname: "fixture.invalid", port: 22, hostKey: null },
-	activeCredentialId: "credential", defaultCwd: "/local", remoteDefaultCwd: "/", sandboxWritableRoots: roots,
+	activeCredentialId: "credential", defaultCwd: "/local", sandboxWritableRoots: roots,
 	connection: { connectTimeoutMs: 10000, keepaliveIntervalMs: 15000, keepaliveMaxCount: 3 }, revision: 1, createdAt: 1, updatedAt: 1 };
 const facts = { mode: "workspace_write", backend: "bubblewrap", enforcement: "full", sandboxRoot: roots[0], sandboxRoots: roots, bubblewrapVersion: "0.12.0" } as const;
 
@@ -35,9 +35,9 @@ describe("multiple sandbox directory UI", () => {
 		expect(badge).not.toContain('<button');
 		expect(badge).toContain(messages["session.sandbox.on"]);
 	});
-	it("preserves old defaults but does not turn an explicitly empty list into cwd permissions", () => {
-		expect(configuredSandboxWritableRoots({ remoteDefaultCwd: "/srv/app" })).toEqual(["/srv/app"]);
-		expect(configuredSandboxWritableRoots({ remoteDefaultCwd: "/srv/app", sandboxWritableRoots: [] })).toEqual([]);
+	it("uses only explicit sandbox roots and never derives permissions from a default directory", () => {
+		expect(configuredSandboxWritableRoots({})).toEqual([]);
+		expect(configuredSandboxWritableRoots({ sandboxWritableRoots: [] })).toEqual([]);
 		expect(validSandboxWritableRoots(["/srv/link/../app", "/var/log/app"])).toBe(true);
 	});
 	it.each(["zh-CN", "en-US"] as const)("edits Session roots alongside its existing fields in %s", (locale) => {

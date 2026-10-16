@@ -74,7 +74,7 @@ function WorkspaceConsoleContent({ workspaceId }: { workspaceId: string }) {
 						{activeTab === "overview" ? <RealtimeOverviewTab workspace={workspace} /> : null}
 						{activeTab === "guard" ? <GuardEditor workspaceId={workspace.id} /> : null}
 						{activeTab === "credentials" ? <CredentialManager workspaceId={workspace.id} /> : null}
-						{activeTab === "files" ? <SftpFilesTab workspaceId={workspace.id} defaultCwd={workspace.remoteDefaultCwd ?? "/"} hostLabel={hostAddress} /> : null}
+						{activeTab === "files" ? <SftpFilesTab workspaceId={workspace.id} defaultCwd="/" hostLabel={hostAddress} /> : null}
 					</div>
 				</div>
 			</main>

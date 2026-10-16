@@ -76,7 +76,7 @@ export function RemoteDirectoryPicker({ initialPath, load, onClose, onSelect, mu
 		? current.filter((entry) => entry !== path)
 		: current.length < MAX_SANDBOX_WRITABLE_ROOTS && isRemoteSandboxRoot(path) ? [...current, path] : current);
 	const canChooseCurrent = !loading && loadError === null && (multiple ? isRemoteSandboxRoot(currentPath) : isRemoteDirectory(currentPath)) && loadedRequestedPath === requestedPath;
-	const title = intl.formatMessage({ id: multiple ? "sandbox.roots.choose" : "workspace.remoteDefaultCwd.choose" });
+	const title = intl.formatMessage({ id: multiple ? "sandbox.roots.choose" : "workspace.directory.remoteChoose" });
 
 	return (
 		<div className="fixed inset-0 z-[90] grid place-items-center bg-zinc-950/35 p-5" role="dialog" aria-modal="true" aria-label={title}>
@@ -84,7 +84,7 @@ export function RemoteDirectoryPicker({ initialPath, load, onClose, onSelect, mu
 				<header className="flex items-center justify-between border-b border-[var(--line-soft)] px-5 py-4">
 					<div>
 						<h2 className="text-sm font-semibold">{title}</h2>
-						<p className="mt-1 text-[11px] text-secondary">{intl.formatMessage({ id: multiple ? "sandbox.roots.pickerHint" : "workspace.remoteDefaultCwd.description" })}</p>
+						<p className="mt-1 text-[11px] text-secondary">{intl.formatMessage({ id: multiple ? "sandbox.roots.pickerHint" : "workspace.directory.remoteHint" })}</p>
 					</div>
 					<button type="button" className="rounded-lg p-2 text-secondary hover:bg-surface-hover" aria-label={intl.formatMessage({ id: "session.workDir.picker.close" })} onClick={onClose}><X size={15} aria-hidden="true" /></button>
 				</header>

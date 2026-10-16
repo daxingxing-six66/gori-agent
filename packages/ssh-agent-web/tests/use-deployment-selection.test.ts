@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { DeploymentRun } from "../features/deploy/model/deployment";
-import { openFreshDeployment, refreshSelectedDeployment } from "../features/deploy/runtime/use-deployment";
+import { newestDeploymentRun } from "../features/deploy/model/deployment-history";
 
 const oldRun: DeploymentRun = {
 	id: "old", sessionId: "session", workspaceId: "workspace", createdAt: 1, updatedAt: 1, status: "success",
@@ -18,22 +18,14 @@ const oldRun: DeploymentRun = {
 	},
 };
 
-describe("deployment panel selection", () => {
-	it("starts each explicit /deploy with no selected history run and a new panel revision", () => {
-		const first = openFreshDeployment({ mode: "history", run: oldRun, freshOpenRevision: 0 });
-		expect(first).toEqual({ mode: "current", run: null, freshOpenRevision: 1 });
-		expect(refreshSelectedDeployment(first, oldRun, [oldRun])).toBe(first);
-
-		const second = openFreshDeployment(first);
-		expect(second).toEqual({ mode: "current", run: null, freshOpenRevision: 2 });
-		expect(refreshSelectedDeployment(second, oldRun, [oldRun])).toBe(second);
-	});
-
-	it("still refreshes a history selection by matching run ID", () => {
-		const selected = { mode: "history" as const, run: oldRun, freshOpenRevision: 1 };
-		const updated = { ...oldRun, updatedAt: 2 };
-		expect(refreshSelectedDeployment(selected, null, [updated]).run).toEqual(updated);
-		expect(refreshSelectedDeployment(selected, { ...oldRun, id: "other", updatedAt: 3 }, []).run).toBe(oldRun);
-		expect(refreshSelectedDeployment(selected, { ...oldRun, updatedAt: 3 }, [updated]).run?.updatedAt).toBe(3);
-	});
+describe("deployment task snapshot selection", () => {
+ it("keeps SSE facts when an earlier REST request resolves after them", () => {
+  const current = { ...oldRun, updatedAt: 4, status: "running" as const };
+  expect(newestDeploymentRun(current, oldRun)).toBe(current);
+  expect(newestDeploymentRun(oldRun, current)).toBe(current);
+ });
+ it("handles discussion-only and legacy history without inventing a Run", () => {
+  expect(newestDeploymentRun(null, undefined)).toBeNull();
+  expect(newestDeploymentRun(undefined, oldRun)).toBe(oldRun);
+ });
 });

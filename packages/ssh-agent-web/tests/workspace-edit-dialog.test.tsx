@@ -10,7 +10,7 @@ it.each([["zh-CN", zhCNMessages, "选择本地工作目录"], ["en-US", enUSMess
 	const workspace: Workspace = {
 		id: "workspace-1", displayName: "example", environment: "development",
 		host: { hostname: "server.example", port: 22, hostKey: null }, activeCredentialId: "credential-1",
-		defaultCwd: "/projects/example", remoteDefaultCwd: "/srv/app",
+		defaultCwd: "/projects/example", sandboxWritableRoots: ["/srv/app"],
 		connection: { connectTimeoutMs: 10000, keepaliveIntervalMs: 15000, keepaliveMaxCount: 3 },
 		revision: 1, createdAt: 1, updatedAt: 1,
 	};
@@ -21,6 +21,7 @@ it.each([["zh-CN", zhCNMessages, "选择本地工作目录"], ["en-US", enUSMess
 	expect(html).toContain(`aria-label="${label}"`);
 	expect(html).toContain('type="button"');
 	expect(html).toContain('title="/srv/app"');
-	expect(html).toContain(messages["workspace.field.remoteDefaultCwd"]);
+	expect(html).not.toContain("默认远端工作目录");
+	expect(html).not.toContain("Default remote working directory");
 	expect(html).not.toContain("Remote sandbox writable root");
 });

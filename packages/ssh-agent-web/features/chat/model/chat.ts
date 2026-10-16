@@ -95,7 +95,17 @@ export interface SystemMessage {
 	runtimeEventId?: string;
 }
 
-export type AgentMessage = SystemMessage | UserMessage | AssistantMessage | ToolResultMessage | CompactionSummaryMessage;
+/** Structured application history, separate from model-authored messages. */
+export interface CustomMessage {
+	role: "custom";
+	customType: string;
+	content: string | Array<TextContent | ImageContent>;
+	display: boolean;
+	details?: unknown;
+	timestamp: number;
+}
+
+export type AgentMessage = SystemMessage | UserMessage | AssistantMessage | ToolResultMessage | CompactionSummaryMessage | CustomMessage;
 
 export interface ChatMessage {
 	id: string;
@@ -239,6 +249,8 @@ export function isAgentMessage(value: unknown): value is AgentMessage {
 	if (value.role === "user") return typeof value.content === "string" || isContentArray(value.content, ["text", "image"]);
 	if (value.role === "assistant") return isContentArray(value.content, ["text", "thinking", "toolCall"]);
 	if (value.role === "compactionSummary") return typeof value.summary === "string" && typeof value.tokensBefore === "number";
+	if (value.role === "custom") return typeof value.customType === "string" && typeof value.display === "boolean" &&
+		(typeof value.content === "string" || isContentArray(value.content, ["text", "image"]));
 	if (value.role === "toolResult") {
 		return typeof value.toolCallId === "string" && typeof value.toolName === "string" &&
 			typeof value.isError === "boolean" && isContentArray(value.content, ["text", "image"]);

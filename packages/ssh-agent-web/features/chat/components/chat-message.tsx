@@ -50,6 +50,9 @@ export const ChatMessageRow = memo(function ChatMessageRow({
 		const text = typeof message.content === "string" ? message.content : message.content.flatMap((part) => part.type === "text" ? [part.text] : []).join("");
 		return <UserMessageBubble message={text} attachments={entry.attachments ?? []} final={entry.final} />;
 	}
+	// Task metadata is projected by its feature. REST history can also contain
+	// newer roles before this client knows them; never assume they are Assistant.
+	if (message.role !== "assistant" || !Array.isArray(message.content)) return null;
 	const hasText = message.content.some((part) => part.type === "text" && part.text.trim().length > 0);
 	const toolOnly = message.content.length > 0 && message.content.every((part) => part.type === "toolCall");
 	return (
@@ -206,7 +209,7 @@ function ToolCard({ call, execution, approval, approvalBusy, targetHost, onResol
 	const fullAccess = approval.toolName === "remote_sandbox_exception";
 	const remoteHost = isRemoteApproval(call.name) ? targetHost : undefined;
 	const commandPreview = typeof call.arguments.command === "string" ? call.arguments.command : target;
-	return <section className="chat-tool-approval min-w-0 p-3.5" aria-labelledby={approvalTitleId} aria-describedby={approvalDescriptionId} aria-busy={approvalBusy}>
+	return <section data-approval-id={approval.id} tabIndex={-1} className="chat-tool-approval min-w-0 p-3.5" aria-labelledby={approvalTitleId} aria-describedby={approvalDescriptionId} aria-busy={approvalBusy}>
 		<div className="flex min-w-0 flex-wrap items-start gap-x-3 gap-y-1.5">
 			<span className="mt-0.5 shrink-0 text-warning"><ToolIcon name={call.name} /></span>
 			<div className="min-w-0 flex-1">

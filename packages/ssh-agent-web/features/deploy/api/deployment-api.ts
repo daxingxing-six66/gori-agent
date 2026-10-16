@@ -1,5 +1,7 @@
 import { apiRequest } from "@/shared/api/client";
 import { isDeploymentDiscussion, isDeploymentDiscovery, isDeploymentRun, type DeploymentDiscussion, type DeploymentDiscovery, type DeploymentRun } from "../model/deployment";
+import { isDeploymentTask, isDeploymentLogChunk, type DeploymentTask, type DeploymentLogPage } from "../model/deployment-task";
+import type { DeploymentExecutableStage } from "../model/deployment";
 
 const root = (sessionId: string) => `/api/sessions/${encodeURIComponent(sessionId)}/deployments`;
 
@@ -26,6 +28,29 @@ function isHistoryPage(value: unknown, sessionId: string): value is { runs: Depl
 }
 
 export const deploymentApi = {
+	async mode(sessionId: string): Promise<DeploymentTask | null> {
+		const value: unknown = await apiRequest(`${root(sessionId)}/mode`);
+		if (value === null) return null;
+		return requireTask(value, sessionId);
+	},
+	async task(sessionId: string, id: string): Promise<DeploymentTask> {
+		return requireTask(await apiRequest(`${root(sessionId)}/tasks/${encodeURIComponent(id)}/state`), sessionId, id);
+	},
+	async finish(sessionId: string, id: string, outcome: "cancelled" | "failed", reason?: string): Promise<DeploymentTask> {
+		return requireTask(await apiRequest(`${root(sessionId)}/tasks/${encodeURIComponent(id)}/finish`, {
+			method: "POST", body: { outcome, ...(reason === undefined ? {} : { reason }) },
+		}), sessionId, id);
+	},
+	async logs(sessionId: string, id: string, stage: DeploymentExecutableStage, afterSequence: number): Promise<DeploymentLogPage> {
+		const value: unknown = await apiRequest(`${root(sessionId)}/${encodeURIComponent(id)}/logs?${new URLSearchParams({ stage, afterSequence: String(afterSequence) })}`);
+		if (!value || typeof value !== "object" || !("chunks" in value) || !Array.isArray(value.chunks) ||
+			!value.chunks.every((chunk) => isDeploymentLogChunk(chunk) && chunk.deploymentRunId === id && chunk.stage === stage && chunk.sequence > afterSequence) ||
+			!("nextSequence" in value) || !Number.isSafeInteger(value.nextSequence) || Number(value.nextSequence) < afterSequence ||
+			!("hasMore" in value) || typeof value.hasMore !== "boolean" ||
+			value.nextSequence !== (value.chunks.at(-1)?.sequence ?? afterSequence) || value.hasMore && value.chunks.length === 0)
+			throw new Error("Invalid deployment logs response");
+		return value as DeploymentLogPage;
+	},
 	async history(sessionId: string, cursor?: string): Promise<{ runs: DeploymentRun[]; nextCursor: string | null }> {
 		const query = new URLSearchParams({ limit: "50" });
 		if (cursor !== undefined) query.set("cursor", cursor);
@@ -75,3 +100,9 @@ export const deploymentApi = {
 		return requireRun(await apiRequest(`${root(sessionId)}/${encodeURIComponent(id)}/cancel`, { method: "POST" }), sessionId, id);
 	},
 };
+
+function requireTask(value: unknown, sessionId: string, id?: string): DeploymentTask {
+	if (!isDeploymentTask(value) || value.deployment.sessionId !== sessionId || id !== undefined && value.deployment.id !== id)
+		throw new Error("Invalid deployment task response");
+	return value;
+}

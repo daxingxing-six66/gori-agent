@@ -1,12 +1,11 @@
 "use client";
 
 import { ChevronRight, Rocket } from "lucide-react";
-import type { ReactNode } from "react";
 import { useIntl } from "react-intl";
 import { DEPLOY_STAGES, type DeploymentRun } from "../model/deployment";
 import { deploymentHistoryTime } from "../model/deployment-history";
 
-export function DeploymentHistoryCard({ run, onOpen, actions }: { run: DeploymentRun; onOpen(): void; actions?: ReactNode }) {
+export function DeploymentHistoryCard({ run, onOpen }: { run: DeploymentRun; onOpen(): void }) {
 	const intl = useIntl();
 	const completed = DEPLOY_STAGES.filter((stage) => ["success", "skipped"].includes(run.stages[stage].status)).length;
 	const timestamp = deploymentHistoryTime(run);
@@ -27,7 +26,7 @@ export function DeploymentHistoryCard({ run, onOpen, actions }: { run: Deploymen
 			{run.error ? <span className="mt-1 line-clamp-2 break-words text-[11px] text-danger">{run.error}</span> : null}
 		</span>
 		<ChevronRight size={16} className="mt-1 shrink-0 text-muted transition-transform group-hover:translate-x-0.5" aria-hidden="true" />
-	</button>{actions}</div>;
+	</button></div>;
 }
 
 function iconTone(status: DeploymentRun["status"]): string {

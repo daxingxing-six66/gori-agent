@@ -47,6 +47,8 @@ export function useChatRuntime(sessionId: string) {
 	const [decisionMutationId, setDecisionMutationId] = useState<string | null>(null);
 	const [requestError, setRequestError] = useState<unknown>(null);
 	const stateRef = useRef<ChatRuntimeState>(state);
+	const historySession = useRef(sessionId);
+	historySession.current = sessionId;
 	const compactionControllerRef = useRef<AbortController | null>(null);
 	const olderMessagesRequestRef = useRef(false);
 	const queueMutationRef = useRef<symbol | null>(null);
@@ -322,7 +324,18 @@ export function useChatRuntime(sessionId: string) {
 		}
 	}, [contextUsageStore, sessionId]);
 
+	const receiveHistoryMessage = useCallback((message: ChatMessage) => {
+		if (historySession.current === sessionId) dispatch({ type: "mergePersisted", messages: [message] });
+	}, [sessionId]);
+	const refreshHistory = useCallback(async () => {
+		try {
+			const page = await chatApi.listMessages(sessionId, { limit: 100 });
+			if (historySession.current === sessionId) dispatch({ type: "mergePersisted", messages: page.messages });
+		} catch (failure) { if (historySession.current === sessionId) setRequestError(failure); }
+	}, [sessionId]);
 	return {
+		receiveHistoryMessage,
+		refreshHistory,
 		contextUsage,
 		state,
 		loading,

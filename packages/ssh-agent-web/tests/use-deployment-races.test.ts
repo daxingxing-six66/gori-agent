@@ -1,9 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { DeploymentDiscussion, DeploymentDiscovery, DeploymentRun } from "../features/deploy/model/deployment";
+import type { DeploymentTask } from "../features/deploy/model/deployment-task";
 
 type HistoryPage = { runs: DeploymentRun[]; nextCursor: string | null };
 
 const api = vi.hoisted(() => ({
+	mode: vi.fn<(sessionId: string) => Promise<DeploymentTask | null>>(),
+	task: vi.fn<(sessionId: string, id: string) => Promise<DeploymentTask>>(),
+	finish: vi.fn<(sessionId: string, id: string, outcome: "cancelled" | "failed") => Promise<DeploymentTask>>(),
 	discover: vi.fn<(sessionId: string) => Promise<DeploymentDiscovery>>(),
 	history: vi.fn<(sessionId: string, cursor?: string) => Promise<HistoryPage>>(),
 	get: vi.fn<(sessionId: string, id: string) => Promise<DeploymentRun>>(),
@@ -15,20 +19,23 @@ const api = vi.hoisted(() => ({
 
 let hooks: HookDriver;
 let workspaceIdForProbe: string | undefined;
+let sessionIdForProbe = "session";
 
 vi.mock("react", async (importOriginal) => ({
 	...await importOriginal<typeof import("react")>(),
 	useState: (initial: unknown) => hooks.useState(initial),
 	useRef: (initial: unknown) => hooks.useRef(initial),
 	useEffect: (effect: () => void | (() => void), deps?: readonly unknown[]) => hooks.useEffect(effect, deps),
-	useCallback: <T,>(callback: T) => callback,
+	useCallback: <T,>(callback: T, deps?: readonly unknown[]) => hooks.useMemo(() => callback, deps),
+	useMemo: <T,>(factory: () => T, deps?: readonly unknown[]) => hooks.useMemo(factory, deps),
 }));
 vi.mock("../features/i18n/components/locale-context", () => ({ useLocale: () => ({ locale: "en-US" }) }));
 vi.mock("../features/deploy/api/deployment-api", () => ({ deploymentApi: api }));
 
+import { ApiError } from "../shared/errors/api-error";
 import { useDeployment } from "../features/deploy/runtime/use-deployment";
 
-function DeploymentProbe() { return useDeployment("session", workspaceIdForProbe); }
+function DeploymentProbe() { return useDeployment(sessionIdForProbe, workspaceIdForProbe); }
 
 class FakeEventSource {
 	static current: FakeEventSource | null = null;
@@ -54,6 +61,8 @@ class HookDriver {
 	private stateIndex = 0;
 	private refIndex = 0;
 	private effectIndex = 0;
+	private memoIndex = 0;
+	private readonly memos: { deps?: readonly unknown[]; value: unknown }[] = [];
 	value!: ReturnType<typeof useDeployment>;
 
 	useState<T>(initial: T | (() => T)): [T, (next: T | ((current: T) => T)) => void] {
@@ -81,9 +90,16 @@ class HookDriver {
 			this.effects[index] = { deps, cleanup: typeof cleanup === "function" ? cleanup : undefined };
 		});
 	}
+	useMemo<T>(factory: () => T, deps?: readonly unknown[]): T {
+		const index = this.memoIndex++;
+		const previous = this.memos[index];
+		if (!previous || !deps || !previous.deps || !deps.every((value, offset) => Object.is(value, previous.deps?.[offset])))
+			this.memos[index] = { deps, value: factory() };
+		return this.memos[index]!.value as T;
+	}
 
 	render(): ReturnType<typeof useDeployment> {
-		this.stateIndex = this.refIndex = this.effectIndex = 0;
+		this.stateIndex = this.refIndex = this.effectIndex = this.memoIndex = 0;
 		this.value = DeploymentProbe();
 		const pending = this.pendingEffects;
 		this.pendingEffects = [];
@@ -99,7 +115,7 @@ function deferred<T>() {
 }
 
 async function settle() {
-	for (let count = 0; count < 4; count++) await Promise.resolve();
+	for (let count = 0; count < 20; count++) await Promise.resolve();
 }
 
 const oldRun: DeploymentRun = {
@@ -138,308 +154,146 @@ function proposal(planningAgentRunId: string): DeploymentRun {
 			artifacts: [{ source: build.artifact, remotePath: upload.remotePath }] } };
 }
 
-beforeEach(async () => {
-	vi.resetAllMocks();
-	workspaceIdForProbe = undefined;
-	FakeEventSource.current = null;
-	api.discover.mockResolvedValue(discovery("example.org"));
-	api.history.mockResolvedValue(page);
-	api.beginDiscussion.mockResolvedValue(discussion);
-	api.getDiscussion.mockResolvedValue(discussion);
-	api.activeDiscussion.mockResolvedValue(null);
-	api.cancelDiscussion.mockResolvedValue({ ...discussion, status: "cancelled", revision: 2, updatedAt: 3 });
-	hooks = new HookDriver();
-	hooks.render();
-	await settle();
-	hooks.render();
-});
 
+const activeTask = (item = discussion, run: DeploymentRun | null = null): DeploymentTask => ({
+ deployment: { id: item.id, title: item.module.name, sessionId: item.sessionId, workspaceId: item.workspaceId, createdAt: item.createdAt },
+ run, phase: run ? "review" : "discussion", stage: run ? "prepare" : null, stageStatus: run ? "success" : null, nextStage: run ? "build" : null,
+});
+const finishedTask = (run = oldRun): DeploymentTask => ({ ...activeTask({ ...discussion, id: run.id }, run), phase: "finished",
+ deployment: { ...activeTask({ ...discussion, id: run.id }).deployment, createdAt: run.createdAt, outcome: "success", finishedAt: 10 } });
+const missing = () => new ApiError(404, "not_found", "Legacy record has no deployment mode");
+async function renderSettled() { for (let count = 0; count < 3; count++) { await settle(); hooks.render(); } }
+
+beforeEach(async () => {
+ vi.resetAllMocks();
+ workspaceIdForProbe = undefined; sessionIdForProbe = "session"; FakeEventSource.current = null;
+ api.discover.mockResolvedValue(discovery("example.org")); api.mode.mockResolvedValue(null);
+ api.task.mockRejectedValue(missing()); api.history.mockResolvedValue(page); api.get.mockResolvedValue(oldRun);
+ api.beginDiscussion.mockResolvedValue(discussion); api.getDiscussion.mockResolvedValue(discussion);
+ hooks = new HookDriver(); hooks.render(); await renderSettled();
+});
 afterEach(() => vi.unstubAllGlobals());
 
-describe("deployment panel async selection", () => {
-	it("ignores initial page discovery after an explicit /deploy has started", async () => {
-		const initialDiscovery = deferred<DeploymentDiscovery>();
-		vi.resetAllMocks();
-		api.discover.mockReturnValueOnce(initialDiscovery.promise).mockResolvedValue(discovery("current.example.org"));
-		api.history.mockResolvedValue(page);
-		hooks = new HookDriver();
-		hooks.render();
+describe("deployment task selection and durable mode", () => {
+ it("restores server mode over older discovery, closes only the page and reopens that identity", async () => {
+  api.mode.mockResolvedValue(activeTask()); api.task.mockResolvedValue(activeTask());
+  hooks = new HookDriver(); hooks.render(); await renderSettled();
+  expect(hooks.value).toMatchObject({ open: true, activeTask: { deployment: { id: discussion.id } }, selectedDiscussion: { id: discussion.id } });
+  hooks.value.hide(); hooks.render();
+  expect(hooks.value.open).toBe(false); expect(hooks.value.activeTask?.deployment.id).toBe(discussion.id); expect(api.finish).not.toHaveBeenCalled();
+  await hooks.value.show(); hooks.render();
+  expect(hooks.value).toMatchObject({ open: true, selectedTask: { deployment: { id: discussion.id } } });
+ });
 
-		await hooks.value.show();
-		hooks.render();
-		expect(hooks.value).toMatchObject({ open: true, run: null, loading: false });
-		expect(hooks.value.discovery?.host).toBe("current.example.org");
+ it("opens old history without changing the current mode or its approval target", async () => {
+  const run = { ...proposal("agent"), id: discussion.id };
+  api.mode.mockResolvedValue(activeTask(discussion, run)); api.task.mockResolvedValue(finishedTask());
+  hooks = new HookDriver(); hooks.render(); await renderSettled();
+  await hooks.value.openHistory(oldRun.id); hooks.render();
+  expect(hooks.value.run?.id).toBe(oldRun.id); expect(hooks.value.activeTask?.run?.id).toBe(discussion.id);
+  expect(api.beginDiscussion).not.toHaveBeenCalled(); expect(api.finish).not.toHaveBeenCalled();
+ });
 
-		initialDiscovery.resolve(discovery("stale.example.org"));
-		await settle();
-		hooks.render();
-		expect(hooks.value).toMatchObject({ open: true, run: null, loading: false });
-		expect(hooks.value.discovery?.host).toBe("current.example.org");
-	});
+ it("does not reactivate a finished deployment after delayed starts or stale mode replies", async () => {
+  vi.stubGlobal("EventSource", FakeEventSource); workspaceIdForProbe = "workspace";
+  api.mode.mockResolvedValue(activeTask()); hooks = new HookDriver(); hooks.render(); await renderSettled();
+  const pending = deferred<DeploymentTask | null>(); api.mode.mockReturnValueOnce(pending.promise);
+  const opening = hooks.value.show();
+  const ended: DeploymentTask = { ...activeTask(), phase: "finished", deployment: { ...activeTask().deployment, outcome: "cancelled", finishedAt: 10 } };
+  FakeEventSource.current?.emit("deployment.finished", ended); hooks.render();
+  pending.resolve(activeTask()); await opening; hooks.render(); expect(hooks.value.activeTask).toBeNull();
+  api.mode.mockResolvedValue(null); FakeEventSource.current?.emit("deployment.started", activeTask()); await renderSettled();
+  expect(hooks.value.activeTask).toBeNull(); expect(hooks.value.selectedTask?.deployment.outcome).toBe("cancelled");
+ });
 
-	it("keeps the newest /deploy discovery when an earlier open resolves last", async () => {
-		const firstDiscovery = deferred<DeploymentDiscovery>();
-		const firstHistory = deferred<HistoryPage>();
-		const secondDiscovery = deferred<DeploymentDiscovery>();
-		const secondHistory = deferred<HistoryPage>();
-		api.discover.mockReturnValueOnce(firstDiscovery.promise).mockReturnValueOnce(secondDiscovery.promise);
-		api.history.mockReturnValueOnce(firstHistory.promise).mockReturnValueOnce(secondHistory.promise);
+ it("does not replace a selected page when initial discovery resolves late", async () => {
+  const initial = deferred<DeploymentDiscovery>(); api.discover.mockReturnValueOnce(initial.promise);
+  hooks = new HookDriver(); hooks.render();
+  api.task.mockResolvedValue(finishedTask()); await hooks.value.openHistory(oldRun.id); hooks.render();
+  initial.resolve({ ...discovery("stale.example.org"), activeDiscussion: discussion }); await renderSettled();
+  expect(hooks.value.run?.id).toBe(oldRun.id); expect(hooks.value.selectedDiscussion).toBeNull();
+ });
 
-		const firstOpen = hooks.value.show();
-		hooks.render();
-		expect(hooks.value).toMatchObject({ open: true, run: null, discovery: null, loading: true });
-		const secondOpen = hooks.value.show();
-		hooks.render();
-		expect(hooks.value.freshOpenRevision).toBe(2);
+ it("keeps the newest open intent when two mode lookups finish in reverse order", async () => {
+  const first = deferred<DeploymentTask | null>(); const second = deferred<DeploymentTask | null>();
+  api.mode.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
+  const opening1 = hooks.value.show(); hooks.render(); const opening2 = hooks.value.show();
+  second.resolve(activeTask()); await opening2; hooks.render(); expect(hooks.value.selectedDiscussion?.id).toBe(discussion.id);
+  first.resolve(null); await opening1; hooks.render(); expect(hooks.value.selectedTask?.deployment.id).toBe(discussion.id);
+ });
 
-		secondDiscovery.resolve(discovery("new.example.org"));
-		secondHistory.resolve(page);
-		await secondOpen;
-		hooks.render();
-		expect(hooks.value).toMatchObject({ open: true, run: null, loading: false });
-		expect(hooks.value.discovery?.host).toBe("new.example.org");
+ it("does not reopen a page closed while its lookup is pending", async () => {
+  const pending = deferred<DeploymentTask | null>(); api.mode.mockReturnValueOnce(pending.promise);
+  const opening = hooks.value.show(); hooks.render(); expect(hooks.value.loading).toBe(true);
+  hooks.value.hide(); hooks.render(); pending.resolve(activeTask()); await opening; await renderSettled();
+  expect(hooks.value).toMatchObject({ open: false, loading: false }); expect(hooks.value.activeTask?.deployment.id).toBe(discussion.id);
+ });
 
-		firstDiscovery.resolve(discovery("stale.example.org"));
-		firstHistory.resolve(page);
-		await firstOpen;
-		hooks.render();
-		expect(hooks.value).toMatchObject({ open: true, run: null, loading: false });
-		expect(hooks.value.discovery?.host).toBe("new.example.org");
-	});
+ it("does not start a planning Chat Run after history selection supersedes creation", async () => {
+  const pending = deferred<DeploymentDiscussion>(); api.beginDiscussion.mockReturnValueOnce(pending.promise);
+  const creating = hooks.value.beginDiscussion(discussion.profileFile, discussion.module.id);
+  api.task.mockResolvedValue(finishedTask()); await hooks.value.openHistory(oldRun.id); hooks.render();
+  api.mode.mockResolvedValue(activeTask()); pending.resolve(discussion); expect(await creating).toBeNull(); hooks.render();
+  expect(hooks.value.run?.id).toBe(oldRun.id); expect(hooks.value.activeTask?.deployment.id).toBe(discussion.id);
+ });
 
-	it("keeps a selected history run when a discussion creation resolves later", async () => {
-		await hooks.value.show();
-		hooks.render();
-		const pendingDiscussion = deferred<DeploymentDiscussion>();
-		api.beginDiscussion.mockReturnValueOnce(pendingDiscussion.promise);
-		const creating = hooks.value.beginDiscussion(discussion.profileFile, discussion.module.id);
+ it("coalesces double module clicks without invalidating the first planning request", async () => {
+  const pending = deferred<DeploymentDiscussion>(); api.beginDiscussion.mockReturnValueOnce(pending.promise); api.mode.mockResolvedValue(activeTask());
+  const first = hooks.value.beginDiscussion(discussion.profileFile, discussion.module.id);
+  expect(await hooks.value.beginDiscussion(discussion.profileFile, discussion.module.id)).toBeNull();
+  pending.resolve(discussion); expect(await first).toEqual(discussion); hooks.render(); expect(api.beginDiscussion).toHaveBeenCalledTimes(1);
+ });
 
-		api.get.mockResolvedValueOnce({ ...oldRun, updatedAt: 2 });
-		await hooks.value.openHistory(oldRun.id);
-		hooks.render();
-		expect(hooks.value).toMatchObject({ readOnly: true, run: { id: "old", updatedAt: 2 } });
+ it("does not start planning for a deployment already ended or replaced by another tab", async () => {
+  api.mode.mockResolvedValue(activeTask({ ...discussion, id: "other" }));
+  expect(await hooks.value.beginDiscussion(discussion.profileFile, discussion.module.id)).toBeNull(); hooks.render();
+  expect(hooks.value.activeTask?.deployment.id).toBe("other");
+ });
 
-		pendingDiscussion.resolve(discussion);
-		expect(await creating).toBeNull();
-		hooks.render();
-		expect(hooks.value).toMatchObject({ readOnly: true, run: { id: "old", updatedAt: 2 } });
-		api.discover.mockResolvedValueOnce({ ...discovery("example.org"), activeDiscussion: discussion });
-		await hooks.value.refresh();
-		hooks.render();
-		expect(hooks.value).toMatchObject({ readOnly: true, run: { id: "old", updatedAt: 2 } });
-		expect(hooks.value.activeDiscussion?.id).toBe(discussion.id);
-	});
+ it("binds plans across Chat Runs by deployment identity and rejects older snapshots", async () => {
+  vi.stubGlobal("EventSource", FakeEventSource); workspaceIdForProbe = "workspace";
+  api.mode.mockResolvedValue(activeTask()); hooks = new HookDriver(); hooks.render(); await renderSettled();
+  FakeEventSource.current?.emit("deployment.updated", { ...proposal("unrelated"), discussionId: "other-discussion" }); hooks.render();
+  expect(hooks.value.run).toBeNull();
+  const plan = { ...proposal("later-agent"), id: discussion.id, updatedAt: 8 };
+  FakeEventSource.current?.emit("deployment.updated", plan); hooks.render(); expect(hooks.value.run?.updatedAt).toBe(8);
+  api.task.mockResolvedValue(activeTask(discussion, { ...plan, updatedAt: 4 }));
+  await hooks.value.openHistory(discussion.id); hooks.render(); expect(hooks.value.run?.updatedAt).toBe(8);
+ });
 
-	it("selects only a proposal bound to the durable discussion across Chat Runs", async () => {
-		await hooks.value.show();
-		hooks.render();
-		await hooks.value.beginDiscussion(discussion.profileFile, discussion.module.id);
-		hooks.render();
-		expect(hooks.value.selectedDiscussion?.id).toBe(discussion.id);
-		const unrelated = { ...proposal("other-agent"), discussionId: "other-discussion" };
-		api.discover.mockResolvedValueOnce({ ...discovery("example.org"), latest: unrelated });
-		api.history.mockResolvedValueOnce({ runs: [unrelated, oldRun], nextCursor: null });
-		await hooks.value.refresh();
-		hooks.render();
-		expect(hooks.value.run).toBeNull();
+ it("recovers missed proposal events through a reconnect without duplicating subscriptions", async () => {
+  vi.stubGlobal("EventSource", FakeEventSource); workspaceIdForProbe = "workspace";
+  api.mode.mockResolvedValue(activeTask()); hooks = new HookDriver(); hooks.render(); await renderSettled();
+  const stream = FakeEventSource.current; const plan = { ...proposal("later-agent"), id: discussion.id };
+  api.mode.mockResolvedValue(activeTask(discussion, plan)); api.task.mockResolvedValue(activeTask(discussion, plan));
+  stream?.emit("stream.ready", {}); await renderSettled();
+  expect(hooks.value.run?.id).toBe(discussion.id); expect(FakeEventSource.current).toBe(stream);
+ });
 
-		const matched = proposal("later-agent-run");
-		api.discover.mockResolvedValueOnce({ ...discovery("example.org"), latest: matched });
-		api.history.mockResolvedValueOnce({ runs: [matched, oldRun], nextCursor: null });
-		await hooks.value.refresh();
-		hooks.render();
-		expect(hooks.value.run).toMatchObject({ id: "new", discussionId: discussion.id });
-	});
+ it("preserves a paged history cursor when refreshing the first page", async () => {
+  api.history.mockResolvedValueOnce({ runs: [oldRun], nextCursor: "older" });
+  hooks = new HookDriver(); hooks.render(); await renderSettled(); expect(hooks.value.hasOlderHistory).toBe(true);
+  const older = { ...oldRun, id: "older", createdAt: 0 }; api.history.mockResolvedValueOnce({ runs: [older], nextCursor: "last" });
+  await hooks.value.loadOlderHistory(); hooks.render();
+  api.history.mockResolvedValueOnce({ runs: [oldRun], nextCursor: "older" }); await hooks.value.refresh(); hooks.render();
+  expect(hooks.value.history.map((run) => run.id)).toEqual(["old", "older"]);
+  api.history.mockResolvedValueOnce({ runs: [], nextCursor: null }); await hooks.value.loadOlderHistory();
+  expect(api.history).toHaveBeenLastCalledWith("session", "last");
+ });
 
-	it("recovers a proposed plan after missing its SSE event", async () => {
-		await hooks.value.beginDiscussion(discussion.profileFile, discussion.module.id);
-		hooks.render();
-		const proposed = proposal("later-agent-run");
-		api.getDiscussion.mockResolvedValueOnce({ ...discussion, status: "proposed", revision: 2, updatedAt: 3, deploymentRunId: proposed.id });
-		api.get.mockResolvedValueOnce(proposed);
-		await hooks.value.refresh();
-		hooks.render();
-		expect(hooks.value.run?.id).toBe(proposed.id);
-		expect(hooks.value.selectedDiscussion?.status).toBe("proposed");
-	});
+ it("discards pending responses and errors from the previous Session", async () => {
+  const pending = deferred<DeploymentTask | null>(); api.mode.mockReturnValueOnce(pending.promise);
+  const opening = hooks.value.show(); hooks.render();
+  sessionIdForProbe = "session-2"; hooks.render(); await renderSettled();
+  pending.resolve(activeTask()); await opening; await renderSettled();
+  expect(hooks.value).toMatchObject({ open: false, activeTask: null, error: null });
+ });
 
-	it("restores an active discussion after remount and clears it only on explicit cancellation", async () => {
-		api.discover.mockResolvedValueOnce({ ...discovery("example.org"), activeDiscussion: discussion });
-		hooks = new HookDriver();
-		hooks.render();
-		await settle();
-		hooks.render();
-		expect(hooks.value).toMatchObject({ open: true, run: null, selectedDiscussion: { id: discussion.id } });
-		await hooks.value.cancelDiscussion();
-		hooks.render();
-		expect(hooks.value.activeDiscussion).toBeNull();
-		expect(hooks.value.selectedDiscussion).toBeNull();
-	});
-
-	it("opens a fresh module picker without cancelling the active discussion", async () => {
-		await hooks.value.beginDiscussion(discussion.profileFile, discussion.module.id);
-		hooks.render();
-		expect(hooks.value.activeDiscussion?.id).toBe(discussion.id);
-		api.discover.mockResolvedValueOnce({ ...discovery("example.org"), activeDiscussion: discussion });
-		await hooks.value.show();
-		hooks.render();
-		expect(hooks.value.selectedDiscussion).toBeNull();
-		expect(hooks.value.activeDiscussion?.id).toBe(discussion.id);
-		expect(api.cancelDiscussion).not.toHaveBeenCalled();
-		const replacement = { ...discussion, id: "discussion-2", createdAt: 4, updatedAt: 4 };
-		api.beginDiscussion.mockResolvedValueOnce(replacement);
-		await hooks.value.beginDiscussion(replacement.profileFile, replacement.module.id);
-		hooks.render();
-		expect(hooks.value.activeDiscussion?.id).toBe(replacement.id);
-		expect(hooks.value.selectedDiscussion?.id).toBe(replacement.id);
-	});
-
-	it("keeps the discussion open when a model turn ends without a proposal", async () => {
-		await hooks.value.beginDiscussion(discussion.profileFile, discussion.module.id);
-		hooks.render();
-		api.discover.mockResolvedValueOnce({ ...discovery("example.org"), activeDiscussion: { ...discussion, revision: 2, updatedAt: 3 } });
-		api.history.mockResolvedValueOnce(page);
-		await hooks.value.refresh();
-		hooks.render();
-		expect(hooks.value.run).toBeNull();
-		expect(hooks.value.selectedDiscussion).toMatchObject({ id: discussion.id, status: "discussing", revision: 2 });
-		expect(hooks.value.activeDiscussion?.id).toBe(discussion.id);
-	});
-
-	it("clears a selected discussion when another tab cancels it", async () => {
-		vi.stubGlobal("EventSource", FakeEventSource);
-		workspaceIdForProbe = "workspace";
-		hooks = new HookDriver();
-		hooks.render();
-		await settle();
-		hooks.render();
-		await hooks.value.beginDiscussion(discussion.profileFile, discussion.module.id);
-		hooks.render();
-		FakeEventSource.current?.emit("deployment.discussion.updated", { ...discussion, status: "cancelled", revision: 2, updatedAt: 3 });
-		hooks.render();
-		expect(hooks.value.selectedDiscussion).toBeNull();
-		expect(hooks.value.activeDiscussion).toBeNull();
-		expect(hooks.value.open).toBe(true);
-	});
-
-	it("uses the server's active discussion when cross-tab SSE events share timestamps", async () => {
-		vi.stubGlobal("EventSource", FakeEventSource);
-		workspaceIdForProbe = "workspace";
-		hooks = new HookDriver();
-		hooks.render();
-		await settle();
-		hooks.render();
-		const newer = { ...discussion, id: "discussion-newer" };
-		api.beginDiscussion.mockResolvedValueOnce(newer);
-		await hooks.value.beginDiscussion(newer.profileFile, newer.module.id);
-		hooks.render();
-		api.activeDiscussion.mockResolvedValueOnce(newer);
-		FakeEventSource.current?.emit("deployment.discussion.updated", discussion);
-		await settle();
-		hooks.render();
-		expect(hooks.value.activeDiscussion?.id).toBe(newer.id);
-		expect(api.activeDiscussion).toHaveBeenCalledWith("session");
-	});
-
-	it("ignores an active-discussion lookup that resolves after a newer selection", async () => {
-		vi.stubGlobal("EventSource", FakeEventSource);
-		workspaceIdForProbe = "workspace";
-		hooks = new HookDriver();
-		hooks.render();
-		await settle();
-		hooks.render();
-		const second = { ...discussion, id: "discussion-2" };
-		api.beginDiscussion.mockResolvedValueOnce(second);
-		await hooks.value.beginDiscussion(second.profileFile, second.module.id);
-		hooks.render();
-		const pendingLookup = deferred<DeploymentDiscussion | null>();
-		api.activeDiscussion.mockReturnValueOnce(pendingLookup.promise);
-		FakeEventSource.current?.emit("deployment.discussion.updated", discussion);
-		const third = { ...discussion, id: "discussion-3" };
-		api.beginDiscussion.mockResolvedValueOnce(third);
-		await hooks.value.beginDiscussion(third.profileFile, third.module.id);
-		hooks.render();
-		pendingLookup.resolve(second);
-		await settle();
-		hooks.render();
-		expect(hooks.value.activeDiscussion?.id).toBe(third.id);
-	});
-
-	it("does not let a stale initial discovery hide an SSE-restored discussion", async () => {
-		vi.stubGlobal("EventSource", FakeEventSource);
-		workspaceIdForProbe = "workspace";
-		const initialDiscovery = deferred<DeploymentDiscovery>();
-		api.discover.mockReturnValueOnce(initialDiscovery.promise);
-		api.activeDiscussion.mockResolvedValueOnce(discussion);
-		hooks = new HookDriver();
-		hooks.render();
-		FakeEventSource.current?.emit("deployment.discussion.updated", discussion);
-		await settle();
-		hooks.render();
-		expect(hooks.value).toMatchObject({ open: true, selectedDiscussion: { id: discussion.id } });
-		initialDiscovery.resolve(discovery("example.org"));
-		await settle();
-		hooks.render();
-		expect(hooks.value.activeDiscussion?.id).toBe(discussion.id);
-		expect(hooks.value.selectedDiscussion?.id).toBe(discussion.id);
-	});
-
-	it("does not bind an older module selection when its create response arrives last", async () => {
-		const first = deferred<DeploymentDiscussion>();
-		const second = deferred<DeploymentDiscussion>();
-		api.beginDiscussion.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
-		const firstRequest = hooks.value.beginDiscussion("deploy-old.md", "old");
-		const secondRequest = hooks.value.beginDiscussion("deploy-new.md", "new");
-		const newer = { ...discussion, id: "discussion-newer", profileFile: "deploy-new.md", module: { id: "new", name: "New" } };
-		second.resolve(newer);
-		expect(await secondRequest).toMatchObject({ id: newer.id });
-		hooks.render();
-		first.resolve(discussion);
-		expect(await firstRequest).toBeNull();
-		hooks.render();
-		expect(hooks.value.activeDiscussion?.id).toBe(newer.id);
-		expect(hooks.value.selectedDiscussion?.id).toBe(newer.id);
-	});
-
-	it("does not start a superseded discussion after another tab replaces it", async () => {
-		vi.stubGlobal("EventSource", FakeEventSource);
-		workspaceIdForProbe = "workspace";
-		hooks = new HookDriver();
-		hooks.render();
-		await settle();
-		hooks.render();
-		const pendingCreate = deferred<DeploymentDiscussion>();
-		api.beginDiscussion.mockReturnValueOnce(pendingCreate.promise);
-		const creating = hooks.value.beginDiscussion(discussion.profileFile, discussion.module.id);
-		const replacement = { ...discussion, id: "discussion-from-other-tab" };
-		api.activeDiscussion.mockResolvedValue(replacement);
-		FakeEventSource.current?.emit("deployment.discussion.updated", replacement);
-		await settle();
-
-		pendingCreate.resolve(discussion);
-		expect(await creating).toBeNull();
-		hooks.render();
-		expect(hooks.value.activeDiscussion?.id).toBe(replacement.id);
-		expect(hooks.value.selectedDiscussion?.id).toBe(replacement.id);
-		expect(api.activeDiscussion).toHaveBeenCalledTimes(2);
-	});
-
-	it("does not leave a closed panel loading after its discovery resolves", async () => {
-		const pendingDiscovery = deferred<DeploymentDiscovery>();
-		const pendingHistory = deferred<HistoryPage>();
-		api.discover.mockReturnValueOnce(pendingDiscovery.promise);
-		api.history.mockReturnValueOnce(pendingHistory.promise);
-		const opening = hooks.value.show();
-		hooks.render();
-		expect(hooks.value.loading).toBe(true);
-
-		hooks.value.hide();
-		hooks.render();
-		expect(hooks.value).toMatchObject({ open: false, loading: false });
-		pendingDiscovery.resolve(discovery("stale.example.org"));
-		pendingHistory.resolve(page);
-		await opening;
-		hooks.render();
-		expect(hooks.value).toMatchObject({ open: false, loading: false, discovery: null });
-	});
+ it("replays explicit exit only once and retains the returned historical task", async () => {
+  api.mode.mockResolvedValue(activeTask()); hooks = new HookDriver(); hooks.render(); await renderSettled();
+  const ended: DeploymentTask = { ...activeTask(), phase: "finished", deployment: { ...activeTask().deployment, outcome: "cancelled", finishedAt: 10 } };
+  api.finish.mockResolvedValue(ended); await hooks.value.finish(); hooks.render();
+  expect(hooks.value.activeTask).toBeNull(); expect(hooks.value.selectedTask?.deployment.outcome).toBe("cancelled");
+  await hooks.value.finish(); expect(api.finish).toHaveBeenCalledTimes(1);
+ });
 });

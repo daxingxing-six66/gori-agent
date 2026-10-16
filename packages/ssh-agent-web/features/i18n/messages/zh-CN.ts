@@ -9,6 +9,7 @@ import { zhCNSftpMessages } from "@/features/i18n/messages/zh-CN/sftp";
 import { zhCNTerminalMessages } from "@/features/i18n/messages/zh-CN/terminal";
 import { zhCNServerMetricsMessages } from "@/features/i18n/messages/zh-CN/server-metrics";
 import { zhCNTaskContainerMessages } from "@/features/i18n/messages/zh-CN/task-container";
+import { zhCNDeployTaskMessages } from "@/features/i18n/messages/zh-CN/deploy-task";
 
 export const zhCNMessages = {
 	...zhCNCommonMessages,
@@ -22,6 +23,7 @@ export const zhCNMessages = {
 	...zhCNTerminalMessages,
 	...zhCNServerMetricsMessages,
 	...zhCNTaskContainerMessages,
+	...zhCNDeployTaskMessages,
 } as const;
 
 export type MessageId = keyof typeof zhCNMessages;

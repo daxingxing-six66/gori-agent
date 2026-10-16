@@ -32,7 +32,6 @@ export function RealtimeOverviewTab({ workspace }: { workspace: Workspace }) {
 		[intl.formatMessage({ id: "overview.connection.host" }), workspace.host.hostname + ":" + workspace.host.port],
 		[intl.formatMessage({ id: "workspace.field.environment" }), intl.formatMessage({ id: `workspace.environment.${workspace.environment}`, defaultMessage: workspace.environment })],
 		[intl.formatMessage({ id: "workspace.field.defaultCwd" }), workspace.defaultCwd],
-		[intl.formatMessage({ id: "workspace.field.remoteDefaultCwd" }), workspace.remoteDefaultCwd ?? "/"],
 		[intl.formatMessage({ id: "overview.connection.activeCredential" }), workspace.activeCredentialId],
 		[intl.formatMessage({ id: "overview.connection.hostKey" }), workspace.host.hostKey?.fingerprint ?? intl.formatMessage({ id: "overview.connection.hostKey.pending" })],
 		[intl.formatMessage({ id: "overview.connection.timeout" }), workspace.connection.connectTimeoutMs + " ms"],

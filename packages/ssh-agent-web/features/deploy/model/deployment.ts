@@ -39,7 +39,7 @@ interface DeploymentPlanBase {
 	remoteAccess: DeploymentRemoteAccess;
 	project: string;
 	target: { host: string; name?: string };
-	targetBinding: { workspaceRevision?: number; port: number; hostKeyAlgorithm?: string; hostKeyFingerprint: string; credentialId: string; credentialAuthVersion: number; remoteUser: string; writableRoot: string; sandboxWritableRoots?: string[] };
+	targetBinding: { workspaceRevision?: number; port: number; hostKeyAlgorithm?: string; hostKeyFingerprint: string; credentialId: string; credentialAuthVersion: number; remoteUser: string; writableRoot?: string; sandboxWritableRoots?: string[] };
 	module: { id: string; name: string };
 	restart: DeploymentRemoteCommand;
 	verify?: DeploymentRemoteCommand;
@@ -95,6 +95,11 @@ export interface DeploymentRun {
 	stages: Record<DeployStage, {
 		status: "pending" | "running" | "success" | "failed" | "skipped";
 		log: string;
+		executionId?: string;
+		logCursor?: number;
+		logTruncated?: boolean;
+		step?: { current: number; total: number; cwd: string; command: string };
+		artifact?: { index: number; count: number; source: string; remotePath: string; bytesTransferred: number; totalBytes: number };
 		startedAt?: number;
 		finishedAt?: number;
 		progress?: { current: number; total: number };
@@ -128,7 +133,7 @@ export interface DeploymentDiscussion {
 		credentialId: string;
 		credentialAuthVersion: number;
 		remoteUser: string;
-		writableRoot: string;
+		writableRoot?: string;
 		sandboxWritableRoots?: string[];
 	};
 	createdAt: number;
@@ -257,12 +262,12 @@ function isDiscussionModule(value: unknown): value is DeploymentDiscussion["modu
 function isDiscussionTarget(value: unknown): value is DeploymentDiscussion["targetBinding"] {
 	return isRecord(value) && keysMatch(value,
 		["hostname", "port", "workspaceRevision", "hostKeyAlgorithm", "hostKeyFingerprint", "credentialId",
-			"credentialAuthVersion", "remoteUser", "writableRoot"], ["sandboxWritableRoots"]) &&
+			"credentialAuthVersion", "remoteUser"], ["writableRoot", "sandboxWritableRoots"]) &&
 		boundedText(value.hostname, 255) && positiveInteger(value.port) && value.port <= 65535 &&
 		positiveInteger(value.workspaceRevision) && boundedText(value.hostKeyAlgorithm, 200) &&
 		boundedText(value.hostKeyFingerprint, 500) && validAgentRunId(value.credentialId) &&
 		positiveInteger(value.credentialAuthVersion) && boundedText(value.remoteUser, 200) &&
-		absoluteRemoteDirectory(value.writableRoot) &&
+		(value.writableRoot === undefined || absoluteRemoteDirectory(value.writableRoot)) &&
 		(value.sandboxWritableRoots === undefined || validSandboxWritableRoots(value.sandboxWritableRoots, true));
 }
 
@@ -302,7 +307,7 @@ function isPlan(value: unknown): value is DeploymentRun["plan"] {
 		(value.targetBinding.workspaceRevision !== undefined && !Number.isSafeInteger(value.targetBinding.workspaceRevision)) ||
 		(value.targetBinding.hostKeyAlgorithm !== undefined && typeof value.targetBinding.hostKeyAlgorithm !== "string") ||
 		!nonEmptyString(value.targetBinding.remoteUser) || !nonEmptyString(value.targetBinding.hostKeyFingerprint) ||
-		!nonEmptyString(value.targetBinding.credentialId) || !nonEmptyString(value.targetBinding.writableRoot) ||
+		!nonEmptyString(value.targetBinding.credentialId) || (value.targetBinding.writableRoot !== undefined && !nonEmptyString(value.targetBinding.writableRoot)) ||
 		(value.targetBinding.sandboxWritableRoots !== undefined && !validSandboxWritableRoots(value.targetBinding.sandboxWritableRoots, true)) ||
 		!validRemoteCommand(value.restart) ||
 		(value.verify !== undefined && !validRemoteCommand(value.verify))) return false;
@@ -366,6 +371,15 @@ function isStages(value: unknown): value is DeploymentRun["stages"] {
 
 function isStage(value: unknown): value is DeploymentRun["stages"][DeployStage] {
 	return isRecord(value) && oneOf(value.status, STAGE_STATUSES) && typeof value.log === "string" &&
+		(value.executionId === undefined || validAgentRunId(value.executionId)) &&
+		(value.logCursor === undefined || (Number.isSafeInteger(value.logCursor) && Number(value.logCursor) >= 0)) &&
+		(value.logTruncated === undefined || typeof value.logTruncated === "boolean") &&
+		(value.step === undefined || (isRecord(value.step) && positiveInteger(value.step.current) && positiveInteger(value.step.total) &&
+			value.step.current <= value.step.total && absoluteLocalPath(value.step.cwd) && validCommand(value.step.command))) &&
+		(value.artifact === undefined || (isRecord(value.artifact) && positiveInteger(value.artifact.index) && positiveInteger(value.artifact.count) &&
+			value.artifact.index <= value.artifact.count && absoluteLocalPath(value.artifact.source) && remoteFilePath(value.artifact.remotePath) &&
+			Number.isSafeInteger(value.artifact.bytesTransferred) && Number(value.artifact.bytesTransferred) >= 0 &&
+			Number.isSafeInteger(value.artifact.totalBytes) && Number(value.artifact.totalBytes) >= Number(value.artifact.bytesTransferred))) &&
 		(value.error === undefined || typeof value.error === "string") &&
 		(value.exitCode === undefined || Number.isSafeInteger(value.exitCode)) &&
 		(value.failureCode === undefined || (typeof value.failureCode === "string" && /^[a-z][a-z0-9_]{0,79}$/u.test(value.failureCode))) &&

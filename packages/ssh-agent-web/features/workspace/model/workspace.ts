@@ -24,8 +24,6 @@ export interface Workspace {
 	activeCredentialId: string;
 	/** Local default inherited by new sessions. */
 	defaultCwd: string;
-	/** Remote SSH/SFTP default directory. */
-	remoteDefaultCwd?: string;
 	sandboxWritableRoots?: string[];
 	connection: {
 		connectTimeoutMs: number;
@@ -53,8 +51,6 @@ export interface CreateWorkspaceInput {
 	credential: CreateCredentialInput;
 	/** Local default inherited by new sessions. */
 	defaultCwd: string;
-	/** Remote SSH/SFTP default directory. */
-	remoteDefaultCwd?: string;
 	sandboxWritableRoots?: string[];
 	connection?: Partial<Workspace["connection"]>;
 }

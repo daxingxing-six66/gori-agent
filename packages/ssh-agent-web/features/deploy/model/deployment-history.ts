@@ -3,8 +3,9 @@ import type { DeploymentDiscussion, DeploymentRun } from "./deployment";
 
 export type ConversationHistoryEntry =
 	| { kind: "message"; entry: ChatTimelineEntry }
+	| { kind: "deploymentMessage"; entry: ChatTimelineEntry; deploymentId: string; title: string; run?: DeploymentRun }
 	| { kind: "discussion"; discussion: DeploymentDiscussion }
-	| { kind: "deployment"; run: DeploymentRun; messages: ChatTimelineEntry[] };
+	| { kind: "deployment"; run: DeploymentRun };
 
 export interface DeploymentHistoryState {
 	runs: DeploymentRun[];
@@ -13,6 +14,12 @@ export interface DeploymentHistoryState {
 }
 
 export const emptyDeploymentHistory = (): DeploymentHistoryState => ({ runs: [], nextCursor: undefined });
+
+export function newestDeploymentRun(first?: DeploymentRun | null, second?: DeploymentRun | null): DeploymentRun | null {
+	if (!first) return second ?? null;
+	if (!second || first.updatedAt >= second.updatedAt) return first;
+	return second;
+}
 
 export function deploymentHistoryTime(run: DeploymentRun): number {
 	return run.createdAt;
@@ -44,55 +51,29 @@ export function applyDeploymentHistoryPage(
 	};
 }
 
-/** Deployment snapshots are projected into the conversation, without changing Agent messages. */
+/** Formal entries retain Chat sequence order; only legacy records need a timestamp fallback. */
 export function conversationHistory(messages: ChatTimelineEntry[], deployments: DeploymentRun[], discussion?: DeploymentDiscussion | null): ConversationHistoryEntry[] {
-	const deploymentByAgentRun = new Map<string, string | null>();
-	const completionMessages = new Set<ChatTimelineEntry>();
-	for (const run of deployments) {
-		for (const agentRunId of [run.planningAgentRunId, ...(run.agentRunHistory ?? []), run.agentRunId]) {
-			if (!agentRunId) continue;
-			// Keep ambiguous/corrupt links visible as ordinary Chat messages.
-			const existing = deploymentByAgentRun.get(agentRunId);
-			deploymentByAgentRun.set(agentRunId, existing === undefined || existing === run.id ? run.id : null);
+	const formalIds = new Set<string>();
+	const ordered = messages.every((entry) => entry.sequence === undefined) ? [...messages].sort((a, b) => a.message.timestamp - b.message.timestamp) : messages;
+	const entries: ConversationHistoryEntry[] = ordered.filter((entry) => entry.message.role !== "system").map((entry) => {
+		const message = entry.message;
+		if (message.role === "custom" && message.customType === "deployment" && message.details && typeof message.details === "object" &&
+			"deploymentId" in message.details && typeof message.details.deploymentId === "string" &&
+			"title" in message.details && typeof message.details.title === "string") {
+			const deploymentId = message.details.deploymentId;
+			const title = message.details.title;
+			formalIds.add(deploymentId);
+			return { kind: "deploymentMessage", entry, deploymentId, title, run: deployments.find((run) => run.id === deploymentId) };
 		}
-		if (run.status !== "success" || !run.agentRunId) continue;
-		// The execution Run's final answer belongs to the conversation. Earlier
-		// tool calls and progress messages remain with the deployment record.
-		const summary = messages.find((entry) => entry.runId === run.agentRunId && entry.final &&
-			entry.message.role === "assistant" && entry.message.stopReason === "stop" &&
-			entry.message.content.some((part) => part.type === "text" && part.text.trim().length > 0) &&
-			!entry.message.content.some((part) => part.type === "toolCall"));
-		if (summary) completionMessages.add(summary);
+		return { kind: "message", entry };
+	});
+	const legacy: { at: number; value: ConversationHistoryEntry }[] = deployments.filter((run) => !formalIds.has(run.id)).map((run) => ({
+		at: run.createdAt, value: { kind: "deployment", run },
+	}));
+	if (discussion && !formalIds.has(discussion.id)) legacy.push({ at: discussion.createdAt, value: { kind: "discussion", discussion } });
+	for (const item of legacy.sort((a, b) => a.at - b.at)) {
+		const index = entries.findIndex((entry) => (entry.kind === "message" || entry.kind === "deploymentMessage") && entry.entry.message.timestamp >= item.at);
+		entries.splice(index < 0 ? entries.length : index, 0, item.value);
 	}
-	const grouped = new Map<string, ChatTimelineEntry[]>();
-	const ungrouped: ChatTimelineEntry[] = [];
-	for (const entry of messages) {
-		if (entry.message.role === "system") continue;
-		const deploymentId = entry.runId ? deploymentByAgentRun.get(entry.runId) : undefined;
-		if (!deploymentId || completionMessages.has(entry)) {
-			ungrouped.push(entry);
-			continue;
-		}
-		const entries = grouped.get(deploymentId) ?? [];
-		entries.push(entry);
-		grouped.set(deploymentId, entries);
-	}
-	const entries = [
-		...(discussion ? [{
-			at: discussion.createdAt,
-			order: -1,
-			value: { kind: "discussion", discussion } as const,
-		}] : []),
-		...ungrouped.map((entry, order) => ({
-			at: entry.message.timestamp,
-			order,
-			value: { kind: "message", entry } as const,
-		})),
-		...deployments.map((run, index) => ({
-			at: deploymentHistoryTime(run),
-			order: messages.length + index,
-			value: { kind: "deployment", run, messages: grouped.get(run.id) ?? [] } as const,
-		})),
-	];
-	return entries.sort((left, right) => left.at - right.at || left.order - right.order).map(({ value }) => value);
+	return entries;
 }

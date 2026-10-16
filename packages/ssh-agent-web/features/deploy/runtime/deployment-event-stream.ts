@@ -1,0 +1,44 @@
+import { apiUrlWithLocale } from "@/shared/api/client";
+import type { SupportedLocale } from "@/features/i18n/model/locale";
+import { isAgentMessage, type ChatMessage } from "@/features/chat/model/chat";
+import { isDeploymentDiscussion, isDeploymentRun, type DeploymentDiscussion, type DeploymentRun } from "../model/deployment";
+import { isDeploymentTask, isDeploymentLogChunk, type DeploymentTask, type DeploymentLogChunk } from "../model/deployment-task";
+
+export function subscribeDeploymentEvents(options: {
+	sessionId: string; workspaceId: string; locale: SupportedLocale;
+	onRun(run: DeploymentRun): void; onDiscussion(discussion: DeploymentDiscussion): void;
+	onTask(task: DeploymentTask): void; onLog(chunk: DeploymentLogChunk): void; onMessage?(message: ChatMessage): void;
+	onReconnect(): void;
+}): () => void {
+	let disposed = false;
+	const stream = new EventSource(apiUrlWithLocale(`/api/workspaces/${encodeURIComponent(options.workspaceId)}/events?topics=deployments`, options.locale));
+	const listen = (type: string, accept: (value: unknown) => void) => stream.addEventListener(type, (event) => {
+		if (disposed || !(event instanceof MessageEvent) || typeof event.data !== "string") return;
+		let value: unknown;
+		try { value = JSON.parse(event.data); } catch { return; }
+		accept(value);
+	});
+	listen("deployment.updated", (value) => {
+		if (isDeploymentRun(value) && value.sessionId === options.sessionId && value.workspaceId === options.workspaceId) options.onRun(value);
+	});
+	listen("deployment.discussion.updated", (value) => {
+		if (isDeploymentDiscussion(value) && value.sessionId === options.sessionId && value.workspaceId === options.workspaceId) options.onDiscussion(value);
+	});
+	for (const event of ["deployment.started", "deployment.finished"]) listen(event, (value) => {
+		if (isDeploymentTask(value) && value.deployment.sessionId === options.sessionId && value.deployment.workspaceId === options.workspaceId) options.onTask(value);
+	});
+	listen("deployment.log.appended", (value) => {
+		if (isDeploymentLogChunk(value) && "sessionId" in value && value.sessionId === options.sessionId) options.onLog(value);
+	});
+	listen("deployment.message.created", (value) => {
+		if (!record(value) || value.sessionId !== options.sessionId || !record(value.message)) return;
+		const entry = value.message;
+		if (isAgentMessage(entry.message) && entry.message.role === "custom" && entry.message.customType === "deployment" &&
+			typeof entry.id === "string" && Number.isSafeInteger(entry.sequence) && Number(entry.sequence) > 0 && Number.isSafeInteger(entry.createdAt))
+			options.onMessage?.(entry as unknown as ChatMessage);
+	});
+	stream.addEventListener("stream.ready", () => { if (!disposed) options.onReconnect(); });
+	return () => { disposed = true; stream.close(); };
+}
+
+function record(value: unknown): value is Record<string, unknown> { return value !== null && typeof value === "object" && !Array.isArray(value); }

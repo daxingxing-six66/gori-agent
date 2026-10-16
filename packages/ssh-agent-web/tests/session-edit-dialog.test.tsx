@@ -52,7 +52,7 @@ class HookDriver {
 const session: SessionDetails = { id: "session", workspaceId: "workspace", displayName: "test", workDir: "/local", autoAudit: false,
 	sandboxEnabled: true, sandboxWritableRoots: ["/srv/app"], terminalContextCursor: 0, revision: 5, createdAt: 1, updatedAt: 1, chatModelSelection: null };
 const workspace: Workspace = { id: "workspace", displayName: "test", environment: "development", host: { hostname: "fixture.invalid", port: 22, hostKey: null },
-	activeCredentialId: "credential", defaultCwd: "/local", remoteDefaultCwd: "/", sandboxWritableRoots: ["/srv/app", "/var/log/app"],
+	activeCredentialId: "credential", defaultCwd: "/local", sandboxWritableRoots: ["/srv/app", "/var/log/app"],
 	connection: { connectTimeoutMs: 10000, keepaliveIntervalMs: 15000, keepaliveMaxCount: 3 }, revision: 1, createdAt: 1, updatedAt: 1 };
 const props = { sessionId: session.id, workspace, onClose: vi.fn(), onUpdated: vi.fn(async () => undefined) };
 const input = { displayName: "edited", workDir: "/local", autoAudit: false, sandboxWritableRoots: ["/srv/app", "/etc/app"] };
