@@ -10,6 +10,8 @@ export interface Session {
 	autoAudit: boolean;
 	/** User-selected remote execution environment, independent of tool approval. */
 	sandboxEnabled: boolean;
+	/** Strict remote file-write policy: only /tmp and /dev/null, with no Full Access exceptions. */
+	sandboxReadOnly?: boolean;
 	/** Session-owned copy of the Workspace defaults. Absent on legacy adapters. */
 	sandboxWritableRoots?: string[];
 	terminalContextCursor: number;
@@ -24,6 +26,7 @@ export interface CreateSessionInput {
 	workDir?: string;
 	autoAudit?: boolean;
 	sandboxEnabled?: boolean;
+	sandboxReadOnly?: boolean;
 	sandboxWritableRoots?: string[];
 }
 
@@ -33,6 +36,7 @@ export interface UpdateSessionInput {
 	workDir?: string | null;
 	autoAudit?: boolean;
 	sandboxEnabled?: boolean;
+	sandboxReadOnly?: boolean;
 	sandboxWritableRoots?: string[];
 	expectedRevision: number;
 }

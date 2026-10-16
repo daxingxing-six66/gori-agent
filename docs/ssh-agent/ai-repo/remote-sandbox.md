@@ -1,8 +1,16 @@
 # 远端 Linux 命令沙箱代码路由
 
-适用于 `remote_server_call`、`/deploy` 与 Terminal Mode 的远端文件访问约束、后端选择、启动器分发、能力探测、Full Access 与执行事实审计。当前 `RemoteSandboxCoordinator` 依次配置 Landlock 与 Bubblewrap 两个后端，扩展边界见[多后端设计](../design/remote-sandbox-backends.md)。Session 默认开启沙盒；开启时命令预检优先选择可用沙箱，明确无后端或已知写入路径越界才申请一次性人工 Full Access 例外。用户通过 Session 设置关闭时，普通命令、部署远端阶段与 PTY 直接跳过探测、准备和受限执行，无逐次例外 grant，仍保留 Guard 与普通审批。配置与自动重开见 [session-sandbox.md](./session-sandbox.md)。本地工作目录、SFTP 与监控不经过命令沙箱。Agent 可用的 `sftp_upload` 仍按 SSH 账号权限写入，新增文件不因命令沙箱受限；沙箱事实只针对命令或 PTY 进程。
+适用于 `remote_server_call`、`/deploy` 与 Terminal Mode 的远端文件访问约束、后端选择、启动器分发、能力探测、Full Access 与执行事实审计。当前 `RemoteSandboxCoordinator` 依次配置 Landlock 与 Bubblewrap 两个后端，扩展边界见[多后端设计](../design/remote-sandbox-backends.md)。Session 默认开启普通沙盒；非只读模式开启时命令预检优先选择可用沙箱，明确无后端或已知写入路径越界才申请一次性人工 Full Access 例外。用户通过 Session 设置关闭时，普通命令、部署远端阶段与 PTY 直接跳过探测、准备和受限执行，无逐次例外 grant，仍保留 Guard 与普通审批。配置与自动重开见 [session-sandbox.md](./session-sandbox.md)。本地工作目录、SFTP 与监控不经过命令沙箱。非只读 Session 的 `sftp_upload` 仍按 SSH 账号权限写入，新增文件不因命令沙箱受限；沙箱事实只针对命令或 PTY 进程。
 
 `/deploy` 的 RESTART/VERIFY 由绑定的 Agent 逐阶段请求，仍通过 `CommandOperationService` 执行。Session 开启沙盒时，服务端按已声明写入路径和实际沙箱能力选择执行模式：受限步骤服从 Session `autoAudit`，例外步骤必须逐条人工批准；计划确认不等于 Full Access 授权。UPLOAD 仍走 SFTP，不受命令沙箱约束；部署服务额外以 SFTP realpath 检查上传目录处于 Profile 允许目录内，不能把该检查等同于内核沙箱。详见 [deployment.md](./deployment.md)。
+
+## 只读 Session
+
+Session `sandboxReadOnly=true` 时，目标实际范围固定为 `/tmp`（另保留 `/dev/null`），忽略但保留原可写目录配置。命令、Terminal 继续使用现有受限后端，审计保持实际 `workspace_write` + `sandboxRoots=["/tmp"]`，不引入第三种内核后端模式。禁止显式或路由产生的 Full Access 例外，缺少沙盒直接失败；Agent 上传、安装和部署写入入口被禁用。读取日志不受目录白名单限制，仍需 SSH 账号读取权限。完整策略、API 与生命周期见 [session-sandbox.md](./session-sandbox.md)。以下关于 Full Access 例外和安装的流程仅适用于非只读模式。
+
+只读准备只复用已存在且摘要验证通过的 Landlock launcher；不创建缓存目录、不上传或修复文件。缺失时尝试已安装的 Bubblewrap，仍要求版本/所有权/功能验证。Bubblewrap 只在 `/tmp` 生成写入探针，根外通过已有宿主可写目录在受限视图中的不可写性验证，不生成或清理根外探针。普通模式保留原部署/探测行为。两个模式的发现缓存分别隔离，连接和 generation 规则不变。无现成后端的服务器必须先独立准备，不能在只读排障中自动安装。
+
+只读仍沿用下述直接文件写入策略及信任前提，网络、IPC、进程信号、元数据和 Bubblewrap 宿主进程路径等既有边界不变；本地工具、Workspace 独立 SFTP 页面不受 Session 选项控制。定向回归为 `test/read-only-sandbox.test.ts`，未进行生产服务器或真实 Linux 内核验收。
 
 ## 策略与边界
 
@@ -43,7 +51,7 @@ Terminal 打开后异步探测失败时，前端保留失败卡片，展示后�
 - `RemoteSandboxCoordinator` 按注入顺序尝试 `RemoteSandboxBackend`；只有明确不可用的后端错误才进入下一后端，根无效、投递或探测失败等错误直接失败关闭。`RemoteSandboxProvider` 供命令和 Terminal 准备使用，独立的 `RemoteSandboxCapabilityProvider` 提供普通 `getCapabilities()` 与强制 `refreshCapabilities()`，调用方明确表达查询或刷新的意图。开启状态的 Full Access 例外包装由 Coordinator 负责；Session 关闭时由应用层直接调用 `remote-shell-command.ts`，不调用 Coordinator。两者共用 POSIX 引用 helper。
 - 包携带 x64/arm64 静态 musl ELF，无远端编译或互联网下载要求。Zig 0.15.2 构建；资源 manifest 保存源码和产物摘要，`check:sandbox` 与后端 build 校验架构、静态链接及摘要。
 - 远端通过 `uname` 选择架构，版本与二进制摘要确定 `$HOME/.cache/gori/sandbox/<launcherVersion>/<sha256>/gori-landlock-run`。同摘要现有文件可复用，否则 SFTP 投递随机临时文件，chmod 0700 后原子 rename，失败清理临时文件。
-- v3 `--probe` 将 `ENOSYS`/`EOPNOTSUPP` 转换为明确的 unavailable 结果；其他探测错误仍失败关闭。能力可用时，在一次性子进程安装无授权规则，验证目录 open 确实被 EACCES 拒绝。两个后端共用 `SandboxCapabilityCache`，只缓存成功的 launcher/runner 元数据，按完整 Connection Key 与 generation 隔离；失败不缓存。普通查询复用有效元数据，强制刷新等待较早的发现完成后再重新发现，同身份的并发刷新合并。刷新中的新查询等待新结果；取消等待者不取消其他请求拥有的发现。重连/凭据变化重新发现。每次查询和准备仍检查目录、设备及 Bubblewrap 实际约束，缓存不是单次执行受约束的证明。
+- v3 `--probe` 将 `ENOSYS`/`EOPNOTSUPP` 转换为明确的 unavailable 结果；其他探测错误仍失败关闭。能力可用时，在一次性子进程安装无授权规则，验证目录 open 确实被 EACCES 拒绝。两个后端共用 `SandboxCapabilityCache`，只缓存成功的 launcher/runner 元数据，按完整 Connection Key、只读标记与 generation 隔离；失败不缓存。普通查询复用有效元数据，强制刷新等待较早的发现完成后再重新发现，同身份的并发刷新合并。刷新中的新查询等待新结果；取消等待者不取消其他请求拥有的发现。重连/凭据变化重新发现。每次查询和准备仍检查目录、设备及 Bubblewrap 实际约束，缓存不是单次执行受约束的证明。
 - Chat/部署预检及安装必要性检查使用 `getCapabilities()`；Overview 手动检测和安装完成后的验证使用 `refreshCapabilities()`。能力查询直接生成校验后的事实，不再通过准备一条 `true` 命令生成无用的确认 nonce。刷新操作的 30 秒时限覆盖等待发现、重新发现及策略复检。
 - `RemoteSandboxRules` 共用可写根、真实 `/tmp`、真实 `/dev/null` 与启动器位于可写范围外的校验。`SandboxCommandRunner` 共用准备命令执行与诊断：stdout 限制为 16 KiB，stderr 最多保留 4 KiB；失败包含检查阶段、退出码/信号、限长 stderr 和原始 cause，保留已有 SSH 失败码与取消语义。公开 HTTP/SSE 仍按稳定 code 本地化，内部诊断不直接透传浏览器。
 - `POST /api/workspaces/:id/sandbox` 通过 Coordinator 显式刷新能力，不执行用户命令；它会使用正式 Host Trust/连接并可能投递启动器。响应按 Landlock ABI 或 Bubblewrap 版本分别校验，并展示 Workspace 默认列表的所有规范根。这不是 Session 的当前范围，只是最后一次能力检测结果，不证明后续命令已经受约束；命令仍在自己的执行路径校验。Overview 初始显示“尚未验证”，检测后显示后端能力、规范根或本地化失败原因及时间；修改 Workspace revision/离开页面会清理状态。检测面板位于 Dashboard 辅助区域，限制说明可展开查看；状态与检测入口直接可见，折叠说明不触发检测或更改 Session 设置。

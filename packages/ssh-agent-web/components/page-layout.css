@@ -33,7 +33,8 @@
 .sidebar-brand-header,
 .terminal-workbench-header { height: var(--workspace-header-height, 44px); }
 .sidebar-settings-footer { display: flex; height: 46px; flex-shrink: 0; align-items: center; padding: 4px 16px; }
-.sidebar-settings-footer-collapsed { justify-content: center; padding-inline: 0; }
+.sidebar-settings-footer-collapsed { height: 82px; flex-direction: column; justify-content: center; padding-inline: 0; }
+.sidebar-statistics-link[aria-current="page"] { background: var(--surface-selected); color: var(--accent-ink); }
 .page-icon-button { display: inline-flex; width: 30px; height: 30px; flex-shrink: 0; align-items: center; justify-content: center; border-radius: 7px; color: var(--text-muted); }
 .page-icon-button:hover:not(:disabled) { background: var(--surface-hover); color: var(--ink); }
 .page-icon-button-danger:hover:not(:disabled) { background: var(--danger-soft); color: var(--danger); }

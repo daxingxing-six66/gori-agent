@@ -1,7 +1,7 @@
 export interface UserDecisionOption { label: string; description: string }
 export interface UserDecisionQuestion {
 	question: string;
-	options: [UserDecisionOption, UserDecisionOption, UserDecisionOption];
+	options: UserDecisionOption[];
 	recommendedIndex: number;
 }
 export type UserDecisionAnswer =
@@ -27,22 +27,24 @@ export function isUserDecision(value: unknown): value is UserDecision {
 		!value.questions.every(isQuestion) ||
 		(value.status !== "pending" && value.status !== "answered" && value.status !== "cancelled" && value.status !== "interrupted")) return false;
 	if (value.status === "pending") return value.answers === undefined && value.resolvedAt === undefined;
+	const questions = value.questions;
 	return Number.isSafeInteger(value.resolvedAt) && (value.resolvedAt as number) >= (value.createdAt as number) &&
-		(value.status === "answered" ? Array.isArray(value.answers) && value.answers.length === value.questions.length && value.answers.every(isAnswer) : value.answers === undefined);
+		(value.status === "answered" ? Array.isArray(value.answers) && value.answers.length === questions.length &&
+			value.answers.every((answer, index) => isAnswer(answer, questions[index]!.options.length)) : value.answers === undefined);
 }
 
 function isQuestion(value: unknown): value is UserDecisionQuestion {
-	return record(value) && boundedText(value.question, 1_000) && Array.isArray(value.options) && value.options.length === 3 &&
+	return record(value) && boundedText(value.question, 1_000) && Array.isArray(value.options) && value.options.length > 0 &&
 		value.options.every((option) => record(option) && boundedText(option.label, 120) && boundedText(option.description, 500)) &&
-		typeof value.recommendedIndex === "number" && Number.isInteger(value.recommendedIndex) && value.recommendedIndex >= 0 && value.recommendedIndex < 3;
+		typeof value.recommendedIndex === "number" && Number.isInteger(value.recommendedIndex) && value.recommendedIndex >= 0 && value.recommendedIndex < value.options.length;
 }
 
-function isAnswer(value: unknown): value is UserDecisionAnswer {
+function isAnswer(value: unknown, optionCount: number): value is UserDecisionAnswer {
 	if (!record(value)) return false;
 	if (value.kind === "skipped") return Object.keys(value).length === 1;
 	if (value.kind === "custom") return Object.keys(value).length === 2 && boundedText(value.text, 4_000);
 	return value.kind === "option" && Object.keys(value).length === 2 &&
-		typeof value.optionIndex === "number" && Number.isInteger(value.optionIndex) && value.optionIndex >= 0 && value.optionIndex < 3;
+		typeof value.optionIndex === "number" && Number.isInteger(value.optionIndex) && value.optionIndex >= 0 && value.optionIndex < optionCount;
 }
 
 function record(value: unknown): value is Record<string, unknown> {

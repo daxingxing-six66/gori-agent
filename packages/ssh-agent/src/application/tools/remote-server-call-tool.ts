@@ -60,6 +60,7 @@ export const remoteServerCallDefinition = {
 export interface RemoteCommandAuthorization {
 	autoApprove(): Promise<boolean>;
 	sandboxEnabled?(): Promise<boolean>;
+	readOnly?(): Promise<boolean>;
 	preflightGuard(sessionId: string, command: string): Promise<{ allowed: boolean; reason?: string }>;
 	assessSandbox?: (sessionId: string, declaredWritePaths: readonly string[], signal: AbortSignal) =>
 		Promise<{ readonly target: SshTargetSnapshot; readonly route: RemoteSandboxRoute }>;
@@ -78,6 +79,9 @@ export async function prepareRemoteCommandAuthorization(
 	const decision = await authorization.preflightGuard(callInput.run.sessionId, command);
 	if (!decision.allowed) return { kind: "block", block: true, terminate: true,
 		reason: decision.reason ?? "Command blocked by Workspace Guard" };
+	const readOnly = await authorization.readOnly?.() === true;
+	if (readOnly && request.sandbox_permissions === "full_access")
+		throw toolRequestError("Full Access is forbidden in read-only mode. Use confined commands to inspect logs; writes are limited to /tmp.");
 	if (await authorization.sandboxEnabled?.() === false) {
 		const plan = new RemoteCommandExecutionPlan({ agentRunId: callInput.run.id,
 			sessionId: callInput.run.sessionId, toolCallId: callInput.toolCallId, request,
@@ -100,6 +104,8 @@ export async function prepareRemoteCommandAuthorization(
 	const assessed = await authorization.assessSandbox?.(
 		callInput.run.sessionId, declaredWritePaths, input.signal ?? AbortSignal.timeout(30_000),
 	);
+	if (readOnly && (!assessed || assessed.route.mode === "full_access"))
+		throw toolRequestError(`Read-only mode cannot bypass confinement: ${assessed?.route.mode === "full_access" ? assessed.route.details : "No sandbox assessment is available"}. No command was executed.`);
 	if (assessed?.route.mode === "full_access") return fullAccessAuthorization(
 		callInput, request, assessed.route.details, assessed.target,
 		backendMessage("approval.remote_sandbox_exception", { reason: assessed.route.details }),

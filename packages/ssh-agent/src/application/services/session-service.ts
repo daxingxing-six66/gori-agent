@@ -62,6 +62,7 @@ export class DefaultSessionService implements SessionService {
 	}
 
 	async create(input: CreateSessionInput): Promise<Session> {
+		requireCompatibleSandboxSettings(input);
 		const workspace = await this.workspaces.findById(input.workspaceId);
 		if (!workspace) {
 			throw new ManagementError("not_found", `Workspace not found: ${input.workspaceId}`);
@@ -73,7 +74,8 @@ export class DefaultSessionService implements SessionService {
 			displayName: requireDisplayName(input.displayName),
 			workDir: await normalizeWorkDir(input.workDir ?? workspace.defaultCwd),
 			autoAudit: input.autoAudit ?? false,
-			sandboxEnabled: input.sandboxEnabled ?? true,
+			sandboxEnabled: input.sandboxReadOnly === true || (input.sandboxEnabled ?? true),
+			sandboxReadOnly: input.sandboxReadOnly ?? false,
 			sandboxWritableRoots: input.sandboxWritableRoots === undefined
 				? [...(workspace.sandboxWritableRoots ?? [])]
 				: requireSandboxWritableRoots(input.sandboxWritableRoots),
@@ -105,7 +107,8 @@ export class DefaultSessionService implements SessionService {
 	}
 
 	async update(input: UpdateSessionInput): Promise<Session> {
-		const changesSandbox = input.sandboxEnabled !== undefined || input.sandboxWritableRoots !== undefined;
+		requireCompatibleSandboxSettings(input);
+		const changesSandbox = input.sandboxEnabled !== undefined || input.sandboxReadOnly !== undefined || input.sandboxWritableRoots !== undefined;
 		const lease = this.lifecycle?.acquireUse(input.id, changesSandbox ? "sandbox_update" : "session_update");
 		try {
 			requirePositiveRevision(input.expectedRevision);
@@ -126,8 +129,10 @@ export class DefaultSessionService implements SessionService {
 				? current.sandboxWritableRoots : requireSandboxWritableRoots(input.sandboxWritableRoots);
 			const rootsChanged = sandboxWritableRoots !== undefined &&
 				!sameSandboxWritableRoots(sandboxWritableRoots, current.sandboxWritableRoots ?? []);
+			const sandboxReadOnly = input.sandboxReadOnly ?? (input.sandboxEnabled === false ? false : current.sandboxReadOnly ?? false);
 			const sandboxChanged = (input.sandboxEnabled !== undefined && input.sandboxEnabled !== current.sandboxEnabled) ||
-				(rootsChanged && current.sandboxEnabled !== false);
+				sandboxReadOnly !== (current.sandboxReadOnly ?? false) ||
+				(rootsChanged && current.sandboxEnabled !== false && !sandboxReadOnly);
 			if (sandboxChanged && this.operations && await this.operations.countActiveBySessionId(input.id) > 0) {
 				throw new ManagementError("session_has_active_operations", "Session still contains active command Operations");
 			}
@@ -141,7 +146,8 @@ export class DefaultSessionService implements SessionService {
 							? null
 							: await normalizeWorkDir(input.workDir),
 				autoAudit: input.autoAudit ?? current.autoAudit,
-				sandboxEnabled: input.sandboxEnabled ?? current.sandboxEnabled,
+				sandboxEnabled: sandboxReadOnly || (input.sandboxEnabled ?? current.sandboxEnabled),
+				sandboxReadOnly,
 				sandboxWritableRoots,
 				revision: current.revision + 1,
 				updatedAt: this.clock.now(),
@@ -197,6 +203,13 @@ export class DefaultSessionService implements SessionService {
 			barrier?.release();
 		}
 	}
+}
+
+function requireCompatibleSandboxSettings(input: { sandboxEnabled?: boolean; sandboxReadOnly?: boolean }): void {
+	if (input.sandboxReadOnly !== undefined && typeof input.sandboxReadOnly !== "boolean")
+		throw new ManagementError("validation_error", "sandboxReadOnly must be a boolean", "sandboxReadOnly");
+	if (input.sandboxReadOnly === true && input.sandboxEnabled === false)
+		throw new ManagementError("validation_error", "Read-only mode requires sandboxing to be enabled", "sandboxReadOnly");
 }
 
 async function normalizeWorkDir(value: string): Promise<string> {

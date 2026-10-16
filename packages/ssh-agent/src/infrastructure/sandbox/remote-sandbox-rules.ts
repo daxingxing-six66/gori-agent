@@ -6,6 +6,7 @@ import { quoteShell } from "./shell-command.ts";
 
 export function requireSandboxRoots(target: SshTargetSnapshot): readonly string[] {
 	const roots = target.sandboxWritableRoots ?? [];
+	if (target.sandboxReadOnly === true) return ["/tmp"];
 	if (roots.length === 0 || roots.length > MAX_SANDBOX_WRITABLE_ROOTS || !roots.every(validRemoteSandboxRoot)) {
 		throw sandboxFailure("sandbox_root_invalid", "Configure 1 to 16 remote writable directories other than / before using workspace_write. The command was not executed.");
 	}

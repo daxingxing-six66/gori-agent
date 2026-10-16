@@ -57,6 +57,7 @@ export class ChatToolAuthorizationPolicy {
 				return prepareRemoteCommandAuthorization(input, {
 					autoApprove,
 					sandboxEnabled: async () => await this.#sandboxPolicy.mode(input.run.sessionId) === "workspace_write",
+					readOnly: () => this.#sandboxPolicy.readOnly(input.run.sessionId),
 					preflightGuard: this.#options.preflightRemoteGuard,
 					assessSandbox: this.#options.assessRemoteSandbox,
 					resolveTarget: this.#options.resolveRemoteTarget,

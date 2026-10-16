@@ -76,6 +76,8 @@ import { SqliteWorkspaceHostTrustRepository } from "../infrastructure/sqlite/sql
 import { SqliteWorkspaceRepository } from "../infrastructure/sqlite/sqlite-workspace-repository.ts";
 import { Ssh2ChannelBroker } from "../infrastructure/ssh/ssh2-channel-broker.ts";
 import { Ssh2HostKeyProbe } from "../infrastructure/ssh/ssh2-host-key-probe.ts";
+import { SqliteStatisticsQuery } from "../infrastructure/sqlite/sqlite-statistics-query.ts";
+import { StatisticsService } from "../application/statistics/statistics-service.ts";
 
 export interface CreateSqliteManagementBackendOptions {
 	connectionTester?: SshConnectionTester;
@@ -407,6 +409,7 @@ export function createSqliteManagementBackend(options: CreateSqliteManagementBac
 			api,
 			handleRequest: createSshAgentHttpHandler({
 				connectionTests,
+				statistics: new StatisticsService(new SqliteStatisticsQuery(database), () => clock.now()),
 				probeRemoteSandbox: async (workspaceId, signal) => sandbox.refreshCapabilities(await targets.resolveWorkspace(workspaceId), signal),
 				api,
 				transfers: fileTransfers,

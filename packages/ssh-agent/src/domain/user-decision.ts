@@ -5,7 +5,7 @@ export interface UserDecisionOption {
 
 export interface UserDecisionQuestion {
 	question: string;
-	options: [UserDecisionOption, UserDecisionOption, UserDecisionOption];
+	options: UserDecisionOption[];
 	recommendedIndex: number;
 }
 
@@ -34,25 +34,25 @@ export function parseUserDecisionQuestions(value: unknown): UserDecisionQuestion
 	}
 	return value.map((entry) => {
 		if (!record(entry, ["question", "options", "recommendedIndex"]) ||
-			!validText(entry.question, 1_000) || !Array.isArray(entry.options) || entry.options.length !== 3 ||
-			typeof entry.recommendedIndex !== "number" || !Number.isInteger(entry.recommendedIndex) || entry.recommendedIndex < 0 || entry.recommendedIndex > 2) {
+			!validText(entry.question, 1_000) || !Array.isArray(entry.options) || entry.options.length === 0 ||
+			typeof entry.recommendedIndex !== "number" || !Number.isInteger(entry.recommendedIndex) || entry.recommendedIndex < 0 || entry.recommendedIndex >= entry.options.length) {
 			throw new Error("Invalid decision question");
 		}
 		const options = entry.options.map((option: unknown) => {
 			if (!record(option, ["label", "description"]) || !validText(option.label, 120) ||
 				!validText(option.description, 500)) throw new Error("Invalid decision option");
 			return { label: option.label.trim(), description: option.description.trim() };
-		}) as UserDecisionQuestion["options"];
+		});
 		return { question: entry.question.trim(), options, recommendedIndex: entry.recommendedIndex };
 	});
 }
 
-export function parseUserDecisionAnswers(value: unknown, questionCount: number): UserDecisionAnswer[] {
-	if (!Array.isArray(value) || value.length !== questionCount) throw new Error("One answer is required for each question");
-	return value.map((entry) => {
+export function parseUserDecisionAnswers(value: unknown, questions: readonly UserDecisionQuestion[]): UserDecisionAnswer[] {
+	if (!Array.isArray(value) || value.length !== questions.length) throw new Error("One answer is required for each question");
+	return value.map((entry, index) => {
 		if (!record(entry, ["kind", "optionIndex", "text"])) throw new Error("Invalid decision answer");
 		if (entry.kind === "option" && Object.keys(entry).length === 2 &&
-			typeof entry.optionIndex === "number" && Number.isInteger(entry.optionIndex) && entry.optionIndex >= 0 && entry.optionIndex < 3) {
+			typeof entry.optionIndex === "number" && Number.isInteger(entry.optionIndex) && entry.optionIndex >= 0 && entry.optionIndex < questions[index]!.options.length) {
 			return { kind: "option", optionIndex: entry.optionIndex };
 		}
 		if (entry.kind === "custom" && Object.keys(entry).length === 2 && validText(entry.text, 4_000)) {

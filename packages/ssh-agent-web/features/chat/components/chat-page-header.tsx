@@ -15,17 +15,18 @@ interface ChatStatusProps {
 interface ChatPageHeaderProps extends ChatStatusProps {
 	title: string;
 	sandboxEnabled: boolean;
+	sandboxReadOnly?: boolean;
 	serverMetrics?: ReactNode;
 }
 
-export function ChatPageHeader({ title, sandboxEnabled, serverMetrics, active, runStatus, connection, queueCount }: ChatPageHeaderProps) {
+export function ChatPageHeader({ title, sandboxEnabled, sandboxReadOnly, serverMetrics, active, runStatus, connection, queueCount }: ChatPageHeaderProps) {
 	return (
 		<PageHeader
 			title={title}
 			compact
 			actions={<>
 				{serverMetrics}
-				<SessionSandboxBadge enabled={sandboxEnabled} />
+				<SessionSandboxBadge enabled={sandboxEnabled} readOnly={sandboxReadOnly} />
 				<ChatStatus active={active} runStatus={runStatus} connection={connection} queueCount={queueCount} />
 			</>}
 		/>

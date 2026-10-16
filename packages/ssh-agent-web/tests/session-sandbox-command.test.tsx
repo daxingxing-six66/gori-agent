@@ -9,17 +9,24 @@ import { DeploymentReview } from "../features/deploy/components/deployment-revie
 import { deploymentReviewState } from "../features/deploy/model/deployment-review";
 import { isDeploymentRun, type DeploymentRun } from "../features/deploy/model/deployment";
 import { zhCNMessages } from "../features/i18n/messages/zh-CN";
+import { SessionSandboxBadge } from "../features/session/components/session-sandbox-badge";
 
 describe("Session sandbox command and audit projection", () => {
 	it("recognizes commands with arguments and keeps normal messages separate", () => {
 		expect(parseSessionSandboxCommand(" /sandbox off ")).toEqual({ kind: "set", enabled: false });
 		expect(parseSessionSandboxCommand("/sandbox on")).toEqual({ kind: "set", enabled: true });
+		expect(parseSessionSandboxCommand("/sandbox read-only")).toEqual({ kind: "invalid" });
 		expect(parseSessionSandboxCommand("/sandbox")).toEqual({ kind: "toggle" });
 		expect(parseSessionSandboxCommand("/sandbox nope")).toEqual({ kind: "invalid" });
 		expect(isSessionSandboxCommand("请关闭沙箱")).toBe(false);
 		expect(matchChatComposerMenuTrigger("/sandbox")).toMatchObject({ query: "sandbox", trigger: "command", startOffsetInTextNode: 0 });
 		expect(matchChatComposerMenuTrigger("/sandbox off")).toBeNull();
 		expect(matchChatComposerMenuTrigger("运行 /sandbox off")).toBeNull();
+	});
+	it("shows the confirmed read-only policy in the header badge", () => {
+		const markup = renderToStaticMarkup(<IntlProvider locale="zh-CN" messages={zhCNMessages}><SessionSandboxBadge enabled readOnly /></IntlProvider>);
+		expect(markup).toContain("只读沙盒");
+		expect(markup).not.toContain("沙盒已关闭");
 	});
 	it("distinguishes intentional Terminal disablement from historical automatic fallback", () => {
 		const sandbox = { mode: "full_access", backend: "none", enforcement: "none", source: "session_setting", configuredAt: 10 } as const;

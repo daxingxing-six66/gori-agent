@@ -3,10 +3,10 @@
 import { Shield, ShieldOff } from "lucide-react";
 import { useIntl } from "react-intl";
 
-export function SessionSandboxBadge({ enabled }: { enabled: boolean }) {
+export function SessionSandboxBadge({ enabled, readOnly = false }: { enabled: boolean; readOnly?: boolean }) {
 	const intl = useIntl();
 	const Icon = enabled ? Shield : ShieldOff;
-	const label = intl.formatMessage({ id: enabled ? "session.sandbox.on" : "session.sandbox.off" });
+	const label = intl.formatMessage({ id: readOnly ? "session.sandbox.readOnly" : enabled ? "session.sandbox.on" : "session.sandbox.off" });
 	return (
 		<span
 			role="status"

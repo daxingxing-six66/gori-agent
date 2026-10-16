@@ -97,6 +97,19 @@ export class LandlockRemoteSandboxProvider implements RemoteSandboxBackend {
 	async #installLauncher(target: SshTargetSnapshot, signal: AbortSignal, home: string, binary: Uint8Array): Promise<string> {
 		const digest = createHash("sha256").update(binary).digest("hex");
 		const requestedDirectory = posix.join(home, ".cache/gori/sandbox", GORI_LANDLOCK_LAUNCHER_VERSION, digest);
+		if (target.sandboxReadOnly === true) {
+			// Production inspection must not create or repair a cache outside /tmp.
+			const directory = (await this.#commands.checked({ target, signal, stage: "existing read-only launcher", code: "sandbox_unavailable",
+				command: `test -d ${quoteShell(requestedDirectory)} && cd -- ${quoteShell(requestedDirectory)} && pwd -P` })).replace(/\n$/, "");
+			if (!directory.startsWith("/") || directory.includes("\n") || directory.includes("\0"))
+				throw sandboxFailure("sandbox_prepare_failed", "Invalid existing launcher directory. The command was not executed.");
+			const path = posix.join(directory, "gori-landlock-run");
+			const existing = await this.#commands.capture({ target, signal, stage: "read-only launcher digest",
+				command: `test -x ${quoteShell(path)} && sha256sum -- ${quoteShell(path)}` });
+			if (existing.exitCode !== 0 || existing.exitSignal || existing.stdout.split(/\s/)[0] !== digest)
+				throw sandboxFailure("sandbox_unavailable", "Read-only mode requires an existing verified Landlock launcher or installed Bubblewrap. No launcher was installed.");
+			return path;
+		}
 		const directory = (await this.#commands.checked({ target, signal, stage: "launcher cache directory", code: "sandbox_launcher_upload_failed",
 			command: `umask 077 && mkdir -p -- ${quoteShell(requestedDirectory)} && cd -- ${quoteShell(requestedDirectory)} && pwd -P` })).replace(/\n$/, "");
 		if (!directory.startsWith("/") || directory.includes("\n") || directory.includes("\0")) throw sandboxFailure("sandbox_prepare_failed", "Invalid launcher directory. The command was not executed.");

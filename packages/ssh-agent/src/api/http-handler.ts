@@ -38,6 +38,8 @@ import {
 	parseUpdateSession,
 } from "./request-validation.ts";
 import { handleTerminalRoute } from "./terminal-routes.ts";
+import { handleStatisticsRoute } from "./statistics-routes.ts";
+import type { StatisticsService } from "../application/statistics/statistics-service.ts";
 
 export type SshAgentHttpHandler = (request: Request) => Promise<Response>;
 
@@ -52,6 +54,7 @@ export function createSshAgentHttpHandler(options: {
 	terminals: TerminalSessionService;
 	attachments: AttachmentService;
 	connectionTests: ConnectionTestService;
+	statistics?: StatisticsService;
 	probeRemoteSandbox?: (workspaceId: string, signal: AbortSignal) => Promise<RemoteSandboxFacts>;
 }): SshAgentHttpHandler {
 	return async (request) => {
@@ -83,6 +86,7 @@ async function route(
 		terminals: TerminalSessionService;
 		attachments: AttachmentService;
 		connectionTests: ConnectionTestService;
+		statistics?: StatisticsService;
 		probeRemoteSandbox?: (workspaceId: string, signal: AbortSignal) => Promise<RemoteSandboxFacts>;
 	},
 	request: Request,
@@ -95,6 +99,10 @@ async function route(
 		.filter((segment) => segment.length > 0)
 		.map((segment) => decodeURIComponent(segment));
 	if (segments[0] !== "api") return notFound();
+	if (options.statistics) {
+		const response = handleStatisticsRoute(options.statistics, request, url, segments);
+		if (response !== null) return response;
+	}
 	const deploymentResponse = await handleDeploymentRoute(options.deployments, request, segments);
 	if (deploymentResponse !== null) return deploymentResponse;
 	const attachmentResponse = await handleAttachmentRoute(options.attachments, request, url, segments);

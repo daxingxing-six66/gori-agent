@@ -13,7 +13,7 @@ type Broker = RemoteCommandBroker & Partial<Pick<SshConnectionPoolControl, "snap
 interface Runner { path: string; version: string; }
 interface Rules { runner: Runner; sandboxRoots: string[]; }
 interface HostNamespaces { pid: string; network: string; }
-interface ProbeFiles { outside: string; writable: string[]; }
+interface ProbeFiles { outside: string; writable: string[]; readOnly?: boolean; }
 
 /** Uses an installed, unprivileged Bubblewrap. No package operation occurs here. */
 export class BubblewrapRemoteSandboxProvider implements RemoteSandboxBackend {
@@ -78,7 +78,7 @@ export class BubblewrapRemoteSandboxProvider implements RemoteSandboxBackend {
 				throw sandboxCommandFailure({ stage: "Bubblewrap confinement (host PID/network access and filesystem writes)", code: "sandbox_unavailable" }, probe);
 		} finally {
 			await this.#commands.capture({ target, signal: AbortSignal.timeout(1_000), stage: "Bubblewrap probe cleanup",
-				command: `rm -f -- ${quoteShell(files.outside)} ${shellArgv(files.writable)}` }).catch(() => {});
+				command: `rm -f -- ${shellArgv(files.readOnly ? files.writable : [files.outside, ...files.writable])}` }).catch(() => {});
 		}
 	}
 
@@ -97,6 +97,10 @@ export class BubblewrapRemoteSandboxProvider implements RemoteSandboxBackend {
 			canonicalRemoteSandboxRoot(candidate) && !roots.some((root) => isWithinSandboxRoot(candidate, root)) && !isWithinSandboxRoot(candidate, "/tmp"));
 		if (!outside) throw sandboxFailure("sandbox_probe_failed",
 			"No host-writable path outside the sandbox roots was available to verify Bubblewrap confinement. The command was not executed.");
+		if (target.sandboxReadOnly === true) return {
+			outside, readOnly: true,
+			writable: roots.map((root) => posix.join(root, `.gori-bwrap-write-probe-${randomBytes(16).toString("hex")}`)),
+		};
 		const files = { outside: posix.join(outside, `.gori-bwrap-probe-${randomBytes(16).toString("hex")}`),
 			writable: roots.map((root) => posix.join(root, `.gori-bwrap-write-probe-${randomBytes(16).toString("hex")}`)) };
 		await this.#commands.checked({ target, signal, stage: "outside writable probe file",
@@ -148,7 +152,8 @@ function confinementProbeCommand(path: string, roots: string[], namespaces: Host
 		`test -w /tmp && test -c /dev/null && test -e ${quoteShell(files.outside)}`,
 		...files.writable.map((file) => `(set -C; : > ${quoteShell(file)}) && rm -f -- ${quoteShell(file)}`),
 		"(: > /dev/null)",
-		`{ if (: >> ${quoteShell(files.outside)}) 2>/dev/null; then exit 2; fi; printf gori-bubblewrap-probe; }`,
+		files.readOnly ? `test ! -w ${quoteShell(files.outside)} && printf gori-bubblewrap-probe`
+			: `{ if (: >> ${quoteShell(files.outside)}) 2>/dev/null; then exit 2; fi; printf gori-bubblewrap-probe; }`,
 	];
 	const script = `umask 077; ${checks.join(" && ")}`;
 	return `GORI_HOST_PROBE_PID=$$ ${shellArgv([...sandboxArgs(path, roots), "--", "/bin/bash", "--noprofile", "--norc", "-c", script])}; exit $?`;

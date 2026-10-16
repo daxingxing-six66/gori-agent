@@ -51,6 +51,32 @@ describe("multiple sandbox directory UI", () => {
 		expect(edit).toContain('title="/srv/session"');
 		expect(edit).not.toContain('title="/var/log/app"');
 		expect(edit).toContain(messages["sandbox.roots.useWorkspace"]);
+		const heading = edit.match(/<div class="sandbox-roots-heading">([\s\S]*?)<\/div><div class="sandbox-roots-selection"/)?.[1];
+		expect(heading).toContain(`aria-label="${messages["sandbox.roots.useWorkspace"]}"`);
+		expect(heading).not.toContain(`>${messages["sandbox.roots.useWorkspace"]}<`);
+		expect(heading).toContain(messages["session.sandbox.readOnlyOption"]);
+		expect(edit).toContain(messages["sandbox.roots.sessionHint"]);
+		expect(edit.indexOf(messages["sandbox.roots.title"])).toBeLessThan(edit.indexOf(messages["session.sandbox.readOnlyOption"]));
+		expect(edit).toContain('role="tooltip"');
+		expect(edit).toContain("group-hover:visible group-focus-within:visible");
+		expect(edit).not.toContain('class="sandbox-roots-overlay"');
+	});
+	it.each(["zh-CN", "en-US"] as const)("masks the directory selection while keeping the read-only selector available in %s", (locale) => {
+		const session = { id: "session", workspaceId: workspace.id, displayName: "maintenance", workDir: null, autoAudit: false,
+			sandboxEnabled: true, sandboxReadOnly: true, sandboxWritableRoots: ["/srv/session"], terminalContextCursor: 0, revision: 4, createdAt: 1, updatedAt: 1 };
+		const edit = renderToStaticMarkup(<IntlProvider locale={locale} messages={messagesByLocale[locale]}><SessionDialog session={session} workspace={workspace} onClose={() => {}} onSubmit={async () => {}} /></IntlProvider>);
+		expect(edit).toContain('class="sandbox-roots-selection" aria-disabled="true"');
+		expect(edit).toContain('class="sandbox-roots-overlay" aria-hidden="true"');
+		expect(edit).toContain('title="/srv/session"');
+		expect(edit).not.toContain(messagesByLocale[locale]["sandbox.roots.sessionHint"]);
+		const heading = edit.match(/<div class="sandbox-roots-heading">([\s\S]*?)<\/div><div class="sandbox-roots-selection"/)?.[1];
+		expect(heading).toContain('disabled=""');
+		const selector = edit.match(/<input[^>]*aria-describedby="session-read-only-hint"[^>]*>/)?.[0];
+		expect(selector).toContain('checked=""'); expect(selector).not.toContain('disabled=""');
+		const selection = edit.slice(edit.indexOf('class="sandbox-roots-selection"')).split('class="sandbox-roots-overlay"')[0] ?? "";
+		const buttons = selection.match(/<button[^>]*>/g);
+		expect(buttons).toHaveLength(2);
+		for (const button of buttons ?? []) expect(button).toContain('disabled=""');
 	});
 	it("reads both new scope arrays and old one-root capability responses", () => {
 		expect(parseRemoteSandboxProbe(facts)).toEqual(facts);

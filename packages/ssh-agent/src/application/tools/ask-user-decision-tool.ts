@@ -10,15 +10,15 @@ export const askUserDecisionParameters = Type.Object({
 		options: Type.Array(Type.Object({
 			label: Type.String({ minLength: 1, maxLength: 120 }),
 			description: Type.String({ minLength: 1, maxLength: 500 }),
-		}, { additionalProperties: false }), { minItems: 3, maxItems: 3 }),
-		recommendedIndex: Type.Integer({ minimum: 0, maximum: 2 }),
+		}, { additionalProperties: false }), { minItems: 1 }),
+		recommendedIndex: Type.Integer({ minimum: 0 }),
 	}, { additionalProperties: false }), { minItems: 1 }),
 }, { additionalProperties: false });
 
 export const askUserDecisionDefinition = {
 	name: "ask_user_decision",
 	label: "Ask user to decide",
-	description: "Ask the user to choose between three mutually exclusive suggestions or write their own answer. Use when a user preference or decision is needed before continuing. Each question needs exactly three suggestions and one recommendedIndex. You may ask multiple questions. The user may skip a question. A choice does not bypass Guard or any subsequent tool approval.",
+	description: "Ask the user to choose between mutually exclusive suggestions or write their own answer. Use when a user preference or decision is needed before continuing. Each question needs one or more suggestions and one recommendedIndex within its options array. Use as many suggestions as the decision needs; there is no fixed option count. You may ask one or multiple questions. The user may skip a question. A choice does not bypass Guard or any subsequent tool approval.",
 	parameters: askUserDecisionParameters,
 };
 

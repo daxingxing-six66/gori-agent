@@ -7,7 +7,7 @@
 
 Workspace POST/PATCH 已移除 `remoteDefaultCwd`，继续提交该字段返回 400 字段错误。`defaultCwd` 仅为本地会话默认目录，响应不再包含远端默认目录。
 
-Session POST/PATCH 接受布尔 `sandboxEnabled` 及可选 `sandboxWritableRoots` 列表，创建省略取 true，更新省略保留，GET 与 tree 返回当前值。PATCH 仍要求 `expectedRevision`；配置切换与执行互斥，`session_configuration_in_progress` 返回 409，已有 active PTY 自动重开。见 [session-sandbox.md](./session-sandbox.md)。
+Session POST/PATCH 接受布尔 `sandboxEnabled`、`sandboxReadOnly` 及可选 `sandboxWritableRoots` 列表，创建省略取 true，更新省略保留，GET 与 tree 返回当前值。PATCH 仍要求 `expectedRevision`；配置切换与执行互斥，`session_configuration_in_progress` 返回 409，已有 active PTY 自动重开。见 [session-sandbox.md](./session-sandbox.md)。
 
 Workspace POST/PATCH 通过 `sandboxWritableRoots` 设置独立可写目录默认列表。显式列表为 1–16 条不重复的绝对非根路径；Session 创建未传时复制 Workspace 默认列表，PATCH 省略时保留，更新 Workspace 不覆盖已有 Session。省略时保存空列表；可写根禁止 `/`。`POST /api/workspaces/:id/sandbox` 通过正式目标解析显式检测远端沙箱，成功返回 mode/backend/enforcement/后端版本、完整 `sandboxRoots` 与首根兼容字段 `sandboxRoot`；不运行用户脚本，可能创建连接及投递启动器。失败沿用安全本地化错误；该检测接口不提供 Full Access 直通执行。见 [remote-sandbox.md](./remote-sandbox.md)。
 
@@ -17,6 +17,7 @@ Workspace POST/PATCH 通过 `sandboxWritableRoots` 设置独立可写目录默�
 
 ## 当前边界
 
+- 全局只读统计挂载在 `/api/statistics/options|overview|models|runs|run-records|workspaces`，由独立路由和查询服务处理，复用共享异常与 Locale 边界，不调用 Chat/Terminal/Deployment 业务服务。见 [statistics.md](./statistics.md) 和 [HTTP 契约](../frontend/statistics-api.md)。
 
 - 用户决策使用 `GET /api/sessions/:sessionId/chat/decisions` 恢复待决题，`POST /api/sessions/:sessionId/chat/decisions/:decisionId/answer` 提交按题序排列的 `{ answers }`；Session、题目数量和答案类型在服务边界验证，重复同答幂等，冲突或过期返回错误。当前 Run SSE 发送 `decision.requested` 与 `decision.resolved`。见 [user-decision.md](./user-decision.md)。
 

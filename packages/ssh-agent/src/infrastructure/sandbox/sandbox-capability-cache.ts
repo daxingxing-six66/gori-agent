@@ -17,7 +17,7 @@ export class SandboxCapabilityCache<T> {
 	}
 
 	async get(target: SshTargetSnapshot, signal: AbortSignal): Promise<T> {
-		const key = serializeConnectionKey(connectionKeyFor(target));
+		const key = capabilityKey(target);
 		for (;;) {
 			signal.throwIfAborted();
 			const pending = this.#refreshing.get(key) ?? this.#loading.get(key);
@@ -30,7 +30,7 @@ export class SandboxCapabilityCache<T> {
 
 	refresh(target: SshTargetSnapshot, signal: AbortSignal): Promise<T> {
 		signal.throwIfAborted();
-		const key = serializeConnectionKey(connectionKeyFor(target));
+		const key = capabilityKey(target);
 		let pending = this.#refreshing.get(key);
 		if (!pending) {
 			pending = this.#reload(key, target, signal).finally(() => this.#refreshing.delete(key));
@@ -62,6 +62,11 @@ export class SandboxCapabilityCache<T> {
 	#generation(target: SshTargetSnapshot): number {
 		return this.#connections.snapshotWorkspace?.(target.workspaceId).generation ?? 0;
 	}
+}
+
+function capabilityKey(target: SshTargetSnapshot): string {
+	// A read-only discovery must never wait for another Session's launcher installation.
+	return JSON.stringify([serializeConnectionKey(connectionKeyFor(target)), target.sandboxReadOnly === true]);
 }
 
 /** A cancelled waiter leaves the discovery owned by another request alone. */

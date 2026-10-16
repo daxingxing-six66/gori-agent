@@ -839,6 +839,18 @@ const MIGRATIONS = [
 		`,
 	},
 	{
+		version: 29,
+		sql: `
+			CREATE INDEX statistics_messages_created_idx ON chat_messages(created_at)
+				WHERE message_type IN ('assistant', 'compact');
+			CREATE INDEX statistics_messages_run_idx ON chat_messages(run_id)
+				WHERE message_type IN ('assistant', 'compact');
+			CREATE INDEX statistics_runs_created_idx ON chat_runs(created_at DESC, id DESC);
+			CREATE INDEX statistics_runs_workspace_created_idx ON chat_runs(workspace_id, created_at DESC, id DESC);
+			CREATE INDEX statistics_runs_started_idx ON chat_runs(started_at) WHERE started_at IS NOT NULL;
+		`,
+	},
+	{
 		version: 30,
 		sql: `
 			CREATE TABLE deployment_sessions (
@@ -923,6 +935,11 @@ const MIGRATIONS = [
 				WHERE session_id = NEW.session_id AND id = 'deployment:' || NEW.id AND message_type = 'deployment';
 			END;
 		`,
+	},
+	{
+		version: 34,
+		sql: `ALTER TABLE sessions ADD COLUMN sandbox_read_only INTEGER NOT NULL DEFAULT 0
+			CHECK (sandbox_read_only IN (0, 1) AND (sandbox_read_only = 0 OR sandbox_enabled = 1));`,
 	},
 ] as const;
 

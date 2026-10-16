@@ -62,6 +62,17 @@ modules:
 }
 
 describe("deployment binding to Session writable directories", () => {
+	it("rejects new deployment plans and previously prepared plans after selecting read-only mode", async () => {
+		const f = await fixture();
+		try {
+			const plan = await f.service.prepare(f.session.id, "deploy-fixture.md", "app");
+			await f.backend.api.renameSession({ id: f.session.id, expectedRevision: f.session.revision, sandboxReadOnly: true });
+			await expect(f.service.prepare(f.session.id, "deploy-fixture.md", "app")).rejects.toMatchObject({ code: "deployment_sandbox_route_changed" });
+			await expect(f.service.beginDiscussion(f.session.id, "deploy-fixture.md", "app")).rejects.toMatchObject({ code: "deployment_sandbox_route_changed" });
+			await expect(f.service.claimForAgent(f.session.id, plan.id, "agent")).rejects.toMatchObject({ code: "deployment_sandbox_route_changed" });
+			expect(f.submit).not.toHaveBeenCalled();
+		} finally { await f.close(); }
+	});
 	it("persists the entire scope and rejects a changed second directory before claiming or executing a stage", async () => {
 		const f = await fixture();
 		try {

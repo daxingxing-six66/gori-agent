@@ -691,7 +691,7 @@ function decisionFromRow(row: unknown): UserDecision | undefined {
 	}
 	try {
 		const questions = parseUserDecisionQuestions(JSON.parse(value.questions_json as string));
-		const answers = value.answers_json === null ? undefined : parseUserDecisionAnswers(JSON.parse(value.answers_json as string), questions.length);
+		const answers = value.answers_json === null ? undefined : parseUserDecisionAnswers(JSON.parse(value.answers_json as string), questions);
 		if ((status === "answered") !== (answers !== undefined) || (status === "pending") !== (value.resolved_at === null)) {
 			throw new Error("Inconsistent persisted Chat decision state");
 		}

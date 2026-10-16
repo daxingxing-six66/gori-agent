@@ -5,6 +5,7 @@ import type { CredentialRepository } from "../repositories/credential-repository
 import type { SessionRepository } from "../repositories/session-repository.ts";
 import type { WorkspaceRepository } from "../repositories/workspace-repository.ts";
 import type { WorkspaceHostTrustService } from "./workspace-host-trust-service.ts";
+import { sessionSandboxRoots } from "./session-sandbox-policy.ts";
 
 export interface SshTargetResolver {
 	resolve(sessionId: SessionId): Promise<SshTargetSnapshot>;
@@ -45,7 +46,8 @@ export class DefaultSshTargetResolver implements SshTargetResolver, WorkspaceSsh
 			});
 		}
 		const target = await this.resolveWorkspaceTarget(session.workspaceId, sessionId);
-		return { ...target, sandboxWritableRoots: [...(session.sandboxWritableRoots ?? target.sandboxWritableRoots ?? [])] };
+		return { ...target, sandboxReadOnly: session.sandboxReadOnly === true,
+			sandboxWritableRoots: sessionSandboxRoots({ ...session, sandboxWritableRoots: [...(session.sandboxWritableRoots ?? target.sandboxWritableRoots ?? [])] }) };
 	}
 
 	async resolveWorkspace(workspaceId: WorkspaceId): Promise<SshTargetSnapshot> {

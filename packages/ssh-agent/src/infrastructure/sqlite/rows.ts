@@ -106,6 +106,7 @@ export interface SessionRow {
 	work_dir: string | null;
 	auto_audit: number;
 	sandbox_enabled: number;
+	sandbox_read_only: number;
 	sandbox_writable_roots_json: string | null;
 	terminal_context_cursor: number;
 	revision: number;
@@ -121,6 +122,7 @@ export function sessionFromRow(row: SessionRow): Session {
 		workDir: row.work_dir,
 		autoAudit: row.auto_audit === 1,
 		sandboxEnabled: row.sandbox_enabled === 1,
+		sandboxReadOnly: row.sandbox_read_only === 1,
 		sandboxWritableRoots: readStoredSandboxWritableRoots(row.sandbox_writable_roots_json),
 		terminalContextCursor: row.terminal_context_cursor,
 		revision: row.revision,

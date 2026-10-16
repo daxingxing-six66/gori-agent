@@ -28,8 +28,9 @@ export function useSessionSandbox(options: {
 	const setError = useCallback((value: unknown) => setSessionError(value === null ? null : { sessionId, value }), [sessionId]);
 	const setNotice = useCallback((value: string | null) => setSessionNotice(value === null ? null : { sessionId, value }), [sessionId]);
 	const latest = confirmed?.id === sessionId && confirmed.revision >= (session?.revision ?? 0) ? confirmed : session;
-	const enabled = latest?.sandboxEnabled !== false;
-	const statusLabel = intl.formatMessage({ id: pending ? "session.sandbox.changing" : enabled ? "session.sandbox.on" : "session.sandbox.off" });
+	const readOnly = latest?.sandboxReadOnly === true;
+	const enabled = readOnly || latest?.sandboxEnabled !== false;
+	const statusLabel = intl.formatMessage({ id: pending ? "session.sandbox.changing" : readOnly ? "session.sandbox.readOnly" : enabled ? "session.sandbox.on" : "session.sandbox.off" });
 
 	useEffect(() => {
 		currentSessionId.current = sessionId;
@@ -53,8 +54,10 @@ export function useSessionSandbox(options: {
 			const current = await sessionApi.get(sessionId, request.signal);
 			if (!isCurrent()) return false;
 			const sandboxEnabled = enabled ?? current.sandboxEnabled === false;
-			const updated = current.sandboxEnabled === sandboxEnabled ? current
-				: await sessionApi.update(sessionId, { sandboxEnabled, expectedRevision: current.revision });
+			const readOnlyChanged = current.sandboxReadOnly === true;
+			const updated = current.sandboxEnabled === sandboxEnabled && !readOnlyChanged ? current
+				: await sessionApi.update(sessionId, { sandboxEnabled,
+					...(readOnlyChanged ? { sandboxReadOnly: false } : {}), expectedRevision: current.revision });
 			if (!isCurrent()) return false;
 			setConfirmed(updated);
 			await refreshTerminal(request.signal);
@@ -90,9 +93,9 @@ export function useSessionSandbox(options: {
 		if (command.kind === "set") return update(command.enabled);
 		if (command.kind === "toggle") return update();
 		setError(null);
-		setNotice(intl.formatMessage({ id: enabled ? "session.sandbox.enabledDescription" : "session.sandbox.disabledDescription" }));
+		setNotice(intl.formatMessage({ id: readOnly ? "session.sandbox.readOnlyDescription" : enabled ? "session.sandbox.enabledDescription" : "session.sandbox.disabledDescription" }));
 		return true;
-	}, [enabled, intl, update, setError, setNotice]);
+	}, [enabled, readOnly, intl, update, setError, setNotice]);
 
 	const tools: ChatComposerTool[] = [{
 		id: "sandbox", icon: "shield", name: intl.formatMessage({ id: "session.sandbox.command.name" }),
@@ -101,6 +104,6 @@ export function useSessionSandbox(options: {
 		status: { label: statusLabel, tone: pending ? "pending" : enabled ? "active" : "inactive" },
 		disabled: disabled || pending || !session,
 	}];
-	return { enabled, pending, disabled, statusLabel, tools, error, notice, execute,
+	return { enabled, readOnly, pending, disabled, statusLabel, tools, error, notice, execute,
 		clearNotice: () => { setError(null); setNotice(null); } };
 }

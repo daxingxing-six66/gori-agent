@@ -9,6 +9,7 @@ import { zhCNSftpMessages } from "@/features/i18n/messages/zh-CN/sftp";
 import { zhCNTerminalMessages } from "@/features/i18n/messages/zh-CN/terminal";
 import { zhCNServerMetricsMessages } from "@/features/i18n/messages/zh-CN/server-metrics";
 import { zhCNTaskContainerMessages } from "@/features/i18n/messages/zh-CN/task-container";
+import { zhCNStatisticsMessages } from "@/features/i18n/messages/zh-CN/statistics";
 import { zhCNDeployTaskMessages } from "@/features/i18n/messages/zh-CN/deploy-task";
 
 export const zhCNMessages = {
@@ -23,6 +24,7 @@ export const zhCNMessages = {
 	...zhCNTerminalMessages,
 	...zhCNServerMetricsMessages,
 	...zhCNTaskContainerMessages,
+	...zhCNStatisticsMessages,
 	...zhCNDeployTaskMessages,
 } as const;
 

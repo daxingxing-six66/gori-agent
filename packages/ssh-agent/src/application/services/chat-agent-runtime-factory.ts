@@ -66,7 +66,7 @@ export interface ChatAgentRuntimeFactoryOptions {
 	decisions: Pick<ChatUserDecisionService, "request">;
 	deployments?: AgentDeploymentService;
 	bubblewrapInstallations?: BubblewrapInstallationService;
-	sandboxPolicy?: Pick<SessionSandboxPolicy, "mode"> & Partial<Pick<SessionSandboxPolicy, "instructions">>;
+	sandboxPolicy?: Pick<SessionSandboxPolicy, "mode"> & Partial<Pick<SessionSandboxPolicy, "instructions" | "readOnly">>;
 	createRemoteTool(sessionId: string, abortRun?: () => void, agentRunId?: string): AgentTool;
 	createTerminalTool(input: { sessionId: string; terminalSessionId: string; agentRunId: string }): AgentTool;
 	createSftpTool(input: {
@@ -144,10 +144,15 @@ export class ChatAgentRuntimeFactory {
 		};
 		let runtime: ChatRunRuntime | undefined;
 		try {
+			const readOnly = await this.#sandboxPolicy?.readOnly?.(input.run.sessionId) === true;
+			const enforceReadOnly = (tool: AgentTool): AgentTool => readOnly &&
+				(tool.name === "sftp_upload" || tool.name === "bubblewrap_install" ||
+					(tool.name.startsWith("deployment_") && tool.name !== "deployment_inspect" && tool.name !== "deployment_finish"))
+				? unavailableTool(tool, "read-only sandbox mode") : tool;
 			const systemPrompt = this.#sandboxPolicy
 				? `${input.systemPrompt}\n\n${this.#sandboxPolicy.instructions
 					? await this.#sandboxPolicy.instructions(input.run.sessionId)
-					: sessionSandboxInstructions(await this.#sandboxPolicy.mode(input.run.sessionId))}`
+					: sessionSandboxInstructions(await this.#sandboxPolicy.mode(input.run.sessionId), undefined, readOnly)}`
 				: input.systemPrompt;
 			const requireRuntime = (): ChatRunRuntime => {
 				if (!runtime) throw new Error("Chat Runtime is unavailable during Agent callback");
@@ -251,7 +256,7 @@ export class ChatAgentRuntimeFactory {
 				const tools = [...initialDeploymentTools.filter((tool) => !input.deploymentReview || tool.name === "deployment_inspect"), ...planningTools];
 				if (deploymentId && this.#deployments?.finishDeployment)
 					tools.push(createDeploymentFinishTool({ run: input.run, deploymentId, deployments: this.#deployments }));
-				return tools.map((tool) => withToolAvailability({ ...tool, execute: async (...args) => {
+				return tools.map((tool) => enforceReadOnly(withToolAvailability({ ...tool, execute: async (...args) => {
 					try { return await tool.execute(...args); }
 					catch (error) {
 						if (error instanceof DeploymentError && error.status >= 400 && error.status < 500)
@@ -260,7 +265,7 @@ export class ChatAgentRuntimeFactory {
 					}
 				} }, () => {
 					if (this.#deployments?.activeMode && !currentMode()) throw toolRequestError("Deployment mode has ended");
-				}));
+				})));
 			};
 			const bubblewrapInspectTool = input.run.serverInteractionMode === "command" && this.#bubblewrapInstallations
 				? createBubblewrapInspectionTool({ sessionId: input.run.sessionId, installations: this.#bubblewrapInstallations })
@@ -270,7 +275,7 @@ export class ChatAgentRuntimeFactory {
 					installations: this.#bubblewrapInstallations })
 				: unavailableTool(bubblewrapInstallDefinition);
 			const ordinaryTools = [...localTools, remoteTool, terminalTool, sftpUploadTool, sftpDownloadTool,
-				bubblewrapInspectTool, bubblewrapInstallTool, createAskUserDecisionTool({ run: input.run, decisions: this.#decisions })];
+				bubblewrapInspectTool, bubblewrapInstallTool, createAskUserDecisionTool({ run: input.run, decisions: this.#decisions })].map(enforceReadOnly);
 			const synchronizeDeployment = (context: AgentContext): AgentContext => ({ ...context,
 				systemPrompt: `${systemPrompt}\n\n${deploymentStateInstructions(currentMode())}`,
 				tools: configureFileToolConcurrency([...ordinaryTools, ...deploymentTools()], env),

@@ -61,7 +61,7 @@ describe("Session sandbox commands", () => {
 		expect(await hooks.value.execute("/sandbox off", true)).toBe(false); expect(api.update).not.toHaveBeenCalled();
 		expect(await hooks.value.execute("Run uname -a")).toBeNull();
 	});
-	it("offers one localized mode entry and toggles against the authoritative Session state", async () => {
+	it("offers only the sandbox switch and toggles against the authoritative Session state", async () => {
 		expect(hooks.value.tools).toHaveLength(1);
 		expect(hooks.value.tools[0]).toMatchObject({ id: "sandbox", name: "session.sandbox.command.name",
 			description: "session.sandbox.command.description", status: { tone: "active" } });
@@ -70,6 +70,25 @@ describe("Session sandbox commands", () => {
 		api.update.mockResolvedValue({ ...session, revision: 6, sandboxEnabled: true });
 		expect(await hooks.value.execute("/sandbox")).toBe(true);
 		expect(api.update).toHaveBeenCalledExactlyOnceWith("session", { expectedRevision: 5, sandboxEnabled: true });
+	});
+	it("rejects the removed read-only command without changing configuration", async () => {
+		expect(await hooks.value.execute("/sandbox read-only")).toBe(false); hooks.render();
+		expect(hooks.value.error).toEqual(new Error("session.sandbox.usage"));
+		expect(api.get).not.toHaveBeenCalled(); expect(api.update).not.toHaveBeenCalled();
+	});
+	it("shows read-only status selected in Edit Session and exits explicitly", async () => {
+		const readOnly = { ...session, revision: 6, sandboxReadOnly: true, sandboxWritableRoots: ["/srv/app"] };
+		hooks.options.session = readOnly; hooks.render(); hooks.render();
+		expect(hooks.value.readOnly).toBe(true);
+		expect(hooks.value.statusLabel).toBe("session.sandbox.readOnly");
+		expect(hooks.value.tools).toHaveLength(1);
+		expect(await hooks.value.execute("/sandbox status")).toBe(true); hooks.render();
+		expect(hooks.value.notice).toBe("session.sandbox.readOnlyDescription");
+		api.get.mockResolvedValue(details(readOnly));
+		api.update.mockResolvedValue({ ...readOnly, revision: 7, sandboxReadOnly: false });
+		expect(await hooks.value.execute("/sandbox on")).toBe(true); hooks.render();
+		expect(api.update).toHaveBeenLastCalledWith("session", { expectedRevision: 6, sandboxEnabled: true, sandboxReadOnly: false });
+		expect(hooks.value.readOnly).toBe(false);
 	});
 	it("prevents duplicate updates and exposes pending state until the request settles", async () => {
 		const pending = deferred<Session>(); api.update.mockReturnValueOnce(pending.promise);

@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { CommandOperationService } from "../src/application/services/command-operation-service.ts";
 import { DefaultSessionService } from "../src/application/services/session-service.ts";
 import { SessionLifecycleCoordinator } from "../src/application/services/session-lifecycle-coordinator.ts";
-import { sessionSandboxInstructions } from "../src/application/services/session-sandbox-policy.ts";
+import { sessionSandboxInstructions, sessionSandboxRoots } from "../src/application/services/session-sandbox-policy.ts";
 import { TerminalSessionService } from "../src/application/services/terminal-session-service.ts";
 import type { ExecuteRemoteCommandInput, TerminalChannelHandle, TerminalChannelExit, OpenTerminalChannelInput } from "../src/application/ssh-channel-broker.ts";
 import { wrapRemoteCommand } from "../src/application/remote-shell-command.ts";
@@ -55,7 +55,11 @@ function fixture(options: { commandSandbox?: boolean } = {}) {
 	let nextId = 0;
 	const ids = { next: () => `test-${++nextId}` };
 	const clock = { now: () => Date.now() };
-	const targets = { resolve: vi.fn(async (sessionId: string) => ({ ...target, sandboxWritableRoots: (await sessions.findById(sessionId))?.sandboxWritableRoots })) };
+	const targets = { resolve: vi.fn(async (sessionId: string) => {
+		const session = await sessions.findById(sessionId);
+		return { ...target, sandboxReadOnly: session?.sandboxReadOnly,
+			sandboxWritableRoots: session?.sandboxReadOnly ? sessionSandboxRoots(session) : session?.sandboxWritableRoots };
+	}) };
 	const guards = { evaluate: vi.fn(async () => ({ allowed: true })) };
 	const prepare = vi.fn(async (input: { cwd: string; command: string }) => ({ command: `confined:${wrapRemoteCommand(input.cwd, input.command)}`,
 		confirmation: "test: confined", sandbox: { mode: "workspace_write" as const, backend: "landlock" as const,
@@ -104,7 +108,7 @@ describe("Session sandbox execution policy", () => {
 
 	it("migrates v26 Sessions to enabled without changing their revisions or other settings", async () => {
 		const f = fixture();
-		f.database.exec("ALTER TABLE sessions DROP COLUMN sandbox_enabled; DELETE FROM ssh_agent_schema_migrations WHERE version = 27");
+		f.database.exec("ALTER TABLE sessions DROP COLUMN sandbox_read_only; ALTER TABLE sessions DROP COLUMN sandbox_enabled; DELETE FROM ssh_agent_schema_migrations WHERE version IN (27, 34)");
 		applyMigrations(f.database);
 		expect(await f.sessions.findById("session")).toMatchObject({ sandboxEnabled: true, autoAudit: false, revision: 1 });
 		applyMigrations(f.database);
@@ -176,9 +180,61 @@ describe("Session sandbox execution policy", () => {
 		expect(sessionSandboxInstructions("full_access")).toContain("disabled remote sandboxing for this Session");
 		expect(sessionSandboxInstructions("full_access")).toContain("ordinary command approval");
 	});
+
+	it("persists read-only mode, overrides configured roots and restores them when leaving", async () => {
+		const f = fixture();
+		const updated = await f.sessionService.update({ id: "session", expectedRevision: 1,
+			sandboxReadOnly: true, sandboxWritableRoots: ["/srv/app", "/var/log"] });
+		expect(await f.sessions.findById("session")).toMatchObject({ sandboxEnabled: true, sandboxReadOnly: true,
+			sandboxWritableRoots: ["/srv/app", "/var/log"] });
+		expect(await f.targets.resolve("session")).toMatchObject({ sandboxReadOnly: true, sandboxWritableRoots: ["/tmp"] });
+		const result = await f.commandService.submit({ ...command, command: "tail /var/log/app.log", cwd: "/var/log" });
+		expect(result.operation.status).toBe("completed");
+		expect(f.prepare).toHaveBeenLastCalledWith(expect.objectContaining({ target: expect.objectContaining({
+			sandboxReadOnly: true, sandboxWritableRoots: ["/tmp"] }) }));
+		await expect(f.commandService.submit({ ...command, sandboxPermissions: "full_access", justification: "approved exception" }))
+			.rejects.toMatchObject({ failure: { code: "invalid_request" } });
+		expect(f.execute).toHaveBeenCalledOnce();
+		await f.sessionService.update({ id: "session", expectedRevision: updated.revision, sandboxReadOnly: false });
+		expect((await f.targets.resolve("session")).sandboxWritableRoots).toEqual(["/srv/app", "/var/log"]);
+	});
+
+	it("validates read-only API settings and prevents conflicting disabled settings", async () => {
+		const f = fixture();
+		expect(parseCreateSession({ displayName: "new", sandboxReadOnly: true })).toMatchObject({ sandboxReadOnly: true });
+		for (const sandboxReadOnly of ["true", 0, null])
+			expect(() => parseUpdateSession({ expectedRevision: 1, sandboxReadOnly })).toThrow();
+		await expect(f.sessionService.update({ id: "session", expectedRevision: 1, sandboxEnabled: false, sandboxReadOnly: true }))
+			.rejects.toMatchObject({ code: "validation_error" });
+	});
+
+	it("fails closed in read-only mode when confinement is unavailable or the target scope is stale", async () => {
+		const f = fixture({ commandSandbox: false });
+		await f.sessionService.update({ id: "session", expectedRevision: 1, sandboxReadOnly: true });
+		expect((await f.commandService.submit(command)).operation.failure?.code).toBe("sandbox_unavailable");
+		f.targets.resolve.mockResolvedValueOnce({ ...target, sandboxReadOnly: true, sandboxWritableRoots: ["/srv/app"] });
+		expect((await f.commandService.submit(command)).operation.failure?.code).toBe("invalid_request");
+		expect(f.execute).not.toHaveBeenCalled();
+	});
 });
 
 describe("Session sandbox Terminal reconfiguration", () => {
+	it("reopens Terminal in both directions when selecting read-only mode without changing saved roots", async () => {
+		const f = fixture();
+		await f.sessionService.update({ id: "session", expectedRevision: 1, sandboxWritableRoots: ["/srv/app"] });
+		await f.terminalService.open({ sessionId: "session", requestId: "first", rows: 40, cols: 100 });
+		const first = await activeTerminal(f);
+		await f.sessionService.update({ id: "session", expectedRevision: 2, sandboxReadOnly: true });
+		const readOnly = await activeTerminal(f);
+		expect(readOnly.id).not.toBe(first.id);
+		expect(readOnly.geometry).toEqual(first.geometry);
+		expect(f.prepareTerminal).toHaveBeenLastCalledWith(expect.objectContaining({ target: expect.objectContaining({
+			sandboxReadOnly: true, sandboxWritableRoots: ["/tmp"] }) }));
+		await f.sessionService.update({ id: "session", expectedRevision: 3, sandboxReadOnly: false });
+		await activeTerminal(f);
+		expect(f.prepareTerminal).toHaveBeenLastCalledWith(expect.objectContaining({ target: expect.objectContaining({
+			sandboxReadOnly: false, sandboxWritableRoots: ["/srv/app"] }) }));
+	});
 	it("replaces a live PTY in both directions with the same geometry and actual mode facts", async () => {
 		const f = fixture(); await f.terminalService.open({ sessionId: "session", requestId: "first", rows: 40, cols: 100 });
 		const first = await activeTerminal(f); expect(f.prepareTerminal).toHaveBeenCalledOnce();

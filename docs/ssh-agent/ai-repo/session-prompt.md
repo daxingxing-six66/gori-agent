@@ -1,5 +1,7 @@
 # 会话头部快照与运行时模式消息
 
+只读 Session 的可信片段说明仅 `/tmp` 与 `/dev/null` 可写、禁止 Full Access/上传/安装/部署写入；Runtime 同时装配不可用工具入口，执行服务独立强制限制，不依赖历史摘要或模型服从。见 [session-sandbox.md](./session-sandbox.md)。
+
 适用于系统提示词组装、环境来源、Terminal Mode 切换、跨轮部署讨论、模型适配及压缩后模式恢复。
 
 `/deploy` 首次配置仍通过本轮 `deployment_setup` 附加包内 Skill，不重写基础头部。选定服务后，后端持久化 Session 部署模式及稳定部署身份；普通后续 Chat Run 读取当前讨论、待审或执行事实。正式历史入口与模型投影分别处理，动态工具和可信状态详见 [deployment.md](./deployment.md)。
@@ -10,7 +12,7 @@
 - 固定头部包括基本工具边界、凭据保护、两种标签的含义与优先级、首次运行环境。`initial-environment` 按 `local` 与 `remote` 分层：本地有效目录来自 `session.workDir ?? localCwd`，本地 OS 类型/版本/架构来自 `node:os`，远端地址与端口来自 Workspace host。域名按配置原样保存，不解析或冒充服务器 IP；不采集远端 OS，不包含远端工作区名称、远端默认目录、凭据、Run ID 或动态时间。
 - 环境是首次运行时的事实；后续 Session 工作目录变更不会重写快照。已有历史但没有快照的旧 Session，在升级后的下一次 Run 初始化一次，无法还原其历史首次运行环境。只读占用查询不创建快照，缺快照返回 null；无快照且存在历史的手动压缩返回 `409 chat_prompt_not_initialized`，提示先运行一次，不提前创建头部。
 - 两个远端 Tool 的定义和顺序在两种模式下保持相同。Runtime Factory 根据 Run 冻结的 `serverInteractionMode` 为不可用 Tool 装配 `unavailableTool`，实际可用入口才绑定服务。工具在参数准备阶段（审批前）和直接执行入口拒绝本次调用，返回 `terminate: false` 的错误结果供模型纠正；授权策略不再重复集中校验模式。不能只依赖 Prompt 让模型遵守模式。错误 Tool 调用不改变模式；Run 绑定模式与最新持久化模式发生冲突时仍停止 Run。
-- `bubblewrap_inspect` 与 `bubblewrap_install` 也保持稳定定义，但仅命令模式可执行。已有 Session 的首次 system prompt 快照不重写；Tool 自身描述了受限命令或 Terminal 打开报告缺失后端时的模型操作。新建快照说明普通远端命令在沙箱可用时始终受限，自动审批只决定是否弹出人工审批；沙箱不可用、已声明写入路径越界以及显式 Full Access 请求都要求独立人工授权。Terminal 打开失败后的前端入口会在命令模式创建 Run，并携带明确的安装请求。上述要求适用于 Session 开启沙盒。Runtime Factory 每个 Run 通过 `SessionSandboxPolicy.instructions()` 读取当前 `sandboxEnabled` 与完整 `sandboxWritableRoots`，在基础 Prompt 后追加可信 `<session-sandbox>`，明确其优先于旧快照的沙箱说明；关闭时指示直接执行，不为运行普通命令探测、安装或申请一次性例外。远端工具描述说明两种策略，Terminal 工具描述读取当前 PTY 事实，参数结构保持兼容。安装审批和执行模式由服务端策略强制，不依赖提示词。见 [session-sandbox.md](./session-sandbox.md)。
+- `bubblewrap_inspect` 与 `bubblewrap_install` 也保持稳定定义，但仅命令模式可执行。已有 Session 的首次 system prompt 快照不重写；Tool 自身描述了受限命令或 Terminal 打开报告缺失后端时的模型操作。新建快照说明普通远端命令在沙箱可用时始终受限，自动审批只决定是否弹出人工审批；沙箱不可用、已声明写入路径越界以及显式 Full Access 请求都要求独立人工授权。Terminal 打开失败后的前端入口会在命令模式创建 Run，并携带明确的安装请求。上述要求适用于 Session 开启沙盒。Runtime Factory 每个 Run 通过 `SessionSandboxPolicy.instructions()` 读取当前 `sandboxEnabled/sandboxReadOnly` 与完整 `sandboxWritableRoots`，在基础 Prompt 后追加可信 `<session-sandbox>`，明确其优先于旧快照的沙箱说明；关闭时指示直接执行，不为运行普通命令探测、安装或申请一次性例外。远端工具描述说明两种策略，Terminal 工具描述读取当前 PTY 事实，参数结构保持兼容。安装审批和执行模式由服务端策略强制，不依赖提示词。见 [session-sandbox.md](./session-sandbox.md)。
 - 部署模式由 DeploymentModeService/Repository 持有，讨论/计划/阶段分别保留各自事实；单轮 Chat 结束不自动退出。提案和执行入口复核绑定、版本与目标，用户或模型文字不能自行激活模式或批准执行。
 - 部署专用工具不属于永久稳定列表；只在当前后端模式绑定内注入，结束后从后续 Provider 请求移除。普通工具继续按交互模式和原审批规则使用；部署提示不会授予远端权限。
 

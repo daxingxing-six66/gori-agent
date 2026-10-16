@@ -1,4 +1,4 @@
-import type { ComponentProps, ReactElement } from "react";
+import { Children, isValidElement, type ChangeEvent, type ComponentProps, type FormEvent, type MouseEvent, type ReactElement, type ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { SessionDetails } from "../features/session/model/session";
 import type { Workspace } from "../features/workspace/model/workspace";
@@ -8,12 +8,15 @@ let hooks: HookDriver;
 vi.mock("react", async (original) => ({ ...await original<typeof import("react")>(),
 	useState: (initial: unknown) => hooks.state(initial),
 	useEffect: (effect: () => void | (() => void), deps: readonly unknown[]) => hooks.effect(effect, deps),
+	useCallback: <T,>(callback: T) => callback,
 }));
 vi.mock("react-intl", () => ({ useIntl: () => ({ formatMessage: ({ id }: { id: string }) => id }) }));
 vi.mock("../features/i18n/components/use-localized-error-message", () => ({ useLocalizedErrorMessage: () => (error: unknown) => error instanceof Error ? error.message : String(error) }));
 vi.mock("../features/session/api/session-api", () => ({ sessionApi: api }));
 import { SessionEditDialog } from "../features/session/components/session-edit-dialog";
 import { SessionDialog } from "../features/session/components/session-dialog";
+import { ManagementDialog } from "../components/management-dialog";
+import { SandboxWritableRootsField } from "../features/workspace/components/sandbox-writable-roots-field";
 
 /** Controls snapshot and response ordering without a server or browser. */
 class HookDriver {
@@ -46,6 +49,10 @@ class HookDriver {
 		for (const effect of effects) effect();
 		return result;
 	}
+	renderForm(formProps: ComponentProps<typeof SessionDialog>) {
+		this.stateIndex = 0;
+		return SessionDialog(formProps) as ReactElement<ComponentProps<typeof ManagementDialog>>;
+	}
 	unmount() { for (const effect of this.effects) effect.cleanup?.(); }
 }
 
@@ -61,9 +68,57 @@ async function loadedEditor() {
 	const editor = hooks.render(); expect(editor.type).toBe(SessionDialog);
 	return editor as ReactElement<ComponentProps<typeof SessionDialog>>;
 }
+function findElement(node: ReactNode, matches: (element: ReactElement<Record<string, unknown>>) => boolean): ReactElement<Record<string, unknown>> | undefined {
+	let found: ReactElement<Record<string, unknown>> | undefined;
+	Children.forEach(node, (child) => {
+		if (found || !isValidElement<Record<string, unknown>>(child)) return;
+		if (matches(child)) { found = child; return; }
+		found = findElement(child.props.children as ReactNode, matches);
+	});
+	return found;
+}
+function rootsField(form: ReactNode) {
+	const field = findElement(form, (element) => element.type === SandboxWritableRootsField);
+	if (!field) throw new Error("Directory selection not found");
+	return field as ReactElement<ComponentProps<typeof SandboxWritableRootsField>>;
+}
+function readOnlyCheckbox(field: ReturnType<typeof rootsField>) {
+	const checkbox = findElement(field.props.settings, (element) => element.type === "input");
+	if (!checkbox) throw new Error("Read-only selector not found");
+	return checkbox as ReactElement<ComponentProps<"input">>;
+}
 beforeEach(() => { vi.clearAllMocks(); hooks = new HookDriver(); api.get.mockResolvedValue(session); api.update.mockResolvedValue({ ...session, revision: 6 }); });
 
 describe("Session edit entry", () => {
+	it.each([false, true])("saves the read-only selector from %s without replacing directory settings", async (initialReadOnly) => {
+		const onSubmit = vi.fn(async () => undefined);
+		const formProps = { session: { ...session, sandboxReadOnly: initialReadOnly }, workspace, onClose: vi.fn(), onSubmit };
+		const initial = hooks.renderForm(formProps);
+		expect(readOnlyCheckbox(rootsField(initial)).props.checked).toBe(initialReadOnly);
+		readOnlyCheckbox(rootsField(initial)).props.onChange?.({ target: { checked: !initialReadOnly } } as ChangeEvent<HTMLInputElement>);
+		const edited = hooks.renderForm(formProps);
+		expect(rootsField(edited).props).toMatchObject({ roots: session.sandboxWritableRoots, masked: !initialReadOnly, disabled: !initialReadOnly });
+		edited.props.onSubmit({ preventDefault: vi.fn() } as unknown as FormEvent<HTMLFormElement>);
+		expect(onSubmit).toHaveBeenCalledExactlyOnceWith({ displayName: session.displayName, workDir: session.workDir, autoAudit: false, sandboxReadOnly: !initialReadOnly });
+	});
+	it("saves the read-only setting with other edits against the editing revision", async () => {
+		const editor = await loadedEditor();
+		await editor.props.onSubmit({ ...input, sandboxReadOnly: true });
+		expect(api.update).toHaveBeenCalledExactlyOnceWith("session", { ...input, sandboxReadOnly: true, expectedRevision: 5 });
+		expect(props.onUpdated).toHaveBeenCalledExactlyOnceWith("session");
+	});
+	it("restores Workspace directory defaults from the heading icon", () => {
+		const onSubmit = vi.fn(async () => undefined);
+		const formProps = { session, workspace, onClose: vi.fn(), onSubmit };
+		const initial = hooks.renderForm(formProps);
+		const restore = rootsField(initial).props.headingAction as ReactElement<ComponentProps<"button">>;
+		expect(restore.props.disabled).toBe(false);
+		restore.props.onClick?.({} as MouseEvent<HTMLButtonElement>);
+		const edited = hooks.renderForm(formProps);
+		edited.props.onSubmit({ preventDefault: vi.fn() } as unknown as FormEvent<HTMLFormElement>);
+		expect(onSubmit).toHaveBeenCalledExactlyOnceWith({ displayName: session.displayName, workDir: session.workDir, autoAudit: false,
+			sandboxWritableRoots: workspace.sandboxWritableRoots });
+	});
 	it("submits name and directory edits together against the editing revision without toggling mode", async () => {
 		const editor = await loadedEditor();
 		api.get.mockResolvedValue({ ...session, revision: 9 });

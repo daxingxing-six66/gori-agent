@@ -42,5 +42,5 @@ export class RemoteSandboxApprovalStore {
 function targetSignature(target: SshTargetSnapshot): string {
 	return JSON.stringify([target.workspaceId, target.workspaceRevision, target.hostname, target.port,
 		target.hostKeyAlgorithm, target.hostKeyFingerprint, target.credentialId, target.credentialAuthVersion,
-		target.remoteUser, target.sandboxWritableRoots ?? []]);
+		target.remoteUser, target.sandboxWritableRoots ?? [], target.sandboxReadOnly === true]);
 }

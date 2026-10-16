@@ -8,11 +8,11 @@ import { createSqliteManagementBackend } from "../src/runtime/create-sqlite-mana
 const questions = [
 	{ question: "Which route?", options: [
 		{ label: "A", description: "First" }, { label: "B", description: "Second" },
-		{ label: "C", description: "Third" },
-	], recommendedIndex: 1 },
+		{ label: "C", description: "Third" }, { label: "D", description: "Fourth" },
+		{ label: "E", description: "Fifth" },
+	], recommendedIndex: 4 },
 	{ question: "Any detail?", options: [
-		{ label: "None", description: "No detail" }, { label: "Short", description: "A short detail" },
-		{ label: "Long", description: "A long detail" },
+		{ label: "None", description: "No detail" },
 	], recommendedIndex: 0 },
 ];
 
@@ -91,9 +91,15 @@ describe("ask_user_decision HTTP flow", () => {
 				return decision !== undefined;
 			});
 			expect(decision).toMatchObject({ runId, questions });
-			const answers = [{ kind: "option", optionIndex: 1 }, { kind: "custom", text: "Use YAML" }];
+			const answers = [{ kind: "option", optionIndex: 4 }, { kind: "custom", text: "Use YAML" }];
 			expect((await json(backend.handleRequest, "POST", `/api/sessions/other/chat/decisions/${decision!.id}/answer`, { answers })).status).toBe(404);
 			expect((await json(backend.handleRequest, "POST", `/api/sessions/${sessionId}/chat/decisions/${decision!.id}/answer`, { answers: [{ kind: "skipped" }] })).status).toBe(400);
+			expect((await json(backend.handleRequest, "POST", `/api/sessions/${sessionId}/chat/decisions/${decision!.id}/answer`, {
+				answers: [{ kind: "option", optionIndex: 5 }, { kind: "skipped" }],
+			})).status).toBe(400);
+			expect((await json(backend.handleRequest, "POST", `/api/sessions/${sessionId}/chat/decisions/${decision!.id}/answer`, {
+				answers: [{ kind: "option", optionIndex: 4 }, { kind: "option", optionIndex: 1 }],
+			})).status).toBe(400);
 			const answered = await json(backend.handleRequest, "POST", `/api/sessions/${sessionId}/chat/decisions/${decision!.id}/answer`, { answers });
 			expect(answered).toMatchObject({ status: 200, body: { status: "answered", answers } });
 			expect(await json(backend.handleRequest, "POST", `/api/sessions/${sessionId}/chat/decisions/${decision!.id}/answer`, { answers })).toEqual(answered);
@@ -101,7 +107,7 @@ describe("ask_user_decision HTTP flow", () => {
 			await waitFor(async () => (await json(backend.handleRequest, "GET", `/api/sessions/${sessionId}/chat/runs/active`)).body?.run === null);
 			const messages = await json(backend.handleRequest, "GET", `/api/sessions/${sessionId}/chat/messages`);
 			const text = JSON.stringify(messages.body);
-			expect(text).toContain('"label":"B"');
+			expect(text).toContain('"label":"E"');
 			expect(text).toContain("Use YAML");
 			expect(text).toContain("I will use your chosen route");
 			expect((await json(backend.handleRequest, "GET", `/api/sessions/${sessionId}/chat/decisions`)).body).toEqual({ decisions: [] });

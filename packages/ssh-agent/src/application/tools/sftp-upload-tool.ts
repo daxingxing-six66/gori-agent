@@ -13,6 +13,7 @@ import type { SessionId } from "../../domain/ids.ts";
 import { SshAgentError } from "../../domain/ssh-failure.ts";
 import { backendMessage } from "../../i18n/message.ts";
 import type { SshTargetResolver } from "../services/ssh-target-resolver.ts";
+import { toolRequestError } from "./tool-authorization.ts";
 import type { SftpFileBroker } from "../ssh-channel-broker.ts";
 import {
 	progressToolUpdate,
@@ -118,6 +119,8 @@ export function createSftpUploadTool(options: {
 
 				const targetDirectory = requireRemoteDirectoryPath(params.targetPath);
 				const target = await options.targets.resolve(options.sessionId);
+				if (target.sandboxReadOnly === true)
+					throw toolRequestError("SFTP uploads are unavailable in read-only mode. Use remote_server_call for confined writes within /tmp.");
 				const directoryEntry = await options.broker.stat({
 					target,
 					remotePath: targetDirectory,

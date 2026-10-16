@@ -1,5 +1,7 @@
 # `/deploy` 代码路由
 
+只读 Session 禁止新部署讨论、准备/提案、阶段执行及修订工具；服务在每次副作用前再次检查当前只读设置，旧计划也不能执行。历史查询与明确结束仍可用，见 [session-sandbox.md](./session-sandbox.md)。
+
 适用于 Deployment Profile、Session 部署模式、模型规划与修订、阶段执行、日志和右侧 Deploy Tab。重构依据及逐项验收见 [Deploy 重构实现依据](../design/deploy-refactor.md) 第 16–17 节。本次范围已经实现并完成 macOS 本地构建、Linux 目标和授权模型的真实交互验收；跨平台及不同沙箱后端的实际执行范围分别说明。
 
 ## 身份、事实与入口

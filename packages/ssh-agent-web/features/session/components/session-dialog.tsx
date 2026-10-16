@@ -1,6 +1,6 @@
 "use client";
 
-import { FolderOpen, X } from "lucide-react";
+import { FolderOpen, Info, RefreshCw, X } from "lucide-react";
 import { useCallback, useState } from "react";
 import { useIntl } from "react-intl";
 import { DialogError, ManagementDialog, dialogInputClass } from "@/components/management-dialog";
@@ -17,6 +17,7 @@ export interface SessionDialogInput {
 	displayName: string;
 	workDir: string | null;
 	autoAudit: boolean;
+	sandboxReadOnly?: boolean;
 	sandboxWritableRoots?: string[];
 }
 
@@ -32,6 +33,7 @@ export function SessionDialog({ session, workspace, onClose, onReload, onSubmit 
 	const [displayName, setDisplayName] = useState(session?.displayName ?? "");
 	const [workDir, setWorkDir] = useState(session?.workDir ?? "");
 	const [autoAudit, setAutoAudit] = useState(session?.autoAudit ?? false);
+	const [sandboxReadOnly, setSandboxReadOnly] = useState(session?.sandboxReadOnly === true);
 	const initialRoots = session?.sandboxWritableRoots ?? (workspace ? configuredSandboxWritableRoots(workspace) : []);
 	const [roots, setRoots] = useState(initialRoots);
 	const [pending, setPending] = useState(false);
@@ -39,6 +41,7 @@ export function SessionDialog({ session, workspace, onClose, onReload, onSubmit 
 	const [picker, setPicker] = useState<"local" | "remote" | null>(null);
 	const rootsChanged = roots.length !== initialRoots.length || roots.some((root, index) => root !== initialRoots[index]);
 	const rootsInvalid = rootsChanged && !validSandboxWritableRoots(roots);
+	const readOnlyChanged = sandboxReadOnly !== (session?.sandboxReadOnly === true);
 	const defaults = workspace ? configuredSandboxWritableRoots(workspace) : [];
 	const loadRemote = useCallback((path: string, signal: AbortSignal) => {
 		if (!workspace) throw new Error("Session directory browsing requires a Workspace");
@@ -59,6 +62,7 @@ export function SessionDialog({ session, workspace, onClose, onReload, onSubmit 
 				setPending(true);
 				setError(null);
 				void onSubmit({ displayName: displayName.trim(), workDir: workDir || null, autoAudit,
+					...(readOnlyChanged ? { sandboxReadOnly } : {}),
 					...(rootsChanged ? { sandboxWritableRoots: roots } : {}) })
 					.catch((requestError) => setError(localizedErrorMessage(requestError)))
 					.finally(() => setPending(false));
@@ -81,11 +85,25 @@ export function SessionDialog({ session, workspace, onClose, onReload, onSubmit 
 				<p className="mt-1.5 text-[9px] text-faint">{intl.formatMessage({ id: "session.workDir.hint" })}</p>
 			</div>
 			{session && workspace ? <div className="space-y-2 border-t border-[var(--line-soft)] pt-4">
-				<SandboxWritableRootsField roots={roots} hint={intl.formatMessage({ id: "sandbox.roots.sessionHint" })} disabled={pending}
+				<SandboxWritableRootsField roots={roots} hint={sandboxReadOnly ? undefined : intl.formatMessage({ id: "sandbox.roots.sessionHint" })} disabled={pending || sandboxReadOnly}
+					masked={sandboxReadOnly}
+					settings={<div className="flex items-center gap-1.5">
+						<label className="flex items-center gap-2 text-[11px] text-secondary">
+							<input type="checkbox" checked={sandboxReadOnly} disabled={pending} aria-describedby="session-read-only-hint"
+								onChange={(event) => setSandboxReadOnly(event.target.checked)} />
+							{intl.formatMessage({ id: "session.sandbox.readOnlyOption" })}
+						</label>
+						<span className="group inline-flex">
+							<button type="button" className="rounded p-1 text-faint hover:text-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+								aria-label={intl.formatMessage({ id: "session.sandbox.readOnlyOption" })} aria-describedby="session-read-only-hint"><Info size={12} aria-hidden="true" /></button>
+							<span id="session-read-only-hint" role="tooltip" className="pointer-events-none invisible absolute bottom-full left-0 z-20 mb-2 w-64 max-w-full rounded-lg border border-[var(--line)] bg-[var(--surface-raised)] px-3 py-2 text-[10px] leading-4 text-secondary shadow-md group-hover:visible group-focus-within:visible">{intl.formatMessage({ id: "session.sandbox.readOnlyHint" })}</span>
+						</span>
+					</div>}
+					headingAction={<button type="button" className="rounded p-1 hover:bg-surface-hover disabled:opacity-40" disabled={pending || sandboxReadOnly || defaults.length === 0}
+						aria-label={intl.formatMessage({ id: "sandbox.roots.useWorkspace" })} title={intl.formatMessage({ id: "sandbox.roots.useWorkspace" })} onClick={() => setRoots(defaults)}><RefreshCw size={13} aria-hidden="true" /></button>}
 					error={rootsInvalid ? intl.formatMessage({ id: "sandbox.roots.invalid" }) : undefined}
 					onChoose={() => setPicker("remote")} onChange={setRoots} />
-				<button type="button" className="text-[11px] text-accent disabled:opacity-40" disabled={pending || defaults.length === 0} onClick={() => setRoots(defaults)}>{intl.formatMessage({ id: "sandbox.roots.useWorkspace" })}</button>
-				{rootsChanged && session.sandboxEnabled ? <p className="text-[11px] text-secondary">{intl.formatMessage({ id: "session.sandbox.restarting" })}</p> : null}
+				{readOnlyChanged || (rootsChanged && session.sandboxEnabled && !sandboxReadOnly) ? <p className="text-[11px] text-secondary">{intl.formatMessage({ id: "session.sandbox.restarting" })}</p> : null}
 			</div> : null}
 			<label className="flex items-center gap-2 text-[11px] text-secondary"><input type="checkbox" checked={autoAudit} disabled={pending} onChange={(event) => setAutoAudit(event.target.checked)} />{intl.formatMessage({ id: "session.autoAudit.legacy" })}</label>
 		</ManagementDialog>

@@ -1,5 +1,7 @@
 # SSH 命令执行代码路由
 
+只读 Session 的实际命令范围固定为 `/tmp`，保留 `/dev/null`；授权、提交和出队均不允许 Full Access。准备不可用时停止，不申请例外；读日志仍可使用任何账号可读目录。详见 [Session 只读策略](./session-sandbox.md)。
+
 适用于 `remote_server_call` Tool、Session 内 FIFO、进程并发限制、Command Operation、Guard 执行期校验、输出审计、失败分类和最终 Tool Result。
 
 

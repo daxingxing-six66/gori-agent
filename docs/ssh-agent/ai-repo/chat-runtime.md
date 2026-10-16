@@ -1,5 +1,7 @@
 # Chat Runtime 代码路由
 
+只读 Session 通过可信策略禁用上传、安装及部署写入工具，保留读取、Terminal 与下载。远端命令拒绝所有 Full Access 路线，不受 `autoAudit` 放宽。详见 [session-sandbox.md](./session-sandbox.md)。
+
 适用于 Session Chat Run、Pi Agent 事件、工具审批、steer/follow-up、本地工具和自动上下文压缩。
 
 
@@ -24,9 +26,9 @@ Runtime Factory 将 Run ID 绑定到远端 Tool。Full Access grant 绑定完整
 
 - 上下文占用在每次 `turn_end` 和自动压缩保存摘要后推送 `context.updated`；刷新通过独立查询恢复，手动压缩返回 `contextUsage`。头部组装纯函数位于 `application/chat-context.ts`，工具共享静态定义；有效消息按 compact 边界加载，不能把 Agent 完整 transcript 当作压缩后 Context。见 [context-usage.md](./context-usage.md)。
 
-- Session 保存 `workDir`、`autoAudit`、默认开启的 `sandboxEnabled` 与独立 `sandboxWritableRoots`；创建时未指定 `workDir` 则从 Workspace `defaultCwd` 继承并验证本地目录，创建后独立保存。已有 Session 的 null 值仍使用服务默认目录。
+- Session 保存 `workDir`、`autoAudit`、默认开启的 `sandboxEnabled`、默认关闭的 `sandboxReadOnly` 与独立 `sandboxWritableRoots`；创建时未指定 `workDir` 则从 Workspace `defaultCwd` 继承并验证本地目录，创建后独立保存。已有 Session 的 null 值仍使用服务默认目录。
 - 已有 Session 页首通过可选展示插槽接入独立 `SessionServerMetrics`，按 Workspace 共享服务器 CPU/内存/网络快照；它使用 monitoring SSE，与 Chat Run、审批、消息和 Agent Context 无关。桌面保留紧凑页首，窄屏允许指标换行。详见 [session-server-metrics.md](./session-server-metrics.md)。
-- Chat 页首由 `ChatPageHeader` 组合会话标题、必要运行状态及 `SessionSandboxBadge`，桌面使用 44px 单行页首，不显示工作区/本地目录副标题和空闲“就绪”标签；活动运行、排队、重连、失败及取消状态继续展示。组件只读取总装配传入的状态，不持有请求或审批逻辑。沙盒标识显示已确认的 Session 设置，只有图标和开启/关闭短文案；标识只读，无配置按钮或点击动作；Session 目录配置统一由侧边栏铅笔编辑入口提供，保存后刷新当前 Terminal；切换进度与异常继续由独立状态提示展示。见 [session-sandbox.md](./session-sandbox.md)。
+- Chat 页首由 `ChatPageHeader` 组合会话标题、必要运行状态及 `SessionSandboxBadge`，桌面使用 44px 单行页首，不显示工作区/本地目录副标题和空闲“就绪”标签；活动运行、排队、重连、失败及取消状态继续展示。组件只读取总装配传入的状态，不持有请求或审批逻辑。沙盒标识显示已确认的 Session 设置，只有图标和开启/只读/关闭短文案；标识只读，无配置按钮或点击动作；Session 目录配置统一由侧边栏铅笔编辑入口提供，保存后刷新当前 Terminal；切换进度与异常继续由独立状态提示展示。见 [session-sandbox.md](./session-sandbox.md)。
 - Session 详情从最近一次 `chat_runs` 记录投影 `chatModelSelection`；首次 Run 显式选模型，后续 Run 可继承，模型与 thinking level 变化按当前 `pi-ai` 目录重新校验。
 - 模型选择从 SSH Agent 的有效目录读取。上游明确返回所选模型不再受支持时，Run 以 `chat_model_not_supported` 失败，最终 assistant 消息携带统一安全失败报告，在公开投影中显示用户友好提示，同时该模型立即从有效目录和持久化快照删除；不会触发一次无意义的即时刷新。
 - `ChatService` 保留 Chat use case、活动 Run 与初始化互斥、创建顺序和资源归属，`chat-run-executor.ts` 负责执行与清理。`ChatPromptService` 在首次 Run 组装并持久化不可变头部；后续 Run 复用基础头部，并临时附加当前可信 Session 沙盒开关及完整可写目录指引。模式切换以真实 system 消息追加到历史，头部只解释标签及首次环境；两个远端 Tool schema 保持稳定，由运行时门禁限制可用入口。完整边界见 [session-prompt.md](./session-prompt.md)。
@@ -48,7 +50,7 @@ Runtime Factory 将 Run ID 绑定到远端 Tool。Full Access grant 绑定完整
 - 进入已有 Session 时 Chat 消息区自动定位到最新消息；用户上滚超过底部阈值后停止跟随流式内容并显示“回到最新消息”按钮，返回底部后恢复自动跟随。
 - Chat 输入区可直接更新 Session 的 `autoAudit`，但活动 Run 期间禁用修改；模型选择器与发送或停止操作位于同一操作区。新 Session 输入区可在首次发送前通过系统目录选择器设置本地 `workDir`，创建请求会携带该绝对路径；Session 编辑弹窗复用同一选择器，两处都不接受手填路径。
 - Session 模型偏好恢复会重新解析当前 Provider 与模型目录；恢复请求使用递增令牌隔离 Session，Abort 不会标记恢复完成，过期请求不能覆盖新 Session。历史模型已失效时结束加载并要求重新选择，目录请求失败时允许显式重试。
-- Chat 输入区使用统一 Composer Menu：消息开头的 `/` 只唤起即时前端工具，合法位置的 `@` 同时提供工具与本机文件；没有匹配工具时隐藏工具分组，工具与文件均无匹配时只显示统一空状态。选择工具本身不会创建用户 Chat 消息或 Agent Tool Call；Terminal 状态提交会追加 system 模式记录，`/deploy` 在无活动部署时打开输入框上方的模块选择，明确选择后才打开 Deploy Tab；有活动部署直接定位右侧任务。真实 Session 的工具组提供 `/deploy`、Terminal Mode、单一沙盒模式入口和手动上下文压缩；沙盒入口直接切换当前 Session，状态用呼吸灯表示，已有 Terminal 自动重开，详见 [session-sandbox.md](./session-sandbox.md)。压缩与活动 Run 互斥，完成后直接合并同步 HTTP 响应中的摘要消息，空上下文显示跳过提示。文件仍可在普通文本间插入 `file`/`folder` Token；已有 Session 从其有效本地目录逐级浏览，新 Session 创建前从系统根目录浏览。发送内容仍是包含自闭合标签的普通消息字符串，历史消息只把标签渲染为行内引用，不新增独立 Reference 实体。
+- Chat 输入区使用统一 Composer Menu：消息开头的 `/` 只唤起即时前端工具，合法位置的 `@` 同时提供工具与本机文件；没有匹配工具时隐藏工具分组，工具与文件均无匹配时只显示统一空状态。选择工具本身不会创建用户 Chat 消息或 Agent Tool Call；Terminal 状态提交会追加 system 模式记录，`/deploy` 在无活动部署时打开输入框上方的模块选择，明确选择后才打开 Deploy Tab；有活动部署直接定位右侧任务。真实 Session 的工具组提供 `/deploy`、Terminal Mode、沙盒开关和手动上下文压缩；沙盒入口直接切换当前 Session，状态用呼吸灯表示，已有 Terminal 自动重开；只读模式仅在编辑会话中设置，详见 [session-sandbox.md](./session-sandbox.md)。压缩与活动 Run 互斥，完成后直接合并同步 HTTP 响应中的摘要消息，空上下文显示跳过提示。文件仍可在普通文本间插入 `file`/`folder` Token；已有 Session 从其有效本地目录逐级浏览，新 Session 创建前从系统根目录浏览。发送内容仍是包含自闭合标签的普通消息字符串，历史消息只把标签渲染为行内引用，不新增独立 Reference 实体。
 - Composer 可从拖拽文件和剪贴板的 `FileList` 或 `ClipboardItem` 读取图片；上传成功后保存完整 Attachment 投影，并仅将已成功上传、尚未移除的图片按选择顺序随新 Run、`follow_up` 或 `steer` 的 `attachmentIds` 提交。纯图片消息可发送，上传或本地预处理尚未完成时不能发送。发送成功后只清除浏览器预览和 Composer 选择状态，不删除后端附件。消息历史与新 Run 的乐观 User Message 会保留后端 Attachment 投影中的受控 `contentUrl`，仅 JPEG、PNG、WebP 通过 API Base URL 以惰加载图片回显；前端不读取或拼接 `storagePath`。完整接口约束见 [Chat 图片附件联调](../frontend/chat-image-attachment-integration.md)。
 - Composer 草稿状态与历史时间线隔离：普通输入只重渲染输入区，`ChatTimeline` 与消息行使用稳定回调和 memo 避免重复协调 Markdown、Tool 与审批卡片。Token 编辑器以已同步值避免 React 回写后的二次 DOM 序列化；普通输入不 normalize DOM，粘贴和 Token 结构变更才 normalize。中文输入法组合期间关闭菜单并延后至 composition end 同步，因此不会用中间拼写状态触发 `/`、`@` 或文件检索。
 - Markdown 同时把 fenced code 和未标注语言的缩进代码识别为块级代码，避免目录树等预格式化内容被压缩。

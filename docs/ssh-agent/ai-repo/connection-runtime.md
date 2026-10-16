@@ -8,7 +8,7 @@
 SSH Target 不再携带默认 cwd，只保存连接身份、连接参数和沙盒范围。未显式指定 cwd 的远端命令从 SSH 用户家目录启动，Terminal 保留 SSH 会话初始目录；SFTP 浏览默认 `/`。本地 `defaultCwd` 不参与远端执行。
 
 
-可写范围由 readonly `sandboxWritableRoots` 独立快照提供。Workspace Resolver 读取默认列表，Session Resolver 以自身列表覆盖；缺省为未配置的空列表，不从其他路径推导权限。列表不参与 Connection Key，改变范围无需断开共享物理连接，但会使旧授权计划失效。Landlock Provider 按连接身份及 generation 缓存成功能力探针；重连重新验证，目录仍逐次规范化与校验。启动器准备使用共享 Broker，不改变物理连接/Channel 所有权。见 [remote-sandbox.md](./remote-sandbox.md)。
+可写范围由 readonly `sandboxWritableRoots` 独立快照提供。Workspace Resolver 读取默认列表，Session Resolver 以自身列表覆盖；缺省为未配置的空列表，不从其他路径推导权限。只读 Session 目标携带 `sandboxReadOnly=true`，实际列表固定为 `/tmp`；只读标记与列表均不参与 Connection Key，改变范围无需断开共享物理连接，但会使旧授权计划失效。Landlock Provider 按连接身份及 generation 缓存成功能力探针；重连重新验证，目录仍逐次规范化与校验。启动器准备使用共享 Broker，不改变物理连接/Channel 所有权。见 [remote-sandbox.md](./remote-sandbox.md)。
 
 ## 当前边界
 

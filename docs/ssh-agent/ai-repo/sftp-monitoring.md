@@ -1,5 +1,7 @@
 # SFTP 与实时监控代码路由
 
+只读 Session 的 Agent `sftp_upload` 在运行时门禁和工具直接执行入口被拒绝，`sftp_download` 仍可读取日志；部署上传也由部署服务拒绝。Workspace 独立 Files 页面没有 Session 身份，保留独立权限，不受此选项控制。详见 [session-sandbox.md](./session-sandbox.md)。
+
 适用于 Workspace 级文件管理、Transfer 六状态持久化、流式上传下载、Workspace SSE、Connection 快照和远端 Linux 指标采集。
 
 

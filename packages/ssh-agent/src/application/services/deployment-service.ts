@@ -230,6 +230,7 @@ export class DeploymentService {
 	}
 
 	async beginDiscussion(sessionId: string, file: string, moduleId: string): Promise<DeploymentDiscussion> {
+		await this.requireWritableSession(sessionId);
 		if (this.closing) throw new DeploymentError("deployment_unavailable", "Deployment service is closing", 503);
 		if (this.activeMode(sessionId)) throw new DeploymentError("deployment_session_busy", "Exit the current deployment before starting another", 409);
 		const context = await this.context(sessionId);
@@ -389,6 +390,7 @@ export class DeploymentService {
 
 	private async propose(sessionId: string, agentRunId: string, file: string, moduleId: string,
 		proposal: DeploymentPlanProposal, signal: AbortSignal, discussion?: { id: string; revision: number }): Promise<DeploymentRun> {
+		await this.requireWritableSession(sessionId);
 		signal.throwIfAborted();
 		if (!validAgentRunId(agentRunId)) throw new DeploymentError("deployment_agent_invalid", "Agent Run ID is invalid");
 		if (this.closing) throw new DeploymentError("deployment_unavailable", "Deployment service is closing", 503);
@@ -538,6 +540,7 @@ export class DeploymentService {
 	}
 
 	private async preparePlan(sessionId: string, file: string, moduleId: string): Promise<DeploymentRun> {
+		await this.requireWritableSession(sessionId);
 		if (this.closing) throw new DeploymentError("deployment_unavailable", "Deployment service is closing", 503);
 		const context = await this.context(sessionId);
 		const { profile, path, hash } = await loadProfile(context.root, file);
@@ -883,6 +886,7 @@ export class DeploymentService {
 
 	async executeStageForAgent(sessionId: string, id: string, agentRunId: string, stage: AgentDeployStage, signal: AbortSignal,
 		requestId?: string): Promise<DeploymentRun> {
+		await this.requireWritableSession(sessionId);
 		if (!AGENT_STAGES.includes(stage)) throw new DeploymentError("deployment_stage_invalid", `stage: ${String(stage)} is invalid; expected build, upload, restart or verify`, 400, { field: "stage" });
 		const run = this.get(sessionId, id);
 		this.requireAgent(run, agentRunId);
@@ -1363,6 +1367,7 @@ export class DeploymentService {
 
 	/** Recheck the reviewed plan before each side effect; Agent tools can modify project files between stages. */
 	private async requireCurrentPlan(run: DeploymentRun): Promise<void> {
+		await this.requireWritableSession(run.sessionId);
 		const sessionAuthorized = await this.sandboxPolicy.mode(run.sessionId) === "full_access";
 		for (const stage of ["restart", "verify"] as const) {
 			if (run.plan[stage] && sessionAuthorizedAccess(remoteStageAccess(run.plan, stage)) !== sessionAuthorized) {
@@ -1579,6 +1584,11 @@ export class DeploymentService {
 		if (!(await stat(root).catch((error: unknown) => deploymentFileSystemError(error, "deployment_workdir_unavailable", "session.workDir", root))).isDirectory())
 			throw new DeploymentError("deployment_workdir_unavailable", `session.workDir: ${root} must be a directory`, 409, { field: "session.workDir", details: { path: root } });
 		return { root, host: workspace.host.hostname, workspaceId: workspace.id };
+	}
+
+	private async requireWritableSession(sessionId: string): Promise<void> {
+		if (await this.sandboxPolicy.readOnly(sessionId))
+			throw new DeploymentError("deployment_sandbox_route_changed", "Deployment is unavailable in read-only mode. Select a writable Session sandbox mode first.", 409);
 	}
 }
 

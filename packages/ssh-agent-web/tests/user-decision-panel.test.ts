@@ -138,14 +138,14 @@ function pressEnter(tree: ReactNode, options: { shiftKey?: boolean; isComposing?
 	return preventDefault;
 }
 
-function setup() {
+function setup(input: UserDecision = decision) {
 	const hooks = new HookHarness();
 	const onSubmit = vi.fn(async (_answers: UserDecisionAnswer[]) => true);
 	const onClose = vi.fn();
 	const render = (busy = false) => {
 		activeHarness = hooks;
 		hooks.beginRender();
-		return UserDecisionPanel({ decision, open: true, busy, error: null, onClose, onSubmit });
+		return UserDecisionPanel({ decision: input, open: true, busy, error: null, onClose, onSubmit });
 	};
 	return { render, onSubmit, onClose };
 }
@@ -159,6 +159,19 @@ afterEach(() => {
 });
 
 describe("user decision panel interaction", () => {
+	it.each([1, 2, 4, 5])("renders %i options and submits the final option for a single question", (optionCount) => {
+		const panel = setup({ ...decision, questions: [{ question: "选一个方案", options: Array.from({ length: optionCount }, (_, index) => ({
+			label: `方案 ${index + 1}`, description: `说明 ${index + 1}`,
+		})), recommendedIndex: optionCount - 1 }] });
+		let tree = panel.render();
+		expect(elements(tree).filter((element) => element.type === "button" && String(element.props.className).startsWith("decision-option "))).toHaveLength(optionCount);
+		expect(findElement(tree, "span", (element) => element.props.role === "img")?.props["aria-label"]).toBe("推荐");
+		click(buttonWithText(tree, `方案 ${optionCount}`));
+		tree = panel.render();
+		click(buttonWithText(tree, "提交决定"));
+		expect(panel.onSubmit).toHaveBeenCalledExactlyOnceWith([{ kind: "option", optionIndex: optionCount - 1 }]);
+	});
+
 	it("advances after each option and exposes submit only after answering the final question", () => {
 		const panel = setup();
 		let tree = panel.render();

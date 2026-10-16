@@ -80,7 +80,7 @@ export class ChatUserDecisionService {
 		const current = this.#repository.findDecision(sessionId, decisionId);
 		if (!current) throw new ChatError("decision_not_found", "User decision not found", 404);
 		let answers: UserDecisionAnswer[];
-		try { answers = parseUserDecisionAnswers(value, current.questions.length); }
+		try { answers = parseUserDecisionAnswers(value, current.questions); }
 		catch (cause) { throw new ChatError("decision_answer_invalid", "Invalid user decision answers", 400, { cause }); }
 		if (current.status === "answered") {
 			if (JSON.stringify(current.answers) === JSON.stringify(answers)) return current;

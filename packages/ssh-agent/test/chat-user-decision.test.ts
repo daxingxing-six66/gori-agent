@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { validateToolArguments } from "@earendil-works/pi-ai";
 import type { ChatRepository } from "../src/application/repositories/chat-repository.ts";
 import { ChatUserDecisionService } from "../src/application/services/chat-user-decision-service.ts";
 import { createAskUserDecisionTool } from "../src/application/tools/ask-user-decision-tool.ts";
@@ -129,12 +130,53 @@ describe("Chat user decisions", () => {
 
 	it("validates question shape and rejects oversized payloads", () => {
 		expect(() => parseUserDecisionQuestions([])).toThrow();
-		expect(() => parseUserDecisionQuestions([{ ...questions[0], options: questions[0]!.options.slice(0, 2) }])).toThrow();
+		expect(() => parseUserDecisionQuestions([{ ...questions[0], options: [] }])).toThrow();
+		expect(() => parseUserDecisionQuestions([{ ...questions[0], recommendedIndex: 3 }])).toThrow();
+		expect(() => parseUserDecisionQuestions([{ ...questions[0], recommendedIndex: -1 }])).toThrow();
+		expect(() => parseUserDecisionQuestions([{ ...questions[0], recommendedIndex: 1.5 }])).toThrow();
 		expect(() => parseUserDecisionQuestions([{ ...questions[0], question: "x".repeat(70_000) }])).toThrow();
+	});
+
+	it.each([1, 2, 4, 5])("accepts a single question with %i options through tool validation and returns the selected option", async (optionCount) => {
+		const { service } = context();
+		const tool = createAskUserDecisionTool({ run: request.run, decisions: service });
+		const variableQuestions = [{ question: "Choose a route", options: Array.from({ length: optionCount }, (_, index) => ({
+			label: `Route ${index + 1}`, description: `Description ${index + 1}`,
+		})), recommendedIndex: optionCount - 1 }];
+		const params = validateToolArguments(tool, {
+			type: "toolCall", id: "tool-1", name: tool.name, arguments: { questions: variableQuestions },
+		});
+		const waiting = tool.execute("tool-1", params, undefined);
+		expect(() => service.answer("session-1", "decision-1", [{ kind: "option", optionIndex: optionCount }])).toThrow();
+		service.answer("session-1", "decision-1", [{ kind: "option", optionIndex: optionCount - 1 }]);
+		const output = await waiting;
+		expect(JSON.parse((output.content[0] as { text: string }).text)).toMatchObject({ answers: [{
+			kind: "option", optionIndex: optionCount - 1, option: variableQuestions[0]!.options[optionCount - 1],
+		}] });
 	});
 });
 
 describe("SQLite user decisions", () => {
+	it("restores variable option counts and checks persisted answers against each question", () => {
+		const database = openSshAgentDatabase(":memory:");
+		try {
+			database.exec("PRAGMA foreign_keys = OFF");
+			const repository = new SqliteChatRepository(database);
+			const variableQuestions = parseUserDecisionQuestions([
+				{ ...questions[0], options: Array.from({ length: 5 }, (_, index) => ({ label: `Route ${index}`, description: "Route details" })), recommendedIndex: 4 },
+				{ ...questions[1], options: questions[1]!.options.slice(0, 1), recommendedIndex: 0 },
+			]);
+			repository.insertDecision({ id: "variable", sessionId: "s", runId: "r", toolCallId: "t", questions: variableQuestions, status: "pending", createdAt: 1 });
+			expect(repository.listPendingDecisions("s")[0]?.questions).toEqual(variableQuestions);
+			const answers: UserDecisionAnswer[] = [{ kind: "option", optionIndex: 4 }, { kind: "option", optionIndex: 0 }];
+			repository.resolveDecision("variable", answers, 2);
+			expect(repository.findDecision("s", "variable")?.answers).toEqual(answers);
+			database.prepare("UPDATE chat_user_decisions SET answers_json = ? WHERE id = 'variable'")
+				.run(JSON.stringify([answers[0], { kind: "option", optionIndex: 1 }]));
+			expect(() => repository.findDecision("s", "variable")).toThrow("Invalid persisted Chat decision data");
+		} finally { database.close(); }
+	});
+
 	it("adds the decision table when upgrading an existing v21 schema", () => {
 		const database = openSshAgentDatabase(":memory:");
 		try {

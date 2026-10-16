@@ -1,6 +1,10 @@
 .sandbox-roots-field { min-width: 0; }
-.sandbox-roots-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 7px; font-size: 12px; font-weight: 500; color: var(--text-secondary); }
-.sandbox-roots-heading button { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; color: var(--accent-ink); }
+.sandbox-roots-heading { position: relative; display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 7px; font-size: 12px; font-weight: 500; color: var(--text-secondary); }
+.sandbox-roots-title { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; min-width: 0; }
+.sandbox-roots-heading button, .sandbox-roots-choose button { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; color: var(--accent-ink); }
+.sandbox-roots-selection { position: relative; }
+.sandbox-roots-choose { display: flex; justify-content: flex-end; margin-bottom: 7px; }
+.sandbox-roots-overlay { position: absolute; inset: 0; z-index: 1; border-radius: 8px; background: color-mix(in srgb, var(--surface) 60%, transparent); cursor: not-allowed; }
 .sandbox-roots-list { border: 1px solid var(--line); border-radius: 8px; background: var(--surface-raised); }
 .sandbox-roots-list li { display: flex; align-items: center; gap: 8px; min-height: 34px; padding: 4px 9px; color: var(--text-muted); }
 .sandbox-roots-list li + li { border-top: 1px solid var(--line-soft); }

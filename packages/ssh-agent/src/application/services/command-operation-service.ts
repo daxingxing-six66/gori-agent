@@ -142,6 +142,8 @@ export class CommandOperationService {
 				throw sandboxFailure("sandbox_approval_required", "Session sandbox setting changed after authorization. The command was not executed.");
 			}
 			const mode = sessionAuthorized ? "full_access" : requestedMode;
+			if (session.sandboxReadOnly === true && mode === "full_access")
+				throw sandboxFailure("invalid_request", "Full Access is forbidden in read-only mode. Select another Session sandbox mode before requesting writes outside /tmp.");
 			if (mode === "full_access" && !sessionAuthorized && !input.justification?.trim())
 				throw sandboxFailure("invalid_request", "full_access requires a justification");
 			const now = this.clock.now();

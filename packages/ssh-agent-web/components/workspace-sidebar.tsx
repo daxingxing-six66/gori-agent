@@ -7,6 +7,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useIntl } from "react-intl";
 import {
 	ChevronRight,
+	BarChart3,
 	CirclePlus,
 	PanelLeftClose,
 	PanelLeftOpen,
@@ -31,10 +32,11 @@ interface WorkspaceSidebarProps {
 	activeWorkspaceId?: string;
 	activeSessionId?: string;
 	homePage?: boolean;
+	activeStatistics?: boolean;
 	onSessionUpdated?(sessionId: string): Promise<unknown>;
 }
 
-export function WorkspaceSidebar({ activeWorkspaceId, activeSessionId, homePage = false, onSessionUpdated }: WorkspaceSidebarProps) {
+export function WorkspaceSidebar({ activeWorkspaceId, activeSessionId, homePage = false, activeStatistics = false, onSessionUpdated }: WorkspaceSidebarProps) {
 	const intl = useIntl();
 	const localizedErrorMessage = useLocalizedErrorMessage();
 	const router = useRouter();
@@ -87,6 +89,9 @@ export function WorkspaceSidebar({ activeWorkspaceId, activeSessionId, homePage 
 		setSidebarCollapsed(false);
 		setMobileOpen(true);
 	};
+	const statisticsLink = <Link href="/statistics" className="sidebar-statistics-link grid h-9 w-9 place-items-center rounded-xl text-[var(--text-muted)] transition hover:bg-[var(--surface-hover)] hover:text-[var(--ink)]"
+		aria-label={intl.formatMessage({ id: "statistics.title" })} title={intl.formatMessage({ id: "statistics.title" })} aria-current={activeStatistics ? "page" : undefined}
+		onClick={(event) => { if (transferManager && !transferManager.confirmNavigation()) event.preventDefault(); else setMobileOpen(false); }}><BarChart3 size={17} /></Link>;
 
 	return (
 		<>
@@ -101,6 +106,7 @@ export function WorkspaceSidebar({ activeWorkspaceId, activeSessionId, homePage 
 						<div className="min-h-0 flex-1" />
 						<div className="sidebar-settings-footer sidebar-settings-footer-collapsed">
 							<button className="grid h-9 w-9 place-items-center rounded-xl text-[var(--text-muted)] transition hover:bg-[var(--surface-hover)] hover:text-[var(--ink)]" aria-label={intl.formatMessage({ id: "sidebar.openSettings" })} title={intl.formatMessage({ id: "sidebar.settings" })} onClick={openSettings}><Settings size={17} /></button>
+							{statisticsLink}
 						</div>
 					</>
 				) : (
@@ -161,7 +167,7 @@ export function WorkspaceSidebar({ activeWorkspaceId, activeSessionId, homePage 
 							</div>
 						</div>
 
-						<div className="sidebar-settings-footer border-t border-[var(--line)]"><button className="grid h-9 w-9 place-items-center rounded-xl text-[var(--text-muted)] transition hover:bg-[var(--surface-hover)] hover:text-[var(--ink)]" aria-label={intl.formatMessage({ id: "sidebar.openSettings" })} title={intl.formatMessage({ id: "sidebar.settings" })} onClick={openSettings}><Settings size={17} /></button></div>
+						<div className="sidebar-settings-footer border-t border-[var(--line)]"><button className="grid h-9 w-9 place-items-center rounded-xl text-[var(--text-muted)] transition hover:bg-[var(--surface-hover)] hover:text-[var(--ink)]" aria-label={intl.formatMessage({ id: "sidebar.openSettings" })} title={intl.formatMessage({ id: "sidebar.settings" })} onClick={openSettings}><Settings size={17} /></button>{statisticsLink}</div>
 					</>
 				)}
 			</aside>

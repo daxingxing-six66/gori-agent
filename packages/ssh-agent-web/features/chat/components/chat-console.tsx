@@ -92,7 +92,7 @@ export function ChatConsole({ sessionId }: { sessionId: string }) {
 			description: intl.formatMessage({ id: "deploy.tool.description" }),
 			keywords: ["deploy", "部署", "发布", "流水线"],
 			...(deployment.activeTask ? { status: { label: intl.formatMessage({ id: "deploy.task.started" }), tone: "active" as const } } : {}),
-			disabled: (!deployment.activeTask && active) || deployment.busy || sandbox.pending,
+			disabled: (!deployment.activeTask && (active || sandbox.readOnly)) || deployment.busy || sandbox.pending,
 		},
 		{
 			id: "terminal",
@@ -256,7 +256,7 @@ export function ChatConsole({ sessionId }: { sessionId: string }) {
 		}
 		if (toolId === "sandbox") { void sandbox.execute("/sandbox"); return; }
 		if (sandbox.pending) return;
-		if (toolId === "deploy" && (!active || deployment.activeTask) && !deployment.busy) {
+		if (toolId === "deploy" && (!sandbox.readOnly || deployment.activeTask) && (!active || deployment.activeTask) && !deployment.busy) {
 			if (deployment.pickerOpen) { deployment.closePicker(); composerRef.current?.focus(); return; }
 			void deployment.show().then((surface) => {
 				if (surface === "task") { setActiveTaskTabId("deploy"); taskDisplay.reveal(); }
@@ -264,20 +264,20 @@ export function ChatConsole({ sessionId }: { sessionId: string }) {
 			return;
 		}
 		if (toolId === "compact" && compactionDisabledReason === undefined) void runtime.compact();
-	}, [active, compactionDisabledReason, deployment, runtime.compact, sandbox.execute, sandbox.pending, taskDisplay.reveal, terminalTask.menuDisabledReason, terminalTask.reveal]);
+	}, [active, compactionDisabledReason, deployment, runtime.compact, sandbox.execute, sandbox.pending, sandbox.readOnly, taskDisplay.reveal, terminalTask.menuDisabledReason, terminalTask.reveal]);
 
 	const requestBubblewrapInstallation = useCallback(async () => {
-		if (!model || active || sandbox.pending || runtime.submitting || terminalMode.status?.effectiveServerInteractionMode !== "command") return;
+		if (!model || active || sandbox.readOnly || sandbox.pending || runtime.submitting || terminalMode.status?.effectiveServerInteractionMode !== "command") return;
 		try {
 			const run = await runtime.submit({ message: intl.formatMessage({ id: "terminal.openFailure.installPrompt" }),
 				attachments: [], model, thinkingLevel, behavior: "follow_up", serverInteractionMode: "command" });
 			if (run) terminalTask.dismiss();
 		} catch { /* Chat composer shows the Run creation error. */ }
-	}, [active, intl, model, sandbox.pending, runtime.submit, runtime.submitting, terminalTask.dismiss,
+	}, [active, intl, model, sandbox.pending, sandbox.readOnly, runtime.submit, runtime.submitting, terminalTask.dismiss,
 		terminalMode.status?.effectiveServerInteractionMode, thinkingLevel]);
 
 	const startDeploymentSetup = useCallback(async () => {
-		if (!model || active || sandbox.pending) return;
+		if (!model || active || sandbox.readOnly || sandbox.pending) return;
 		const run = await runtime.submit({
 			message: "请根据当前项目为这个 Workspace 的 SSH 主机创建 Gori deployment profile。使用 ask_user_decision 确认所有无法可靠推断的信息；只保存配置，不执行部署。",
 			attachments: [], model, thinkingLevel, behavior: "follow_up",
@@ -285,10 +285,10 @@ export function ChatConsole({ sessionId }: { sessionId: string }) {
 			workflow: "deployment_setup",
 		});
 		if (run) deployment.hide();
-	}, [active, deployment, model, sandbox.pending, runtime.submit, terminalMode.status?.effectiveServerInteractionMode, thinkingLevel]);
+	}, [active, deployment, model, sandbox.pending, sandbox.readOnly, runtime.submit, terminalMode.status?.effectiveServerInteractionMode, thinkingLevel]);
 
 	const startDeploymentDiscussion = useCallback(async (profileFile: string, moduleId: string) => {
-		if (!model || active || sandbox.pending || runtime.submitting || planningRequestRef.current) return;
+		if (!model || active || sandbox.readOnly || sandbox.pending || runtime.submitting || planningRequestRef.current) return;
 		const request = { sessionId };
 		planningRequestRef.current = request;
 		setPlanningSubmitting(true);
@@ -310,11 +310,11 @@ export function ChatConsole({ sessionId }: { sessionId: string }) {
 				setPlanningSubmitting(false);
 			}
 		}
-	}, [active, deployment, intl, model, sandbox.pending, runtime.submit, runtime.submitting, sessionId, terminalMode.status?.effectiveServerInteractionMode, thinkingLevel]);
+	}, [active, deployment, intl, model, sandbox.pending, sandbox.readOnly, runtime.submit, runtime.submitting, sessionId, terminalMode.status?.effectiveServerInteractionMode, thinkingLevel]);
 
 	const startDeploymentExecution = useCallback(async () => {
 		const plan = deployment.activeTask?.run ?? deployment.run;
-		if (!plan || (plan.status !== "preparing" && !deploymentAwaitsResume(plan)) || !model || active || sandbox.pending || runtime.submitting) return;
+		if (!plan || (plan.status !== "preparing" && !deploymentAwaitsResume(plan)) || !model || active || sandbox.readOnly || sandbox.pending || runtime.submitting) return;
 		deployment.setError(null);
 		try {
 			const run = await runtime.submit({
@@ -326,7 +326,7 @@ export function ChatConsole({ sessionId }: { sessionId: string }) {
 			});
 			if (run) await deployment.refresh();
 		} catch (error) { deployment.setError(error instanceof Error ? error.message : String(error)); }
-	}, [active, deployment, model, sandbox.pending, runtime.submit, runtime.submitting, terminalMode.status?.effectiveServerInteractionMode, thinkingLevel]);
+	}, [active, deployment, model, sandbox.pending, sandbox.readOnly, runtime.submit, runtime.submitting, terminalMode.status?.effectiveServerInteractionMode, thinkingLevel]);
 
 	const resolveApproval = useCallback((approval: ToolApproval, approved: boolean) => {
 		void runtime.resolveApproval(approval, approved);
@@ -363,7 +363,7 @@ export function ChatConsole({ sessionId }: { sessionId: string }) {
 			disabledReason: terminalTask.operationDisabledReason,
 			busy: terminalTask.transition === "disconnecting", onRequestClose: terminalTask.requestClose },
 		content: <TerminalTask sessionId={sessionId} mode={terminalMode} task={terminalTask}
-			canRequestInstallation={Boolean(model && !active && !runtime.submitting && !sandbox.pending && terminalMode.status?.effectiveServerInteractionMode === "command")}
+			canRequestInstallation={Boolean(model && !active && !runtime.submitting && !sandbox.readOnly && !sandbox.pending && terminalMode.status?.effectiveServerInteractionMode === "command")}
 			onRequestInstallation={() => { void requestBubblewrapInstallation(); }} />,
 	}] : [];
 	if (deployment.open) taskTabs.push({ id: "deploy", title: "Deploy",
@@ -393,7 +393,7 @@ export function ChatConsole({ sessionId }: { sessionId: string }) {
 					"--terminal-panel-transition-ms": `${TASK_CONTAINER_DEFAULTS.transitionMs}ms` } as CSSProperties}
 			>
 				<div className="session-console-header min-w-0">
-					<ChatPageHeader title={item.session.displayName} sandboxEnabled={sandbox.enabled} active={active} runStatus={runtime.state.run?.status} connection={runtime.state.connection} queueCount={pendingQueue.length}
+					<ChatPageHeader title={item.session.displayName} sandboxEnabled={sandbox.enabled} sandboxReadOnly={sandbox.readOnly} active={active} runStatus={runtime.state.run?.status} connection={runtime.state.connection} queueCount={pendingQueue.length}
 						serverMetrics={<SessionServerMetrics workspaceId={item.workspace.id} />} />
 					<SessionSandboxStatus pending={sandbox.pending} label={sandbox.statusLabel} error={sandbox.error} notice={sandbox.notice} onDismiss={sandbox.clearNotice} />
 					{terminalMode.error && !terminalTask.present ? <p role="alert" className="px-4 py-2 text-xs text-danger">{terminalMode.error}</p> : null}
@@ -414,7 +414,7 @@ export function ChatConsole({ sessionId }: { sessionId: string }) {
 						<ChatTimeline showActivity={showActivity} loading={runtime.loading} loadingOlderMessages={runtime.loadingOlderMessages} timeline={runtime.state.timeline} tools={runtime.state.tools} approvals={runtime.state.approvals} approvalMutationId={runtime.approvalMutationId} targetHost={targetHost} run={runtime.state.run} latestUserText={latestUserText} onResolveApproval={resolveApproval} onRestoreDraft={restoreDraft}
 							onOpenDeployment={(id) => { setActiveTaskTabId("deploy"); taskDisplay.reveal(); void deployment.openHistory(id); }} />
 						{needsDeploymentReview ? <div data-deployment-review tabIndex={-1} className="mx-auto max-w-[820px] px-5 py-5 lg:px-8"><DeploymentReview
-							run={activeDeploymentRun} review={deploymentReview} busy={deployment.busy} canConfirm={Boolean(model && !active && !runtime.submitting && !sandbox.pending)}
+							run={activeDeploymentRun} review={deploymentReview} busy={deployment.busy} canConfirm={Boolean(model && !active && !runtime.submitting && !sandbox.readOnly && !sandbox.pending)}
 							onConfirm={() => { void startDeploymentExecution(); }} onDecideFullAccess={(stage, id, approved) => { void deployment.decideFullAccess(stage, id, approved); }}
 							onDecideRecovery={(id, approved) => { void deployment.decideRecovery(id, approved); }} /></div> : null}
 					</div>
@@ -460,7 +460,7 @@ export function ChatConsole({ sessionId }: { sessionId: string }) {
 					decisionPanel={decisionPanel}
 					aboveInputPanel={deployment.pickerOpen && !pendingDecision ? <DeploymentModulePicker key={sessionId}
 						discovery={deployment.discovery} loading={deployment.pickerLoading} busy={deployment.busy || planningSubmitting}
-						disabled={!model || active || runtime.submitting || sandbox.pending} error={deployment.error}
+						disabled={!model || active || runtime.submitting || sandbox.readOnly || sandbox.pending} error={deployment.error}
 						onSelect={startDeploymentDiscussion} onSetup={() => { void startDeploymentSetup().catch((error) => deployment.setError(error instanceof Error ? error.message : String(error))); }}
 						onClose={(restoreFocus = true) => { deployment.closePicker(); if (restoreFocus) composerRef.current?.focus(); }} onRetry={() => { void deployment.show(); }} /> : undefined}
 				/>

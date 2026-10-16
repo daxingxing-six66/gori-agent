@@ -65,6 +65,10 @@ export class CommandExecutionPolicy {
 		authorization: { readonly fullAccessRequest?: FullAccessRequest; readonly expectedTarget?: SshTargetSnapshot },
 	): Promise<CommandExecutionTarget> {
 		const target = await this.targets.resolve(operation.sessionId);
+		if (await this.sandboxPolicy.readOnly(operation.sessionId) &&
+			(operation.sandbox?.mode === "full_access" || target.sandboxReadOnly !== true ||
+				!sameSandboxWritableRoots(target.sandboxWritableRoots ?? [], ["/tmp"])))
+			throw sandboxFailure("invalid_request", "Read-only mode requires confinement to /tmp and forbids Full Access. The command was not executed.");
 		const sessionAuthorized = operation.sandbox?.authorizationSource === "session_setting";
 		if ((await this.sandboxPolicy.mode(operation.sessionId) === "full_access") !== sessionAuthorized) {
 			throw sandboxFailure("sandbox_approval_required", "Session sandbox setting changed after authorization. The command was not executed.");
@@ -99,6 +103,7 @@ function sameExecutionTarget(actual: SshTargetSnapshot, expected: SshTargetSnaps
 		actual.hostKeyAlgorithm === expected.hostKeyAlgorithm && actual.hostKeyFingerprint === expected.hostKeyFingerprint &&
 		actual.credentialId === expected.credentialId && actual.credentialAuthVersion === expected.credentialAuthVersion &&
 		actual.remoteUser === expected.remoteUser &&
+		(actual.sandboxReadOnly === true) === (expected.sandboxReadOnly === true) &&
 		sameSandboxWritableRoots(actual.sandboxWritableRoots ?? [],
 			expected.sandboxWritableRoots ?? []);
 }

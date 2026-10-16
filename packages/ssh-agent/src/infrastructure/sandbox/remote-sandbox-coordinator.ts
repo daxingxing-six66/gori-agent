@@ -5,7 +5,7 @@ import type {
 	RemoteSandboxBackend,
 	RemoteSandboxProvider,
 } from "../../application/services/remote-sandbox-provider.ts";
-import { isSandboxBackendUnavailable, isGenericTerminalSandboxFailure } from "../../domain/remote-sandbox.ts";
+import { isSandboxBackendUnavailable, isGenericTerminalSandboxFailure, sandboxFailure } from "../../domain/remote-sandbox.ts";
 import type { SshTargetSnapshot } from "../../domain/ssh-target.ts";
 import { wrapRemoteCommand } from "./shell-command.ts";
 
@@ -27,6 +27,8 @@ export class RemoteSandboxCoordinator implements RemoteSandboxProvider {
 	}
 
 	prepare(input: Parameters<RemoteSandboxProvider["prepare"]>[0]): Promise<PreparedRemoteExecution> {
+		if (input.target.sandboxReadOnly === true && input.policy.mode === "full_access")
+			throw sandboxFailure("invalid_request", "Full Access is forbidden in read-only mode. The command was not executed.");
 		if (input.policy.mode === "full_access") {
 			input.signal.throwIfAborted();
 			return Promise.resolve({

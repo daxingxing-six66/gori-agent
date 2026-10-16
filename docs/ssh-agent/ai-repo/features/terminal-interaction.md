@@ -1,5 +1,7 @@
 # Terminal Interaction 代码路由
 
+只读 Session 仍以受限模式打开 PTY，但实际 `sandboxRoots` 固定为 `/tmp`；保留 `/dev/null`、账号可读范围与既有非文件操作边界。切换只读会自动重开原 Terminal Tab，准备失败不会降级，失败卡片不提供只读模式内的安装入口。见 [session-sandbox.md](../session-sandbox.md)。
+
 适用于与业务 Session 绑定的长周期 SSH PTY、Canonical Terminal State、浏览器只读投影、Agent Terminal Tool 和审计时间线。
 
 ## 当前边界
