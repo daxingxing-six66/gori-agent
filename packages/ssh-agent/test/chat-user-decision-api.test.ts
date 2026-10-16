@@ -17,6 +17,45 @@ const questions = [
 ];
 
 describe("ask_user_decision HTTP flow", () => {
+	it.each(["steer", "follow_up"] as const)("cancels a waiting decision without consuming a queued %s message", async (behavior) => {
+		const localCwd = await mkdtemp(join(tmpdir(), "gori-decision-cancel-"));
+		const faux = fauxProvider({ provider: "cancel-decision", models: [{ id: "model" }] });
+		faux.setResponses([
+			fauxAssistantMessage(fauxToolCall("ask_user_decision", { questions }), { stopReason: "toolUse" }),
+			fauxAssistantMessage("This reply must not run after cancellation"),
+		]);
+		const backend = createSqliteManagementBackend({
+			databasePath: ":memory:", credentialEncryptionKey: Buffer.alloc(32, 26), localCwd,
+			llmModelsFactory: (credentials) => { const models = createModels({ credentials }); models.setProvider(faux.provider); return models; },
+		});
+		try {
+			const workspace = await json(backend.handleRequest, "POST", "/api/workspaces", {
+				displayName: "test", environment: "development", host: { hostname: "localhost", port: 22 },
+				credential: { displayName: "test", remoteUser: "test", type: "password", password: "test" }, defaultCwd: "/tmp",
+			});
+			const workspaceId = (workspace.body as { workspace: { id: string } }).workspace.id;
+			const session = await json(backend.handleRequest, "POST", `/api/workspaces/${workspaceId}/sessions`, { displayName: "cancel" });
+			const sessionId = (session.body as { id: string }).id;
+			const root = `/api/sessions/${sessionId}/chat`;
+			const created = await json(backend.handleRequest, "POST", `${root}/runs`, {
+				requestId: "cancel", providerId: "cancel-decision", modelId: "model", message: "Wait for my decision", serverInteractionMode: "command",
+			});
+			const runId = (created.body as { id: string }).id;
+			await waitFor(async () => ((await json(backend.handleRequest, "GET", `${root}/decisions`)).body as { decisions: unknown[] }).decisions.length > 0);
+			const queued = await json(backend.handleRequest, "POST", `${root}/runs/${runId}/queue`, {
+				requestId: "queued", behavior, message: "queued-message-must-remain-unsent",
+			});
+			expect(queued.status).toBe(201);
+			await json(backend.handleRequest, "POST", `${root}/runs/${runId}/cancel`);
+			await waitFor(async () => (await json(backend.handleRequest, "GET", `${root}/runs/active`)).body.run === null);
+			expect(backend.database.prepare("SELECT status, failure_json FROM chat_runs WHERE id = ? AND session_id = ?").get(runId, sessionId))
+				.toMatchObject({ status: "cancelled", failure_json: null });
+			const messages = await json(backend.handleRequest, "GET", `${root}/messages`);
+			expect(JSON.stringify(messages.body)).not.toContain("queued-message-must-remain-unsent");
+			expect((await json(backend.handleRequest, "GET", `${root}/runs/${runId}/queue?status=cancelled`)).body.items).toHaveLength(1);
+		} finally { await backend.close(); await rm(localCwd, { recursive: true, force: true }); }
+	});
+
 	it("recovers a pending model tool call and delivers the user's ordered answers to the same Run", async () => {
 		const localCwd = await mkdtemp(join(tmpdir(), "gori-decision-api-"));
 		const faux = fauxProvider({ provider: "decision-faux", models: [{ id: "model", contextWindow: 128_000, maxTokens: 8_192 }] });

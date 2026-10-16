@@ -167,6 +167,20 @@ describe("provider failure boundary", () => {
 		expect(result).not.toHaveProperty("providerFailure");
 	});
 
+	it("normalizes an adapter error event received after cancellation to aborted", async () => {
+		const controller = new AbortController();
+		const input = createAssistantMessageEventStream();
+		const output = providerFailureStream(model, () => input, controller.signal);
+		controller.abort();
+		input.push({ type: "error", reason: "error", error: fauxAssistantMessage("", {
+			stopReason: "error", errorMessage: "This operation was aborted",
+		}) });
+		const result = await output.result();
+		expect(result.stopReason).toBe("aborted");
+		expect(result).not.toHaveProperty("failure");
+		expect(result).not.toHaveProperty("providerFailure");
+	});
+
 	it("normalizes thrown iterator errors after partial output without changing normal events", async () => {
 		const input = createAssistantMessageEventStream();
 		const partial = fauxAssistantMessage("partial output");

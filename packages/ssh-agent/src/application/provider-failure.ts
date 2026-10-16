@@ -70,7 +70,10 @@ export function providerFailureStream(
 				if (event.type === "error") {
 					output.push({
 						...event,
-						error: signal?.aborted ? event.error : annotateProviderFailure(model, event.error, scope),
+						...(signal?.aborted ? {
+							reason: "aborted",
+							error: { ...event.error, stopReason: "aborted" },
+						} : { error: annotateProviderFailure(model, event.error, scope) }),
 					});
 					return;
 				}
