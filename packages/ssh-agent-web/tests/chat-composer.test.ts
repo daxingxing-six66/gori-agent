@@ -64,51 +64,21 @@ describe("Local file API", () => {
 		);
 	});
 
-	it("searches the complete Session work directory through paged directory listings", async () => {
-		const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
-			const url = String(input);
-			if (url === "/api/sessions/session-1/local-files") {
-				return Response.json({
-					rootPath: "/work",
-					currentPath: "/work",
-					relativePath: "",
-					entries: [
-						{ name: "node_modules", path: "/work/node_modules", relativePath: "node_modules", type: "directory", size: 0, modifiedAt: 1 },
-						{ name: "src", path: "/work/src", relativePath: "src", type: "directory", size: 0, modifiedAt: 1 },
-						{ name: "README.md", path: "/work/README.md", relativePath: "README.md", type: "file", size: 1, modifiedAt: 1 },
-					],
-				});
-			}
-			if (url === "/api/sessions/session-1/local-files?path=%2Fwork%2Fsrc") {
-				return Response.json({
-					rootPath: "/work",
-					currentPath: "/work/src",
-					relativePath: "src",
-					entries: [
-						{ name: "nested", path: "/work/src/nested", relativePath: "src/nested", type: "directory", size: 0, modifiedAt: 1 },
-					],
-				});
-			}
-			if (url === "/api/sessions/session-1/local-files?path=%2Fwork%2Fsrc%2Fnested") {
-				return Response.json({
-					rootPath: "/work",
-					currentPath: "/work/src/nested",
-					relativePath: "src/nested",
-					entries: [
-						{ name: "user-service.ts", path: "/work/src/nested/user-service.ts", relativePath: "src/nested/user-service.ts", type: "file", size: 1, modifiedAt: 1 },
-					],
-				});
-			}
-			return new Response(null, { status: 404 });
-		});
+	it("sends one cancellable indexed-search request instead of walking HTTP directories", async () => {
+		const result = { entries: [{ name: "MidAutumnLoginConverterTest.java", path: "/work/src/MidAutumnLoginConverterTest.java", relativePath: "src/MidAutumnLoginConverterTest.java", type: "file", size: 1, modifiedAt: 1 }], truncated: false, incomplete: false };
+		const fetchMock = vi.fn().mockResolvedValue(Response.json(result));
 		vi.stubGlobal("fetch", fetchMock);
+		const controller = new AbortController();
+		expect(await localFilesApi.searchSession("session / 1", "MidAutumnLoginConverterTest", { signal: controller.signal, includeIgnored: true, refresh: true })).toEqual(result);
+		expect(fetchMock).toHaveBeenCalledExactlyOnceWith(
+			"/api/sessions/session%20%2F%201/local-files/search?query=MidAutumnLoginConverterTest&includeIgnored=true&refresh=true",
+			expect.objectContaining({ method: "GET", cache: "no-store", signal: controller.signal }),
+		);
+	});
 
-		const result = await localFilesApi.searchSession("session-1", "USER-service");
-
-		expect(result).toEqual({
-			entries: [{ name: "user-service.ts", path: "/work/src/nested/user-service.ts", relativePath: "src/nested/user-service.ts", type: "file", size: 1, modifiedAt: 1 }],
-			truncated: false,
-		});
-		expect(fetchMock).toHaveBeenCalledTimes(3);
+	it("does not search before a query is entered", async () => {
+		const fetchMock = vi.fn(); vi.stubGlobal("fetch", fetchMock);
+		expect(await localFilesApi.searchSession("session", "  ")).toEqual({ entries: [], truncated: false, incomplete: false });
+		expect(fetchMock).not.toHaveBeenCalled();
 	});
 });

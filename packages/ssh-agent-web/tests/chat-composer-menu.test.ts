@@ -89,6 +89,11 @@ describe("chat composer tool selection", () => {
 });
 
 describe("chat composer menu sections", () => {
+	it("does not misreport incomplete indexing as no matching files", () => {
+		expect(resolveChatComposerMenuSections({ fileMenuOpen: true, fileLoading: false, fileError: false,
+			fileSearchIncomplete: true, hasParentDirectory: false, visibleToolCount: 0, visibleFileCount: 0 }))
+			.toEqual({ showTools: false, showFiles: true, showEmpty: false });
+	});
 	it("hides an empty tool group while retaining matching files", () => {
 		expect(resolveChatComposerMenuSections({
 			fileMenuOpen: true,

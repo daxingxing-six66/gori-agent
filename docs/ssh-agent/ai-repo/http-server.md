@@ -46,6 +46,7 @@ Workspace POST/PATCH 通过 `sandboxWritableRoots` 设置独立可写目录默�
 - 单 Session GET 组合最近 Chat Run 模型选择；Chat Run 请求支持继承最近模型，并验证 Provider/Model 成对提交和模型支持的 thinking level。
 - Chat Run 和 Queue JSON 可携带 `attachmentIds`。请求校验数量、非空和重复 ID；Session 所有权、真实图片格式和模型图片输入能力由 Chat Attachment Service 校验。
 - 本地文件接口按需列出普通文件和目录并返回规范化绝对路径：系统接口以 `/` 为根，Session 接口以有效 `workDir` 为硬边界；文件系统细节见 [local-file-system.md](./local-file-system.md)。
+- `GET /api/sessions/:id/local-files/search?query=...` 复用当前根的候选索引，返回有限排序结果及 `truncated/incomplete`；`includeIgnored/refresh` 仅接受布尔查询值，Request 取消信号进入索引等待和评分。无文件正文、数据库写入或模型调用，详见 [local-file-search.md](./local-file-search.md)。
 - Session 本地文件阅读器通过 `GET /api/sessions/:id/local-files/content?path=...` 返回 UTF-8 文本、绝对路径和文件元数据；只读/no-store，沿用工作目录与符号链接限制，最大 1 MiB。超限、非文本与非普通文件通过统一 Locale/错误出口返回；详见 [file-reader.md](./file-reader.md)。
 - `POST /api/sessions/:sessionId/attachments?name=...` 接收原始文件字节，同名时原子选择递增名称；`GET /api/sessions/:sessionId/attachments` 返回带受控 `contentUrl` 的附件元数据列表。`GET /api/sessions/:sessionId/attachments/:attachmentId/content` 流式返回经过真实格式校验的 JPEG、PNG 或 WebP，并支持不可变私有缓存和 ETag。接口不使用 multipart/Base64，不提供附件删除、覆盖或非图片通用下载；完整边界见 [attachments.md](./attachments.md)。
 - 默认后端已装配 TerminalSession 与 TerminalInteraction Service。`/api/sessions/:sessionId/terminal` 提供状态、open/close、attachment、ready/focus/resize/detach、timeline、observation 和 SSE；服务关闭先停止接受新连接，再关闭 Terminal runtime 以终止长连接，最后等待 HTTP drain。

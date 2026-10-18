@@ -13,6 +13,7 @@ import {
 } from "react";
 import { useIntl } from "react-intl";
 import { localFilesApi, type LocalFileEntry } from "@/features/chat/api/local-files-api";
+import { useLocalFileSearch } from "@/features/chat/runtime/use-local-file-search";
 import { useLocalizedErrorMessage } from "@/features/i18n/components/use-localized-error-message";
 import {
 	fileBadgeForName,
@@ -90,23 +91,20 @@ export const ChatTokenEditor = forwardRef<ChatTokenEditorHandle, ChatTokenEditor
 	const [rootPath, setRootPath] = useState<string | null>(null);
 	const [currentPath, setCurrentPath] = useState<string | undefined>(undefined);
 	const [directoryEntries, setDirectoryEntries] = useState<LocalFileEntry[]>([]);
-	const [searchLoading, setSearchLoading] = useState(false);
-	const [searchError, setSearchError] = useState<unknown>(null);
-	const [searchEntries, setSearchEntries] = useState<LocalFileEntry[]>([]);
 	const [draggingFiles, setDraggingFiles] = useState(false);
 	const menuOpen = menu !== null;
 	const fileMenuOpen = menu ? chatComposerMenuIncludesFiles(menu.trigger) : false;
 	const normalizedQuery = menu?.query.trim().toLocaleLowerCase() ?? "";
 	const recursiveSearchActive = fileMenuOpen && sessionId !== undefined && normalizedQuery.length > 0;
+	const search = useLocalFileSearch(sessionId, menu?.query.trim() ?? "", recursiveSearchActive);
 	const visibleTools = menu ? filterChatComposerTools(tools, normalizedQuery) : [];
+	const loading = recursiveSearchActive ? search.loading : directoryLoading;
+	const browsedEntries = fileMenuOpen && !recursiveSearchActive
+		? directoryEntries.filter((entry) => !normalizedQuery || entry.name.toLocaleLowerCase().includes(normalizedQuery)) : [];
 	const visibleEntries = !fileMenuOpen
 		? []
-		: (recursiveSearchActive
-			? searchEntries
-			: directoryEntries.filter((entry) => !normalizedQuery || entry.name.toLocaleLowerCase().includes(normalizedQuery)))
-			.slice(0, 12);
-	const loading = recursiveSearchActive ? searchLoading : directoryLoading;
-	const loadError = recursiveSearchActive ? searchError : directoryError;
+		: loading ? [] : recursiveSearchActive ? search.entries : browsedEntries.slice(0, 80);
+	const loadError = recursiveSearchActive ? search.error : directoryError;
 	const parentDirectoryPath = !recursiveSearchActive && rootPath !== null && currentPath !== undefined && currentPath !== rootPath
 		? parentPath(currentPath, rootPath)
 		: null;
@@ -114,6 +112,7 @@ export const ChatTokenEditor = forwardRef<ChatTokenEditorHandle, ChatTokenEditor
 		fileMenuOpen,
 		fileLoading: loading,
 		fileError: loadError !== null,
+		fileSearchIncomplete: recursiveSearchActive && (search.incomplete || search.truncated),
 		hasParentDirectory: parentDirectoryPath !== null,
 		visibleToolCount: visibleTools.length,
 		visibleFileCount: visibleEntries.length,
@@ -167,46 +166,23 @@ export const ChatTokenEditor = forwardRef<ChatTokenEditorHandle, ChatTokenEditor
 		const controller = new AbortController();
 		setDirectoryLoading(true);
 		setDirectoryError(null);
-		const request = sessionId
-			? localFilesApi.listSession(sessionId, currentPath, controller.signal)
-			: localFilesApi.listSystem(currentPath, controller.signal);
-		void request.then((result) => {
-			setRootPath(result.rootPath);
-			setCurrentPath(result.currentPath);
-			setDirectoryEntries(result.entries);
-		}).catch((requestError) => {
-			if (!controller.signal.aborted) setDirectoryError(requestError);
-		}).finally(() => {
-			if (!controller.signal.aborted) setDirectoryLoading(false);
-		});
-		return () => controller.abort();
-	}, [currentPath, fileMenuOpen, recursiveSearchActive, sessionId]);
-
-	useEffect(() => {
-		if (!fileMenuOpen || !sessionId || !normalizedQuery) {
-			setSearchEntries([]);
-			setSearchError(null);
-			setSearchLoading(false);
-			return;
-		}
-		const controller = new AbortController();
-		setSearchLoading(true);
-		setSearchError(null);
-		setSearchEntries([]);
 		const timeout = window.setTimeout(() => {
-			void localFilesApi.searchSession(sessionId, normalizedQuery, { signal: controller.signal }).then((result) => {
-				setSearchEntries(result.entries);
+			const request = sessionId
+				? localFilesApi.listSession(sessionId, currentPath, controller.signal)
+				: localFilesApi.listSystem(currentPath, controller.signal);
+			void request.then((result) => {
+				if (controller.signal.aborted) return;
+				setRootPath(result.rootPath);
+				if (currentPath !== undefined) setCurrentPath(result.currentPath);
+				setDirectoryEntries(result.entries);
 			}).catch((requestError) => {
-				if (!controller.signal.aborted) setSearchError(requestError);
+				if (!controller.signal.aborted) setDirectoryError(requestError);
 			}).finally(() => {
-				if (!controller.signal.aborted) setSearchLoading(false);
+				if (!controller.signal.aborted) setDirectoryLoading(false);
 			});
 		}, 180);
-		return () => {
-			window.clearTimeout(timeout);
-			controller.abort();
-		};
-	}, [fileMenuOpen, normalizedQuery, sessionId]);
+		return () => { window.clearTimeout(timeout); controller.abort(); };
+	}, [currentPath, fileMenuOpen, recursiveSearchActive, sessionId]);
 
 	useEffect(() => {
 		setActiveIndex(0);
@@ -446,7 +422,10 @@ export const ChatTokenEditor = forwardRef<ChatTokenEditorHandle, ChatTokenEditor
 							<div className="chat-composer-menu-group-title">{intl.formatMessage({ id: "chat.composer.menu.files" })}</div>
 							{loading ? <div className="chat-composer-menu-state"><LoaderCircle size={13} className="animate-spin" /></div> : null}
 							{!loading && loadError ? <div className="chat-composer-menu-state text-rose-600">{localizedErrorMessage(loadError)}</div> : null}
-							{!loading && !loadError && visibleEntries.length === 0 ? <div className="chat-composer-menu-state">{intl.formatMessage({ id: "chat.composer.menu.files.empty" })}</div> : null}
+							{!loading && !loadError && visibleEntries.length === 0 && !search.incomplete && !search.truncated ? <div className="chat-composer-menu-state">{intl.formatMessage({ id: "chat.composer.menu.files.empty" })}</div> : null}
+							{recursiveSearchActive && !loading && search.incomplete ? <div className="chat-composer-menu-state" role="status">{intl.formatMessage({ id: "chat.composer.menu.search.incomplete" })}</div> : null}
+							{recursiveSearchActive && !loading && search.truncated ? <div className="chat-composer-menu-state" role="status">{intl.formatMessage({ id: "chat.composer.menu.search.truncated" }, { count: visibleEntries.length })}</div> : null}
+							{!recursiveSearchActive && !loading && browsedEntries.length > visibleEntries.length ? <div className="chat-composer-menu-state" role="status">{intl.formatMessage({ id: "chat.composer.menu.search.browseLimit" }, { count: visibleEntries.length })}</div> : null}
 							{parentDirectoryPath !== null ? <button type="button" className="chat-composer-menu-parent" onMouseDown={(event) => { event.preventDefault(); setCurrentPath(parentDirectoryPath); }}>{intl.formatMessage({ id: "chat.composer.menu.parent" })}</button> : null}
 							{!loading && !loadError ? visibleEntries.map((entry) => {
 								const Icon = entry.type === "directory" ? Folder : File;
@@ -473,6 +452,10 @@ export const ChatTokenEditor = forwardRef<ChatTokenEditorHandle, ChatTokenEditor
 						</div>
 					) : null}
 					{menuSections.showEmpty ? <div className="chat-composer-menu-state">{intl.formatMessage({ id: "chat.composer.menu.empty" })}</div> : null}
+					{recursiveSearchActive ? <div className="flex items-center justify-between gap-3 border-t border-line-soft px-3 py-2 text-xs text-secondary">
+						<button type="button" aria-pressed={search.includeIgnored} className="rounded px-1 py-1 hover:bg-surface-hover focus-visible:outline-2 focus-visible:outline-accent" onMouseDown={(event) => event.preventDefault()} onClick={search.toggleIgnored}>{intl.formatMessage({ id: search.includeIgnored ? "chat.composer.menu.search.ignoredIncluded" : "chat.composer.menu.search.includeIgnored" })}</button>
+						<button type="button" disabled={loading} className="rounded px-1 py-1 hover:bg-surface-hover focus-visible:outline-2 focus-visible:outline-accent disabled:opacity-50" onMouseDown={(event) => event.preventDefault()} onClick={search.refresh}>{intl.formatMessage({ id: "chat.composer.menu.search.refresh" })}</button>
+					</div> : null}
 				</div>
 			) : null}
 		</div>

@@ -4,16 +4,20 @@ import type { SessionId } from "../../domain/ids.ts";
 import {
 	type LocalDirectoryListing,
 	type LocalFileEntry,
+	type LocalFileSearchOptions,
+	type LocalFileSearchResult,
 	type LocalTextFile,
 	LocalFileSystemError,
 } from "../../domain/local-file-system.ts";
 import type { SessionRepository } from "../repositories/session-repository.ts";
 import { readLocalTextFile } from "./read-local-text-file.ts";
+import { LocalFileSearchIndex } from "./local-file-search-index.ts";
 
 export interface LocalFileSystemService {
 	listDirectory(sessionId: SessionId, path?: string): Promise<LocalDirectoryListing>;
 	listSystemDirectory(path?: string): Promise<LocalDirectoryListing>;
 	readFile(sessionId: SessionId, path: string): Promise<LocalTextFile>;
+	searchFiles(sessionId: SessionId, query: string, options?: LocalFileSearchOptions): Promise<LocalFileSearchResult>;
 }
 
 export interface DefaultLocalFileSystemServiceOptions {
@@ -24,6 +28,7 @@ export interface DefaultLocalFileSystemServiceOptions {
 export class DefaultLocalFileSystemService implements LocalFileSystemService {
 	private readonly sessions: Pick<SessionRepository, "findById">;
 	private readonly localCwd: string;
+	private readonly searchIndex = new LocalFileSearchIndex();
 
 	constructor(options: DefaultLocalFileSystemServiceOptions) {
 		this.sessions = options.sessions;
@@ -52,6 +57,13 @@ export class DefaultLocalFileSystemService implements LocalFileSystemService {
 		if (!path.trim() || path.includes("\0")) throw new LocalFileSystemError("local_file_path_invalid", "A file path is required", 400);
 		const rootPath = await this.resolveRoot(session.workDir ?? this.localCwd, true);
 		return readLocalTextFile(rootPath, resolve(rootPath, path));
+	}
+
+	async searchFiles(sessionId: SessionId, query: string, options: LocalFileSearchOptions = {}): Promise<LocalFileSearchResult> {
+		const session = await this.sessions.findById(sessionId);
+		if (!session) throw new LocalFileSystemError("session_not_found", `Session not found: ${sessionId}`, 404);
+		const rootPath = await this.resolveRoot(session.workDir ?? this.localCwd, true);
+		return this.searchIndex.search(rootPath, query, options);
 	}
 
 	private async listWithinRoot(rootPath: string, path?: string): Promise<LocalDirectoryListing> {

@@ -13,6 +13,8 @@ Runtime Factory 将 Run ID 绑定到远端 Tool。Full Access grant 绑定完整
 
 ## 当前边界
 
+- `@` 非空文件检索使用独立 Hook 与后端有界候选索引，不逐目录发 HTTP，也不创建 Chat Run。取消、缓存、全局排序及不完整提示见 [local-file-search.md](./local-file-search.md)。
+
 - 前端将 `stopReason: "aborted"` 作为用户取消结束，隐藏附带错误详情并保留已有正文、Thinking 和工具记录；实时消息和刷新后的历史共用该规则，见 `packages/ssh-agent-web/tests/chat-failure-details.test.tsx`。
 
 - 成功的 `read` / `write` 工具行可点击文件名，经展示回调在右侧打开独立阅读器，读取当前磁盘文件而非截断的工具输出。阅读器自有标签与读取状态，不创建 Chat Run、消息或审批，不依赖 Terminal/Deploy 生命周期；完整入口与边界见 [file-reader.md](./file-reader.md)。

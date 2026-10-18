@@ -123,6 +123,61 @@ describe("Session local file system API", () => {
 		expect(response).toMatchObject({ status: 404, body: { error: { code: "session_not_found" } } });
 	});
 
+	it("searches the Session directory through one no-store request and ranks exact names", async () => {
+		await mkdir(join(rootPath, "src", "test", "java"), { recursive: true });
+		await writeFile(join(rootPath, "src", "test", "java", "MidAutumnLoginConverterTest.java"), "fixture");
+		const response = await backend.handleRequest(new Request("http://localhost/api/sessions/id-4/local-files/search?query=MidAutumnLoginConverterTest"));
+		expect(response.status).toBe(200);
+		expect(response.headers.get("cache-control")).toBe("no-store");
+		expect(await response.json()).toMatchObject({ incomplete: false, truncated: false,
+			entries: [{ name: "MidAutumnLoginConverterTest.java", relativePath: join("src", "test", "java", "MidAutumnLoginConverterTest.java") }] });
+	});
+
+	it("keeps search roots scoped to the current Session and supports explicit refresh and ignored files", async () => {
+		await writeFile(join(outsidePath, "OutsideOnly.java"), "outside");
+		await writeFile(join(rootPath, ".gitignore"), "Hidden.java\n");
+		await writeFile(join(rootPath, "Hidden.java"), "hidden");
+		expect(await request(backend, "/api/sessions/id-4/local-files/search?query=OutsideOnly"))
+			.toMatchObject({ status: 200, body: { entries: [], incomplete: false } });
+		expect(await request(backend, "/api/sessions/id-4/local-files/search?query=Hidden"))
+			.toMatchObject({ status: 200, body: { entries: [] } });
+		expect(await request(backend, "/api/sessions/id-4/local-files/search?query=Hidden&includeIgnored=true"))
+			.toMatchObject({ status: 200, body: { entries: [{ name: "Hidden.java" }] } });
+		await writeFile(join(rootPath, "NewlyAdded.java"), "new");
+		expect(await request(backend, "/api/sessions/id-4/local-files/search?query=NewlyAdded&refresh=true"))
+			.toMatchObject({ status: 200, body: { entries: [{ name: "NewlyAdded.java" }] } });
+	});
+
+	it("validates search flags, paths and Session identity through the ordinary API error contract", async () => {
+		for (const [suffix, status, code] of [
+			["?query=../outside/file", 403, "local_file_path_outside_work_dir"],
+			["?query=outside-link/file", 403, "local_file_path_symlink_not_allowed"],
+			["?query=x&includeIgnored=invalid", 400, "validation_error"],
+			["?query=x&refresh=invalid", 400, "validation_error"],
+			[`?query=${"x".repeat(513)}`, 400, "validation_error"],
+		] as const) {
+			expect(await request(backend, `/api/sessions/id-4/local-files/search${suffix}`))
+				.toMatchObject({ status, body: { error: { code } } });
+		}
+		expect(await request(backend, "/api/sessions/missing/local-files/search?query=x"))
+			.toMatchObject({ status: 404, body: { error: { code: "session_not_found" } } });
+	});
+
+	it("uses the updated Session workDir instead of a cached previous root", async () => {
+		expect(await request(backend, "/api/sessions/id-4/local-files/search?query=release.tar"))
+			.toMatchObject({ body: { entries: [{ name: "release.tar" }] } });
+		await writeFile(join(outsidePath, "Different.java"), "new root");
+		const updated = await backend.handleRequest(new Request("http://localhost/api/sessions/id-4", {
+			method: "PATCH", headers: { "content-type": "application/json" },
+			body: JSON.stringify({ workDir: outsidePath, expectedRevision: 1 }),
+		}));
+		expect(updated.status).toBe(200);
+		expect(await request(backend, "/api/sessions/id-4/local-files/search?query=release.tar"))
+			.toMatchObject({ body: { entries: [] } });
+		expect(await request(backend, "/api/sessions/id-4/local-files/search?query=Different"))
+			.toMatchObject({ body: { entries: [{ path: join(outsidePath, "Different.java") }] } });
+	});
+
 	it("reads complete UTF-8 file contents using relative and absolute paths without caching", async () => {
 		const filePath = join(rootPath, "nested", "说明.md");
 		const content = "# 文件预览\n\n" + "完整内容\n".repeat(4000);

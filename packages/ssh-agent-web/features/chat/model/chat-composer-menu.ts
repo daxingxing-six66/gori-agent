@@ -25,6 +25,7 @@ export interface ChatComposerMenuSectionsInput {
 	fileMenuOpen: boolean;
 	fileLoading: boolean;
 	fileError: boolean;
+	fileSearchIncomplete?: boolean;
 	hasParentDirectory: boolean;
 	visibleToolCount: number;
 	visibleFileCount: number;
@@ -36,7 +37,7 @@ export function resolveChatComposerMenuSections(input: ChatComposerMenuSectionsI
 	showEmpty: boolean;
 } {
 	const showTools = input.visibleToolCount > 0;
-	const fileStatePendingOrFailed = input.fileMenuOpen && (input.fileLoading || input.fileError);
+	const fileStatePendingOrFailed = input.fileMenuOpen && (input.fileLoading || input.fileError || input.fileSearchIncomplete);
 	const hasResults = showTools || (input.fileMenuOpen && (input.visibleFileCount > 0 || input.hasParentDirectory));
 	const showEmpty = !fileStatePendingOrFailed && !hasResults;
 	return { showTools, showFiles: input.fileMenuOpen && !showEmpty, showEmpty };

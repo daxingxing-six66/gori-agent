@@ -33,6 +33,7 @@
 | Chat 统一异常、cause/errorId、Run 终态提交与恢复 | [chat-failures.md](./chat-failures.md) | `packages/ssh-agent/src/application/failure-policy.ts`、`packages/ssh-agent/src/application/services/chat-run-executor.ts` |
 | 聊天和压缩的厂商原因提取、安全展示和重试属性 | [provider-failures.md](./provider-failures.md) | `packages/ssh-agent/src/application/provider-failure.ts` |
 | 系统和 Session 本地目录浏览、绝对路径契约和文件系统边界 | [local-file-system.md](./local-file-system.md) | `packages/ssh-agent/src/application/services/local-file-system-service.ts` |
+| `@` 文件/路径模糊检索、候选索引、忽略规则、缓存与性能预算 | [local-file-search.md](./local-file-search.md) | `packages/ssh-agent/src/application/services/local-file-search-index.ts`、`packages/ssh-agent-web/features/chat/runtime/use-local-file-search.ts` |
 | Session 附件上传、自动命名、受控图片回显、SQLite 元数据和生命周期约束 | [attachments.md](./attachments.md) | `packages/ssh-agent/src/application/services/attachment-service.ts` |
 | Chat 图片附件引用、真实格式校验、Provider 多模态投影和引用持久化 | [chat-image-input.md](./chat-image-input.md) | `packages/ssh-agent/src/application/services/chat-attachment-service.ts` |
 | SFTP 文件管理、Transfer、Workspace SSE 和 Linux 实时监控 | [sftp-monitoring.md](./sftp-monitoring.md) | `packages/ssh-agent/src/application/services/file-transfer-service.ts`、`packages/ssh-agent/src/application/services/remote-metrics-service.ts` |

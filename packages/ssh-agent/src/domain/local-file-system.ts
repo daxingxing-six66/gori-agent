@@ -26,6 +26,20 @@ export interface LocalTextFile {
 	modifiedAt: number;
 }
 
+export interface LocalFileSearchResult {
+	entries: LocalFileEntry[];
+	/** More matching entries exist than the response limit. */
+	truncated: boolean;
+	/** Some directories could not be inspected or an indexing budget was reached. */
+	incomplete: boolean;
+}
+
+export interface LocalFileSearchOptions {
+	signal?: AbortSignal;
+	includeIgnored?: boolean;
+	refresh?: boolean;
+}
+
 export type LocalFileSystemErrorCode =
 	| "session_not_found"
 	| "local_file_path_invalid"

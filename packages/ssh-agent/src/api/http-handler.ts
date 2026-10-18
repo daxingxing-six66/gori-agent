@@ -132,6 +132,13 @@ async function route(
 	if (segments.length === 5 && segments[1] === "sessions" && segments[3] === "local-files" && segments[4] === "content" && request.method === "GET") {
 		return json(await options.localFiles.readFile(segments[2], requiredPath(url)));
 	}
+	if (segments.length === 5 && segments[1] === "sessions" && segments[3] === "local-files" && segments[4] === "search" && request.method === "GET") {
+		return json(await options.localFiles.searchFiles(segments[2], url.searchParams.get("query") ?? "", {
+			signal: request.signal,
+			includeIgnored: booleanQuery(url, "includeIgnored"),
+			refresh: booleanQuery(url, "refresh"),
+		}));
+	}
 
 	if (segments.length >= 4 && segments[1] === "sessions" && segments[3] === "chat") {
 		const sessionId = segments[2];
@@ -618,6 +625,12 @@ function requiredPath(url: URL): string {
 	const path = url.searchParams.get("path");
 	if (!path) throw new ManagementError("validation_error", "path query parameter is required", "path");
 	return path;
+}
+function booleanQuery(url: URL, name: string): boolean {
+	const value = url.searchParams.get(name);
+	if (value === null || value === "false") return false;
+	if (value === "true") return true;
+	throw new ManagementError("validation_error", `${name} must be true or false`, name);
 }
 function transferLimit(url: URL): number {
 	const value = url.searchParams.get("limit");
