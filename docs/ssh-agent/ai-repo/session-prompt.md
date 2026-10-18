@@ -33,7 +33,7 @@ SQLite v16 引入、v17 统一兼容后的结构使用触发器让 Terminal 状�
 
 ## 请求与压缩
 
-`convertToLlm` 保留 system role。OpenAI Chat Completions、Responses（含共享转换器的 Azure/Codex）及 Mistral 适配器按原历史位置发送 system 消息；本地 faux 用于测试。不支持会话内 system 的 API 在创建 Run 前返回本地化 `409 chat_system_messages_unsupported`，不静默降级为 user 或移动到头部。目录管理仍保留原能力；第三方兼容服务的实际接收能力需另行验证。
+`convertToLlm` 保留 system role。OpenAI Chat Completions、Responses（含共享转换器的 Azure/Codex）及 Mistral 适配器保留 system 消息的历史位置，但工具调用与对应结果必须组成连续消息组：若运行时 system 事件落在调用与结果之间，`transformMessages` 仅在 Provider 请求投影中将这些事件延后到完整结果组之后，保留事件之间的顺序和真实角色，不提前生成缺失结果。SQLite 原始 sequence 不变。真正缺失、重复或失去父调用的结果处理见 [chat-failures.md](./chat-failures.md)。本地 faux 用于测试。不支持会话内 system 的 API 在创建 Run 前返回本地化 `409 chat_system_messages_unsupported`，不静默降级为 user 或移动到头部。目录管理仍保留原能力；第三方兼容服务的实际接收能力需另行验证。
 
 压缩只替换有效历史，固定头部不变。最新权威模式若落入摘要区，会以原 system 消息保留在 retained tail；摘要请求期间发生的新模式事件也加入尾部，避免被新 compact 行的 sequence 边界遮蔽。每次 Provider 请求及压缩返回后复核最新持久化模式：同一事件不重复插入，若与当前 Run 绑定模式不一致则停止并返回模式冲突，不继续使用已失效 PTY。
 
@@ -52,7 +52,7 @@ Terminal 模式切换保留头部和工具 schema 前缀；历史只追加。Ses
 | 模式历史读取、压缩保护 | `packages/ssh-agent/src/infrastructure/sqlite/sqlite-chat-repository.ts`、`packages/ssh-agent/src/application/services/chat-context-service.ts` |
 | 通用消息角色和适配能力 | `packages/ai/src/types.ts`、`packages/ai/src/utils/system-messages.ts`、`packages/ai/src/api/transform-messages.ts`、`packages/agent/src/harness/messages.ts` |
 | 浏览器协议兼容 | `packages/ssh-agent-web/features/chat/model/chat.ts`、`packages/ssh-agent-web/features/chat/model/chat-runtime-state.ts`、`packages/ssh-agent-web/features/chat/components/chat-timeline.tsx` |
-| 定向回归 | `packages/ssh-agent/test/chat-prompt-snapshot.test.ts`、`packages/ssh-agent/test/chat-system-message-adapters.test.ts`、`packages/ssh-agent/test/chat-context-service.test.ts`、`packages/ssh-agent/test/chat-service-lifecycle.test.ts`、`packages/ssh-agent-web/tests/chat-system-messages.test.tsx` |
+| 定向回归 | `packages/ssh-agent/test/chat-prompt-snapshot.test.ts`、`packages/ssh-agent/test/chat-system-message-adapters.test.ts`、`packages/ssh-agent/test/tool-message-recovery.test.ts`、`packages/ssh-agent/test/chat-context-service.test.ts`、`packages/ssh-agent/test/chat-service-lifecycle.test.ts`、`packages/ssh-agent-web/tests/chat-system-messages.test.tsx` |
 
 测试使用临时 SQLite 和 faux/本地序列化，不连接真实 SSH 或付费模型。
 

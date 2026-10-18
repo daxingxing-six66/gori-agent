@@ -1938,7 +1938,11 @@
 				"packages/ssh-agent/src/i18n/projection.ts",
 				"packages/ssh-agent-web/features/chat/components/chat-failure-details.tsx",
 				"packages/ssh-agent-web/features/chat/components/chat-message.tsx",
-				"packages/ssh-agent-web/features/chat/components/chat-timeline.tsx"
+				"packages/ssh-agent-web/features/chat/components/chat-timeline.tsx",
+				"packages/ai/src/api/transform-messages.ts",
+				"packages/ssh-agent/test/tool-message-recovery.test.ts",
+				"packages/ssh-agent/test/chat-system-message-adapters.test.ts",
+				"packages/ai/test/transform-messages-copilot-openai-to-anthropic.test.ts"
 			],
 			"sourceDigests": {
 				"packages/ssh-agent/src/application/failure-policy.ts": "sha256:07543a002e0897653bf824311dfe83a3a5d4a2b135b45c2d8b6771f339f0cd05",
@@ -1955,7 +1959,11 @@
 				"packages/ssh-agent/src/i18n/projection.ts": "sha256:742d1133df9c14bd425e2962d2a7da2bc9c5921fb8c10b20db730381ff2c4207",
 				"packages/ssh-agent-web/features/chat/components/chat-failure-details.tsx": "sha256:25b57c0661f673dd3ad6bd15f219f16de87bbe0e0679a1ef759f7334b0a92b7f",
 				"packages/ssh-agent-web/features/chat/components/chat-message.tsx": "sha256:3e9883f0ace54960e0bf6b10a577035c12d895aadce0ae9c7e0c6220254bebe1",
-				"packages/ssh-agent-web/features/chat/components/chat-timeline.tsx": "sha256:3cfc86c97ed08f88f7b32e1d441cf73fddc1b37c19002fdf47a8bc4f9c497431"
+				"packages/ssh-agent-web/features/chat/components/chat-timeline.tsx": "sha256:3cfc86c97ed08f88f7b32e1d441cf73fddc1b37c19002fdf47a8bc4f9c497431",
+				"packages/ai/src/api/transform-messages.ts": "sha256:c6293b0371e853ff25dd89cf6da122b47edca0bcbb1fbb32e49c67fb3d905c7c",
+				"packages/ssh-agent/test/tool-message-recovery.test.ts": "sha256:0cb8224f758cdb399bcaa704d6c0270fccbcd63b0a60fb976ead0334764de341",
+				"packages/ssh-agent/test/chat-system-message-adapters.test.ts": "sha256:f105d3681d10bb42123f56b76662c5fc6d0bd6291f5335bc97a3f8b089af406e",
+				"packages/ai/test/transform-messages-copilot-openai-to-anthropic.test.ts": "sha256:8a033985abf148527183592d91657f502e7cb1a02e1036c4dbd9082745dd0433"
 			}
 		},
 		{
@@ -2105,7 +2113,8 @@
 				"packages/ssh-agent/src/application/deployment-selection-context.ts",
 				"packages/ssh-agent/src/application/deployment-runtime-context.ts",
 				"packages/ssh-agent/src/domain/deployment-session.ts",
-				"packages/ssh-agent/src/application/services/deployment-mode-service.ts"
+				"packages/ssh-agent/src/application/services/deployment-mode-service.ts",
+				"packages/ssh-agent/test/tool-message-recovery.test.ts"
 			],
 			"sourceDigests": {
 				"packages/ssh-agent/src/application/chat-context.ts": "sha256:f2d8ff0e1353b3b21659b10cfb4f8ed93b70910205e37820040b0fe145aeca2b",
@@ -2125,7 +2134,7 @@
 				"packages/ai/src/types.ts": "sha256:c95d5456df1bb3acf3ecabd193ba7e3c31bced72e1ea0cf199ea47a5f3477b42",
 				"packages/ai/src/index.ts": "sha256:d1c720973e7e05dd9164f92c255b9e87a7f038b346fb25edab5d53d4a1d438de",
 				"packages/ai/src/utils/system-messages.ts": "sha256:3e71cb05bc6c620529e11d42ae1ba1bebcb8e061b05c756c6d33203ba2612699",
-				"packages/ai/src/api/transform-messages.ts": "sha256:ba7820ff9eb088395e2118722673131722a6a2faf55ea1ee32a3c3981e088e58",
+				"packages/ai/src/api/transform-messages.ts": "sha256:c6293b0371e853ff25dd89cf6da122b47edca0bcbb1fbb32e49c67fb3d905c7c",
 				"packages/ai/src/api/openai-completions.ts": "sha256:03d88cc786b169e25be6f57e0dbd8ff4b75f1056e3dcd421d79c3a457d1e9d9c",
 				"packages/ai/src/api/openai-responses-shared.ts": "sha256:d221d1a88e434fe5986f4f06c92d5e1eb88051a26b737de9da9159229f2cf4fe",
 				"packages/ai/src/api/mistral-conversations.ts": "sha256:f8c7c815f1e90369f21ee0f2924f7d023bdced93eeab8c12c32c76c3b8e28a10",
@@ -2138,7 +2147,7 @@
 				"packages/ssh-agent-web/features/chat/components/chat-message.tsx": "sha256:3e9883f0ace54960e0bf6b10a577035c12d895aadce0ae9c7e0c6220254bebe1",
 				"packages/ssh-agent-web/features/chat/components/chat-timeline.tsx": "sha256:3cfc86c97ed08f88f7b32e1d441cf73fddc1b37c19002fdf47a8bc4f9c497431",
 				"packages/ssh-agent/test/chat-prompt-snapshot.test.ts": "sha256:77e05ba26536fa6c264efb6d63b606c916e4a0dde9d75f5a57e4e763d8e964c2",
-				"packages/ssh-agent/test/chat-system-message-adapters.test.ts": "sha256:6a0426d59f042c7a4ea5f432169e6f8ea63011f8fd259c8ae5fbc6464b33575f",
+				"packages/ssh-agent/test/chat-system-message-adapters.test.ts": "sha256:f105d3681d10bb42123f56b76662c5fc6d0bd6291f5335bc97a3f8b089af406e",
 				"packages/ssh-agent/test/chat-context-service.test.ts": "sha256:9b2bcd99213d13584cc56a79a5f80b9c74b06866ba200859fd652d0172f2db12",
 				"packages/ssh-agent-web/tests/chat-system-messages.test.tsx": "sha256:3a9213235648f4063821433a44aaa751eb3657d473de06245c02e1dd485e345e",
 				"packages/ssh-agent/test/chat-prompt-migration.test.ts": "sha256:ef0188c11647cd175aa3a8d6cee1461fb1b77e29015ea63066b4e40e8d24770f",
@@ -2149,7 +2158,8 @@
 				"packages/ssh-agent/src/application/deployment-selection-context.ts": "sha256:0aad997e56e1d653119c166885682471eea8642b9cb957cef73c1cb41e0e60c1",
 				"packages/ssh-agent/src/application/deployment-runtime-context.ts": "sha256:1a3dabaa7cd5d82052358b2ebb0529ed25082b80e22051a647a96deb98256620",
 				"packages/ssh-agent/src/domain/deployment-session.ts": "sha256:4ca6cf998a4d2b7badf2b51093820b5731ecb63df259f9b1a6f6609bd597611c",
-				"packages/ssh-agent/src/application/services/deployment-mode-service.ts": "sha256:6bf0a9888b1475a3aa9b32e656785257cac6d3180904db1b77640fb9d0cc163d"
+				"packages/ssh-agent/src/application/services/deployment-mode-service.ts": "sha256:6bf0a9888b1475a3aa9b32e656785257cac6d3180904db1b77640fb9d0cc163d",
+				"packages/ssh-agent/test/tool-message-recovery.test.ts": "sha256:0cb8224f758cdb399bcaa704d6c0270fccbcd63b0a60fb976ead0334764de341"
 			}
 		},
 		{

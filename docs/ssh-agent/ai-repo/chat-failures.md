@@ -15,6 +15,16 @@
 - schemaVersion=1 failure_json 保存安全摘要，公开投影使用白名单；无版本历史保留原快照，不从文案猜原因。日志使用现有 Console sink 和共享 errorId，原始 cause 不公开。
 - delivery 故障不改变 Run 业务结果，通过 stream.resync 要求客户端读取 REST；正常客户端断开只移除订阅。服务关闭取消并等待在途 Run 任务，10 秒未结束则抛错，不继续关闭数据库；独立手动压缩尚未纳入该等待集合。
 
+## 中断后的工具消息恢复
+
+`packages/ai/src/api/transform-messages.ts` 在每次 Provider 序列化前修复工具消息配对，只处理请求投影，不删除或重写持久化历史，也不重新执行工具：
+
+- 已有真实结果时保留该结果；调用执行期间追加的 Terminal 等 system 事件暂缓到本组全部结果之后，避免提前补出错误结果后又发送一条同 ID 的真实结果。多个并行调用的结果可按实际完成顺序出现，system 事件之间的顺序不变。
+- 遇到下一条 user/assistant 或历史结束时仍缺少结果，为每个缺失调用补一条 `isError: true` 的结果，明确执行中断、操作可能已经生效，需要先检查当前状态再决定是否重试。补充结果使用原调用时间戳，重复投影保持稳定；不能将未知结果冒充执行失败或成功。
+- 重复结果、无对应调用的结果，以及已过滤 error/aborted assistant 留下的结果不进入 Provider 请求；原始审计记录仍然保留。修复不改变 Run 的失败分类，不自动恢复或重放有副作用的操作。
+
+`tool-message-recovery.test.ts` 覆盖 system 插入、并行调用、部分/全部结果缺失、重复与孤立结果、跨模型 ID 归一化及投影幂等；`chat-system-message-adapters.test.ts` 验证 Chat Completions、Responses 和 Mistral 最终请求保留真实结果及 system 角色，测试在网络请求前停止。
+
 ## 源码入口
 
 | 职责 | 位置 |
@@ -27,6 +37,8 @@
 | 运行错误与恢复 | `packages/ssh-agent/src/application/chat-run-runtime.ts`、`services/chat-agent-runtime-factory.ts` |
 | 终态原子更新和历史验证 | `packages/ssh-agent/src/infrastructure/sqlite/sqlite-chat-repository.ts` |
 | 公开报告和 SSE | `packages/ssh-agent/src/i18n/projection.ts`、`application/chat-run-event-stream.ts` |
+| Provider 工具配对与中断恢复投影 | `packages/ai/src/api/transform-messages.ts` |
+| 工具配对回归与适配器序列化 | `packages/ssh-agent/test/tool-message-recovery.test.ts`、`packages/ssh-agent/test/chat-system-message-adapters.test.ts`、`packages/ai/test/transform-messages-copilot-openai-to-anthropic.test.ts` |
 
 设计、实施边界与验收见 [chat-run-failure-design.md](../design/chat-run-failure-design.md)。
 

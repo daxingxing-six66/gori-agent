@@ -155,7 +155,7 @@ describe("OpenAI to Anthropic session migration for Copilot Claude", () => {
 			toolCallId: "call_123_fc_123",
 			toolName: "read",
 			isError: true,
-			content: [{ type: "text", text: "No result provided" }],
+			content: [{ type: "text", text: expect.stringContaining("The operation may have taken effect") }],
 		});
 	});
 
@@ -185,7 +185,7 @@ describe("OpenAI to Anthropic session migration for Copilot Claude", () => {
 			role: "toolResult",
 			toolCallId: "call_2_fc_2",
 			toolName: "bash",
-			content: [{ type: "text", text: "No result provided" }],
+			content: [{ type: "text", text: expect.stringContaining("The operation may have taken effect") }],
 		});
 	});
 });

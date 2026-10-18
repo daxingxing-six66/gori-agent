@@ -5,6 +5,7 @@ import type {
 	ImageContent,
 	Message,
 	Model,
+	SystemMessage,
 	TextContent,
 	ToolCall,
 	ToolResultMessage,
@@ -159,12 +160,15 @@ export function transformMessages<TApi extends Api>(
 		return msg;
 	});
 
-	// Second pass: insert synthetic empty tool results for orphaned tool calls
-	// This preserves thinking signatures and satisfies API requirements
+	// A tool call and its results form one provider message group. Runtime system
+	// events can be persisted while a tool is running; defer those events until
+	// the whole group is closed instead of fabricating an early result.
 	const result: Message[] = [];
 	let pendingToolCalls: ToolCall[] = [];
 	let existingToolResultIds = new Set<string>();
-	const insertSyntheticToolResults = () => {
+	let deferredSystemMessages: SystemMessage[] = [];
+	let toolCallTimestamp = 0;
+	const finishToolGroup = () => {
 		if (pendingToolCalls.length > 0) {
 			for (const tc of pendingToolCalls) {
 				if (!existingToolResultIds.has(tc.id)) {
@@ -172,23 +176,29 @@ export function transformMessages<TApi extends Api>(
 						role: "toolResult",
 						toolCallId: tc.id,
 						toolName: tc.name,
-						content: [{ type: "text", text: "No result provided" }],
+						content: [
+							{
+								type: "text",
+								text: "No result provided: execution was interrupted before a result was recorded. The operation may have taken effect; check the current state before deciding whether to retry.",
+							},
+						],
 						isError: true,
-						timestamp: Date.now(),
-					} as ToolResultMessage);
+						timestamp: toolCallTimestamp,
+					} satisfies ToolResultMessage);
 				}
 			}
 			pendingToolCalls = [];
 			existingToolResultIds = new Set();
 		}
+		result.push(...deferredSystemMessages);
+		deferredSystemMessages = [];
 	};
 
 	for (let i = 0; i < transformed.length; i++) {
 		const msg = transformed[i];
 
 		if (msg.role === "assistant") {
-			// If we have pending orphaned tool calls from a previous assistant, insert synthetic results now
-			insertSyntheticToolResults();
+			finishToolGroup();
 
 			// Skip errored/aborted assistant messages entirely.
 			// These are incomplete turns that shouldn't be replayed:
@@ -205,15 +215,23 @@ export function transformMessages<TApi extends Api>(
 			if (toolCalls.length > 0) {
 				pendingToolCalls = toolCalls;
 				existingToolResultIds = new Set();
+				toolCallTimestamp = assistantMsg.timestamp;
 			}
 
 			result.push(msg);
 		} else if (msg.role === "toolResult") {
+			// A missing/filtered parent or duplicate result cannot be replayed as a
+			// provider tool message. This projection never changes stored history.
+			if (!pendingToolCalls.some((call) => call.id === msg.toolCallId) || existingToolResultIds.has(msg.toolCallId)) {
+				continue;
+			}
 			existingToolResultIds.add(msg.toolCallId);
 			result.push(msg);
-		} else if (msg.role === "user" || msg.role === "system") {
-			// User message interrupts tool flow - insert synthetic results for orphaned calls
-			insertSyntheticToolResults();
+			if (existingToolResultIds.size === pendingToolCalls.length) finishToolGroup();
+		} else if (msg.role === "system" && pendingToolCalls.length > 0) {
+			deferredSystemMessages.push(msg);
+		} else if (msg.role === "user") {
+			finishToolGroup();
 			result.push(msg);
 		} else {
 			result.push(msg);
@@ -221,7 +239,7 @@ export function transformMessages<TApi extends Api>(
 	}
 
 	// If the conversation ends with unresolved tool calls, synthesize results now.
-	insertSyntheticToolResults();
+	finishToolGroup();
 
 	return result;
 }
