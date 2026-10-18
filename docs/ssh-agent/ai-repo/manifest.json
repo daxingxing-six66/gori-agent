@@ -483,7 +483,7 @@
 				"packages/ssh-agent-web/features/chat/api/local-files-api.ts": "sha256:32d99188869f1668ca4a8249cc62fd57437ba6c8807ee4154deb2b357b42fa96",
 				"packages/ssh-agent-web/features/chat/components/chat-token-editor.tsx": "sha256:a5c8bed69266e1596f64f4b82c2e1ded16504da571fcf419e045398e0c373c80",
 				"packages/ssh-agent-web/features/chat/components/chat-reference.tsx": "sha256:1a93725384349d8d8e29ac9b5c6cf8b2c5e5244fc20dbc3f79979b0dd3eda5b3",
-				"packages/ssh-agent-web/features/chat/components/chat-message.tsx": "sha256:3e9883f0ace54960e0bf6b10a577035c12d895aadce0ae9c7e0c6220254bebe1",
+				"packages/ssh-agent-web/features/chat/components/chat-message.tsx": "sha256:bb3c474116f577b138e48d70fc57549d8041c44703ba98c5144d4686886fad36",
 				"packages/ssh-agent-web/features/chat/components/chat-console.tsx": "sha256:86787db3257668b5e606627f5b7089921503ac0762317d04b75b955229b29f16",
 				"packages/ssh-agent-web/features/chat/components/chat-composer-panel.tsx": "sha256:1cb1cd17266ecdd300b20cc4d334d7a30cf96f8bd87229f24f9a8df40e708aa3",
 				"packages/ssh-agent-web/features/chat/model/chat-composer-menu.ts": "sha256:88fb98da1eba5078057a8d5fe5c16840333f0d35c0f41540a86ba44ea712079c",
@@ -1184,7 +1184,7 @@
 				"packages/ssh-agent-web/components/toggle-switch.tsx": "sha256:24f94839392c4cfaa53f0aa7dde2448cf7b0338132b45ef637611c8b64c225a1",
 				"packages/ssh-agent-web/features/chat/api/chat-api.ts": "sha256:c95159d28b5e80d2e996ffb819cfd88c5d33a374bd02758515bfd647ac40fc7d",
 				"packages/ssh-agent-web/features/chat/components/chat-markdown.tsx": "sha256:e861ee50ac2d1e97d1cc6e4ee801a57f9b502e29e1bde1221fcfd2de2d64f987",
-				"packages/ssh-agent-web/features/chat/components/chat-message.tsx": "sha256:3e9883f0ace54960e0bf6b10a577035c12d895aadce0ae9c7e0c6220254bebe1",
+				"packages/ssh-agent-web/features/chat/components/chat-message.tsx": "sha256:bb3c474116f577b138e48d70fc57549d8041c44703ba98c5144d4686886fad36",
 				"packages/ssh-agent-web/features/chat/components/chat-console.tsx": "sha256:86787db3257668b5e606627f5b7089921503ac0762317d04b75b955229b29f16",
 				"packages/ssh-agent-web/features/chat/components/chat-composer-panel.tsx": "sha256:1cb1cd17266ecdd300b20cc4d334d7a30cf96f8bd87229f24f9a8df40e708aa3",
 				"packages/ssh-agent-web/features/chat/components/chat-timeline.tsx": "sha256:3cfc86c97ed08f88f7b32e1d441cf73fddc1b37c19002fdf47a8bc4f9c497431",
@@ -1942,7 +1942,8 @@
 				"packages/ai/src/api/transform-messages.ts",
 				"packages/ssh-agent/test/tool-message-recovery.test.ts",
 				"packages/ssh-agent/test/chat-system-message-adapters.test.ts",
-				"packages/ai/test/transform-messages-copilot-openai-to-anthropic.test.ts"
+				"packages/ai/test/transform-messages-copilot-openai-to-anthropic.test.ts",
+				"packages/ssh-agent-web/tests/chat-failure-details.test.tsx"
 			],
 			"sourceDigests": {
 				"packages/ssh-agent/src/application/failure-policy.ts": "sha256:07543a002e0897653bf824311dfe83a3a5d4a2b135b45c2d8b6771f339f0cd05",
@@ -1958,12 +1959,13 @@
 				"packages/ssh-agent/src/application/chat-run-event-stream.ts": "sha256:279325f25747f512c322d2cd291b1b4e470feebfba824c350c0a454cbc4633c0",
 				"packages/ssh-agent/src/i18n/projection.ts": "sha256:742d1133df9c14bd425e2962d2a7da2bc9c5921fb8c10b20db730381ff2c4207",
 				"packages/ssh-agent-web/features/chat/components/chat-failure-details.tsx": "sha256:25b57c0661f673dd3ad6bd15f219f16de87bbe0e0679a1ef759f7334b0a92b7f",
-				"packages/ssh-agent-web/features/chat/components/chat-message.tsx": "sha256:3e9883f0ace54960e0bf6b10a577035c12d895aadce0ae9c7e0c6220254bebe1",
+				"packages/ssh-agent-web/features/chat/components/chat-message.tsx": "sha256:bb3c474116f577b138e48d70fc57549d8041c44703ba98c5144d4686886fad36",
 				"packages/ssh-agent-web/features/chat/components/chat-timeline.tsx": "sha256:3cfc86c97ed08f88f7b32e1d441cf73fddc1b37c19002fdf47a8bc4f9c497431",
 				"packages/ai/src/api/transform-messages.ts": "sha256:c6293b0371e853ff25dd89cf6da122b47edca0bcbb1fbb32e49c67fb3d905c7c",
 				"packages/ssh-agent/test/tool-message-recovery.test.ts": "sha256:0cb8224f758cdb399bcaa704d6c0270fccbcd63b0a60fb976ead0334764de341",
 				"packages/ssh-agent/test/chat-system-message-adapters.test.ts": "sha256:f105d3681d10bb42123f56b76662c5fc6d0bd6291f5335bc97a3f8b089af406e",
-				"packages/ai/test/transform-messages-copilot-openai-to-anthropic.test.ts": "sha256:8a033985abf148527183592d91657f502e7cb1a02e1036c4dbd9082745dd0433"
+				"packages/ai/test/transform-messages-copilot-openai-to-anthropic.test.ts": "sha256:8a033985abf148527183592d91657f502e7cb1a02e1036c4dbd9082745dd0433",
+				"packages/ssh-agent-web/tests/chat-failure-details.test.tsx": "sha256:890ec6be1725ab0cc7606bb998030a4f798f8784da67686f3f8393380307d984"
 			}
 		},
 		{
@@ -2144,7 +2146,7 @@
 				"packages/agent/src/harness/compaction/utils.ts": "sha256:1e51ede93739aa35d198730b1c721e3b81cff2c2f364497e0ae6379075c87ed8",
 				"packages/ssh-agent-web/features/chat/model/chat.ts": "sha256:e72a19fe357f163054e9b0334d63531950942244c06599f632cfa195a5ba5001",
 				"packages/ssh-agent-web/features/chat/model/chat-runtime-state.ts": "sha256:5868a24c88ae31da4b6c65c90f4202575d9420afdd08eda58422baa9c8c29eb1",
-				"packages/ssh-agent-web/features/chat/components/chat-message.tsx": "sha256:3e9883f0ace54960e0bf6b10a577035c12d895aadce0ae9c7e0c6220254bebe1",
+				"packages/ssh-agent-web/features/chat/components/chat-message.tsx": "sha256:bb3c474116f577b138e48d70fc57549d8041c44703ba98c5144d4686886fad36",
 				"packages/ssh-agent-web/features/chat/components/chat-timeline.tsx": "sha256:3cfc86c97ed08f88f7b32e1d441cf73fddc1b37c19002fdf47a8bc4f9c497431",
 				"packages/ssh-agent/test/chat-prompt-snapshot.test.ts": "sha256:77e05ba26536fa6c264efb6d63b606c916e4a0dde9d75f5a57e4e763d8e964c2",
 				"packages/ssh-agent/test/chat-system-message-adapters.test.ts": "sha256:f105d3681d10bb42123f56b76662c5fc6d0bd6291f5335bc97a3f8b089af406e",
@@ -2977,7 +2979,7 @@
 				"packages/ssh-agent-web/features/file-reader/runtime/use-reader-file.ts": "sha256:9465dc237ca66e2848a24686e49f1b8e60cf604c5513e9d5695b71e494f1d99d",
 				"packages/ssh-agent-web/features/i18n/messages/zh-CN/file-reader.ts": "sha256:bf7827dc7f6c0ffd323bd48bd101d36d0079209890817f7b43933ca4eb89ca37",
 				"packages/ssh-agent-web/features/i18n/messages/en-US/file-reader.ts": "sha256:a8fa1bbdab4d0dd71a6f9c99574d86837822c27bbeb617605ddf0965807b3fc5",
-				"packages/ssh-agent-web/features/chat/components/chat-message.tsx": "sha256:3e9883f0ace54960e0bf6b10a577035c12d895aadce0ae9c7e0c6220254bebe1",
+				"packages/ssh-agent-web/features/chat/components/chat-message.tsx": "sha256:bb3c474116f577b138e48d70fc57549d8041c44703ba98c5144d4686886fad36",
 				"packages/ssh-agent-web/features/chat/components/chat-timeline.tsx": "sha256:3cfc86c97ed08f88f7b32e1d441cf73fddc1b37c19002fdf47a8bc4f9c497431",
 				"packages/ssh-agent-web/features/chat/components/chat-console.tsx": "sha256:86787db3257668b5e606627f5b7089921503ac0762317d04b75b955229b29f16",
 				"packages/ssh-agent-web/package.json": "sha256:7fa6b73571c0a83875a7a23b537da47c58032eba93759f884db77ba80b5dcc34",

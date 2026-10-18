@@ -13,6 +13,8 @@ Runtime Factory 将 Run ID 绑定到远端 Tool。Full Access grant 绑定完整
 
 ## 当前边界
 
+- 前端将 `stopReason: "aborted"` 作为用户取消结束，隐藏附带错误详情并保留已有正文、Thinking 和工具记录；实时消息和刷新后的历史共用该规则，见 `packages/ssh-agent-web/tests/chat-failure-details.test.tsx`。
+
 - 成功的 `read` / `write` 工具行可点击文件名，经展示回调在右侧打开独立阅读器，读取当前磁盘文件而非截断的工具输出。阅读器自有标签与读取状态，不创建 Chat Run、消息或审批，不依赖 Terminal/Deploy 生命周期；完整入口与边界见 [file-reader.md](./file-reader.md)。
 
 - `ask_user_decision` 在普通模式与 Terminal Mode 共用同一工具定义和独立的 `ChatUserDecisionService`。服务持有无超时等待，SQLite 保存题目、回答及终态；Run 取消和服务关闭中止等待。回答只表达用户选择，不授予命令权限，Guard 和原有审批规则继续生效。前端通过 Run SSE 和待决 REST 接口恢复；完整代码入口见 [user-decision.md](./user-decision.md)。

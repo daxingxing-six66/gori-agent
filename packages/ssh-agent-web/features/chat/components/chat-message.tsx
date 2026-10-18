@@ -64,7 +64,7 @@ export const ChatMessageRow = memo(function ChatMessageRow({
 					if (part.type === "thinking") return <ThinkingBlock key={`thinking:${index}:${entry.final}:${hasText}`} content={part} streaming={!entry.final} hasText={hasText} />;
 					return <ToolCard key={`${part.id}:${tools[part.id]?.status ?? "waiting"}`} call={part} execution={tools[part.id]} approval={approvalForTool(approvals, part.id)} approvalBusy={approvalMutationId === approvalForTool(approvals, part.id)?.id} targetHost={targetHost} onResolveApproval={onResolveApproval} onOpenFile={onOpenFile} />;
 				})}
-				{!hideFailure && (message.failure || message.errorMessage) ? <div className="rounded-lg border border-[var(--danger-line)] bg-danger-soft px-3 py-2 text-xs leading-5 text-danger"><ChatFailureDetails failure={message.failure} fallback={message.errorMessage ?? ""} /></div> : null}
+				{!hideFailure && message.stopReason !== "aborted" && (message.failure || message.errorMessage) ? <div className="rounded-lg border border-[var(--danger-line)] bg-danger-soft px-3 py-2 text-xs leading-5 text-danger"><ChatFailureDetails failure={message.failure} fallback={message.errorMessage ?? ""} /></div> : null}
 				{!entry.final ? <span className="chat-streaming-dots" aria-label={intl.formatMessage({ id: "chat.message.generating" })}><i /><i /><i /></span> : null}
 		</div>
 	);
