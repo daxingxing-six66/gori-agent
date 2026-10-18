@@ -31,6 +31,18 @@ describe("follow-up promotion", () => {
 		</IntlProvider>);
 		expect(html).not.toContain("lucide-corner-down-left");
 	});
+	it.each(["next", "MidAutumnLoginConverterTest.java".repeat(50)])("keeps actions in a fixed right column for %s", (message) => {
+		const html = renderToStaticMarkup(<IntlProvider locale="zh-CN" messages={zhCNMessages}>
+			<QueuePreview active items={[{ id: "q", behavior: "follow_up", status: "pending", message }]} mutationId={null} onCancel={() => {}} onPromote={() => {}} />
+		</IntlProvider>);
+		expect(html).toContain("grid-cols-[auto_minmax(0,1fr)_auto]");
+		expect(html).toContain("flex w-[52px] items-center justify-end");
+		expect(html).toContain("min-w-0 truncate");
+		expect(html).toContain('width="14" height="14"');
+		expect(html).toContain('stroke-width="2.25"');
+		expect(html).not.toContain("border-[var(--accent)]");
+		expect(html).not.toContain("bg-[var(--accent-soft)]");
+	});
 	it("does not resurrect consumed items or downgrade steering after delayed responses", () => {
 		let state = chatRuntimeReducer(initialChatRuntimeState, { type: "event", event: { type: "queue.updated", data: { id: "q", behavior: "steer", status: "consumed" } } });
 		state = chatRuntimeReducer(state, { type: "event", event: { type: "queue.updated", data: { id: "q", behavior: "follow_up", status: "pending" } } });

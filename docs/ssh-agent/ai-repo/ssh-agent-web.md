@@ -102,7 +102,9 @@ Chat 的 `UserDecisionPanel` 在输入框上方向上展开，显示模型提供
 
 ## 目录职责
 
-运行期间普通发送进入 follow_up。输入区 `chat-composer-panel.tsx` 的 `QueuePreview` 在 pending follow_up 行右侧提供回车图标，通过 `use-chat-runtime.ts` 调用 `chat-api.ts` 的原项转换接口，不重新发送消息；取消操作保留。队列区域按条数自然增高，最多完整显示四行（每行 36px，间距 4px），超过四条后纵向滚动。请求期间锁定队列操作，失败刷新队列；状态归约防止延迟响应恢复已消费项目。回归见 `tests/chat-queue-promotion.test.tsx`。
+运行期间普通发送进入 follow_up。输入区 `chat-composer-panel.tsx` 的 `QueuePreview` 在 pending follow_up 行右侧提供无背景、无边框、无阴影的引导图标，尺寸为 14px、描边为 2.25，相比初始的 12px / 2 仅轻微加大加粗，保留原主题图标色和键盘焦点提示，通过 `use-chat-runtime.ts` 调用 `chat-api.ts` 的原项转换接口，不重新发送消息；取消操作保留。每行以标签、可收缩文本和固定 52px 右侧操作列排版，长文本省略，不将图标推到内容尾部或撑宽行。队列区域按条数自然增高，最多完整显示四行（每行 36px，间距 4px），超过四条后纵向滚动。请求期间锁定队列操作，失败刷新队列；状态归约防止延迟响应恢复已消费项目。回归见 `tests/chat-queue-promotion.test.tsx`。
+
+点击停止输出且存在排队消息时，后端中断当前输出，每次只将队首一条加入同一 Run，其余消息继续排队；`use-chat-runtime.ts` 不主动清空 pending 控件，而按返回的 Run 状态和 REST/SSE 同步。真正进入终态才由 reducer 清理，重同步失败时继续保留已有队列。队列为空时仍取消 Run；回归见 `tests/chat-runtime-cancel.test.ts`，后端生命周期边界见 [chat-runtime.md](./chat-runtime.md)。
 
 Chat 错误展示复用 `features/chat/components/chat-failure-details.tsx`，消息历史和当前 Run 都保留 errorId 与 recovery。`chat-timeline.tsx` 按同一 errorId 隐藏重复错误提示但保留文本/工具内容。`chat-event-stream.ts` 接受无 tokensBefore 的 compaction.failed，已知协议解析失败、stream.resync 和 run.persistence_failed 触发 `use-chat-runtime.ts` 的 REST 重同步。测试见 `tests/chat-event-stream-failure.test.ts`。
 

@@ -410,7 +410,7 @@ export class ChatAgentRuntimeFactory {
 						throw new AgentRunError(undefined, "Tool authorization failed", { cause: error });
 					}
 				},
-				shouldStopAfterTurn: () => requireRuntime().cancellationRequested,
+				shouldStopAfterTurn: () => requireRuntime().stoppingCurrentTurn,
 				shouldContinueAutomaticallyAfterTurn: () => {
 					const activeRuntime = requireRuntime();
 					if (activeRuntime.consumeContinuationDecision()) return true;

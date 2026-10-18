@@ -218,6 +218,7 @@ describe("SSH Agent Chat API", () => {
 			fauxAssistantMessage(fauxToolCall("write", { path: "note.txt", content: "hello" }), {
 				stopReason: "toolUse",
 			}),
+			fauxAssistantMessage("queued summary completed"),
 		]);
 		const backend = createSqliteManagementBackend({
 			databasePath: ":memory:",
@@ -306,12 +307,15 @@ describe("SSH Agent Chat API", () => {
 				const result = await json(backend.handleRequest, "GET", `/api/sessions/${sessionId}/chat/runs/active`);
 				return (result.body as { run: unknown }).run === null;
 			});
-			const cancelled = await json(
+			const consumed = await json(
 				backend.handleRequest,
 				"GET",
-				`/api/sessions/${sessionId}/chat/runs/${runId}/queue?status=cancelled`,
+				`/api/sessions/${sessionId}/chat/runs/${runId}/queue?status=consumed`,
 			);
-			expect(cancelled.body).toMatchObject({ items: [{ requestId: "queue-active", status: "cancelled" }] });
+			expect(consumed.body).toMatchObject({ items: [{ requestId: "queue-active", status: "consumed" }] });
+			expect(faux.state.callCount).toBe(2);
+			expect(backend.database.prepare("SELECT status, failure_json FROM chat_runs WHERE id = ?").get(runId))
+				.toMatchObject({ status: "completed", failure_json: null });
 			expect(await json(backend.handleRequest, "POST", promotePath)).toMatchObject({ status: 409 });
 			const rejectedApprovals = await json(
 				backend.handleRequest,

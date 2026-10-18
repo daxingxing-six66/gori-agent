@@ -346,12 +346,14 @@ export function QueuePreview({ items, active, mutationId, onCancel, onPromote }:
 	return (
 		<div className="mb-1.5 border-b border-[var(--line-soft)] px-1 pb-2">
 			<p className="mb-1.5 px-1 text-[8px] font-semibold tracking-[0.06em] text-zinc-400">{intl.formatMessage({ id: "chat.queue.title" }, { count: items.length })}</p>
-			<div className="app-scrollbar grid max-h-[156px] auto-rows-[36px] gap-1 overflow-y-auto">
-				{items.map((item) => <div key={item.id} className="flex items-center gap-2 rounded-lg bg-[var(--surface-muted)] px-2.5 py-1.5">
+			<div className="app-scrollbar grid max-h-[156px] auto-rows-[36px] gap-1 overflow-y-auto min-w-0 grid-cols-[minmax(0,1fr)]">
+				{items.map((item) => <div key={item.id} className="grid w-full min-w-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 rounded-lg bg-[var(--surface-muted)] px-2.5 py-1">
 					<span className={`shrink-0 rounded px-1.5 py-0.5 text-[7px] font-semibold ${item.behavior === "steer" ? "bg-[var(--accent-soft)] text-[var(--accent)]" : "text-[var(--secondary)]"}`}>{intl.formatMessage({ id: item.behavior === "steer" ? "chat.queue.steer" : "chat.queue.followUp" })}</span>
-					<span className="min-w-0 flex-1 truncate text-[9px] text-[var(--secondary)]">{queueMessageText(item.message) || intl.formatMessage({ id: "chat.queue.fallback" })}</span>
-					{item.behavior === "follow_up" && item.status === "pending" ? <button type="button" className="grid h-6 w-6 shrink-0 place-items-center rounded text-[var(--accent)] transition hover:bg-[var(--accent-soft)] disabled:opacity-40" disabled={!active || mutationId !== null} onClick={() => onPromote(item.id)} aria-label={intl.formatMessage({ id: "chat.steer" })} title={intl.formatMessage({ id: "chat.steer" })}><CornerDownLeft size={12} /></button> : null}
-					<button type="button" className="grid h-5 w-5 shrink-0 place-items-center rounded text-zinc-400 transition hover:bg-white hover:text-rose-600 disabled:opacity-40" disabled={!active || mutationId !== null} onClick={() => onCancel(item.id)} aria-label={intl.formatMessage({ id: "chat.queue.cancel" })}>{mutationId === item.id ? <LoaderCircle size={10} className="animate-spin" /> : <X size={10} />}</button>
+					<span className="min-w-0 truncate text-[9px] text-[var(--secondary)]">{queueMessageText(item.message) || intl.formatMessage({ id: "chat.queue.fallback" })}</span>
+					<div className="flex w-[52px] items-center justify-end gap-1">
+						{item.behavior === "follow_up" && item.status === "pending" ? <button type="button" className="grid h-6 w-6 shrink-0 place-items-center text-[var(--accent)] transition-opacity hover:opacity-75 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)] disabled:opacity-40" disabled={!active || mutationId !== null} onClick={() => onPromote(item.id)} aria-label={intl.formatMessage({ id: "chat.steer" })} title={intl.formatMessage({ id: "chat.steer" })}><CornerDownLeft size={14} strokeWidth={2.25} /></button> : null}
+						<button type="button" className="grid h-5 w-5 shrink-0 place-items-center rounded text-[var(--text-muted)] transition hover:bg-[var(--surface-strong)] hover:text-[var(--danger)] disabled:opacity-40" disabled={!active || mutationId !== null} onClick={() => onCancel(item.id)} aria-label={intl.formatMessage({ id: "chat.queue.cancel" })}>{mutationId === item.id ? <LoaderCircle size={10} className="animate-spin" /> : <X size={10} />}</button>
+					</div>
 				</div>)}
 			</div>
 		</div>

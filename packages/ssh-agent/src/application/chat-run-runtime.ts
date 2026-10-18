@@ -4,10 +4,11 @@ import {
 	type AgentEvent,
 	type AgentMessage,
 	AgentRunError,
+	CompactionError,
 } from "@earendil-works/pi-agent-core";
 import type { NodeExecutionEnv } from "@earendil-works/pi-agent-core/node";
 import type { Api, Model } from "@earendil-works/pi-ai";
-import type { ChatRun } from "../domain/chat.ts";
+import type { ChatQueueItem, ChatRun } from "../domain/chat.ts";
 import { ChatCompactionError } from "../domain/context-compaction.ts";
 import { assistantFailure, runFailure } from "./failure-policy.ts";
 import type { ProviderFailureMessage } from "./provider-failure.ts";
@@ -22,6 +23,8 @@ const COMPACTION_AGENT_CODES = {
 	chat_compaction_model_unavailable: "compaction_model_unavailable",
 } as const satisfies Record<ChatCompactionError["code"], string>;
 
+type PendingChatMessage = Pick<ChatQueueItem, "behavior" | "message">;
+
 export class ChatRunRuntime implements ChatQueueDriver {
 	#failure?: NonNullable<ChatRun["failure"]>;
 
@@ -30,11 +33,16 @@ export class ChatRunRuntime implements ChatQueueDriver {
 	}
 
 	captureFailure(error: unknown, stage = "agent"): void {
-		if (this.cancellationRequested && error instanceof Error && error.name === "AbortError") return;
+		if (this.stoppingCurrentTurn && error instanceof Error && error.name === "AbortError") return;
 		this.#failure ??= runFailure(error, { stage, runId: this.run.id, sessionId: this.run.sessionId });
 	}
 
 	toAgentError(error: unknown, original?: ProviderFailureMessage): Error {
+		if (this.stoppingCurrentTurn && error instanceof Error && error.name === "AbortError") return error;
+		if (this.stoppingCurrentTurn && error instanceof ChatCompactionError &&
+			error.cause instanceof CompactionError && error.cause.code === "aborted") {
+			return new DOMException(error.message, "AbortError");
+		}
 		const recovery = runFailure(error, {
 			stage: "recovery",
 			runId: this.run.id,
@@ -82,6 +90,7 @@ export class ChatRunRuntime implements ChatQueueDriver {
 	#continuationState: "automatic" | "stop_after_turn" = "automatic";
 	#steeringState: "accepting" | "reject_until_next_turn" = "accepting";
 	#modelState: "available" | "removed" = "available";
+	#resumeQueuedMessages?: () => PendingChatMessage[];
 	#disposePromise?: Promise<void>;
 
 	constructor(input: {
@@ -102,6 +111,10 @@ export class ChatRunRuntime implements ChatQueueDriver {
 
 	get cancellationRequested(): boolean {
 		return this.#terminationState === "cancelling";
+	}
+
+	get stoppingCurrentTurn(): boolean {
+		return this.cancellationRequested || this.#resumeQueuedMessages !== undefined;
 	}
 
 	get modelRemoved(): boolean {
@@ -135,12 +148,39 @@ export class ChatRunRuntime implements ChatQueueDriver {
 		};
 	}
 
-	prompt(message: AgentMessage): Promise<void> {
-		return this.#agent.prompt(message);
+	async prompt(message: AgentMessage): Promise<void> {
+		await this.#agent.prompt(message);
+		while (this.#resumeQueuedMessages && !this.cancellationRequested && !this.publicFailure) {
+			// Read after the interrupted loop and its persistence listeners have settled.
+			// Some items may already have been consumed or removed while it was stopping.
+			const [next, ...remaining] = this.#resumeQueuedMessages();
+			this.#resumeQueuedMessages = undefined;
+			if (!next) {
+				this.requestCancellation();
+				return;
+			}
+			this.#agent.clearAllQueues();
+			// continue() consumes one steering item, including after a tool result.
+			// Keep the rest queued rather than appending them to the same prompt.
+			this.#agent.steer(next.message);
+			for (const item of remaining) {
+				if (item.behavior === "steer") this.#agent.steer(item.message);
+				else this.#agent.followUp(item.message);
+			}
+			this.#continuationState = "automatic";
+			await this.#agent.continue();
+		}
+	}
+
+	interruptForQueuedMessages(loadQueuedMessages: () => PendingChatMessage[]): void {
+		if (this.cancellationRequested) return;
+		this.#resumeQueuedMessages = loadQueuedMessages;
+		this.#agent.abort();
 	}
 
 	requestCancellation(): void {
 		this.#terminationState = "cancelling";
+		this.#resumeQueuedMessages = undefined;
 	}
 
 	stopAfterApprovalRejection(): void {

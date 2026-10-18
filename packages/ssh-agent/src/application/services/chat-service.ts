@@ -524,6 +524,19 @@ export class ChatService {
 		this.queues.cancel(runtime.run, runtime, itemId);
 	}
 
+	/** Stop the current output; pending user messages continue in this same Run. */
+	async stopRun(sessionId: string, runId: string): Promise<ChatRun> {
+		const runtime = this.active.get(sessionId)?.runtime;
+		if (runtime?.run.id === runId && !runtime.cancellationRequested && !runtime.publicFailure &&
+			(runtime.run.status === "pending" || runtime.run.status === "running") &&
+			this.queues.list(runtime.run).length > 0) {
+			runtime.interruptForQueuedMessages(() => this.queues.list(runtime.run));
+			return { ...runtime.run };
+		}
+		return this.cancelRun(sessionId, runId);
+	}
+
+	/** Force cancellation for lifecycle operations that must not resume queued work. */
 	async cancelRun(sessionId: string, runId: string): Promise<ChatRun> {
 		const run = this.chatRepository.findRun(runId, sessionId);
 		if (!run) throw new ChatError("chat_run_not_found", "Chat Run not found", 404);

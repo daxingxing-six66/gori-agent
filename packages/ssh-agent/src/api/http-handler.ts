@@ -194,7 +194,7 @@ async function route(
 				);
 			}
 			if (segments.length === 7 && segments[6] === "cancel" && request.method === "POST")
-				return json(await options.chat.cancelRun(sessionId, runId));
+				return json(await options.chat.stopRun(sessionId, runId));
 			if (segments.length === 7 && segments[6] === "queue") {
 				if (request.method === "GET")
 					return json({ items: options.chat.listQueue(sessionId, runId, chatQueueStatus(url)) });

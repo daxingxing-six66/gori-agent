@@ -17,12 +17,12 @@ const questions = [
 ];
 
 describe("ask_user_decision HTTP flow", () => {
-	it.each(["steer", "follow_up"] as const)("cancels a waiting decision without consuming a queued %s message", async (behavior) => {
+	it.each(["steer", "follow_up"] as const)("stops a waiting decision and continues the queued %s message in the same Run", async (behavior) => {
 		const localCwd = await mkdtemp(join(tmpdir(), "gori-decision-cancel-"));
 		const faux = fauxProvider({ provider: "cancel-decision", models: [{ id: "model" }] });
 		faux.setResponses([
 			fauxAssistantMessage(fauxToolCall("ask_user_decision", { questions }), { stopReason: "toolUse" }),
-			fauxAssistantMessage("This reply must not run after cancellation"),
+			fauxAssistantMessage("The queued message was processed"),
 		]);
 		const backend = createSqliteManagementBackend({
 			databasePath: ":memory:", credentialEncryptionKey: Buffer.alloc(32, 26), localCwd,
@@ -43,16 +43,19 @@ describe("ask_user_decision HTTP flow", () => {
 			const runId = (created.body as { id: string }).id;
 			await waitFor(async () => ((await json(backend.handleRequest, "GET", `${root}/decisions`)).body as { decisions: unknown[] }).decisions.length > 0);
 			const queued = await json(backend.handleRequest, "POST", `${root}/runs/${runId}/queue`, {
-				requestId: "queued", behavior, message: "queued-message-must-remain-unsent",
+				requestId: "queued", behavior, message: "Please continue with this queued message",
 			});
 			expect(queued.status).toBe(201);
 			await json(backend.handleRequest, "POST", `${root}/runs/${runId}/cancel`);
 			await waitFor(async () => (await json(backend.handleRequest, "GET", `${root}/runs/active`)).body.run === null);
 			expect(backend.database.prepare("SELECT status, failure_json FROM chat_runs WHERE id = ? AND session_id = ?").get(runId, sessionId))
-				.toMatchObject({ status: "cancelled", failure_json: null });
+				.toMatchObject({ status: "completed", failure_json: null });
 			const messages = await json(backend.handleRequest, "GET", `${root}/messages`);
-			expect(JSON.stringify(messages.body)).not.toContain("queued-message-must-remain-unsent");
-			expect((await json(backend.handleRequest, "GET", `${root}/runs/${runId}/queue?status=cancelled`)).body.items).toHaveLength(1);
+			expect(JSON.stringify(messages.body)).toContain("Please continue with this queued message");
+			expect(JSON.stringify(messages.body)).toContain("The queued message was processed");
+			expect((await json(backend.handleRequest, "GET", `${root}/runs/${runId}/queue?status=consumed`)).body.items).toHaveLength(1);
+			expect((await json(backend.handleRequest, "GET", `${root}/decisions`)).body.decisions).toEqual([]);
+			expect(faux.state.callCount).toBe(2);
 		} finally { await backend.close(); await rm(localCwd, { recursive: true, force: true }); }
 	});
 

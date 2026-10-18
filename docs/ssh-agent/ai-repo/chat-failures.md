@@ -8,6 +8,7 @@
 - Provider 分类在纯函数文件中，流包装保留部分输出并处理同步抛错、终态 error 和消费失败。空 400 不触发其他厂商的 Cerebras 超限特例。
 - Runtime 捕获原异常；失败消息和 Run 保存相同报告。压缩失败挂 recovery，清理失败单独记录且不改主结果。
 - 用户主动取消是正常结束行为。浏览器消息行按 `stopReason: "aborted"` 隐藏取消附带的错误详情，保留已有正文、Thinking 与工具记录；实时和历史加载一致，不解析英文或本地化错误文案。其他消息的真实失败仍按原规则显示，即使所属 Run 后来被取消也不统一隐藏。回归见 `packages/ssh-agent-web/tests/chat-failure-details.test.tsx`。
+- 点击停止时存在排队消息会中断当前 Loop 并在同一 Run 续接，Run 不提前进入终态；旧循环结束与监听器落库之后才读取剩余队列，每次仅续接队首一条，其余消息继续排队。真实失败阻止续接，内部强制取消优先于待续接意图；明确的摘要中止不包装为恢复失败。状态与回归入口见 [chat-runtime.md](./chat-runtime.md)。
 - AgentRunError 是 fatal tool 契约；普通 ToolError 仍可交给模型。并行 fatal 会中止可取消的同批任务并等待已启动任务结束；监听器失败不再递归写错误消息。
 - 审批 timeout/abort/HTTP 写入失败必须 reject 等待者；SFTP 覆盖审批也适用。新队列注入失败只补偿当前项；补偿失败中止 Run。现有 follow_up 转 steer 时若数据库更新或内存队列同步抛错，沿用持久化失败路径中止 Run，避免继续消费不一致的队列。
 - executor 只选择一次业务结果，终态提交失败不将它改成另一业务错误。SQLite updateRun 终态事务关闭 pending Queue/Approval，提交后更新内存和 SSE。

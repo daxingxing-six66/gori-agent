@@ -223,7 +223,6 @@ export function useChatRuntime(sessionId: string) {
 		setRequestError(null);
 		try {
 			dispatch({ type: "setRun", run: await chatApi.cancelRun(sessionId, currentRun.id) });
-			dispatch({ type: "clearPendingRuntime" });
 			await synchronize({ afterSequence: stateRef.current.maxSequence, merge: true });
 		} catch (requestError) {
 			setRequestError(requestError);
