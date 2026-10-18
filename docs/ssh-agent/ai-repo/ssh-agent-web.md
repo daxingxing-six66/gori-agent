@@ -61,6 +61,8 @@ Chat 的 `UserDecisionPanel` 在输入框上方向上展开，显示模型提供
 
 ## 功能路由
 
+成功的 `read` / `write` 工具行可点击文件名，经 ChatConsole 打开独立 `features/file-reader/` 标签页；代码使用 Highlight.js，Markdown 直接阅读预览，自有 Hook/API/局部 CSS 与双语目录。阅读器不依赖 Terminal/Deploy 或其生命周期，通用 TaskContainer 无新增业务分支。内容读取、去重、取消和边界及测试见 [file-reader.md](./file-reader.md)。
+
 | 要修改的前端功能 | 首要文件 | 状态、协议和辅助文件 | 对应测试 |
 |---|---|---|---|
 | Workspace/Session 树加载与全局刷新 | `features/workspace/components/workspace-tree-provider.tsx` | `workspace-tree-context.ts`、`features/workspace/api/workspace-api.ts`、`features/workspace/model/workspace.ts` | `tests/api-clients.test.ts` |

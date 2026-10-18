@@ -26,6 +26,7 @@ export const ChatTimeline = memo(function ChatTimeline({
 	onResolveApproval,
 	onRestoreDraft,
 	onOpenDeployment,
+	onOpenFile,
 }: {
 	showActivity: boolean;
 	loading: boolean;
@@ -40,6 +41,7 @@ export const ChatTimeline = memo(function ChatTimeline({
 	onResolveApproval(approval: ToolApproval, approved: boolean): void;
 	onRestoreDraft(message: string): void;
 	onOpenDeployment?(id: string): void;
+	onOpenFile?(path: string): void;
 }) {
 	const intl = useIntl();
 	const entries = loading ? [] : deploymentCompletionHistory(conversationHistory(timeline), tools);
@@ -49,7 +51,7 @@ export const ChatTimeline = memo(function ChatTimeline({
 			{loadingOlderMessages ? <div className="flex justify-center py-1.5 text-zinc-400" role="status" aria-label={intl.formatMessage({ id: "chat.history.loadingOlder" })}><LoaderCircle size={14} className="animate-spin" /></div> : null}
 			{!loading && !showActivity && entries.length === 0 ? <div className="grid min-h-[320px] place-items-center text-center"><div><p className="text-[13px] font-semibold text-zinc-700">{intl.formatMessage({ id: "chat.empty.title" })}</p><p className="mt-2 text-[10px] leading-5 text-zinc-400">{intl.formatMessage({ id: "chat.empty.description" })}</p></div></div> : null}
 			{entries.map((item) => {
-				if (item.kind === "message") return <ChatMessageRow key={item.entry.key} entry={item.entry} tools={tools} approvals={approvals} approvalMutationId={approvalMutationId} targetHost={targetHost} hideFailure={Boolean(run?.status === "failed" && run.failure?.errorId && item.entry.message.role === "assistant" && item.entry.message.failure?.errorId === run.failure.errorId)} onResolveApproval={onResolveApproval} />;
+				if (item.kind === "message") return <ChatMessageRow key={item.entry.key} entry={item.entry} tools={tools} approvals={approvals} approvalMutationId={approvalMutationId} targetHost={targetHost} hideFailure={Boolean(run?.status === "failed" && run.failure?.errorId && item.entry.message.role === "assistant" && item.entry.message.failure?.errorId === run.failure.errorId)} onResolveApproval={onResolveApproval} onOpenFile={onOpenFile} />;
 				return <DeploymentHistoryCard key={`deployment:${deploymentEntryId(item)}`} entry={item} onOpen={() => onOpenDeployment?.(deploymentEntryId(item))} />;
 			})}
 			{showActivity ? <div role="status" aria-label={intl.formatMessage({ id: "chat.status.running" })} className="flex h-9 w-full items-center justify-center gap-1 text-[var(--text-secondary)]">

@@ -5,6 +5,7 @@
 ## 当前边界
 
 - `GET /api/sessions/:sessionId/local-files` 列出当前 Session 有效工作目录的直接子项；`path` 查询参数用于逐级进入目录，不递归返回整棵目录树。
+- `GET /api/sessions/:sessionId/local-files/content?path=...` 为独立阅读器读取根内 UTF-8 普通文件；支持相对有效工作目录的路径或根内绝对路径，最多 1 MiB，空文件合法，拒绝越界、符号链接、二进制与非法编码。读取磁盘当前版本并使用 no-store，不使用 Tool 的截断结果。该相对路径规则只适用于内容接口；目录列表仍要求绝对路径。实现与错误边界见 [file-reader.md](./file-reader.md)。
 - `GET /api/local-files` 是独立的系统目录接口，以 `/` 为根目录，不查询 Session，也不受 `workDir` 限制，主要供前端展示整个本机目录结构。
 - Session 接口的有效根目录为 `session.workDir ?? server localCwd`，系统接口的根目录固定为 `/`。两者都返回规范化的 `rootPath`、`currentPath`，以及每个文件或目录的绝对 `path` 和相对 `relativePath`。
 - `path` 未提供或为空时使用根目录；非空时必须是绝对路径，并且规范化路径与真实文件系统路径都必须位于有效根目录内。

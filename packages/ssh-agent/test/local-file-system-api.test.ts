@@ -123,6 +123,65 @@ describe("Session local file system API", () => {
 		expect(response).toMatchObject({ status: 404, body: { error: { code: "session_not_found" } } });
 	});
 
+	it("reads complete UTF-8 file contents using relative and absolute paths without caching", async () => {
+		const filePath = join(rootPath, "nested", "说明.md");
+		const content = "# 文件预览\n\n" + "完整内容\n".repeat(4000);
+		await writeFile(filePath, content);
+		for (const path of ["nested/说明.md", filePath]) {
+			const response = await backend.handleRequest(new Request(`http://localhost/api/sessions/id-4/local-files/content?path=${encodeURIComponent(path)}`));
+			expect(response.status).toBe(200);
+			expect(response.headers.get("cache-control")).toBe("no-store");
+			expect(await response.json()).toMatchObject({ path: filePath, name: "说明.md", content, size: Buffer.byteLength(content) });
+		}
+		await writeFile(filePath, "Updated");
+		expect(await request(backend, `/api/sessions/id-4/local-files/content?path=${encodeURIComponent(filePath)}`))
+			.toMatchObject({ status: 200, body: { content: "Updated" } });
+	});
+
+	it("rejects file path escapes, symlinks, directories, missing files and unknown sessions", async () => {
+		await symlink(join(rootPath, "release.tar"), join(rootPath, "file-link"));
+		const cases = [
+			[outsidePath, 403, "local_file_path_outside_work_dir"],
+			["../escape.txt", 403, "local_file_path_outside_work_dir"],
+			["outside-link/app.txt", 403, "local_file_path_symlink_not_allowed"],
+			["file-link", 403, "local_file_path_symlink_not_allowed"],
+			["nested", 400, "local_file_path_not_file"],
+			["missing.txt", 404, "local_file_path_not_found"],
+			["\0.txt", 400, "local_file_path_invalid"],
+		] as const;
+		await writeFile(join(outsidePath, "app.txt"), "outside");
+		for (const [path, status, code] of cases) {
+			expect(await request(backend, `/api/sessions/id-4/local-files/content?path=${encodeURIComponent(path)}`))
+				.toMatchObject({ status, body: { error: { code } } });
+		}
+		expect(await request(backend, "/api/sessions/missing/local-files/content?path=file.txt"))
+			.toMatchObject({ status: 404, body: { error: { code: "session_not_found" } } });
+		expect(await request(backend, "/api/sessions/id-4/local-files/content"))
+			.toMatchObject({ status: 400, body: { error: { code: "validation_error" } } });
+	});
+
+	it("supports empty files and enforces byte and text limits with localized errors", async () => {
+		await writeFile(join(rootPath, "empty.txt"), "");
+		await writeFile(join(rootPath, "large.txt"), Buffer.alloc(1024 * 1024, "a"));
+		expect(await request(backend, "/api/sessions/id-4/local-files/content?path=empty.txt"))
+			.toMatchObject({ status: 200, body: { content: "", size: 0 } });
+		expect(await request(backend, "/api/sessions/id-4/local-files/content?path=large.txt"))
+			.toMatchObject({ status: 200, body: { size: 1024 * 1024 } });
+		await writeFile(join(rootPath, "large.txt"), Buffer.alloc(1024 * 1024 + 1, "a"));
+		await writeFile(join(rootPath, "binary.bin"), Buffer.from([0, 1, 2]));
+		await writeFile(join(rootPath, "invalid.txt"), Buffer.from([0xff, 0xfe]));
+		for (const [name, status, code] of [["large.txt", 413, "local_file_too_large"], ["binary.bin", 415, "local_file_not_text"], ["invalid.txt", 415, "local_file_not_text"]] as const) {
+			for (const locale of ["zh-CN", "en-US"]) {
+				const response = await backend.handleRequest(new Request(`http://localhost/api/sessions/id-4/local-files/content?path=${name}`, { headers: { "accept-language": locale } }));
+				expect(response.status).toBe(status);
+				const body = await response.json() as { error: { code: string; message: string } };
+				expect(body.error.code).toBe(code);
+				expect(body.error.message).toContain(code === "local_file_too_large" ? "1 MiB" : "UTF-8");
+				expect(response.headers.get("content-language")).toBe(locale);
+			}
+		}
+	});
+
 	it("lists the whole local system from the filesystem root", async () => {
 		const root = await request(backend, "/api/local-files");
 		expect(root).toMatchObject({

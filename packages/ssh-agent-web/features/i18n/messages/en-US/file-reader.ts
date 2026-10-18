@@ -1,0 +1,15 @@
+export const enUSFileReaderMessages = {
+	"fileReader.label": "File reader · {name}",
+	"fileReader.open": "Open {name} in reader",
+	"fileReader.close": "Close file {name}",
+	"fileReader.refresh": "Reload file",
+	"fileReader.preview": "Markdown preview",
+	"fileReader.readOnly": "Read only",
+	"fileReader.plainText": "Plain text",
+	"fileReader.loading": "Reading file…",
+	"fileReader.failed": "Could not read file",
+	"fileReader.retry": "Retry",
+	"fileReader.empty": "This file is empty",
+	"fileReader.content": "File contents",
+	"fileReader.largePlainText": "This large file is displayed as plain text to keep reading responsive.",
+} as const;

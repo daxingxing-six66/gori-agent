@@ -129,6 +129,9 @@ async function route(
 			return json(await options.localFiles.listDirectory(segments[2], url.searchParams.get("path") ?? undefined));
 		}
 	}
+	if (segments.length === 5 && segments[1] === "sessions" && segments[3] === "local-files" && segments[4] === "content" && request.method === "GET") {
+		return json(await options.localFiles.readFile(segments[2], requiredPath(url)));
+	}
 
 	if (segments.length >= 4 && segments[1] === "sessions" && segments[3] === "chat") {
 		const sessionId = segments[2];

@@ -1,0 +1,15 @@
+export const zhCNFileReaderMessages = {
+	"fileReader.label": "文件阅读器 · {name}",
+	"fileReader.open": "在阅读器中打开 {name}",
+	"fileReader.close": "关闭文件 {name}",
+	"fileReader.refresh": "重新读取文件",
+	"fileReader.preview": "Markdown 预览",
+	"fileReader.readOnly": "只读",
+	"fileReader.plainText": "纯文本",
+	"fileReader.loading": "正在读取文件…",
+	"fileReader.failed": "文件读取失败",
+	"fileReader.retry": "重试",
+	"fileReader.empty": "这是一个空文件",
+	"fileReader.content": "文件内容",
+	"fileReader.largePlainText": "文件较大，已使用纯文本显示以保持阅读流畅。",
+} as const;

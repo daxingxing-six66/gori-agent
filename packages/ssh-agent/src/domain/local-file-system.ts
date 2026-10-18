@@ -18,12 +18,23 @@ export interface LocalDirectoryListing {
 	entries: LocalFileEntry[];
 }
 
+export interface LocalTextFile {
+	path: string;
+	name: string;
+	content: string;
+	size: number;
+	modifiedAt: number;
+}
+
 export type LocalFileSystemErrorCode =
 	| "session_not_found"
 	| "local_file_path_invalid"
 	| "local_file_path_outside_work_dir"
 	| "local_file_path_not_found"
 	| "local_file_path_not_directory"
+	| "local_file_path_not_file"
+	| "local_file_too_large"
+	| "local_file_not_text"
 	| "local_file_path_symlink_not_allowed"
 	| "local_file_access_denied"
 	| "local_file_system_unavailable"

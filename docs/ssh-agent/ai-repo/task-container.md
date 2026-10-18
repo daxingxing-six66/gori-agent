@@ -1,6 +1,6 @@
 # Session 任务 Tab 容器
 
-适用于已有 Session 的通用任务容器、标签选择、关闭请求和会话布局。当前接入 Terminal 与 Deploy；不提供 Monitor、多个 Terminal 实例或通用工作流执行引擎。
+适用于已有 Session 的通用任务容器、标签选择、关闭请求和会话布局。当前接入 Terminal、Deploy 与独立文件阅读器；不提供 Monitor、多个 Terminal 实例或通用工作流执行引擎。
 
 ## 职责与契约
 
@@ -12,7 +12,7 @@
 
 ## 会话装配与布局
 
-- `features/chat/components/chat-console.tsx` 装配任务描述与具体页面，保持功能运行逻辑在各自模块。Terminal 与 Deploy 分别以固定功能 id `terminal`、`deploy` 接入，容器按 Session key 隔离。Deploy 的模式、历史选择、日志与草稿由自身模块管理，容器没有部署状态分支。
+- `features/chat/components/chat-console.tsx` 装配任务描述与具体页面，保持功能运行逻辑在各自模块。Terminal 与 Deploy 分别以固定功能 id `terminal`、`deploy` 接入，容器按 Session key 隔离。Deploy 的模式、历史选择、日志与草稿由自身模块管理，容器没有部署状态分支。文件阅读器以独立 `reader:` 路径身份支持多个标签，自有 Hook 管理去重、重新读取与关闭；不调用 Terminal/Deploy，关闭只移除该文件，详见 [file-reader.md](./file-reader.md)。
 - `/` 或现有 `@` 工具菜单选择 Terminal 时，未打开则调用现有 open；已有页面则选中，包含正在连接、失败和关闭过渡中的页面，不重复打开或关闭。定位可在 Agent 运行期间进行，生命周期操作仍受原限制。
 - 计划审核在右侧 Deploy 页内完成；开始前显示四节点竖向计划时间轴，确认并由后端开始后切换到准备、打包、上传、重启、验证五个图标节点，准备详情展示只读计划，其余节点展示执行事实与日志，图标位于横向连接线上。业务开始/权限逻辑归 Deploy 和 Chat 装配，容器不感知计划或阶段。
 - `/deploy` 无活动部署时只展开 Agent 输入框上方的模块选择，不新增任务 Tab；选择后或已有活动部署时才展示任务。选择器属于 Deploy 功能，Composer 只提供展示插槽，通用容器不承接选择器。

@@ -12,6 +12,7 @@ import { enUSServerMetricsMessages } from "@/features/i18n/messages/en-US/server
 import { enUSTaskContainerMessages } from "@/features/i18n/messages/en-US/task-container";
 import { enUSStatisticsMessages } from "@/features/i18n/messages/en-US/statistics";
 import { enUSDeployTaskMessages } from "@/features/i18n/messages/en-US/deploy-task";
+import { enUSFileReaderMessages } from "@/features/i18n/messages/en-US/file-reader";
 
 export const enUSMessages = {
 	...enUSCommonMessages,
@@ -27,4 +28,5 @@ export const enUSMessages = {
 	...enUSTaskContainerMessages,
 	...enUSStatisticsMessages,
 	...enUSDeployTaskMessages,
+	...enUSFileReaderMessages,
 } satisfies Record<MessageId, string>;

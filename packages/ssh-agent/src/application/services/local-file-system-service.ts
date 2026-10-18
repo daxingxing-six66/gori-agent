@@ -4,13 +4,16 @@ import type { SessionId } from "../../domain/ids.ts";
 import {
 	type LocalDirectoryListing,
 	type LocalFileEntry,
+	type LocalTextFile,
 	LocalFileSystemError,
 } from "../../domain/local-file-system.ts";
 import type { SessionRepository } from "../repositories/session-repository.ts";
+import { readLocalTextFile } from "./read-local-text-file.ts";
 
 export interface LocalFileSystemService {
 	listDirectory(sessionId: SessionId, path?: string): Promise<LocalDirectoryListing>;
 	listSystemDirectory(path?: string): Promise<LocalDirectoryListing>;
+	readFile(sessionId: SessionId, path: string): Promise<LocalTextFile>;
 }
 
 export interface DefaultLocalFileSystemServiceOptions {
@@ -41,6 +44,14 @@ export class DefaultLocalFileSystemService implements LocalFileSystemService {
 	async listSystemDirectory(path?: string): Promise<LocalDirectoryListing> {
 		const rootPath = await this.resolveRoot("/", false);
 		return this.listWithinRoot(rootPath, path);
+	}
+
+	async readFile(sessionId: SessionId, path: string): Promise<LocalTextFile> {
+		const session = await this.sessions.findById(sessionId);
+		if (!session) throw new LocalFileSystemError("session_not_found", `Session not found: ${sessionId}`, 404);
+		if (!path.trim() || path.includes("\0")) throw new LocalFileSystemError("local_file_path_invalid", "A file path is required", 400);
+		const rootPath = await this.resolveRoot(session.workDir ?? this.localCwd, true);
+		return readLocalTextFile(rootPath, resolve(rootPath, path));
 	}
 
 	private async listWithinRoot(rootPath: string, path?: string): Promise<LocalDirectoryListing> {

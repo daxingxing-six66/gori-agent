@@ -21,6 +21,7 @@ export const ChatMessageRow = memo(function ChatMessageRow({
 	approvalMutationId,
 	targetHost,
 	onResolveApproval,
+	onOpenFile,
 }: {
 	entry: ChatTimelineEntry;
 	hideFailure?: boolean;
@@ -29,6 +30,7 @@ export const ChatMessageRow = memo(function ChatMessageRow({
 	approvalMutationId: string | null;
 	targetHost?: string;
 	onResolveApproval(approval: ToolApproval, approved: boolean): void;
+	onOpenFile?(path: string): void;
 }) {
 	const intl = useIntl();
 	const message = entry.message;
@@ -60,7 +62,7 @@ export const ChatMessageRow = memo(function ChatMessageRow({
 				{message.content.map((part, index) => {
 					if (part.type === "text") return part.text ? <ChatMarkdown key={`text:${index}`}>{part.text}</ChatMarkdown> : null;
 					if (part.type === "thinking") return <ThinkingBlock key={`thinking:${index}:${entry.final}:${hasText}`} content={part} streaming={!entry.final} hasText={hasText} />;
-					return <ToolCard key={`${part.id}:${tools[part.id]?.status ?? "waiting"}`} call={part} execution={tools[part.id]} approval={approvalForTool(approvals, part.id)} approvalBusy={approvalMutationId === approvalForTool(approvals, part.id)?.id} targetHost={targetHost} onResolveApproval={onResolveApproval} />;
+					return <ToolCard key={`${part.id}:${tools[part.id]?.status ?? "waiting"}`} call={part} execution={tools[part.id]} approval={approvalForTool(approvals, part.id)} approvalBusy={approvalMutationId === approvalForTool(approvals, part.id)?.id} targetHost={targetHost} onResolveApproval={onResolveApproval} onOpenFile={onOpenFile} />;
 				})}
 				{!hideFailure && (message.failure || message.errorMessage) ? <div className="rounded-lg border border-[var(--danger-line)] bg-danger-soft px-3 py-2 text-xs leading-5 text-danger"><ChatFailureDetails failure={message.failure} fallback={message.errorMessage ?? ""} /></div> : null}
 				{!entry.final ? <span className="chat-streaming-dots" aria-label={intl.formatMessage({ id: "chat.message.generating" })}><i /><i /><i /></span> : null}
@@ -146,13 +148,14 @@ function ThinkingBlock({ content, streaming, hasText }: { content: ThinkingConte
 	);
 }
 
-function ToolCard({ call, execution, approval, approvalBusy, targetHost, onResolveApproval }: {
+function ToolCard({ call, execution, approval, approvalBusy, targetHost, onResolveApproval, onOpenFile }: {
 	call: ToolCallContent;
 	execution?: ChatToolExecution;
 	approval?: ToolApproval;
 	approvalBusy: boolean;
 	targetHost?: string;
 	onResolveApproval(approval: ToolApproval, approved: boolean): void;
+	onOpenFile?(path: string): void;
 }) {
 	const intl = useIntl();
 	const approvalTitleId = useId();
@@ -166,6 +169,9 @@ function ToolCard({ call, execution, approval, approvalBusy, targetHost, onResol
 	const approvalActions = approvalActionLabels(intl, call.name, approval?.toolName);
 	const target = toolTarget(intl, call);
 	const compactTarget = call.name === "read" || call.name === "write" ? target.split("/").at(-1) || target : target;
+	const filePath = call.name === "read" || call.name === "write" ? call.arguments.path ?? call.arguments.file_path : undefined;
+	const openFile = typeof filePath === "string" && filePath.trim() && execution?.status === "completed" && !execution.isError && onOpenFile
+		? () => onOpenFile(filePath) : undefined;
 	const argumentsText = toolRequestArguments(call);
 	const Details = presentation.Component;
 	const update = presentation.update(execution);
@@ -183,7 +189,10 @@ function ToolCard({ call, execution, approval, approvalBusy, targetHost, onResol
 			<summary className="flex min-h-7 min-w-0 cursor-pointer list-none items-center gap-1.5 rounded-md px-1 text-secondary transition-colors hover:bg-surface-hover focus-visible:outline-2 focus-visible:outline-accent [&::-webkit-details-marker]:hidden">
 				<span className="shrink-0"><ToolIcon name={call.name} /></span>
 				<span className={`shrink-0 font-medium ${failed ? "text-danger" : "text-ink"}`}>{toolActionLabel(intl, call.name, state)}</span>
-				<span className={`min-w-0 flex-1 truncate text-secondary ${call.name === "bash" || call.name === "remote_server_call" || call.name === "terminal_interaction" ? "font-mono" : ""}`} title={target}>{compactTarget}</span>
+				{openFile ? <button type="button" className="min-w-0 flex-1 truncate text-left text-secondary underline decoration-dotted underline-offset-4 hover:text-accent focus-visible:outline-2 focus-visible:outline-accent"
+					title={target} aria-label={intl.formatMessage({ id: "fileReader.open" }, { name: target })}
+					onClick={(event) => { event.preventDefault(); event.stopPropagation(); openFile(); }}>{compactTarget}</button>
+					: <span className={`min-w-0 flex-1 truncate text-secondary ${call.name === "bash" || call.name === "remote_server_call" || call.name === "terminal_interaction" ? "font-mono" : ""}`} title={target}>{compactTarget}</span>}
 				{state === "running" && toolActionKind(call.name) !== null ? <LoaderCircle size={13} className="shrink-0 animate-spin text-accent" aria-hidden="true" /> : null}
 				{toolActionKind(call.name) === null || state === "waiting" ? <ToolStatus state={state} /> : null}
 				<ChevronDown size={14} className="shrink-0 transition-transform group-open:rotate-180" aria-hidden="true" />

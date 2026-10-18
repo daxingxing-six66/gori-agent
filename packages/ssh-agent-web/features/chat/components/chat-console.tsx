@@ -38,6 +38,8 @@ import { DeploymentModulePicker } from "@/features/deploy/components/deployment-
 import { useDeploymentExecution } from "@/features/deploy/runtime/use-deployment-execution";
 import { useDeployment } from "@/features/deploy/runtime/use-deployment";
 import { useDeploymentReview } from "@/features/deploy/runtime/use-deployment-review";
+import { FileReaderPage } from "@/features/file-reader/components/file-reader-page";
+import { useFileReaderTabs } from "@/features/file-reader/runtime/use-file-reader-tabs";
 import "./chat-task-layout.css";
 
 export function ChatConsole({ sessionId }: { sessionId: string }) {
@@ -70,7 +72,12 @@ export function ChatConsole({ sessionId }: { sessionId: string }) {
 	const autoAuditChecked = autoAuditOverride ?? item?.session.autoAudit ?? false;
 	const terminalTask = useTerminalTask({ sessionId, mode: terminalMode, runActive: active,
 		submitting: runtime.submitting, sandboxPending: sandbox.pending });
-	const taskDisplay = useTaskContainerDisplay(sessionId, terminalTask.present || deployment.open);
+	const fileReader = useFileReaderTabs(sessionId, item?.session.workDir);
+	const taskDisplay = useTaskContainerDisplay(sessionId, terminalTask.present || deployment.open || fileReader.documents.length > 0);
+	const openFile = useCallback((path: string) => {
+		setActiveTaskTabId(fileReader.open(path));
+		taskDisplay.reveal();
+	}, [fileReader.open, taskDisplay.reveal]);
 	const terminalStatus = { label: terminalTask.label,
 		tone: terminalTask.tone === "positive" ? "active" as const
 			: terminalTask.tone === "warning" ? "pending" as const : "inactive" as const };
@@ -365,6 +372,9 @@ export function ChatConsole({ sessionId }: { sessionId: string }) {
 				onDecideRecovery: (id, approved) => { void deployment.decideRecovery(id, approved); } } : undefined}
 			onExit={deployment.activeTask && deployment.activeTask.deployment.id === deployment.selectedTask?.deployment.id ? () => { void deployment.finish(); } : undefined}
 			onSubmit={(message) => submit(message, [])} /> });
+	for (const document of fileReader.documents) taskTabs.push({ id: document.id, title: document.name,
+		close: { label: intl.formatMessage({ id: "fileReader.close" }, { name: document.name }), onRequestClose: () => fileReader.close(document.id) },
+		content: <FileReaderPage key={`${sessionId}:${document.id}`} sessionId={sessionId} document={document} /> });
 
 	if (treeLoading && tree === null) return <div className="grid h-dvh place-items-center text-sm text-zinc-400">{intl.formatMessage({ id: "session.loading" })}</div>;
 	if (!item) return <div className="grid h-dvh place-items-center text-sm text-zinc-500">{intl.formatMessage({ id: "session.notFound" })}</div>;
@@ -376,7 +386,7 @@ export function ChatConsole({ sessionId }: { sessionId: string }) {
 			<WorkspaceSidebar activeWorkspaceId={item.workspace.id} activeSessionId={item.session.id}
 				onSessionUpdated={async (updatedId) => { if (updatedId === sessionId) await terminalMode.refresh(); }} />
 			<main
-				className={`session-console page-main page-main-chat ${taskTabs.length > 0 ? "session-console-tasks-present" : ""} ${(terminalTask.expanded || deployment.open) && taskDisplay.mode === "docked" ? "session-console-tasks-active" : ""}`}
+				className={`session-console page-main page-main-chat ${taskTabs.length > 0 ? "session-console-tasks-present" : ""} ${(terminalTask.expanded || deployment.open || fileReader.documents.length > 0) && taskDisplay.mode === "docked" ? "session-console-tasks-active" : ""}`}
 				data-task-display={taskDisplay.mode}
 				data-task-container-scope
 				style={{ "--task-panel-width": TASK_CONTAINER_DEFAULTS.sidePanelWidth,
@@ -403,7 +413,7 @@ export function ChatConsole({ sessionId }: { sessionId: string }) {
 
 				<div className="session-console-chat relative min-h-0">
 					<div ref={scrollRef} className="app-scrollbar h-full overflow-y-auto" onScroll={handleChatScroll}>
-						<ChatTimeline showActivity={showActivity} loading={runtime.loading} loadingOlderMessages={runtime.loadingOlderMessages} timeline={runtime.state.timeline} tools={runtime.state.tools} approvals={runtime.state.approvals} approvalMutationId={runtime.approvalMutationId} targetHost={targetHost} run={runtime.state.run} latestUserText={latestUserText} onResolveApproval={resolveApproval} onRestoreDraft={restoreDraft}
+						<ChatTimeline showActivity={showActivity} loading={runtime.loading} loadingOlderMessages={runtime.loadingOlderMessages} timeline={runtime.state.timeline} tools={runtime.state.tools} approvals={runtime.state.approvals} approvalMutationId={runtime.approvalMutationId} targetHost={targetHost} run={runtime.state.run} latestUserText={latestUserText} onResolveApproval={resolveApproval} onRestoreDraft={restoreDraft} onOpenFile={openFile}
 							onOpenDeployment={(id) => { setActiveTaskTabId("deploy"); taskDisplay.reveal(); void deployment.openHistory(id); }} />
 						{activeDeploymentRun && deploymentReview && deploymentReview.pendingExceptions.length > 0 ? <div data-deployment-review tabIndex={-1} className="mx-auto max-w-[820px] px-5 py-5 lg:px-8">
 							<DeploymentFullAccessReview run={activeDeploymentRun} stages={deploymentReview.exceptionStages}
