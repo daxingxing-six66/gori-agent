@@ -15,9 +15,24 @@ describe("SSH Agent server environment", () => {
 		expect(config.credentialEncryptionKey).toEqual(Buffer.alloc(32, 9));
 		expect(config.host).toBe("127.0.0.1");
 		expect(config.port).toBe(3001);
+		expect(config.eventsPort).toBe(3002);
 		expect(config.maxConcurrentOperations).toBe(16);
 		expect(config.allowedOrigins).toContain("http://localhost:3000");
 		expect(config.localCwd).toBe(join(homedir(), ".gori-agent", "workspace"));
+	});
+
+	it("configures independent API and events ports and rejects shared or invalid ports", () => {
+		const environment = {
+			SSH_AGENT_DATABASE_PATH: ":memory:",
+			SSH_AGENT_CREDENTIAL_KEY_BASE64: Buffer.alloc(32, 9).toString("base64"),
+			SSH_AGENT_PORT: "4001",
+			SSH_AGENT_EVENTS_PORT: "4002",
+		};
+		expect(readSshAgentServerEnvironment(environment)).toMatchObject({ port: 4001, eventsPort: 4002 });
+		expect(() => readSshAgentServerEnvironment({ ...environment, SSH_AGENT_EVENTS_PORT: "4001" })).toThrow("must differ");
+		for (const port of ["0", "65536", "bad"]) {
+			expect(() => readSshAgentServerEnvironment({ ...environment, SSH_AGENT_EVENTS_PORT: port })).toThrow("SSH_AGENT_EVENTS_PORT");
+		}
 	});
 
 	it("accepts an absolute local working directory", () => {

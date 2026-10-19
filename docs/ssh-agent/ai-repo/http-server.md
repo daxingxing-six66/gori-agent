@@ -28,7 +28,7 @@ Workspace POST/PATCH 通过 `sandboxWritableRoots` 设置独立可写目录默�
 
 - `GET /api/sessions/:sessionId/chat/context-usage` 只读返回占用快照或 null，使用 `no-store`；手动压缩响应包含同结构 `contextUsage`。联调见 [context-usage-integration.md](../frontend/context-usage-integration.md)。
 
-- 默认监听 `127.0.0.1:3001`，提供 `/healthz` 和 `/api/*`。
+- 同一 Backend 通过独立传输类监听 API `127.0.0.1:3001` 与事件 `127.0.0.1:3002`：`GET /api/**/events` 仅在事件入口开放，其余业务 API 仅在 API 入口开放，二者均提供 `/healthz`。双端口配置、启动回滚与关闭见 [transport-channels.md](./transport-channels.md)。
 - 使用持久化 SQLite 时，Server 在构造后端并执行部署、Chat、Terminal 中断恢复之前，先通过数据库旁的 `<数据库路径>.server-lock.sqlite` 文件取得进程级所有权。第二个使用相同数据库的 Server 即使监听其他端口，也会在恢复记录前被拒绝；正常关闭或端口绑定失败后释放锁，进程意外退出则由 SQLite/操作系统释放。`:memory:` 测试后端不需要此锁；直接调用底层 Backend 工厂不经过 Server 所有权检查。
 - CLI 把 console 日志写入数据目录的 `logs/`，按本地日期及 10 MiB 分段；启动、关闭和未捕获异常保留错误栈。见 [logging.md](./logging.md)。
 - 支持 Workspace + Session tree、Workspace 范围 Credential、活动 Credential 切换、Workspace、Session 和 Guard 管理路由；Guard 还提供后端预设规则包目录查询和原子导入接口；全局 Credential 路由已经移除。
@@ -65,6 +65,7 @@ Workspace POST/PATCH 通过 `sandboxWritableRoots` 设置独立可写目录默�
 | Terminal REST/SSE 与请求校验 | [terminal-routes.ts](../../../packages/ssh-agent/src/api/terminal-routes.ts)、[terminal-request-validation.ts](../../../packages/ssh-agent/src/api/terminal-request-validation.ts) |
 | Web Request 与 Node HTTP 适配、CORS、body limit | [node-http-server.ts](../../../packages/ssh-agent/src/server/node-http-server.ts) |
 | Server 生命周期和后端组合 | [ssh-agent-server.ts](../../../packages/ssh-agent/src/server/ssh-agent-server.ts) |
+| API/事件双监听和通道准入 | `packages/ssh-agent/src/server/management-http-transport.ts` |
 | SQLite Server 所有权锁 | [database-ownership.ts](../../../packages/ssh-agent/src/server/database-ownership.ts) |
 | 环境变量解析 | [environment.ts](../../../packages/ssh-agent/src/server/environment.ts) |
 | CLI、umask 和信号关闭 | [main.ts](../../../packages/ssh-agent/src/server/main.ts) |

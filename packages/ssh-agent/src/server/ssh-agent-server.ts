@@ -7,7 +7,7 @@ import {
 	type SqliteManagementBackend,
 } from "../runtime/create-sqlite-management-backend.ts";
 import { acquireDatabaseOwnership, type DatabaseOwnership } from "./database-ownership.ts";
-import { createNodeHttpServer, type NodeHttpServer, type NodeHttpServerAddress } from "./node-http-server.ts";
+import { DEFAULT_API_PORT, DEFAULT_EVENTS_PORT, ManagementHttpTransport, type ManagementHttpAddress } from "./management-http-transport.ts";
 
 export interface CreateSshAgentServerOptions {
 	databasePath: string;
@@ -15,6 +15,7 @@ export interface CreateSshAgentServerOptions {
 	llmModelsFactory: LlmModelsFactory;
 	host?: string;
 	port?: number;
+	eventsPort?: number;
 	allowedOrigins?: readonly string[];
 	maxRequestBodyBytes?: number;
 	maxConcurrentOperations?: number;
@@ -24,7 +25,7 @@ export interface CreateSshAgentServerOptions {
 
 export interface SshAgentServer {
 	readonly api: SshAgentManagementApi;
-	listen(): Promise<NodeHttpServerAddress>;
+	listen(): Promise<ManagementHttpAddress>;
 	close(): Promise<void>;
 }
 
@@ -34,13 +35,14 @@ export function createSshAgentServer(options: CreateSshAgentServerOptions): SshA
 	const ownership = acquireDatabaseOwnership(options.databasePath);
 	try {
 		let backend: SqliteManagementBackend | undefined;
-		const httpServer = createNodeHttpServer({
+		const transport = new ManagementHttpTransport({
 			handleRequest: (request) => {
 				if (!backend) throw new Error("SSH Agent backend is not initialized");
 				return backend.handleRequest(request);
 			},
 			host: options.host ?? "127.0.0.1",
-			port: options.port ?? 3001,
+			port: options.port ?? DEFAULT_API_PORT,
+			eventsPort: options.eventsPort ?? (options.port === 0 ? 0 : DEFAULT_EVENTS_PORT),
 			...(options.allowedOrigins === undefined ? {} : { allowedOrigins: options.allowedOrigins }),
 			...(options.maxRequestBodyBytes === undefined ? {} : { maxRequestBodyBytes: options.maxRequestBodyBytes }),
 		});
@@ -54,7 +56,7 @@ export function createSshAgentServer(options: CreateSshAgentServerOptions): SshA
 				? {}
 				: { maxConcurrentOperations: options.maxConcurrentOperations }),
 		});
-		return new DefaultSshAgentServer(backend, httpServer, ownership);
+		return new DefaultSshAgentServer(backend, transport, ownership);
 	} catch (error) {
 		ownership.release();
 		throw error;
@@ -66,22 +68,22 @@ type ServerState = "created" | "starting" | "listening" | "closed";
 class DefaultSshAgentServer implements SshAgentServer {
 	readonly api: SshAgentManagementApi;
 	private readonly backend: SqliteManagementBackend;
-	private readonly httpServer: NodeHttpServer;
+	private readonly transport: ManagementHttpTransport;
 	private readonly ownership: DatabaseOwnership;
 	private state: ServerState = "created";
 
-	constructor(backend: SqliteManagementBackend, httpServer: NodeHttpServer, ownership: DatabaseOwnership) {
+	constructor(backend: SqliteManagementBackend, transport: ManagementHttpTransport, ownership: DatabaseOwnership) {
 		this.backend = backend;
-		this.httpServer = httpServer;
+		this.transport = transport;
 		this.ownership = ownership;
 		this.api = backend.api;
 	}
 
-	async listen(): Promise<NodeHttpServerAddress> {
+	async listen(): Promise<ManagementHttpAddress> {
 		if (this.state !== "created") throw new Error(`SSH Agent server cannot listen while ${this.state}`);
 		this.state = "starting";
 		try {
-			const address = await this.httpServer.listen();
+			const address = await this.transport.listen();
 			this.state = "listening";
 			return address;
 		} catch (error) {
@@ -93,7 +95,7 @@ class DefaultSshAgentServer implements SshAgentServer {
 	async close(): Promise<void> {
 		if (this.state === "closed") return;
 		this.state = "closed";
-		const httpClose = this.httpServer.close();
+		const httpClose = this.transport.close();
 		try {
 			await this.backend.close();
 		} finally {

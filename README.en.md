@@ -32,9 +32,9 @@ This installs locked dependencies without dependency lifecycle scripts, builds t
 npm start
 ```
 
-When ready, open <http://127.0.0.1:3000>. Configure a model provider, create a workspace with SSH credentials, and start a session. Press Ctrl+C to stop. Ports 3000 and 3001 are the defaults.
+When ready, open <http://127.0.0.1:3000>. Configure a model provider, create a workspace with SSH credentials, and start a session. Press Ctrl+C to stop. The default ports are 3000 (web), 3001 (API requests), and 3002 (SSE events). Separate API and event origins keep persistent streams from consuming the browser's API connection budget.
 
-For different ports on macOS/Linux, run `SSH_AGENT_PORT=4311 npm run build`, then `SSH_AGENT_WEB_PORT=4310 npm start`. In PowerShell, set `$env:SSH_AGENT_PORT="4311"` before building and `$env:SSH_AGENT_WEB_PORT="4310"` before starting. Open <http://127.0.0.1:4310>. Changing the backend port requires rebuilding because its address is embedded in the browser bundle. The launcher records the backend port used during the build.
+For different ports on macOS/Linux, run `SSH_AGENT_PORT=4311 SSH_AGENT_EVENTS_PORT=4312 npm run build`, then `SSH_AGENT_WEB_PORT=4310 npm start`. In PowerShell, set `$env:SSH_AGENT_PORT="4311"` and `$env:SSH_AGENT_EVENTS_PORT="4312"` before building, then `$env:SSH_AGENT_WEB_PORT="4310"` before starting. Open <http://127.0.0.1:4310>. Changing either backend port requires rebuilding because both addresses are embedded in the browser bundle. All three ports must differ; the launcher records the API and event ports used during the build.
 
 ## Data and security
 

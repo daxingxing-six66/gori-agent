@@ -43,12 +43,12 @@ npm start
 3. 创建 Session，选择模型并开始对话。
 4. 涉及审批的工具调用，在界面中检查内容后批准或拒绝。
 
-默认使用本机 3000（网页）和 3001（后端）端口。该启动入口面向本机单用户使用，不提供公网登录服务。
+默认使用本机 3000（网页）、3001（API 请求）和 3002（SSE 推送）端口。请求与推送通过独立地址隔离浏览器连接额度。该启动入口面向本机单用户使用，不提供公网登录服务。
 
 若端口被占用，可选择其他端口。macOS / Linux：
 
 ```sh
-SSH_AGENT_PORT=4311 npm run build
+SSH_AGENT_PORT=4311 SSH_AGENT_EVENTS_PORT=4312 npm run build
 SSH_AGENT_WEB_PORT=4310 npm start
 ```
 
@@ -56,12 +56,13 @@ Windows PowerShell：
 
 ```powershell
 $env:SSH_AGENT_PORT="4311"
+$env:SSH_AGENT_EVENTS_PORT="4312"
 npm run build
 $env:SSH_AGENT_WEB_PORT="4310"
 npm start
 ```
 
-此时打开 <http://127.0.0.1:4310>。后端地址会写入前端构建产物，所以更换后端端口后必须重新构建；网页端口可以在启动时调整。启动器读取上次构建的端口记录，不会自动结束占用端口的程序。
+此时打开 <http://127.0.0.1:4310>。API 和推送地址会写入前端构建产物，所以更换任一后端端口后必须重新构建；网页端口可以在启动时调整。三个端口必须不同，启动器读取上次构建的端口记录，不会自动结束占用端口的程序。
 
 ## 数据与备份
 

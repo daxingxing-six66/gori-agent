@@ -61,6 +61,8 @@ Chat 的 `UserDecisionPanel` 在输入框上方向上展开，显示模型提供
 
 ## 功能路由
 
+普通请求使用 `shared/api/client.ts`，所有 EventSource 地址使用独立的 `shared/events/client.ts`，通过不同 origin 隔离浏览器连接额度。各功能适配器保留事件解析、重连与取消；后端双监听和构建配置见 [transport-channels.md](./transport-channels.md)。
+
 `@` 非空文件检索由 `features/chat/runtime/use-local-file-search.ts` 持有防抖、取消和响应身份，`local-files-api.ts` 只发一次后端索引查询；菜单显示最多 80 项，支持包含忽略文件、手动刷新及部分结果提示。规则与性能预算见 [local-file-search.md](./local-file-search.md)。
 
 成功的 `read` / `write` 工具行可点击文件名，经 ChatConsole 打开独立 `features/file-reader/` 标签页；代码使用 Highlight.js，Markdown 直接阅读预览，自有 Hook/API/局部 CSS 与双语目录。阅读器不依赖 Terminal/Deploy 或其生命周期，通用 TaskContainer 无新增业务分支。内容读取、去重、取消和边界及测试见 [file-reader.md](./file-reader.md)。

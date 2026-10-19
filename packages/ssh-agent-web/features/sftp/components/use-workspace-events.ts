@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { parseSessionUpdate, type SessionUpdate } from "@/features/workspace/model/session-update";
 import { useLocale } from "@/features/i18n/components/locale-context";
-import { apiUrlWithLocale } from "@/shared/api/client";
+import { eventUrlWithLocale } from "@/shared/events/client";
 import { nextWorkspaceEventStreamState } from "../model/sftp-state";
 import type {
 	ConnectionPoolSnapshot,
@@ -37,7 +37,7 @@ export function useWorkspaceEvents(
 	}, [handlers]);
 	useEffect(() => {
 		let receivedReady = false;
-		const events = new EventSource(apiUrlWithLocale(`/api/workspaces/${encodeURIComponent(workspaceId)}/events?topics=${encodeURIComponent(topicKey)}`, locale));
+		const events = new EventSource(eventUrlWithLocale(`/api/workspaces/${encodeURIComponent(workspaceId)}/events?topics=${encodeURIComponent(topicKey)}`, locale));
 		const listen = <T,>(name: string, callback: ((value: T) => void) | undefined) => {
 			const listener = (event: Event) => {
 				try {

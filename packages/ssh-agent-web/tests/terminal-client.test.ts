@@ -264,7 +264,7 @@ describe("Terminal event stream", () => {
 		const onError = vi.fn();
 		const stream = new TerminalEventStream("session-1", "attachment-1", 4, "en-US", onError);
 
-		expect(sources[0]?.url).toBe("/api/sessions/session-1/terminal/attachments/attachment-1/events?afterSequence=4&locale=en-US");
+		expect(sources[0]?.url).toBe("http://127.0.0.1:3002/api/sessions/session-1/terminal/attachments/attachment-1/events?afterSequence=4&locale=en-US");
 		sources[0]?.dispatchEvent(new Event("error"));
 		expect(onError).toHaveBeenCalledOnce();
 		stream.close();

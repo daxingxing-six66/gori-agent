@@ -30,12 +30,6 @@ export function apiUrl(path: string): string {
 	return `${configuredBaseUrl}${path}`;
 }
 
-export function apiUrlWithLocale(path: string, locale: SupportedLocale): string {
-	const url = new URL(path, "http://ssh-agent.local");
-	url.searchParams.set("locale", locale);
-	return apiUrl(`${url.pathname}${url.search}`);
-}
-
 export function requestLocale(): SupportedLocale {
 	if (typeof document === "undefined") return "zh-CN";
 	return parseSupportedLocale(document.documentElement.dataset.locale) ??

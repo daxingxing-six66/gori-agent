@@ -1,4 +1,4 @@
-import { apiUrlWithLocale } from "@/shared/api/client";
+import { eventUrlWithLocale } from "@/shared/events/client";
 import type { SupportedLocale } from "@/features/i18n/model/locale";
 import { isAgentMessage, isRecord, type ChatMessage } from "@/features/chat/model/chat";
 import { isDeploymentDiscussion, isDeploymentRun, type DeploymentDiscussion, type DeploymentRun } from "../model/deployment";
@@ -11,7 +11,7 @@ export function subscribeDeploymentEvents(options: {
 	onReconnect(): void;
 }): () => void {
 	let disposed = false;
-	const stream = new EventSource(apiUrlWithLocale(`/api/workspaces/${encodeURIComponent(options.workspaceId)}/events?topics=deployments`, options.locale));
+	const stream = new EventSource(eventUrlWithLocale(`/api/workspaces/${encodeURIComponent(options.workspaceId)}/events?topics=deployments`, options.locale));
 	const listen = (type: string, accept: (value: unknown) => void) => stream.addEventListener(type, (event) => {
 		if (disposed || !(event instanceof MessageEvent) || typeof event.data !== "string") return;
 		let value: unknown;

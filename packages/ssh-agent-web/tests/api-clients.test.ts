@@ -7,7 +7,8 @@ import { llmProviderApi } from "../features/llm-provider/api/llm-provider-api.ts
 import { sessionApi } from "../features/session/api/session-api.ts";
 import { sessionAttachmentApi } from "../features/session/api/session-attachment-api.ts";
 import { workspaceApi } from "../features/workspace/api/workspace-api.ts";
-import { apiRequest, apiUrlWithLocale, requestLocale } from "../shared/api/client.ts";
+import { apiRequest, requestLocale } from "../shared/api/client.ts";
+import { eventUrlWithLocale } from "../shared/events/client.ts";
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -31,8 +32,8 @@ describe("management API clients", () => {
 			expect.objectContaining({ headers: expect.objectContaining({ "accept-language": "en-US" }) }),
 		);
 		expect(requestLocale()).toBe("en-US");
-		expect(apiUrlWithLocale("/api/workspaces/ws-1/events?topics=monitoring", "en-US"))
-			.toBe("/api/workspaces/ws-1/events?topics=monitoring&locale=en-US");
+		expect(eventUrlWithLocale("/api/workspaces/ws-1/events?topics=monitoring", "en-US"))
+			.toBe("http://127.0.0.1:3002/api/workspaces/ws-1/events?topics=monitoring&locale=en-US");
 	});
 
 	it("uses the workspace tree endpoint without caching", async () => {

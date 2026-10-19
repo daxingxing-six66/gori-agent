@@ -19,8 +19,8 @@ HTTP、SQLite、SSH 与聊天运行时。完整安装步骤见 [根 README](../.
 
 仍可显式提供 `SSH_AGENT_DATABASE_PATH` 和 `SSH_AGENT_CREDENTIAL_KEY_BASE64`；后者必须是固定的 32 字节随机密钥的标准 Base64 表示。显式密钥优先，不写入 credential-key，使用此方式需自行保管并在后续启动继续提供。
 
-可选配置包括 `SSH_AGENT_HOST`、`SSH_AGENT_PORT`、`SSH_AGENT_LOCAL_CWD`、`SSH_AGENT_CORS_ORIGINS`、`SSH_AGENT_MAX_REQUEST_BODY_BYTES` 和 `SSH_AGENT_MAX_CONCURRENT_OPERATIONS`。以 environment.ts 为准。
+可选配置包括 `SSH_AGENT_HOST`、`SSH_AGENT_PORT`、`SSH_AGENT_EVENTS_PORT`、`SSH_AGENT_LOCAL_CWD`、`SSH_AGENT_CORS_ORIGINS`、`SSH_AGENT_MAX_REQUEST_BODY_BYTES` 和 `SSH_AGENT_MAX_CONCURRENT_OPERATIONS`。以 environment.ts 为准。
 
-`GET /healthz` 检查进程存活。`/api/*` 提供管理、聊天、终端、附件、SFTP 和事件接口。事件通过 SSE 推送。
+同一进程和 Backend 默认监听两个端口：3001 处理普通 `/api/*` 请求，3002 只处理 `GET /api/**/events` SSE 推送；两个端口必须不同，都提供 `GET /healthz`。独立 origin 隔离浏览器的请求与推送连接额度，错误通道返回 404。
 
 当前服务不提供登录认证。生产模式不等于可以公开暴露到互联网；见 [安全说明](../../SECURITY.md)。

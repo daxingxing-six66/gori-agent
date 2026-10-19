@@ -62,6 +62,8 @@ Profile hash、SSH 主机指纹、凭据版本、远端用户、Workspace revisi
 
 ## 前端职责与当前完成边界
 
+- 部署事件使用独立的事件 origin，与历史、状态和其他 REST 请求的连接额度隔离。`deployment-event-stream.ts` 保留 Session 过滤、结构验证与重连补读，地址通过 `shared/events/client.ts` 生成；见 [transport-channels.md](./transport-channels.md)。
+
 - `ChatConsole` 负责装配 Terminal/Deploy Tab，通用 TaskContainer 没有部署业务导入。`DeploymentTaskPage` 展示服务、目标、待确认计划，开始后再显示横向阶段、当前步骤、文件真实字节（自适应 B/KiB/MiB/GiB）、阶段错误和日志；放大复用原容器，不覆盖左侧导航。Tab × 只隐藏，退出部署走独立接口；只有所展示任务确实是当前活动部署才提供退出按钮，模块选择已移至 Composer 上拉面板，任务页不再接收 Profile 或选择/配置回调。部署结算 reason 不再作为页首长段文字展示，模型结论仍归中间会话，持久化原因和阶段错误不变。
 - 待确认计划使用竖向时间轴，四个阶段保留 Hammer/Upload/RotateCw/ShieldCheck 图标，节点间距 32px，默认收起；展开通过短连接线延伸到独立内容卡片，避免整块折叠表格堆叠。构建显示步骤数量并可展开完整 cwd/命令；产物显示文件名与目标摘要，进一步展开查看完整源/目标。样式局限在 `deployment-plan.css` 并使用主题语义色。开始按钮位于分隔线上方、右对齐、32px 高，使用中性高对比表面和轻微阴影；禁用与启动中反馈保留。
 - `use-deployment-execution.ts` 只处理确认意图：保持既有 deployment_execution Chat Run 链路，提交原已确认计划 ID，阻止同帧重复点击，隔离 Session 切换后的迟到响应，空结果/错误保持计划可重试。只有服务端 Run 开始后才挂载 DeploymentPipeline 的准备节点、四个执行节点与日志，点击和启动中不伪造进度；未启动即退出的历史计划只读展示。执行开始后不再展示底部计划折叠入口，计划改为准备节点的只读内容，点击准备即可查看，不重复提供开始按钮；历史查看不借用活动部署的确认/修订回调；开始前的计划审阅与执行中的必要修订确认保留。DeploymentBuildSteps 独立管理构建命令浏览：右对齐显示“步骤 ‹ 1/4 ›”，使用本次冻结计划的完整步骤，当前执行步骤优先使用实际快照。未手动选择时跟随实时步骤，浏览时保持所选命令，新执行或修订切换后复位；上一/下一按钮在边界禁用，不推进后端执行，兼容 v1 单步骤。命令使用浅色背景和左侧线条的引用块。DeploymentPipeline 独立持有阶段选择与计时，保留同阶段日志页面及原上传进度行为；四个语义图标直接位于横向连接线上，和计划共用 deployment-stage-icon.tsx，状态只用颜色与小标记表达，不替换阶段身份。准备使用 ClipboardList 图标，显示 run.plan 的计划时间轴，执行日志视口在此节点隐藏但保持挂载；后端刚认领且仍为 prepare 时显示准备详情，不伪造构建成功；通用任务容器没有业务分支。

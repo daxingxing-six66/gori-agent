@@ -68,7 +68,7 @@ describe("SSH Agent Node HTTP server", () => {
 		}
 	});
 
-	it("keeps ownership across processes and releases it after a failed port bind", async () => {
+	it.each(["api", "events"])("keeps ownership across processes and releases it after a failed %s port bind", async (channel) => {
 		const directory = await mkdtemp(join(tmpdir(), "gori-server-owner-"));
 		const databasePath = join(directory, "gori.sqlite");
 		const occupied = createNodeHttpServer({ host: "127.0.0.1", port: 0, handleRequest: async () => new Response(null) });
@@ -78,14 +78,15 @@ describe("SSH Agent Node HTTP server", () => {
 				databasePath,
 				credentialEncryptionKey: new Uint8Array(32).fill(3),
 				host: "127.0.0.1",
-				port: address.port,
+				port: channel === "api" ? address.port : 0,
+				eventsPort: channel === "events" ? address.port : 0,
 				llmModelsFactory: createTestLlmModels,
 			};
 			const failed = createSshAgentServer(options);
 			expect(childCanOwn(databasePath)).toBe(false);
 			await expect(failed.listen()).rejects.toMatchObject({ code: "EADDRINUSE" });
 			expect(childCanOwn(databasePath)).toBe(true);
-			const replacement = createSshAgentServer({ ...options, port: 0 });
+			const replacement = createSshAgentServer({ ...options, port: 0, eventsPort: 0 });
 			try { await replacement.listen(); }
 			finally { await replacement.close(); }
 		} finally {

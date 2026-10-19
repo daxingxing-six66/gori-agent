@@ -4,6 +4,7 @@ import { resolveDataDirectory } from "../data-directory.ts";
 import { readCredentialKey } from "./credential-key.ts";
 import { COMMAND_EXECUTION_DEFAULTS } from "../application/services/command-operation-service.ts";
 import type { CreateSshAgentServerOptions } from "./ssh-agent-server.ts";
+import { DEFAULT_API_PORT, DEFAULT_EVENTS_PORT } from "./management-http-transport.ts";
 
 const DEFAULT_ALLOWED_ORIGINS = [
 	"http://localhost:3000",
@@ -17,6 +18,7 @@ export interface SshAgentServerEnvironmentConfig extends Omit<CreateSshAgentServ
 	logDirectory: string;
 	host: string;
 	port: number;
+	eventsPort: number;
 	allowedOrigins: readonly string[];
 }
 
@@ -27,7 +29,9 @@ export function readSshAgentServerEnvironment(
 	const databaseValue = environment.SSH_AGENT_DATABASE_PATH?.trim() || join(dataDirectory, "ssh-agent.sqlite");
 	const databasePath = databaseValue === ":memory:" ? databaseValue : resolve(databaseValue);
 	const host = environment.SSH_AGENT_HOST?.trim() || "127.0.0.1";
-	const port = integer(environment.SSH_AGENT_PORT, "SSH_AGENT_PORT", 3001, 1, 65_535);
+	const port = integer(environment.SSH_AGENT_PORT, "SSH_AGENT_PORT", DEFAULT_API_PORT, 1, 65_535);
+	const eventsPort = integer(environment.SSH_AGENT_EVENTS_PORT, "SSH_AGENT_EVENTS_PORT", DEFAULT_EVENTS_PORT, 1, 65_535);
+	if (port === eventsPort) throw new Error("SSH_AGENT_PORT and SSH_AGENT_EVENTS_PORT must differ");
 	const maxConcurrentOperations = integer(
 		environment.SSH_AGENT_MAX_CONCURRENT_OPERATIONS,
 		"SSH_AGENT_MAX_CONCURRENT_OPERATIONS",
@@ -56,6 +60,7 @@ export function readSshAgentServerEnvironment(
 		credentialEncryptionKey: readCredentialKey(dataDirectory, databasePath, environment.SSH_AGENT_CREDENTIAL_KEY_BASE64),
 		host,
 		port,
+		eventsPort,
 		maxConcurrentOperations,
 		allowedOrigins,
 		localCwd,

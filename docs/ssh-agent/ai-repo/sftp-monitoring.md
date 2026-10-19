@@ -11,6 +11,8 @@
 
 ## 当前边界
 
+- 前端 Workspace SSE 由各功能适配器订阅，统一通过独立事件 origin 与普通 REST 连接额度隔离；传输层不解析业务事件或合并 topic，见 [transport-channels.md](./transport-channels.md)。
+
 - 后端共享 Broker 的上传和下载共用 20 个活动名额、3000 个 FIFO 等待位置；满队列返回 `transfer_queue_full`，公开异常状态 429，Tool 失败提示支持中英文。排队不新增 Transfer 状态，目录/stat/delete 不占传输名额。Agent 下载收到数据后才打开本地临时文件，空文件在下载成功后创建。
 
 - Agent 文件工具按同批次读写路径判断是否并发；底层所有 SFTP 操作复用同连接身份的一个 Channel，各自持有独立文件句柄，空闲 1 秒释放。单任务取消不关闭共享 Channel。详见 [文件工具并发与 Channel 复用](./file-tool-concurrency.md)。

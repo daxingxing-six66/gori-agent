@@ -36,6 +36,8 @@ export function createNodeHttpServer(options: CreateNodeHttpServerOptions): Node
 	}
 
 	const server = createServer((request, response) => {
+		// Streams can finish after close() starts. Release their newly idle keep-alive sockets as well.
+		response.once("finish", () => { if (!server.listening) server.closeIdleConnections(); });
 		void serve(request, response, options.handleRequest, allowedOrigins, maxRequestBodyBytes);
 	});
 	server.requestTimeout = 0;

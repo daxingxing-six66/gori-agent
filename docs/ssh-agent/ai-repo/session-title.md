@@ -13,7 +13,7 @@
 
 ## SSE 扩展
 
-- 复用 `GET /api/workspaces/:workspaceId/events`，新增可选 `sessions` topic 和一个 `session.updated` 事件。原默认 topics、事件封装、订阅分发、心跳、Locale 和 EventSource 重连机制保持不变。
+- 复用 `GET /api/workspaces/:workspaceId/events`，新增可选 `sessions` topic 和一个 `session.updated` 事件。原默认 topics、事件封装、订阅分发、心跳、Locale 和 EventSource 重连机制保持不变。事件地址通过 `shared/events/client.ts` 使用独立 origin，与读取树的 REST 额度隔离，见 [transport-channels.md](./transport-channels.md)。
 - 成功保存标题后才发布：`{ id, workspaceId, displayName, revision, updatedAt }`。标题属于模型输出，原文推送，不作词典翻译。
 - `WorkspaceTreeProvider` 按当前 Workspace/Session 路由订阅对应工作区的 sessions topic，跨同工作区页面保留连接，不为全部工作区创建连接。更新共享树数据后，侧边栏及 Chat 页顶部读取同一标题。
 - 每次 stream.ready（包括首次连接）读取 Workspace tree，补齐订阅建立前或断线期间的标题更新；切换到其他工作区也会同步。该事件不增加持久化重放能力。

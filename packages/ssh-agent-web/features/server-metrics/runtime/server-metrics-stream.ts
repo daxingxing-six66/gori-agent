@@ -1,5 +1,5 @@
 import type { SupportedLocale } from "@/features/i18n/model/locale";
-import { apiUrlWithLocale } from "@/shared/api/client";
+import { eventUrlWithLocale } from "@/shared/events/client";
 import { parseServerMetricsSnapshot, type ServerMetricsSnapshot } from "../model/server-metrics";
 
 export interface ServerMetricsStreamOptions {
@@ -14,7 +14,7 @@ export type OpenServerMetricsStream = (options: ServerMetricsStreamOptions) => (
 
 export const openServerMetricsStream: OpenServerMetricsStream = (options) => {
 	const path = `/api/workspaces/${encodeURIComponent(options.workspaceId)}/events?topics=monitoring`;
-	const events = new EventSource(apiUrlWithLocale(path, options.locale));
+	const events = new EventSource(eventUrlWithLocale(path, options.locale));
 	const onSnapshot = (event: MessageEvent<string>) => {
 		const snapshot = parseServerMetricsSnapshot(readJson(event.data));
 		if (snapshot?.workspaceId === options.workspaceId) options.onSnapshot(snapshot);

@@ -17,7 +17,7 @@ try {
 		llmModelsFactory: (credentials) => builtinModels({ credentials }),
 	});
 	const address = await server.listen();
-	console.info(`SSH Agent HTTP server listening on ${address.origin}`);
+	console.info(`SSH Agent API listening on ${address.origin}; events listening on ${address.events.origin}`);
 
 	let shuttingDown = false;
 	const shutdown = async (signal: NodeJS.Signals) => {

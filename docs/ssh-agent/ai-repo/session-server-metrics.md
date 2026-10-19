@@ -12,8 +12,8 @@
 
 ## 前端边界
 
-- `features/server-metrics/` 独立持有数据投影、EventSource adapter、共享内存 store、React hook 和展示。只消费 Workspace `monitoring`，不消费 Chat Run/Terminal/Deployment 事件，不依赖 SFTP 页面状态。
-- store 按 Workspace + Locale 共享一个连接，最后消费者离开即关闭连接，缓存保留 30 秒后淘汰；跨同工作区会话可立即显示已有快照。更换工作区或语言使用独立资源，关闭连接的迟到回调与较旧/其他工作区快照不能覆盖当前数据。
+- `features/server-metrics/` 独立持有数据投影、事件适配器、共享内存 store、React hook 和展示。只消费 Workspace `monitoring`，不消费 Chat Run/Terminal/Deployment 事件，不依赖 SFTP 页面状态；事件地址使用与普通 API 隔离的事件 origin，见 [transport-channels.md](./transport-channels.md)。
+- store 按 Workspace + Locale 共享监控订阅，最后指标消费者离开即关闭该订阅，缓存保留 30 秒后淘汰。跨同工作区会话可立即显示已有快照。更换工作区或语言使用独立资源，关闭订阅的迟到回调与较旧/其他工作区快照不能覆盖当前数据。
 - 首次等待显示占位符；断线、monitor.error 和超过 10 秒未更新时分别表示重连、失败或等待更新，并保留最后成功数据。监控恢复后清除错误；首次网络基准显示采样中，不伪造零速率。
 - `SessionServerMetrics` 在 `ChatConsole` 的页首接入，`ChatPageHeader` 只接受可选 ReactNode 插槽，不持有采集/订阅逻辑。`ServerMetricsStrip` 展示三个图标组：CPU 百分比、内存百分比、网络发送 ↑ / 接收 ↓，速率按 B/s、KiB/s、MiB/s、GiB/s 转换。
 - 悬停与无障碍文案说明服务器视角、网卡、更新时间和数据状态。桌面保持紧凑单行，窄屏页首换行以保留全部指标。Overview 仍展示原三个资源卡，不增加网络卡。

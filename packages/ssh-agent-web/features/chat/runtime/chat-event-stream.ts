@@ -11,7 +11,7 @@ import {
 	type ToolUpdate,
 } from "@/features/chat/model/chat";
 import type { SupportedLocale } from "@/features/i18n/model/locale";
-import { apiUrlWithLocale } from "@/shared/api/client";
+import { eventUrlWithLocale } from "@/shared/events/client";
 import { isChatContextUsage } from "@/features/chat/model/chat-context-usage";
 import { isUserDecision } from "@/features/chat/model/user-decision";
 
@@ -53,7 +53,7 @@ export class ChatEventStream {
 			};
 		},
 	) {
-		this.source = factory(apiUrlWithLocale(`/api/sessions/${encodeURIComponent(sessionId)}/chat/runs/${encodeURIComponent(runId)}/events`, locale));
+		this.source = factory(eventUrlWithLocale(`/api/sessions/${encodeURIComponent(sessionId)}/chat/runs/${encodeURIComponent(runId)}/events`, locale));
 		this.source.onopen = () => this.emitConnection(this.readyCount === 0 ? "connecting" : "reconnecting");
 		this.source.onerror = () => this.emitConnection("reconnecting");
 		for (const type of EVENT_TYPES) {

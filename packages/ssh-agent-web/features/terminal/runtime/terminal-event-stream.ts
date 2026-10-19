@@ -1,6 +1,6 @@
 import { isRecord, parseTerminalEnvelope, type TerminalSseEnvelope } from "@/features/terminal/model/terminal";
 import type { SupportedLocale } from "@/features/i18n/model/locale";
-import { apiUrlWithLocale } from "@/shared/api/client";
+import { eventUrlWithLocale } from "@/shared/events/client";
 
 const EVENT_TYPES = [
 	"terminal.stream.ready",
@@ -23,7 +23,7 @@ export class TerminalEventStream {
 	constructor(sessionId: string, attachmentId: string, afterSequence: number, locale: SupportedLocale, onError?: () => void) {
 		const query = new URLSearchParams({ afterSequence: String(afterSequence) });
 		this.#source = new EventSource(
-			apiUrlWithLocale(
+			eventUrlWithLocale(
 				`/api/sessions/${encodeURIComponent(sessionId)}/terminal/attachments/${encodeURIComponent(attachmentId)}/events?${query}`,
 				locale,
 			),
