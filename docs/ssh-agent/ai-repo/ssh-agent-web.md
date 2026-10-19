@@ -12,6 +12,8 @@
 
 侧边栏的工作区展开状态由根布局中的 `WorkspaceTreeProvider` 按工作区 ID 独立保存，切换工作区或会话页面不会收起其他工作区。首次进入尚无展开记录的工作区时默认展开；手动收起（包括当前工作区）会保留到本次页面生命周期结束，刷新浏览器后重新初始化。
 
+左侧会话行由独立 `components/sidebar-session-row.tsx` 展示，右侧固定槽通过 `features/session-activity/` 显示运行旋转、审批/回答等待和本次观察到的完成、失败、停止图标；悬浮或键盘聚焦时编辑/删除优先显示，标题与左侧导航圆点不移动。点击会话清除该会话当前已结束结果的未读标识，已读按 Run ID 保存在当前浏览器，刷新/重连不复现，新 Run 可重新提示；正在运行或等待处理的状态继续显示。当前可见会话成功完成会自动已读并直接清除运行标识，其他会话及后台完成结果保留提醒；失败、停止和待处理状态不自动清除。根布局挂载共享 Provider，通过一个全局流观察，只向 Store 上报路由与页面可见性，自动已读归 Store 处理，前端按 Session ID 独立通知目标行。初始不批量回填历史结果；断线清除旧显示，重连恢复本进程的快照。WorkspaceSidebar 只装配导航与管理回调，不参与状态归约和聊天生命周期。边界见 [session-activity.md](./session-activity.md)。
+
 桌面 `WorkspaceSidebar` 展开宽度保持 256px，收起宽度为 44px，展开与设置按钮居中。宽度变化由 Terminal 容器已有的 `ResizeObserver` 感知，owner 在防抖后测量、提交行列数，服务端确认事件再同步 xterm；布局样式不直接改 PTY geometry，也不重新建立 attachment。
 
 窄屏首页仍显示工作区导航；在 Workspace 与 Session 页面，`WorkspaceSidebar` 改为可从页首按钮打开的抽屉，支持关闭按钮、遮罩和 Escape，并在关闭后将焦点还给入口。Workspace 控制台将工作区上下文页首与 Tab 导航分为两层，Tab 支持方向键循环切换及 Home/End，活动面板通过 ARIA 关联。跨页面骨架使用 `components/page-layout.tsx` 的 PageHeader/PageHeading，布局位于 `page-layout.css`，颜色继续引用 `app/globals.css` 的主题变量；不改变 Workspace/Session 路由及审批状态归属。

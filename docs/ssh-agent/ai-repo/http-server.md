@@ -43,6 +43,7 @@ Workspace POST/PATCH 通过 `sandboxWritableRoots` 设置独立可写目录默�
 - 服务本身不提供 TLS、登录认证或公网访问控制；非 loopback 部署必须由外层安全边界补齐。
 - Workspace SSE 按 monitoring、connection、transfers、sessions、deployments topic 广播并定时 heartbeat；SSH Command Operation 事件仍不走该 SSE。
 - Chat 使用独立 Run SSE；断线不取消 Run，高频 delta 不写 SQLite。
+- `GET /api/session-activity/events` 是独立全局只读 SSE，首帧为当前活动与本进程已观察结束结果的快照，随后只发送目标 Session 的运行、审批与回答等待、完成/失败/停止变化；不批量回填历史会话，不输出消息/命令正文，不逐会话读取历史，不参与 Agent 生命周期。请求取消会移除观察订阅，重连重新取快照；边界见 [session-activity.md](./session-activity.md)。
 - `POST /api/sessions/:sessionId/chat/runs/:runId/cancel` 对应用户停止输出：有 pending 队列则中断当前 Loop，每次只将队首一条加入同一 Run，其余消息继续排队，响应可以仍为 running；无队列则取消整个 Run。客户端通过原 Run SSE 和活动状态/队列查询恢复，不应仅因该请求成功就清空队列。内部生命周期强制取消不复用该用户停止语义，详见 [chat-runtime.md](./chat-runtime.md)。
 - 单 Session GET 组合最近 Chat Run 模型选择；Chat Run 请求支持继承最近模型，并验证 Provider/Model 成对提交和模型支持的 thinking level。
 - Chat Run 和 Queue JSON 可携带 `attachmentIds`。请求校验数量、非空和重复 ID；Session 所有权、真实图片格式和模型图片输入能力由 Chat Attachment Service 校验。

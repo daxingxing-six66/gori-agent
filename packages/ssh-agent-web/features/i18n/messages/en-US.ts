@@ -13,6 +13,7 @@ import { enUSTaskContainerMessages } from "@/features/i18n/messages/en-US/task-c
 import { enUSStatisticsMessages } from "@/features/i18n/messages/en-US/statistics";
 import { enUSDeployTaskMessages } from "@/features/i18n/messages/en-US/deploy-task";
 import { enUSFileReaderMessages } from "@/features/i18n/messages/en-US/file-reader";
+import { enUSSessionActivityMessages } from "@/features/i18n/messages/en-US/session-activity";
 
 export const enUSMessages = {
 	...enUSCommonMessages,
@@ -29,4 +30,5 @@ export const enUSMessages = {
 	...enUSStatisticsMessages,
 	...enUSDeployTaskMessages,
 	...enUSFileReaderMessages,
+	...enUSSessionActivityMessages,
 } satisfies Record<MessageId, string>;

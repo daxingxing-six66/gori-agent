@@ -99,6 +99,12 @@ async function route(
 		.filter((segment) => segment.length > 0)
 		.map((segment) => decodeURIComponent(segment));
 	if (segments[0] !== "api") return notFound();
+	if (matches(segments, ["api", "session-activity", "events"]) && request.method === "GET") {
+		return new Response(options.chat.activity.subscribe(request.signal), { headers: {
+			"content-type": "text/event-stream", "cache-control": "no-store, no-transform",
+			connection: "keep-alive", "x-accel-buffering": "no",
+		} });
+	}
 	if (options.statistics) {
 		const response = handleStatisticsRoute(options.statistics, request, url, segments);
 		if (response !== null) return response;

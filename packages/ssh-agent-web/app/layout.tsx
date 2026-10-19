@@ -8,6 +8,7 @@ import { SettingsProvider } from "@/features/settings/components/settings-provid
 import { ThemeProvider } from "@/features/theme/components/theme-provider";
 import { THEME_BOOTSTRAP_SCRIPT } from "@/features/theme/model/theme-bootstrap";
 import { WorkspaceTreeProvider } from "@/features/workspace/components/workspace-tree-provider";
+import { SessionActivityProvider } from "@/features/session-activity/components/session-activity-provider";
 import "./globals.css";
 
 const FAVICON_URL = "/favicon.png?v=4";
@@ -48,7 +49,7 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
 				<LocaleProvider initialLocale={locale}>
 					<ThemeProvider>
 						<LlmProviderProvider>
-							<SettingsProvider><WorkspaceTreeProvider>{children}</WorkspaceTreeProvider></SettingsProvider>
+							<SettingsProvider><SessionActivityProvider><WorkspaceTreeProvider>{children}</WorkspaceTreeProvider></SessionActivityProvider></SettingsProvider>
 						</LlmProviderProvider>
 					</ThemeProvider>
 				</LocaleProvider>

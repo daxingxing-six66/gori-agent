@@ -15,6 +15,8 @@ Runtime Factory 将 Run ID 绑定到远端 Tool。Full Access grant 绑定完整
 
 - 普通请求与所有 SSE 使用独立 origin；Chat 事件适配器通过 `shared/events/client.ts` 生成地址，模型/历史/队列等请求仍走 API 客户端。传输只负责通道隔离，不参与 Run 状态、工具、队列或重放规则，见 [transport-channels.md](./transport-channels.md)。
 
+- 左侧会话行右侧运行标识由独立 Session Activity 投影观察已持久化的 Run、审批和用户决策事实。ChatRunEventHub 按类型提供进程内观察出口；投影不处理 token delta，不控制 Run 或队列。初次插入后发布 pending 事实，终态提交成功后结束旋转并保留该会话本次结果，停止并续接队列时保持运行；未参与本次运行的历史会话不批量标记。结构、全局 SSE 和生命周期见 [session-activity.md](./session-activity.md)。
+
 - `@` 非空文件检索使用独立 Hook 与后端有界候选索引，不逐目录发 HTTP，也不创建 Chat Run。取消、缓存、全局排序及不完整提示见 [local-file-search.md](./local-file-search.md)。
 
 - 成功的 `read` / `write` 工具行可点击文件名，经展示回调在右侧打开独立阅读器，读取当前磁盘文件而非截断的工具输出。阅读器自有标签与读取状态，不创建 Chat Run、消息或审批，不依赖 Terminal/Deploy 生命周期；完整入口与边界见 [file-reader.md](./file-reader.md)。

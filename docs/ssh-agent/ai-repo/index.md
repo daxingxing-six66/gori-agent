@@ -43,6 +43,7 @@
 | 新会话首条消息自动标题、模型命名和 SSE 更新 | [session-title.md](./session-title.md) | `packages/ssh-agent/src/application/services/session-title-service.ts` |
 | 首次 Run 固定头部、环境快照、模式 system 消息与缓存边界 | [session-prompt.md](./session-prompt.md) | `packages/ssh-agent/src/application/services/chat-prompt-service.ts`、`packages/ssh-agent/src/application/chat-context.ts` |
 | Session Chat、Pi Agent 事件、本地工具、审批、队列和压缩 | [chat-runtime.md](./chat-runtime.md) | `packages/ssh-agent/src/application/services/chat-service.ts`、`packages/agent/src/harness/agent-harness.ts` |
+| 左侧会话运行标识、等待状态、事件归约与全局活动流 | [session-activity.md](./session-activity.md) | `packages/ssh-agent/src/application/session-activity/`、`packages/ssh-agent-web/features/session-activity/` |
 | Tool 错误是否终止模型、模式/工作流门禁和工具自有审批准备 | [chat-runtime.md](./chat-runtime.md) | `packages/ssh-agent/src/application/tools/tool-authorization.ts`、`packages/ssh-agent/src/application/services/chat-tool-authorization-policy.ts`、`packages/ssh-agent/src/application/services/chat-agent-runtime-factory.ts` |
 | Agent 用户决策工具、等待持久化、恢复与输入框上方的面板 | [user-decision.md](./user-decision.md) | `packages/ssh-agent/src/application/services/chat-user-decision-service.ts`、`packages/ssh-agent-web/features/chat/components/user-decision-panel.tsx` |
 | `/deploy` 模型驱动阶段、Profile、首次配置 Skill、部署历史与阶段 UI | [deployment.md](./deployment.md) | `packages/ssh-agent/src/application/services/deployment-service.ts`、`packages/ssh-agent/src/application/tools/deployment-agent-tool.ts`、`packages/ssh-agent-web/features/deploy/` |

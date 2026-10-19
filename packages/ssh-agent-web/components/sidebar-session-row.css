@@ -1,0 +1,77 @@
+.sidebar-session-row {
+	display: flex;
+	align-items: center;
+	width: 100%;
+	min-height: 32px;
+	overflow: hidden;
+	color: var(--text-secondary);
+	transition: background-color 150ms, color 150ms;
+}
+
+.sidebar-session-row:not([data-active="true"]):hover {
+	background: var(--surface-hover);
+	color: var(--ink);
+}
+
+.sidebar-session-link {
+	display: flex;
+	flex: 1;
+	align-items: center;
+	align-self: stretch;
+	gap: 8px;
+	min-width: 0;
+	padding: 6px 10px;
+}
+
+.sidebar-session-marker {
+	width: 6px;
+	height: 6px;
+	flex: 0 0 6px;
+	border-radius: 50%;
+	background: var(--line-strong);
+}
+
+.sidebar-session-row[data-active="true"] .sidebar-session-marker { background: var(--accent); }
+
+.sidebar-session-name {
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	font-size: 12px;
+	font-weight: 500;
+}
+
+/* One fixed slot keeps the status right-aligned and prevents title movement when actions appear. */
+.sidebar-session-trailing {
+	display: grid;
+	align-items: center;
+	flex: 0 0 56px;
+	margin-right: 4px;
+}
+
+.sidebar-session-status, .sidebar-session-actions { grid-area: 1 / 1; }
+.sidebar-session-status { display: flex; justify-content: flex-end; padding-right: 6px; }
+.sidebar-session-actions { display: flex; justify-content: flex-end; opacity: 0; pointer-events: none; }
+
+.sidebar-session-action {
+	display: grid;
+	width: 26px;
+	height: 28px;
+	place-items: center;
+	border-radius: var(--radius-control);
+	color: var(--text-muted);
+}
+
+.sidebar-session-action:hover { background: var(--surface-hover); color: var(--ink); }
+.sidebar-session-delete:hover { color: var(--danger); }
+
+.sidebar-session-row:is(:hover, :focus-within) .sidebar-session-status { visibility: hidden; }
+.sidebar-session-row:is(:hover, :focus-within) .sidebar-session-actions { opacity: 1; pointer-events: auto; }
+
+@media (hover: none) {
+	.sidebar-session-trailing { display: flex; flex-basis: auto; gap: 4px; }
+	.sidebar-session-status { padding-right: 2px; }
+	.sidebar-session-actions { opacity: 1; pointer-events: auto; }
+	.sidebar-session-row:is(:hover, :focus-within) .sidebar-session-status { visibility: visible; }
+}

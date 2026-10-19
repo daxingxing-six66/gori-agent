@@ -11,11 +11,9 @@ import {
 	CirclePlus,
 	PanelLeftClose,
 	PanelLeftOpen,
-	Pencil,
 	Server,
 	Settings,
 	Settings2,
-	Trash2,
 	X,
 } from "lucide-react";
 import { useSettings } from "@/features/settings/components/settings-context";
@@ -27,6 +25,7 @@ import type { Session } from "@/features/session/model/session";
 import { useSftpTransferManagerOptional } from "@/features/sftp/components/sftp-transfer-provider";
 import { WorkspaceDialog } from "@/features/workspace/components/workspace-dialog";
 import { useWorkspaceTree } from "@/features/workspace/components/workspace-tree-context";
+import { SidebarSessionRow } from "./sidebar-session-row";
 
 interface WorkspaceSidebarProps {
 	activeWorkspaceId?: string;
@@ -148,16 +147,9 @@ export function WorkspaceSidebar({ activeWorkspaceId, activeSessionId, homePage 
 											{expanded ? (
 												<div id={sessionListId} className="sidebar-session-list mb-2 ml-[27px] mr-2 mt-1.5">
 													<div className="space-y-0.5">
-														{sessions.map((session) => {
-															const activeSession = activeSessionId === session.id;
-															return (
-																<div key={session.id} data-active={activeSession ? "true" : "false"} className={`sidebar-session-row group flex min-h-8 w-full items-center overflow-hidden rounded-lg transition ${activeSession ? "bg-[var(--surface-selected)] text-[var(--accent-ink)]" : "text-[var(--text-secondary)] hover:bg-[var(--surface-hover)] hover:text-[var(--ink)]"}`}>
-																	<Link href={`/sessions/${session.id}`} aria-current={activeSession ? "page" : undefined} className="flex min-w-0 flex-1 self-stretch items-center px-2.5 py-1.5" onClick={() => setMobileOpen(false)}><span className={`h-1.5 w-1.5 shrink-0 rounded-full ${activeSession ? "bg-[var(--accent)]" : "bg-[var(--line-strong)]"}`} /><span className="ml-2 min-w-0 flex-1 truncate text-[12px] font-medium">{session.displayName}</span></Link>
-																	<button className="sidebar-session-action rounded p-1.5 text-[var(--text-muted)] opacity-0 transition hover:bg-[var(--surface-hover)] hover:text-[var(--ink)] focus-visible:opacity-100 group-hover:opacity-100 group-focus-within:opacity-100" aria-label={`${intl.formatMessage({ id: "session.edit" })} ${session.displayName}`} onClick={() => setEditSession(session)}><Pencil size={13} /></button>
-																	<button className="sidebar-session-action mr-1 rounded p-1.5 text-[var(--text-muted)] opacity-0 transition hover:bg-[var(--surface-hover)] hover:text-[var(--danger)] focus-visible:opacity-100 group-hover:opacity-100 group-focus-within:opacity-100" aria-label={intl.formatMessage({ id: "sidebar.session.delete" }, { name: session.displayName })} onClick={() => { setDeleteSessionError(null); setDeleteSession(session); }}><Trash2 size={13} /></button>
-																</div>
-															);
-														})}
+														{sessions.map((session) => <SidebarSessionRow key={session.id} session={session} active={activeSessionId === session.id}
+															onNavigate={() => setMobileOpen(false)} onEdit={setEditSession}
+															onDelete={(selected) => { setDeleteSessionError(null); setDeleteSession(selected); }} />)}
 													</div>
 												</div>
 											) : null}

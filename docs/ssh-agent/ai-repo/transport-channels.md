@@ -16,7 +16,7 @@
 
 - 同一进程创建一个 Backend、一组 Services/EventHub 和一份数据库所有权，向两个 HTTP 监听器注入同一个请求处理器。默认 API `127.0.0.1:3001`，事件推送 `127.0.0.1:3002`；没有第二个业务服务或数据库连接池。
 - `ManagementHttpTransport` 按请求方法和路径隔离流量：`GET /api/**/events` 只进入事件监听器，其余业务 API 只进入请求监听器；错误通道返回 404。两个监听器都提供 `/healthz`，并沿用同一 CORS allowlist、Locale、body limit 与流式适配。
-- Chat、Terminal、Workspace（标题、SFTP、监控、Deploy）统一使用 `shared/events/client.ts`；业务适配器继续持有协议校验、重连和取消。HTTP 通道不解析业务事件，也不合并业务 topic 或接管业务生命周期。
+- Chat、Terminal、Workspace（标题、SFTP、监控、Deploy）及全局会话活动流统一使用 `shared/events/client.ts`；业务适配器继续持有协议校验、重连和取消。HTTP 通道不解析业务事件，也不合并业务 topic 或接管业务生命周期。
 - `SSH_AGENT_PORT` 与 `SSH_AGENT_EVENTS_PORT` 必须不同；程序化测试允许两者均为 0，由系统分配不同空闲端口。`listen()` 保留原 API 地址字段，并在 `events` 返回事件地址。
 - 任一监听绑定失败，Server 关闭两个监听、唯一 Backend 并释放数据库所有权。正常关闭先停止两侧接受连接，业务关闭结束流后等待 HTTP drain；结束的 SSE 即使声明 keep-alive，也会在关闭期间释放新空闲连接。客户端断开只取消订阅，不取消 Agent。
 
@@ -29,7 +29,9 @@
 
 ## 验证
 
+- `packages/ssh-agent/test/transport-channels.test.ts`：真实 TCP、每 origin 最多 6 条连接的 HTTP Agent，保持 6 条 SSE 时历史/模型请求正常完成；通道准入、CORS、健康检查、开放订阅时关闭与第二监听失败回滚。
 - `packages/ssh-agent/test/http-server.test.ts`：两个端口的绑定失败均释放跨进程数据库所有权，保留原 API/CORS/上传检查。
 - `packages/ssh-agent/test/server-environment.test.ts`：双端口缺省、独立配置、冲突与非法值。
+- `packages/ssh-agent-web/tests/transport-channels.test.ts`：六种事件适配器均使用事件 origin，Locale/cursor/topic 保留，普通请求仍走 API，清理只关闭各自订阅。
 
 测试只使用内存/临时 SQLite、faux 模型与本机临时 TCP 端口，不请求真实模型或 SSH。

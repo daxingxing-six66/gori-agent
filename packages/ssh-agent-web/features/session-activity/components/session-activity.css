@@ -1,0 +1,20 @@
+.session-activity-indicator {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 14px;
+	height: 14px;
+	flex: 0 0 14px;
+	color: var(--text-muted);
+}
+
+.session-activity-dot { fill: var(--line-strong); }
+.session-activity-idle[data-active="true"] .session-activity-dot { fill: var(--accent); }
+.session-activity-unknown .session-activity-dot { opacity: 0.55; }
+.session-activity-running, .session-activity-waiting_input { color: var(--accent); }
+.session-activity-waiting_approval { color: var(--warning); }
+.session-activity-completed { color: var(--success); }
+.session-activity-attention, .session-activity-failed { color: var(--danger); }
+.session-activity-running { animation: session-activity-spin 1.2s linear infinite; }
+@keyframes session-activity-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .session-activity-running { animation: none; } }

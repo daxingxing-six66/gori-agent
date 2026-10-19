@@ -12,6 +12,7 @@ import { zhCNTaskContainerMessages } from "@/features/i18n/messages/zh-CN/task-c
 import { zhCNStatisticsMessages } from "@/features/i18n/messages/zh-CN/statistics";
 import { zhCNDeployTaskMessages } from "@/features/i18n/messages/zh-CN/deploy-task";
 import { zhCNFileReaderMessages } from "@/features/i18n/messages/zh-CN/file-reader";
+import { zhCNSessionActivityMessages } from "@/features/i18n/messages/zh-CN/session-activity";
 
 export const zhCNMessages = {
 	...zhCNCommonMessages,
@@ -28,6 +29,7 @@ export const zhCNMessages = {
 	...zhCNStatisticsMessages,
 	...zhCNDeployTaskMessages,
 	...zhCNFileReaderMessages,
+	...zhCNSessionActivityMessages,
 } as const;
 
 export type MessageId = keyof typeof zhCNMessages;

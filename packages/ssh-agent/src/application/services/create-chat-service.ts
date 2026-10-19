@@ -2,6 +2,7 @@ import type { RemoteSandboxApprovalStore } from "./remote-sandbox-approval-store
 import type { Models } from "@earendil-works/pi-ai";
 import type { IdGenerator } from "../../domain/ids.ts";
 import { ChatRunEventHub } from "../chat-run-event-hub.ts";
+import { SessionActivityService } from "../session-activity/session-activity-service.ts";
 import type { ChatRepository } from "../repositories/chat-repository.ts";
 import type { SessionRepository } from "../repositories/session-repository.ts";
 import { ChatAgentEventHandler } from "./chat-agent-event-handler.ts";
@@ -64,6 +65,7 @@ export function createChatService(options: CreateChatServiceOptions): ChatServic
 		get: () => ({ triggerPercent: 80, model: null, revision: 1, updatedAt: 0 }),
 	};
 	const events = new ChatRunEventHub();
+	const activity = new SessionActivityService(events);
 	const approvals = new ChatApprovalService({
 		repository: options.chatRepository,
 		ids: options.ids,
@@ -142,6 +144,7 @@ export function createChatService(options: CreateChatServiceOptions): ChatServic
 		bindServerInteraction: options.bindServerInteraction,
 		unbindTerminalRun: options.unbindTerminalRun,
 		events,
+		activity,
 		approvals,
 		decisions,
 		context,

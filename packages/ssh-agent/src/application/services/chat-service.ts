@@ -21,6 +21,7 @@ import type { BackendLocale } from "../../i18n/message.ts";
 import { createChatContext } from "../chat-context.ts";
 import type { ChatRunEventHub } from "../chat-run-event-hub.ts";
 import type { ChatRunRuntime } from "../chat-run-runtime.ts";
+import type { SessionActivityService } from "../session-activity/session-activity-service.ts";
 import { runFailure } from "../failure-policy.ts";
 import { reportFailure } from "../failure-reporter.ts";
 import type { ChatRepository } from "../repositories/chat-repository.ts";
@@ -79,6 +80,7 @@ export interface ChatServiceDependencies {
 	bindServerInteraction(sessionId: string, runId: string, mode: "command" | "terminal"): Promise<string | null>;
 	unbindTerminalRun(sessionId: string, runId: string): Promise<void>;
 	events: ChatRunEventHub;
+	activity: SessionActivityService;
 	approvals: ChatApprovalService;
 	decisions: ChatUserDecisionService;
 	context: ChatContextService;
@@ -91,6 +93,7 @@ export interface ChatServiceDependencies {
 }
 
 export class ChatService {
+	readonly activity: SessionActivityService;
 	private readonly prompts: ChatPromptService;
 	private readonly titles?: SessionTitleService;
 	private readonly chatRepository: ChatRepository;
@@ -137,6 +140,7 @@ export class ChatService {
 		this.bindServerInteraction = options.bindServerInteraction;
 		this.unbindTerminalRun = options.unbindTerminalRun;
 		this.events = options.events;
+		this.activity = options.activity;
 		this.approvals = options.approvals;
 		this.decisions = options.decisions;
 		this.context = options.context;
@@ -271,6 +275,7 @@ export class ChatService {
 			};
 			const firstRun = this.chatRepository.findLatestRun(session.id) === undefined;
 			this.chatRepository.insertRun(run);
+			this.events.publish(run.id, "run.updated", run);
 			let runtime: ChatRunRuntime | undefined;
 			let deploymentClaimed = false;
 			let deploymentPlanning: { discussionId: string; revision: number } | undefined;
@@ -669,6 +674,7 @@ export class ChatService {
 			clearTimeout(timer);
 		}
 		this.toolCalls.close();
+		this.activity.close();
 		this.events.close();
 	}
 
