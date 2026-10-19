@@ -59,6 +59,7 @@ export const enUSSettingsMessages = {
 	"theme.dark.label": "Dark",
 	"theme.dark.description": "Use a low-contrast frosted charcoal interface",
 	"theme.contrast.label": "Split tone · Experimental",
+	"theme.ion.label": "ION · Terminal",
 	"theme.system.label": "System",
 	"theme.system.description": "Switch automatically with the system appearance",
 	"theme.system.resolved": "Currently using {theme}",

@@ -69,7 +69,37 @@ const CONTRAST_TERMINAL_THEME: Readonly<ITheme> = {
 	selectionInactiveBackground: "#36453c",
 };
 
+const ION_TERMINAL_THEME: Readonly<ITheme> = {
+	background: "#080e18",
+	foreground: "#c6d8ef",
+	cursor: "#79baff",
+	cursorAccent: "#080e18",
+	selectionBackground: "#244876",
+	selectionForeground: "#edf5ff",
+	selectionInactiveBackground: "#1c2d48",
+	scrollbarSliderBackground: "#79baff33",
+	scrollbarSliderHoverBackground: "#79baff55",
+	scrollbarSliderActiveBackground: "#79baff88",
+	black: "#182035",
+	red: "#ff8498",
+	green: "#79baff",
+	yellow: "#f2b56b",
+	blue: "#8ba4ff",
+	magenta: "#be9bff",
+	cyan: "#a7d1ff",
+	white: "#c6d8ef",
+	brightBlack: "#64738d",
+	brightRed: "#ffa5b4",
+	brightGreen: "#9bceff",
+	brightYellow: "#ffd29b",
+	brightBlue: "#b1c0ff",
+	brightMagenta: "#d8c1ff",
+	brightCyan: "#d0e7ff",
+	brightWhite: "#f3f7ff",
+};
+
 export function terminalTheme(theme: ResolvedTheme): Readonly<ITheme> {
+	if (theme === "ion") return ION_TERMINAL_THEME;
 	if (theme === "contrast") return CONTRAST_TERMINAL_THEME;
 	return theme === "dark" ? DARK_TERMINAL_THEME : LIGHT_TERMINAL_THEME;
 }

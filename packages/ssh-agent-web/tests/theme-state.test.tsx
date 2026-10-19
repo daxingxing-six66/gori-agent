@@ -20,6 +20,7 @@ describe("theme state", () => {
 		expect(parseThemePreference("light")).toBe("light");
 		expect(parseThemePreference("dark")).toBe("dark");
 		expect(parseThemePreference("contrast")).toBe("contrast");
+		expect(parseThemePreference("ion")).toBe("ion");
 	});
 
 	it("resolves only the system preference from the media state", () => {
@@ -29,6 +30,8 @@ describe("theme state", () => {
 		expect(resolveTheme("dark", false)).toBe("dark");
 		expect(resolveTheme("contrast", true)).toBe("contrast");
 		expect(resolveTheme("contrast", false)).toBe("contrast");
+		expect(resolveTheme("ion", true)).toBe("ion");
+		expect(resolveTheme("ion", false)).toBe("ion");
 	});
 
 	it("bootstraps the same storage and document attribute contract before hydration", () => {
@@ -43,6 +46,8 @@ describe("theme state", () => {
 		["dark", false, "dark", "dark"],
 		["contrast", true, "contrast", "light"],
 		["contrast", false, "contrast", "light"],
+		["ion", true, "ion", "dark"],
+		["ion", false, "ion", "dark"],
 		["system", true, "dark", "dark"],
 		["system", false, "light", "light"],
 	] as const)("restores %s before hydration with system dark=%s", (preference, systemDark, resolved, colorScheme) => {
@@ -57,7 +62,29 @@ describe("theme state", () => {
 		expect(root.style.colorScheme).toBe(colorScheme);
 	});
 
-	it("renders the three visual themes plus system following without descriptive copy", () => {
+	it("restores the saved ION preference without requiring a system appearance API", () => {
+		const root = { dataset: {} as Record<string, string>, style: { colorScheme: "" } };
+		runInNewContext(THEME_BOOTSTRAP_SCRIPT, {
+			localStorage: { getItem: (key: string) => key === THEME_STORAGE_KEY ? "ion" : null },
+			window: {},
+			document: { documentElement: root },
+		});
+		expect(root.dataset).toEqual({ themePreference: "ion", theme: "ion" });
+		expect(root.style.colorScheme).toBe("dark");
+	});
+
+	it("keeps system as the default when browser storage is unavailable", () => {
+		const root = { dataset: {} as Record<string, string>, style: { colorScheme: "" } };
+		runInNewContext(THEME_BOOTSTRAP_SCRIPT, {
+			localStorage: { getItem: () => { throw new Error("Storage denied"); } },
+			window: { matchMedia: () => ({ matches: true }) },
+			document: { documentElement: root },
+		});
+		expect(root.dataset).toEqual({ themePreference: "system", theme: "dark" });
+		expect(root.style.colorScheme).toBe("dark");
+	});
+
+	it("renders the four visual themes plus system following without descriptive copy", () => {
 		const markup = renderToStaticMarkup(createElement(IntlProvider, {
 			locale: "zh-CN",
 			messages: zhCNMessages,
@@ -67,17 +94,20 @@ describe("theme state", () => {
 				onChange: () => undefined,
 			}),
 		));
-		expect(markup.match(/type="radio"/g)).toHaveLength(4);
+		expect(markup.match(/type="radio"/g)).toHaveLength(5);
 		expect(markup).toContain("value=\"light\"");
 		expect(markup).toContain("value=\"dark\"");
 		expect(markup).toContain("value=\"contrast\"");
+		expect(markup).toContain("value=\"ion\"");
+		expect(markup).toContain("ION · 离子终端");
+		expect(markup).toContain("data-preview=\"ion\"");
 		expect(markup).toContain("明暗分层 · 实验");
 		expect(markup).not.toContain("theme-option-description");
 		expect(markup).toMatch(/checked="" value="system"|value="system" checked=""/);
 		expect(markup).toContain("当前使用暗部");
 	});
 
-	it.each(["light", "dark", "contrast", "system"] satisfies ThemePreference[])("selects only the %s preference", (preference) => {
+	it.each(["light", "dark", "contrast", "ion", "system"] satisfies ThemePreference[])("selects only the %s preference", (preference) => {
 		const markup = renderToStaticMarkup(createElement(IntlProvider, {
 			locale: "zh-CN", messages: zhCNMessages,
 		}, createElement(ThemePreferenceControl, { preference, resolvedTheme: resolveTheme(preference, false), onChange: () => undefined })));

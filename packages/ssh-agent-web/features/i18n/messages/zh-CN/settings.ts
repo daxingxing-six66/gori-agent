@@ -59,6 +59,7 @@ export const zhCNSettingsMessages = {
 	"theme.dark.label": "暗部",
 	"theme.dark.description": "低对比度的磨砂炭灰界面",
 	"theme.contrast.label": "明暗分层 · 实验",
+	"theme.ion.label": "ION · 离子终端",
 	"theme.system.label": "跟随系统",
 	"theme.system.description": "随系统外观自动切换",
 	"theme.system.resolved": "当前使用{theme}",

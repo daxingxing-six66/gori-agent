@@ -14,6 +14,7 @@ import {
 	Server,
 	Settings,
 	Settings2,
+	SquareTerminal,
 	X,
 } from "lucide-react";
 import { useSettings } from "@/features/settings/components/settings-context";
@@ -110,8 +111,11 @@ export function WorkspaceSidebar({ activeWorkspaceId, activeSessionId, homePage 
 					</>
 				) : (
 					<>
+						<div className="ion-only ion-region-label ion-region-server" aria-hidden="true"><span>01 /</span><span>SERVER RACK</span></div>
 						<div className="sidebar-brand-header flex shrink-0 items-center gap-2 border-b border-[var(--line-soft)] px-4">
-							<div className="min-w-0 flex-1"><p className="truncate text-[14px] font-semibold tracking-[-0.01em]">Gori</p></div>
+							<SquareTerminal size={22} className="ion-only ion-brand-symbol" aria-hidden="true" />
+							<div className="min-w-0 flex-1"><p className="sidebar-brand-name truncate text-[14px] font-semibold tracking-[-0.01em]">Gori</p></div>
+							<span className="ion-only ion-brand-badge" aria-hidden="true">ION</span>
 							<button className="sidebar-desktop-collapse rounded-md p-1.5 text-[var(--text-muted)] transition hover:bg-[var(--surface-hover)] hover:text-[var(--ink)]" aria-label={intl.formatMessage({ id: "sidebar.collapse" })} title={intl.formatMessage({ id: "sidebar.collapse" })} aria-expanded={true} onClick={() => setSidebarCollapsed(true)}><PanelLeftClose size={17} /></button>
 							{!homePage ? <button ref={mobileCloseRef} type="button" className="mobile-sidebar-close" aria-label={intl.formatMessage({ id: "sidebar.collapse" })} onClick={() => setMobileOpen(false)}><X size={18} /></button> : null}
 						</div>

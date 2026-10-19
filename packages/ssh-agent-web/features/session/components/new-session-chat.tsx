@@ -1,6 +1,6 @@
 "use client";
 
-import { FolderOpen, LoaderCircle, Send, ShieldCheck, X } from "lucide-react";
+import { Cpu, FolderOpen, LoaderCircle, Send, ShieldCheck, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useIntl } from "react-intl";
@@ -156,18 +156,29 @@ export function NewSessionChat({ workspaceId }: { workspaceId: string }) {
 			<div className="app-layout">
 			<WorkspaceSidebar activeWorkspaceId={workspace.id} />
 			<main className="page-main page-main-chat flex flex-col">
-				<PageHeader title={intl.formatMessage({ id: "session.new" })} compact />
+				<div className="ion-chat-header">
+					<div className="ion-only ion-region-label ion-region-agent" aria-hidden="true"><span>02 /</span><span>AGENT CORE</span></div>
+					<PageHeader title={intl.formatMessage({ id: "session.new" })} compact leading={<Cpu size={18} className="ion-only ion-header-symbol" aria-hidden="true" />} />
+				</div>
 
 				<div className="app-scrollbar chat-empty-state overflow-y-auto">
 					<div className="chat-empty-state-inner">
-						<img
-							src="/favicon.png?v=4"
-							alt="Gori"
-							width={96}
-							height={96}
-							className="block size-20 object-contain sm:size-24"
-							draggable={false}
-						/>
+						<div className="new-session-emblem">
+							<img
+								src="/favicon.png?v=4"
+								alt="Gori"
+								width={96}
+								height={96}
+								className="block size-20 object-contain sm:size-24"
+								draggable={false}
+							/>
+							<div className="ion-only ion-core-emblem" aria-hidden="true">
+								<span className="ion-core-orbit ion-core-orbit-one" />
+								<span className="ion-core-orbit ion-core-orbit-two" />
+								<Cpu size={40} strokeWidth={1.4} />
+								<span className="ion-core-marker">&gt;_</span>
+							</div>
+						</div>
 						<h2>{intl.formatMessage({ id: "session.new.heading" }, { name: workspace.displayName })}</h2>
 						<p>{intl.formatMessage({ id: "session.new.description" })}</p>
 					</div>

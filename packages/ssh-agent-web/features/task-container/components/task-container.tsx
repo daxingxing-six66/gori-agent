@@ -97,6 +97,7 @@ export function TaskContainer({ tabs, activeTabId, tabListLabel, onSelect, displ
 			<span className="task-container-collapsed-title">{tabs.find((tab) => tab.id === selectedId)?.title}</span>
 			{tabs.length > 1 ? <span className="task-container-collapsed-count">{tabs.length}</span> : null}
 		</button> : null}
+		<div className="ion-only ion-region-label ion-region-observer" hidden={collapsed} aria-hidden="true"><span>03 /</span><span>RUNTIME OBSERVATORY</span></div>
 		<div className="task-container-header" hidden={collapsed}>
 			<div className="task-container-tabs app-scrollbar" role="tablist" aria-label={tabListLabel}>
 				{tabs.map((tab, index) => {

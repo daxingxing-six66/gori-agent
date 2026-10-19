@@ -1,5 +1,6 @@
 @import "tailwindcss";
 @import "@xterm/xterm/css/xterm.css";
+@import "../features/theme/styles/ion.css";
 
 @theme inline {
 	--color-canvas: var(--canvas);
@@ -1952,167 +1953,167 @@ input:focus-visible {
 
 /* Existing feature components still use a small set of Tailwind palette utilities.
    This compatibility layer gives them semantic dark values while new UI uses tokens directly. */
-[data-theme="dark"] [class~="bg-white"],
-[data-theme="dark"] [class~="bg-white/90"],
-[data-theme="dark"] [class~="bg-white/70"],
-[data-theme="dark"] [class~="bg-white/60"] {
+:is([data-theme="dark"], [data-theme="ion"]) [class~="bg-white"],
+:is([data-theme="dark"], [data-theme="ion"]) [class~="bg-white/90"],
+:is([data-theme="dark"], [data-theme="ion"]) [class~="bg-white/70"],
+:is([data-theme="dark"], [data-theme="ion"]) [class~="bg-white/60"] {
 	background-color: var(--surface-raised);
 }
 
-[data-theme="dark"] [class~="bg-zinc-50"],
-[data-theme="dark"] [class~="bg-zinc-50/70"],
-[data-theme="dark"] [class~="bg-zinc-50/60"],
-[data-theme="dark"] [class~="bg-zinc-100"],
-[data-theme="dark"] [class~="bg-[#fafaf8]"],
-[data-theme="dark"] [class~="bg-[#f8faf8]"],
-[data-theme="dark"] [class~="bg-[#f7f6f2]"],
-[data-theme="dark"] [class~="bg-[#f6f6f3]"],
-[data-theme="dark"] [class~="bg-[#f6f5f1]"],
-[data-theme="dark"] [class~="bg-[#f5f8f5]"],
-[data-theme="dark"] [class~="bg-[#f4f5f2]"],
-[data-theme="dark"] [class~="bg-[#f3f2ee]"] {
+:is([data-theme="dark"], [data-theme="ion"]) [class~="bg-zinc-50"],
+:is([data-theme="dark"], [data-theme="ion"]) [class~="bg-zinc-50/70"],
+:is([data-theme="dark"], [data-theme="ion"]) [class~="bg-zinc-50/60"],
+:is([data-theme="dark"], [data-theme="ion"]) [class~="bg-zinc-100"],
+:is([data-theme="dark"], [data-theme="ion"]) [class~="bg-[#fafaf8]"],
+:is([data-theme="dark"], [data-theme="ion"]) [class~="bg-[#f8faf8]"],
+:is([data-theme="dark"], [data-theme="ion"]) [class~="bg-[#f7f6f2]"],
+:is([data-theme="dark"], [data-theme="ion"]) [class~="bg-[#f6f6f3]"],
+:is([data-theme="dark"], [data-theme="ion"]) [class~="bg-[#f6f5f1]"],
+:is([data-theme="dark"], [data-theme="ion"]) [class~="bg-[#f5f8f5]"],
+:is([data-theme="dark"], [data-theme="ion"]) [class~="bg-[#f4f5f2]"],
+:is([data-theme="dark"], [data-theme="ion"]) [class~="bg-[#f3f2ee]"] {
 	background-color: var(--surface-muted);
 }
 
-[data-theme="dark"] [class~="bg-zinc-200"],
-[data-theme="dark"] [class~="bg-zinc-300"],
-[data-theme="dark"] [class~="bg-[#eeede8]"],
-[data-theme="dark"] [class~="bg-[#e7e6e1]"] {
+:is([data-theme="dark"], [data-theme="ion"]) [class~="bg-zinc-200"],
+:is([data-theme="dark"], [data-theme="ion"]) [class~="bg-zinc-300"],
+:is([data-theme="dark"], [data-theme="ion"]) [class~="bg-[#eeede8]"],
+:is([data-theme="dark"], [data-theme="ion"]) [class~="bg-[#e7e6e1]"] {
 	background-color: var(--surface-hover);
 }
 
-[data-theme="dark"] [class~="disabled:bg-zinc-200"]:disabled,
-[data-theme="dark"] [class~="disabled:bg-zinc-300"]:disabled {
+:is([data-theme="dark"], [data-theme="ion"]) [class~="disabled:bg-zinc-200"]:disabled,
+:is([data-theme="dark"], [data-theme="ion"]) [class~="disabled:bg-zinc-300"]:disabled {
 	background-color: var(--surface-hover);
 }
 
-[data-theme="dark"] [class~="disabled:text-zinc-400"]:disabled {
+:is([data-theme="dark"], [data-theme="ion"]) [class~="disabled:text-zinc-400"]:disabled {
 	color: var(--text-faint);
 }
 
-[data-theme="dark"] [class~="bg-[#397b5c]"] {
+:is([data-theme="dark"], [data-theme="ion"]) [class~="bg-[#397b5c]"] {
 	background-color: var(--accent);
 }
 
-[data-theme="dark"] [class~="bg-[#e7f0e9]"],
-[data-theme="dark"] [class~="bg-[#edf4f0]"],
-[data-theme="dark"] [class~="bg-[#edf2ee]"],
-[data-theme="dark"] [class~="bg-[#eaf2ec]"],
-[data-theme="dark"] [class~="bg-[#e3f0e8]"],
-[data-theme="dark"] [class~="bg-[#e1eee6]"],
-[data-theme="dark"] [class~="bg-[#f1f8f4]"],
-[data-theme="dark"] [class~="bg-[#f1f7f3]"] {
+:is([data-theme="dark"], [data-theme="ion"]) [class~="bg-[#e7f0e9]"],
+:is([data-theme="dark"], [data-theme="ion"]) [class~="bg-[#edf4f0]"],
+:is([data-theme="dark"], [data-theme="ion"]) [class~="bg-[#edf2ee]"],
+:is([data-theme="dark"], [data-theme="ion"]) [class~="bg-[#eaf2ec]"],
+:is([data-theme="dark"], [data-theme="ion"]) [class~="bg-[#e3f0e8]"],
+:is([data-theme="dark"], [data-theme="ion"]) [class~="bg-[#e1eee6]"],
+:is([data-theme="dark"], [data-theme="ion"]) [class~="bg-[#f1f8f4]"],
+:is([data-theme="dark"], [data-theme="ion"]) [class~="bg-[#f1f7f3]"] {
 	background-color: var(--accent-soft);
 }
 
-[data-theme="dark"] [class~="text-zinc-900"],
-[data-theme="dark"] [class~="text-zinc-800"],
-[data-theme="dark"] [class~="text-zinc-700"] {
+:is([data-theme="dark"], [data-theme="ion"]) [class~="text-zinc-900"],
+:is([data-theme="dark"], [data-theme="ion"]) [class~="text-zinc-800"],
+:is([data-theme="dark"], [data-theme="ion"]) [class~="text-zinc-700"] {
 	color: var(--ink);
 }
 
-[data-theme="dark"] [class~="text-zinc-600"],
-[data-theme="dark"] [class~="text-zinc-500"] {
+:is([data-theme="dark"], [data-theme="ion"]) [class~="text-zinc-600"],
+:is([data-theme="dark"], [data-theme="ion"]) [class~="text-zinc-500"] {
 	color: var(--text-secondary);
 }
 
-[data-theme="dark"] [class~="text-zinc-400"],
-[data-theme="dark"] [class~="text-zinc-300"] {
+:is([data-theme="dark"], [data-theme="ion"]) [class~="text-zinc-400"],
+:is([data-theme="dark"], [data-theme="ion"]) [class~="text-zinc-300"] {
 	color: var(--text-muted);
 }
 
-[data-theme="dark"] [class~="text-[#397b5c]"],
-[data-theme="dark"] [class~="text-[#326e52]"],
-[data-theme="dark"] [class~="text-[#2f6f52]"] {
+:is([data-theme="dark"], [data-theme="ion"]) [class~="text-[#397b5c]"],
+:is([data-theme="dark"], [data-theme="ion"]) [class~="text-[#326e52]"],
+:is([data-theme="dark"], [data-theme="ion"]) [class~="text-[#2f6f52]"] {
 	color: var(--accent-ink);
 }
 
-[data-theme="dark"] [class~="border-zinc-100"],
-[data-theme="dark"] [class~="border-zinc-200"],
-[data-theme="dark"] [class~="border-zinc-300"] {
+:is([data-theme="dark"], [data-theme="ion"]) [class~="border-zinc-100"],
+:is([data-theme="dark"], [data-theme="ion"]) [class~="border-zinc-200"],
+:is([data-theme="dark"], [data-theme="ion"]) [class~="border-zinc-300"] {
 	border-color: var(--line);
 }
 
-[data-theme="dark"] [class~="border-[#dbe3dd]"],
-[data-theme="dark"] [class~="border-[#d8e5dc]"],
-[data-theme="dark"] [class~="border-[#d6e4da]"],
-[data-theme="dark"] [class~="border-[#d3e2d8]"],
-[data-theme="dark"] [class~="border-[#cfd8d2]"],
-[data-theme="dark"] [class~="border-[#b9cec0]"],
-[data-theme="dark"] [class~="border-[#b4c0b8]"],
-[data-theme="dark"] [class~="border-[#9bb9a8]"],
-[data-theme="dark"] [class~="border-[#7aa48e]"] {
+:is([data-theme="dark"], [data-theme="ion"]) [class~="border-[#dbe3dd]"],
+:is([data-theme="dark"], [data-theme="ion"]) [class~="border-[#d8e5dc]"],
+:is([data-theme="dark"], [data-theme="ion"]) [class~="border-[#d6e4da]"],
+:is([data-theme="dark"], [data-theme="ion"]) [class~="border-[#d3e2d8]"],
+:is([data-theme="dark"], [data-theme="ion"]) [class~="border-[#cfd8d2]"],
+:is([data-theme="dark"], [data-theme="ion"]) [class~="border-[#b9cec0]"],
+:is([data-theme="dark"], [data-theme="ion"]) [class~="border-[#b4c0b8]"],
+:is([data-theme="dark"], [data-theme="ion"]) [class~="border-[#9bb9a8]"],
+:is([data-theme="dark"], [data-theme="ion"]) [class~="border-[#7aa48e]"] {
 	border-color: var(--accent-line);
 }
 
-[data-theme="dark"] [class~="bg-rose-50"],
-[data-theme="dark"] [class~="bg-rose-50/60"] {
+:is([data-theme="dark"], [data-theme="ion"]) [class~="bg-rose-50"],
+:is([data-theme="dark"], [data-theme="ion"]) [class~="bg-rose-50/60"] {
 	background-color: var(--danger-soft);
 }
 
-[data-theme="dark"] [class~="text-rose-500"],
-[data-theme="dark"] [class~="text-rose-600"],
-[data-theme="dark"] [class~="text-rose-700"] {
+:is([data-theme="dark"], [data-theme="ion"]) [class~="text-rose-500"],
+:is([data-theme="dark"], [data-theme="ion"]) [class~="text-rose-600"],
+:is([data-theme="dark"], [data-theme="ion"]) [class~="text-rose-700"] {
 	color: var(--danger);
 }
 
-[data-theme="dark"] [class~="border-rose-200"] {
+:is([data-theme="dark"], [data-theme="ion"]) [class~="border-rose-200"] {
 	border-color: var(--danger-line);
 }
 
-[data-theme="dark"] [class~="bg-amber-50"],
-[data-theme="dark"] [class~="bg-amber-50/80"] {
+:is([data-theme="dark"], [data-theme="ion"]) [class~="bg-amber-50"],
+:is([data-theme="dark"], [data-theme="ion"]) [class~="bg-amber-50/80"] {
 	background-color: var(--warning-soft);
 }
 
-[data-theme="dark"] [class~="text-amber-500"],
-[data-theme="dark"] [class~="text-amber-600"],
-[data-theme="dark"] [class~="text-amber-700"],
-[data-theme="dark"] [class~="text-amber-800"] {
+:is([data-theme="dark"], [data-theme="ion"]) [class~="text-amber-500"],
+:is([data-theme="dark"], [data-theme="ion"]) [class~="text-amber-600"],
+:is([data-theme="dark"], [data-theme="ion"]) [class~="text-amber-700"],
+:is([data-theme="dark"], [data-theme="ion"]) [class~="text-amber-800"] {
 	color: var(--warning);
 }
 
-[data-theme="dark"] [class~="border-amber-200"],
-[data-theme="dark"] [class~="border-amber-300"] {
+:is([data-theme="dark"], [data-theme="ion"]) [class~="border-amber-200"],
+:is([data-theme="dark"], [data-theme="ion"]) [class~="border-amber-300"] {
 	border-color: var(--warning-line);
 }
 
-[data-theme="dark"] [class~="bg-black/[0.025]"],
-[data-theme="dark"] [class~="bg-black/[0.035]"],
-[data-theme="dark"] [class~="bg-black/[0.04]"],
-[data-theme="dark"] [class~="bg-black/[0.05]"] {
+:is([data-theme="dark"], [data-theme="ion"]) [class~="bg-black/[0.025]"],
+:is([data-theme="dark"], [data-theme="ion"]) [class~="bg-black/[0.035]"],
+:is([data-theme="dark"], [data-theme="ion"]) [class~="bg-black/[0.04]"],
+:is([data-theme="dark"], [data-theme="ion"]) [class~="bg-black/[0.05]"] {
 	background-color: color-mix(in srgb, white 5%, transparent);
 }
 
-[data-theme="dark"] [class~="hover:bg-zinc-50"]:hover,
-[data-theme="dark"] [class~="hover:bg-zinc-100"]:hover,
-[data-theme="dark"] [class~="hover:bg-white"]:hover,
-[data-theme="dark"] [class~="hover:bg-white/70"]:hover,
-[data-theme="dark"] [class~="hover:bg-[#fdfefd]"]:hover,
-[data-theme="dark"] [class~="hover:bg-[#f8fbf9]"]:hover,
-[data-theme="dark"] [class~="hover:bg-[#fafcfb]"]:hover,
-[data-theme="dark"] [class~="hover:bg-[#f5f8f5]"]:hover,
-[data-theme="dark"] [class~="hover:bg-[#f4f7f5]"]:hover,
-[data-theme="dark"] [class~="hover:bg-[#f3f8f5]"]:hover,
-[data-theme="dark"] [class~="hover:bg-[#f1f6f3]"]:hover {
+:is([data-theme="dark"], [data-theme="ion"]) [class~="hover:bg-zinc-50"]:hover,
+:is([data-theme="dark"], [data-theme="ion"]) [class~="hover:bg-zinc-100"]:hover,
+:is([data-theme="dark"], [data-theme="ion"]) [class~="hover:bg-white"]:hover,
+:is([data-theme="dark"], [data-theme="ion"]) [class~="hover:bg-white/70"]:hover,
+:is([data-theme="dark"], [data-theme="ion"]) [class~="hover:bg-[#fdfefd]"]:hover,
+:is([data-theme="dark"], [data-theme="ion"]) [class~="hover:bg-[#f8fbf9]"]:hover,
+:is([data-theme="dark"], [data-theme="ion"]) [class~="hover:bg-[#fafcfb]"]:hover,
+:is([data-theme="dark"], [data-theme="ion"]) [class~="hover:bg-[#f5f8f5]"]:hover,
+:is([data-theme="dark"], [data-theme="ion"]) [class~="hover:bg-[#f4f7f5]"]:hover,
+:is([data-theme="dark"], [data-theme="ion"]) [class~="hover:bg-[#f3f8f5]"]:hover,
+:is([data-theme="dark"], [data-theme="ion"]) [class~="hover:bg-[#f1f6f3]"]:hover {
 	background-color: var(--surface-hover);
 }
 
-[data-theme="dark"] [class~="hover:bg-[#edf4f0]"]:hover {
+:is([data-theme="dark"], [data-theme="ion"]) [class~="hover:bg-[#edf4f0]"]:hover {
 	background-color: var(--accent-soft);
 }
 
-[data-theme="dark"] [class~="hover:bg-[#326e52]"]:hover {
+:is([data-theme="dark"], [data-theme="ion"]) [class~="hover:bg-[#326e52]"]:hover {
 	background-color: var(--accent-hover);
 }
 
-[data-theme="dark"] [class~="hover:text-zinc-900"]:hover,
-[data-theme="dark"] [class~="hover:text-zinc-800"]:hover,
-[data-theme="dark"] [class~="hover:text-zinc-700"]:hover {
+:is([data-theme="dark"], [data-theme="ion"]) [class~="hover:text-zinc-900"]:hover,
+:is([data-theme="dark"], [data-theme="ion"]) [class~="hover:text-zinc-800"]:hover,
+:is([data-theme="dark"], [data-theme="ion"]) [class~="hover:text-zinc-700"]:hover {
 	color: var(--ink);
 }
 
-[data-theme="dark"] .workspace-sidebar {
+:is([data-theme="dark"], [data-theme="ion"]) .workspace-sidebar {
 	backdrop-filter: blur(18px) saturate(110%);
 }
 

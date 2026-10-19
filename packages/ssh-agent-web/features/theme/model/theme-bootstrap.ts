@@ -4,7 +4,7 @@ export const THEME_BOOTSTRAP_SCRIPT = `(() => {
 	let preference = "system";
 	try {
 		const stored = localStorage.getItem(${JSON.stringify(THEME_STORAGE_KEY)});
-		if (stored === "light" || stored === "dark" || stored === "contrast" || stored === "system") preference = stored;
+		if (stored === "light" || stored === "dark" || stored === "contrast" || stored === "ion" || stored === "system") preference = stored;
 	} catch {}
 	let systemDark = false;
 	try { systemDark = window.matchMedia("(prefers-color-scheme: dark)").matches; } catch {}
@@ -12,5 +12,5 @@ export const THEME_BOOTSTRAP_SCRIPT = `(() => {
 	const root = document.documentElement;
 	root.dataset.theme = resolved;
 	root.dataset.themePreference = preference;
-	root.style.colorScheme = resolved === "dark" ? "dark" : "light";
+	root.style.colorScheme = resolved === "dark" || resolved === "ion" ? "dark" : "light";
 })();`;

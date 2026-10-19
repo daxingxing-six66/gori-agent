@@ -1,0 +1,362 @@
+/* ION is an opt-in visual experiment. Region colors describe purpose, never status. */
+.ion-only { display: none; }
+.ion-chat-header { min-width: 0; flex-shrink: 0; }
+
+:root[data-theme="ion"] {
+	color-scheme: dark;
+	--font-terminal: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+	--canvas: #0c0b12;
+	--panel: #13101d;
+	--surface: #191523;
+	--surface-strong: #211b2e;
+	--surface-raised: #241e32;
+	--surface-muted: #1c1728;
+	--surface-hover: #30263f;
+	--surface-selected: #39294e;
+	--line: #433451;
+	--line-soft: #2c233b;
+	--line-strong: #77628e;
+	--ink: #f0eaf9;
+	--text-secondary: #c7bad8;
+	--text-muted: #ac9bbf;
+	--text-faint: #9584a9;
+	--text-inverse: #160d25;
+	--muted: var(--text-muted);
+	--accent: #be9bff;
+	--accent-hover: #d1b7ff;
+	--accent-ink: #cfb3ff;
+	--accent-soft: #2b203f;
+	--accent-line: #725396;
+	--success: #96baff;
+	--success-soft: #1d2843;
+	--warning: #f2b56b;
+	--warning-soft: #342517;
+	--warning-line: #7d5732;
+	--danger: #ff8eaa;
+	--danger-soft: #3b1c2c;
+	--danger-line: #884257;
+	--sidebar: #14110f;
+	--sidebar-ink: #faebd9;
+	--sidebar-secondary: #d5c0a9;
+	--sidebar-muted: #bca58b;
+	--sidebar-faint: #a18a73;
+	--sidebar-line: #4b3827;
+	--sidebar-line-soft: #31261d;
+	--sidebar-hover: #2b2118;
+	--sidebar-selected: #302218;
+	--sidebar-surface-muted: #241c16;
+	--sidebar-session-selected: #3c2a1c;
+	--sidebar-session-ink: #ffd6a1;
+	--sidebar-accent: #f2b56b;
+	--sidebar-accent-ink: #ffc98a;
+	--sidebar-inverse: #22150b;
+	--sidebar-logo: #f2b56b;
+	--sidebar-logo-ink: #22150b;
+	--workbench-bg: #101927;
+	--workbench-ink: #d4e6ff;
+	--workbench-muted: #9ab2d0;
+	--workbench-line: #2d4561;
+	--workbench-accent: #79baff;
+	--code-bg: #0e0b16;
+	--code-header: #20182e;
+	--code-ink: #ddcff2;
+	--code-muted: #b6a1cd;
+	--terminal-bg: #080e18;
+	--terminal-chrome: #101c2d;
+	--terminal-line: #2c4260;
+	--terminal-line-strong: #647f9f;
+	--terminal-ink: #c6d8ef;
+	--terminal-command: #e1edff;
+	--terminal-output: #b3c9e5;
+	--terminal-muted: #92aac8;
+	--terminal-accent: #79baff;
+	--terminal-error: #ff8eaa;
+	--overlay: rgb(5 4 10 / 76%);
+	--shadow-soft: none;
+	--shadow-card: none;
+	--shadow-composer: none;
+	--shadow-raised: 0 24px 90px rgb(0 0 0 / 60%);
+	--radius-control: 3px;
+	--radius-composer: 4px;
+	--radius-tag: 2px;
+	--canvas-background: var(--canvas);
+}
+
+:root[data-theme="ion"] .ion-only { display: flex; }
+:root[data-theme="ion"] .ion-region-label[hidden] { display: none; }
+:root[data-theme="ion"] .ion-header-symbol { flex-shrink: 0; color: var(--accent); }
+:root[data-theme="ion"] :is(button, a, input, textarea):focus-visible { outline-color: var(--accent); }
+:root[data-theme="ion"] :is(.page-header, .sidebar-brand-header, .task-container-header) {
+	font-family: var(--font-terminal);
+}
+
+/* 01 — warm metal, rack rails, and shell-style navigation. */
+:root[data-theme="ion"] .workspace-sidebar {
+	background: linear-gradient(90deg, #f2b56b0b 1px, transparent 1px) 7px 0 / 8px 100% no-repeat, var(--sidebar);
+	border-right-color: var(--sidebar-line);
+	backdrop-filter: none;
+}
+:root[data-theme="ion"] .sidebar-brand-header { border-bottom-color: var(--sidebar-line); }
+:root[data-theme="ion"] .sidebar-brand-name { font-size: 18px; font-weight: 750; letter-spacing: -.06em; }
+:root[data-theme="ion"] .ion-brand-symbol { color: var(--sidebar-accent); flex-shrink: 0; }
+:root[data-theme="ion"] .ion-brand-badge {
+	align-items: center;
+	border: 1px solid var(--sidebar-line);
+	padding: 2px 5px;
+	color: var(--sidebar-accent);
+	font-size: 9px;
+	letter-spacing: .16em;
+}
+:root[data-theme="ion"] .ion-region-label {
+	min-height: 26px;
+	flex-shrink: 0;
+	align-items: center;
+	gap: 8px;
+	border-bottom: 1px solid var(--line-soft);
+	padding: 0 16px;
+	font-family: var(--font-terminal);
+	font-size: 9px;
+	font-weight: 600;
+	letter-spacing: .13em;
+	line-height: 26px;
+	white-space: nowrap;
+}
+:root[data-theme="ion"] .ion-region-label::after {
+	content: "";
+	height: 3px;
+	min-width: 16px;
+	flex: 1;
+	margin-left: 10px;
+	background: repeating-linear-gradient(90deg, currentcolor 0 1px, transparent 1px 5px);
+	opacity: .25;
+}
+:root[data-theme="ion"] .ion-region-server { color: var(--sidebar-accent); background: #201810; border-color: var(--sidebar-line); }
+:root[data-theme="ion"] .sidebar-workspace-row { border-radius: 2px; }
+:root[data-theme="ion"] .sidebar-workspace-row[data-active="true"] { border-color: var(--sidebar-line); background: #281e16; }
+:root[data-theme="ion"] .sidebar-workspace-name { font-size: 12px; letter-spacing: .01em; }
+:root[data-theme="ion"] .sidebar-workspace-address { font-size: 10px; }
+:root[data-theme="ion"] .sidebar-workspace-count { border: 1px solid var(--sidebar-line); border-radius: 1px; font-family: var(--font-terminal); }
+:root[data-theme="ion"] .sidebar-session-list { border-left-style: dashed; }
+:root[data-theme="ion"] .sidebar-session-row { border-radius: 2px; }
+:root[data-theme="ion"] .sidebar-session-row[data-active="true"] {
+	box-shadow: inset 3px 0 var(--sidebar-accent);
+	background: linear-gradient(90deg, #f2b56b14, transparent), var(--sidebar-session-selected);
+}
+:root[data-theme="ion"] .sidebar-session-row[data-active="true"] a::before {
+	content: ">";
+	color: var(--sidebar-accent);
+	font-family: var(--font-terminal);
+	font-weight: 700;
+}
+:root[data-theme="ion"] .sidebar-session-row[data-active="true"] a > span:first-child { display: none; }
+:root[data-theme="ion"] .sidebar-session-row[data-active="true"] a > span:last-child { font-weight: 700; }
+:root[data-theme="ion"] .sidebar-settings-footer { border-top: 1px solid var(--sidebar-line); background: #1b1510; }
+:root[data-theme="ion"] .sidebar-settings-footer :is(button, a) { border-radius: 2px; }
+
+/* 02 — a violet inference canvas, precise frames, and an illuminated prompt. */
+:root[data-theme="ion"] .page-main-chat {
+	background: radial-gradient(ellipse at 45% 0%, #6e3daa13, transparent 65%), var(--panel);
+}
+:root[data-theme="ion"] .ion-region-agent { color: var(--accent); background: #21172f; border-color: #49325e; }
+:root[data-theme="ion"] .page-main-chat .page-header { background: #171220; border-bottom-color: #49325e; }
+:root[data-theme="ion"] .page-main-chat .page-header-identity h1 { font-size: 13px; font-weight: 600; letter-spacing: .01em; }
+:root[data-theme="ion"] .session-console-chat {
+	background-image: radial-gradient(#b99ae411 .7px, transparent .7px);
+	background-size: 24px 24px;
+}
+:root[data-theme="ion"] .chat-timeline { padding-top: 28px; }
+:root[data-theme="ion"] .chat-assistant-message:not(.chat-tool-only) {
+	position: relative;
+	border-left: 1px solid #68478a;
+	padding-left: 22px;
+}
+:root[data-theme="ion"] .chat-assistant-message:not(.chat-tool-only)::before {
+	position: absolute;
+	top: 2px;
+	left: -10px;
+	display: grid;
+	width: 19px;
+	height: 19px;
+	place-items: center;
+	border: 1px solid #725396;
+	background: #2b203f;
+	color: #d9c3ff;
+	font: 700 8px var(--font-terminal);
+	box-shadow: 0 0 12px #be9bff15;
+	content: "AI" / "";
+}
+:root[data-theme="ion"] .chat-user-bubble {
+	border-color: #5b4276;
+	border-right: 3px solid var(--accent);
+	background: #2b203c;
+}
+:root[data-theme="ion"] .chat-thinking { border-left-style: dashed; border-left-color: #68478a; }
+:root[data-theme="ion"] .chat-tool-line > summary { border: 1px solid var(--line-soft); border-radius: 2px; padding: 6px 8px; background: #17121f; }
+:root[data-theme="ion"] .chat-tool-line > summary > span:first-child { color: var(--accent); }
+:root[data-theme="ion"] .chat-code-block { border-color: #49345e; }
+:root[data-theme="ion"] .chat-code-header { border-bottom-color: #49345e; }
+:root[data-theme="ion"] .chat-composer-dock { background: linear-gradient(0deg, var(--panel) 80%, transparent); padding-top: 20px; }
+:root[data-theme="ion"] .page-main-chat .chat-composer-shell {
+	border: 1px solid #755291;
+	border-top: 2px solid var(--accent);
+	background: #20182c;
+	box-shadow: 0 -8px 40px #9a67ea09;
+}
+:root[data-theme="ion"] .chat-token-editor { caret-color: var(--accent); font-family: var(--font-terminal); font-size: 13px; }
+:root[data-theme="ion"] .chat-token-editor:empty::before { color: #b29bc8; }
+:root[data-theme="ion"] .chat-composer-controls { border-top: 1px solid #49345e; margin-top: 4px; padding-top: 8px; }
+:root[data-theme="ion"] .chat-composer-action { border-radius: 3px; background: var(--accent); color: var(--text-inverse); }
+:root[data-theme="ion"] .chat-composer-action:hover:not(:disabled) { background: var(--accent-hover); }
+:root[data-theme="ion"] .chat-composer-action:disabled { background: #3b2e4d; color: #ae97c7; }
+:root[data-theme="ion"] :is(.chat-composer-menu, .model-thinking-selector-composer, .user-decision-panel, .chat-tool-approval) { border-radius: 3px; }
+:root[data-theme="ion"] .chat-composer-menu-tool-status-active { color: var(--success); }
+:root[data-theme="ion"] .chat-empty-state { background-image: radial-gradient(#b99ae411 .7px, transparent .7px); background-size: 24px 24px; }
+:root[data-theme="ion"] .chat-empty-state h2 { max-width: 640px; font-size: clamp(24px, 3vw, 38px); line-height: 1.25; letter-spacing: -.04em; text-wrap: balance; }
+:root[data-theme="ion"] .new-session-emblem > img { display: none; }
+:root[data-theme="ion"] .ion-core-emblem {
+	position: relative;
+	width: 88px;
+	height: 88px;
+	align-items: center;
+	justify-content: center;
+	border: 1px solid #725396;
+	background: linear-gradient(135deg, #be9bff15, transparent 60%), #20152e;
+	color: var(--accent);
+	box-shadow: inset 0 0 0 7px var(--panel), inset 0 0 0 8px #433451;
+}
+:root[data-theme="ion"] .ion-core-emblem::before,
+:root[data-theme="ion"] .ion-core-emblem::after { position: absolute; width: 22px; height: 3px; background: var(--accent); content: ""; }
+:root[data-theme="ion"] .ion-core-emblem::before { top: -2px; left: 10px; }
+:root[data-theme="ion"] .ion-core-emblem::after { bottom: -2px; right: 10px; }
+:root[data-theme="ion"] .ion-core-orbit { position: absolute; border: 1px dashed #725396; pointer-events: none; }
+:root[data-theme="ion"] .ion-core-orbit-one { inset: -8px 16px; }
+:root[data-theme="ion"] .ion-core-orbit-two { inset: 16px -8px; }
+:root[data-theme="ion"] .ion-core-marker { position: absolute; right: -6px; bottom: -7px; padding: 0 4px; background: var(--panel); font: 700 13px var(--font-terminal); }
+:root[data-theme="ion"] .page-main-chat [class~="bg-[#282b28]"] { border-radius: 3px; background: var(--accent); color: var(--text-inverse); }
+:root[data-theme="ion"] .page-main-chat [class~="hover:bg-[#171a17]"]:hover:not(:disabled) { background: var(--accent-hover); }
+:root[data-theme="ion"] .page-main-chat [class~="bg-[#282b28]"]:disabled { background: #3b2e4d; color: #ae97c7; }
+
+/* 03 — cool instruments. Task identity and terminal output remain independent. */
+:root[data-theme="ion"] .session-task-area {
+	--ink: #d4e6ff;
+	--text-secondary: #b3c9e5;
+	--text-muted: #9ab2d0;
+	--text-faint: #8ba3c1;
+	--line: #2d4561;
+	--line-soft: #20334a;
+	--line-strong: #647f9f;
+	--panel: #0c1420;
+	--surface: #111d2d;
+	--surface-strong: #152337;
+	--surface-raised: #192a40;
+	--surface-muted: #101c2d;
+	--surface-hover: #20334c;
+	--accent: #79baff;
+	--accent-ink: #9acbff;
+	--accent-soft: #1c304d;
+	--accent-line: #42658d;
+	--code-bg: #080e18;
+	--code-header: #101c2d;
+	--code-ink: #c6d8ef;
+	--code-muted: #92aac8;
+	background: var(--terminal-bg);
+}
+:root[data-theme="ion"] .ion-region-observer { color: #8ac3ff; background: #132238; border-color: #2d4561; }
+:root[data-theme="ion"] .task-container-header { background: #0f1a2a; border-bottom-color: #2d4561; }
+:root[data-theme="ion"] .task-container-tab-item[data-selected="true"] { background: #192b43; box-shadow: inset 0 -2px #79baff; }
+:root[data-theme="ion"] .task-container-tab { font-family: var(--font-terminal); font-size: 11px; }
+:root[data-theme="ion"] .task-container-status-dot { border-radius: 1px; width: 5px; height: 5px; }
+:root[data-theme="ion"] .task-container-tab-status { font-size: 10px; }
+:root[data-theme="ion"] .terminal-connection-spinner { color: #79baff99; }
+:root[data-theme="ion"] .terminal-connection-state-status span { box-shadow: 0 0 0 3px #79baff18; }
+:root[data-theme="ion"] .terminal-connection-state-status-complete span { background: #92aac8; box-shadow: none; }
+:root[data-theme="ion"] .terminal-observation-aurora {
+	background: radial-gradient(ellipse at 18% 55%, #79baff24, transparent 42%), radial-gradient(ellipse at 72% 42%, #b798ff1c, transparent 46%), #79baff08;
+	box-shadow: inset 0 0 50px #79baff12;
+}
+:root[data-theme="ion"] .terminal-observation-aurora::before {
+	background: conic-gradient(from 130deg at 42% 48%, transparent 0 19%, #79baff26 29%, transparent 42% 65%, #be9bff20 74%, transparent 85%);
+}
+:root[data-theme="ion"] .terminal-observation-aurora::after { background: linear-gradient(108deg, transparent 27%, #bedcff20 38%, transparent 49%); }
+:root[data-theme="ion"] .terminal-observation-particles { color: #b4d6ff; }
+:root[data-theme="ion"] .terminal-observation-rail { background: linear-gradient(90deg, transparent, #79baff 48%, transparent); box-shadow: 0 0 12px #79baff40; }
+:root[data-theme="ion"] :is(.terminal-observation-label, .terminal-observation-edge-status) { border-color: #446991; border-radius: 2px; background: #101c2df2; color: #bedcff; box-shadow: 0 8px 26px #03081366; }
+:root[data-theme="ion"] .terminal-observation-label small { color: #9ab2d0; }
+:root[data-theme="ion"] :is(.terminal-observation-status-dot, .terminal-observation-edge-status span) { background: #79baff; box-shadow: 0 0 10px #79baff70; }
+
+/* Settings keep the experiment visible before it is selected. */
+.theme-option-preview[data-preview="ion"] {
+	--preview-sidebar: #23190f;
+	--preview-content: #13101d;
+	--preview-header: #251a35;
+	--preview-input: #3c2855;
+	--preview-line: #624278;
+	--preview-terminal: #080e18;
+	--preview-workbench: #1a3351;
+	border-radius: 2px;
+}
+.theme-option-preview[data-preview="ion"] span:first-child { border-top: 3px solid #f2b56b; }
+.theme-option-preview[data-preview="ion"] span:nth-child(3) { border-top: 2px solid #be9bff; border-radius: 1px; }
+.theme-option-preview[data-preview="ion"] span:nth-child(4) { border-top: 2px solid #79baff; }
+:root[data-theme="ion"] :is(.settings-dialog, .management-dialog, .custom-select-options, .theme-option, .theme-option-preview, .settings-nav-item, .page-button, .custom-select-trigger) { border-radius: 3px; }
+:root[data-theme="ion"] .custom-select-trigger[aria-expanded="true"] { box-shadow: 0 0 0 3px #be9bff18; }
+:root[data-theme="ion"] .guard-rule-card-created { animation: none; }
+:root[data-theme="ion"] .ui-toolbar-button-primary { box-shadow: none; }
+:root[data-theme="ion"] [class*="ring-[#"] { --tw-ring-color: #be9bff55; }
+:root[data-theme="ion"] [class*="focus:border-[#"]:focus,
+:root[data-theme="ion"] [class*="focus-within:border-[#"]:focus-within { border-color: var(--accent); }
+:root[data-theme="ion"] [class~="hover:text-[#397b5c]"]:hover { color: var(--accent-ink); }
+:root[data-theme="ion"] [class~="bg-emerald-50"] { background: var(--success-soft); }
+:root[data-theme="ion"] [class~="border-emerald-200"] { border-color: #42658d; }
+:root[data-theme="ion"] [class~="text-emerald-800"] { color: var(--success); }
+
+/* Analytics owns local tokens; explicitly rejoin ION instead of inheriting its green accent. */
+:root[data-theme="ion"] .stats-page {
+	--stats-input: #f2b56b;
+	--stats-output: #be9bff;
+	--stats-cache-read: #79baff;
+	--stats-cache-write: #ff8eaa;
+	--stats-kpi-bg: #21182f;
+	--stats-kpi-line: #725396;
+	--stats-kpi-muted: #c7bad8;
+	--stats-kpi-icon: #be9bff;
+}
+:root[data-theme="ion"] .stats-page > .page-main {
+	--panel: inherit;
+	--surface: inherit;
+	--surface-strong: inherit;
+	--surface-raised: inherit;
+	--surface-muted: inherit;
+	--surface-hover: inherit;
+	--surface-selected: inherit;
+	--line: inherit;
+	--line-soft: inherit;
+	--line-strong: inherit;
+	--ink: inherit;
+	--text-secondary: inherit;
+	--text-muted: inherit;
+	--text-faint: inherit;
+	--accent: inherit;
+	--accent-hover: inherit;
+	--accent-ink: inherit;
+	--accent-soft: inherit;
+	--accent-line: inherit;
+	--danger: inherit;
+	--danger-soft: inherit;
+	--warning: inherit;
+	--warning-soft: inherit;
+}
+
+@media (max-width: 1100px) {
+	:root[data-theme="ion"] .session-task-area:not([data-display="collapsed"]):not([data-display="fullscreen"]) { height: calc(var(--workspace-header-height, 44px) + 276px); }
+}
+@media (max-width: 760px) {
+	:root[data-theme="ion"] .ion-region-label { min-height: 22px; padding-inline: 12px; font-size: 8px; line-height: 22px; letter-spacing: .08em; }
+	:root[data-theme="ion"] .page-main-chat .page-header { padding-left: 48px; }
+	:root[data-theme="ion"] .page-header-compact:has(.server-metrics-strip) .ion-header-symbol { display: none; }
+	:root[data-theme="ion"] .app-layout:has(.page-main-chat) .mobile-sidebar-trigger { top: 30px; border-color: #725396; border-radius: 2px; }
+	:root[data-theme="ion"] .session-task-area[data-display="fullscreen"] .ion-region-observer { padding-left: 48px; }
+	:root[data-theme="ion"] .chat-assistant-message:not(.chat-tool-only) { padding-left: 18px; }
+	:root[data-theme="ion"] .chat-empty-state h2 { font-size: 26px; }
+	:root[data-theme="ion"] .ion-core-emblem { width: 72px; height: 72px; }
+}

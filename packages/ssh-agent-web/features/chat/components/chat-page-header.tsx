@@ -1,5 +1,6 @@
 "use client";
 
+import { Cpu } from "lucide-react";
 import { useIntl } from "react-intl";
 import type { ReactNode } from "react";
 import { PageHeader } from "@/components/page-layout";
@@ -21,15 +22,19 @@ interface ChatPageHeaderProps extends ChatStatusProps {
 
 export function ChatPageHeader({ title, sandboxEnabled, sandboxReadOnly, serverMetrics, active, runStatus, connection, queueCount }: ChatPageHeaderProps) {
 	return (
-		<PageHeader
-			title={title}
-			compact
-			actions={<>
-				{serverMetrics}
-				<SessionSandboxBadge enabled={sandboxEnabled} readOnly={sandboxReadOnly} />
-				<ChatStatus active={active} runStatus={runStatus} connection={connection} queueCount={queueCount} />
-			</>}
-		/>
+		<div className="ion-chat-header">
+			<div className="ion-only ion-region-label ion-region-agent" aria-hidden="true"><span>02 /</span><span>AGENT CORE</span></div>
+			<PageHeader
+				title={title}
+				compact
+				leading={<Cpu size={18} className="ion-only ion-header-symbol" aria-hidden="true" />}
+				actions={<>
+					{serverMetrics}
+					<SessionSandboxBadge enabled={sandboxEnabled} readOnly={sandboxReadOnly} />
+					<ChatStatus active={active} runStatus={runStatus} connection={connection} queueCount={queueCount} />
+				</>}
+			/>
+		</div>
 	);
 }
 

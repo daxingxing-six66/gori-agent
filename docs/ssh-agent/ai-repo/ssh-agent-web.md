@@ -4,7 +4,7 @@
 
 浏览器图标由 `app/layout.tsx` 的 Metadata 与显式 head 链接声明：`public/favicon-16.png`、`public/favicon-32.png` 供小尺寸标签页使用，`public/favicon.png` 为 256px 版本，`public/apple-touch-icon.png` 为 180px 触屏图标。图像保留大猩猩与绿色终端符号，外围透明，无黑色底板；根目录 `icon.png` 与 256px 版本保持一致。替换资源时同步尺寸声明并递增图标 URL 的版本参数，避免旧浏览器缓存。
 
-新会话页 `new-session-chat.tsx` 在提示标题上方复用透明的 `public/favicon.png`，替代原星光图标；桌面显示为 96px，640px 以下显示为 80px，与标题及说明保持左对齐，不增加底板或边框。
+新会话页 `new-session-chat.tsx` 在原有三套配色的提示标题上方复用透明的 `public/favicon.png`，替代原星光图标；桌面显示为 96px，640px 以下显示为 80px，与标题及说明保持左对齐，不增加底板或边框。ION 主题隐藏该位图，改用无绿色的 CPU/电路图形，桌面 88px、窄屏 72px。
 
 创建工作区弹窗底部左侧提供可选“测试连接”，测试当前草稿，无需工作区名称或有效默认目录；结果复用 NoticeCard，在操作栏上方显示。ManagementDialog 增加可选 footerLeading/footerNotice 插槽，取消和创建保持右侧一组。测试期间禁用重复测试与创建，编辑连接字段、进入凭据配置或关闭时取消并清除结果；请求序号避免旧结果回写。实现、契约与测试见 [connection-test.md](./connection-test.md)。
 
@@ -18,9 +18,9 @@
 
 窄屏首页仍显示工作区导航；在 Workspace 与 Session 页面，`WorkspaceSidebar` 改为可从页首按钮打开的抽屉，支持关闭按钮、遮罩和 Escape，并在关闭后将焦点还给入口。Workspace 控制台将工作区上下文页首与 Tab 导航分为两层，Tab 支持方向键循环切换及 Home/End，活动面板通过 ARIA 关联。跨页面骨架使用 `components/page-layout.tsx` 的 PageHeader/PageHeading，布局位于 `page-layout.css`，颜色继续引用 `app/globals.css` 的主题变量；不改变 Workspace/Session 路由及审批状态归属。
 
-页面按用途组织：Dashboard 先展示 CPU/内存/磁盘指标和进程表，连接池与显式沙箱检测作为辅助区域，SSH 参数默认折叠；Guard、Credential、SFTP 使用统一内容标题及操作区，凭据和文件采用紧凑列表。Chat 与新会话在桌面使用 44px 单行页首和 820px 阅读列，页首不显示工作区/目录副标题，空闲“就绪”不展示，运行、重连、失败及取消状态仍保留。Sidebar 品牌栏与 Terminal 顶栏同高，品牌栏移除 Logo 图标，只显示 Gori，底部设置与统计入口在展开时为 46px 横排，收起时为 82px 纵排；窄屏侧栏按钮为 28px，标题截断而不撑高页首。对话、提示和输入区对齐，窄屏输入区控件可换行；Session 右侧由通用任务容器承载，标签栏接替 Terminal 顶栏，名称和连接阶段只展示一次；Terminal 内部保留原有输出与恢复，底部活动列表不再挂载。容器布局与业务生命周期分别管理，见 [task-container.md](./task-container.md)。侧边栏采用小图标与更紧凑的工作区/会话行。
+页面按用途组织：Dashboard 先展示 CPU/内存/磁盘指标和进程表，连接池与显式沙箱检测作为辅助区域，SSH 参数默认折叠；Guard、Credential、SFTP 使用统一内容标题及操作区，凭据和文件采用紧凑列表。Chat 与新会话在桌面使用 44px 单行页首和 820px 阅读列，页首不显示工作区/目录副标题，空闲“就绪”不展示，运行、重连、失败及取消状态仍保留。Sidebar 品牌栏与 Terminal 顶栏同高，原有三套配色的品牌栏只显示 Gori，底部设置与统计入口在展开时为 46px 横排，收起时为 82px 纵排；窄屏侧栏按钮为 28px，标题截断而不撑高页首。对话、提示和输入区对齐，窄屏输入区控件可换行；Session 右侧由通用任务容器承载，标签栏接替 Terminal 顶栏，名称和连接阶段只展示一次；Terminal 内部保留原有输出与恢复，底部活动列表不再挂载。容器布局与业务生命周期分别管理，见 [task-container.md](./task-container.md)。侧边栏采用小图标与更紧凑的工作区/会话行。
 
-视觉精修沿用原主题系统：明暗分层实验主题使用深绿导航、近白对话及浅中性 Workbench 外壳，内部 Terminal 使用中性深灰绿；明亮与暗部保留各自配色，共用轻量组件样式。`globals.css` 集中提供 Sidebar/Workbench/Terminal/Code 与圆角语义变量，顶栏和活动记录不继承 Terminal 深底。正文 14px、代码 12px，聊天代码块随主题使用轻量表面；普通卡片去除装饰阴影，Composer 使用 12px 圆角和细中性边框，新会话及已有会话均取消聚焦时的边框变色与外圈高光。父级服务器与当前会话通过底色重量、细指示条、字重和树线分层；Tool Call 继续使用紧凑行和原生展开控件。布局、输入、审批、模型选择、复制及 Terminal 的 attach/SSE/resize 行为不由样式接管。完整主题边界见 [theme.md](./theme.md)。
+视觉精修沿用原主题系统；新增 ION 离子终端为可选实验，独立 `features/theme/styles/ion.css` 提供琥珀服务器机架、紫色 Agent 核心与冰蓝运行观察三个区域，以及等宽顶栏、区域编号、锐利边界和无绿色 ANSI palette。原有三套配色：明暗分层实验主题使用深绿导航、近白对话及浅中性 Workbench 外壳，内部 Terminal 使用中性深灰绿；明亮与暗部保留各自配色，共用轻量组件样式。`globals.css` 集中提供 Sidebar/Workbench/Terminal/Code 与圆角语义变量，顶栏和活动记录不继承 Terminal 深底。正文 14px、代码 12px，聊天代码块随主题使用轻量表面；原有三套配色的普通卡片去除装饰阴影，Composer 使用 12px 圆角和细中性边框，新会话及已有会话均取消聚焦时的边框变色与外圈高光。父级服务器与当前会话通过底色重量、细指示条、字重和树线分层；Tool Call 继续使用紧凑行和原生展开控件。布局、输入、审批、模型选择、复制及 Terminal 的 attach/SSE/resize 行为不由样式接管。完整主题边界见 [theme.md](./theme.md)。
 
 创建工作区的默认工作目录通过 `LocalDirectoryPicker` 选择，复用新建聊天的 `GET /api/local-files` 本机目录浏览、筛选及面包屑。打开选择器时暂时卸载外层管理弹窗，取消/Escape 只返回草稿，确认后回填 `defaultCwd`；其余表单和连接测试结果保留。
 
@@ -45,7 +45,7 @@ Chat 的 `UserDecisionPanel` 在输入框上方向上展开，显示模型提供
 1. 先从“页面与总装配”确定功能出现在哪个页面。
 2. 再从“功能路由”打开该功能的组件、运行时或状态入口。
 3. API 请求改动同时检查该 feature 的 `api/`、`model/` 和对应测试。
-4. 样式问题按组件类名定位共用或 feature 局部 CSS；主题变量在 `app/globals.css`，不要从全局样式反推功能边界。
+4. 样式问题按组件类名定位共用或 feature 局部 CSS；基础主题变量在 `app/globals.css`，ION 扩展在 `features/theme/styles/ion.css`，不要从全局样式反推功能边界。
 
 ## 页面与总装配
 
@@ -81,7 +81,7 @@ Chat 的 `UserDecisionPanel` 在输入框上方向上展开，显示模型提供
 | Guard 规则包浏览和导入 | `features/guard/components/guard-rule-pack-dialog.tsx` | `model/guard-rule-pack-state.ts`、`api/guard-api.ts` | `tests/guard-rule-pack-state.test.tsx` |
 | Provider 全局目录状态 | `features/llm-provider/components/llm-provider-provider.tsx` | `llm-provider-context.ts`、`api/llm-provider-api.ts` | `tests/llm-provider-state.test.ts`、`tests/api-clients.test.ts` |
 | 自动上下文压缩全局设置 | `features/context-compaction/components/context-compaction-settings.tsx` | `api/context-compaction-settings-api.ts`、`model/context-compaction-settings.ts`、`features/llm-provider/components/model-selector.tsx` | `tests/context-compaction-settings.test.ts`、`tests/api-clients.test.ts` |
-| 明亮、暗部、明暗分层实验、跟随系统主题和设置分类 | `features/theme/components/theme-provider.tsx` | `features/settings/`、`features/theme/model/theme.ts`、`app/layout.tsx`、`app/globals.css`；导航语义色独立，服务器/子会话有不同选中样式，Terminal 保留原有布局和对齐 | `tests/theme-state.test.tsx` |
+| 明亮、暗部、明暗分层实验、ION 离子终端、跟随系统主题和设置分类 | `features/theme/components/theme-provider.tsx` | `features/settings/`、`features/theme/model/theme.ts`、`app/layout.tsx`、`app/globals.css`；导航语义色独立，服务器/子会话有不同选中样式，Terminal 保留原有布局和对齐 | `tests/theme-state.test.tsx` |
 | Provider Credential 配置、轮换和删除 | `components/settings-dialog.tsx` | `features/llm-provider/api/llm-provider-api.ts`、`model/llm-provider.ts` | `tests/llm-provider-state.test.ts`、`tests/api-clients.test.ts` |
 | 自定义 Provider、静态模型目录和浏览器模型发现 | `features/llm-provider/components/custom-provider-editor.tsx` | `model/custom-provider-model-discovery.ts`、`api/llm-provider-api.ts`、`model/llm-provider.ts` | `tests/custom-provider-model-discovery.test.ts`、`tests/api-clients.test.ts` |
 | 模型和 Thinking 等级选择 | `features/llm-provider/components/model-thinking-selector.tsx` | `model-selector.tsx`、`thinking-level-selector.tsx`、`thinking-level-slider.tsx`、`model/llm-provider.ts` | `tests/llm-provider-state.test.ts` |
@@ -114,7 +114,7 @@ Chat 错误展示复用 `features/chat/components/chat-failure-details.tsx`，�
 
 手动压缩请求状态由 `chat-console.tsx` 传给 Composer，复用 `NoticeCard` 的 `loading` 参数展示旋转圆圈及本地化进度文案。处理中隐藏关闭按钮和旧压缩结果，请求结束后恢复结果/异常卡片；动画遵守减少动画设置，不新增轮询。
 
-通用提示卡片 `components/notice-card.tsx` 接收文案、`error/info` 色彩语义和关闭回调，无场景操作按钮。错误使用柔和红色及 alert，普通信息使用主题绿色及 status。`chat-composer-panel.tsx` 在输入框外侧上方装配 `chat-composer-notices.tsx`；后者负责运行时与自动审批设置异常、压缩完成或跳过提示的状态优先级和本地化，不持有请求或草稿状态。两者共用宽度容器并按文案自然撑高；提示和输入区内的 Follow-up/Steer 队列均占正常布局空间，不通过绝对定位叠放。模型恢复及附件局部状态保留各自入口。测试见 `tests/notice-card.test.tsx`、`tests/chat-composer-notices.test.tsx`。
+通用提示卡片 `components/notice-card.tsx` 接收文案、`error/info` 色彩语义和关闭回调，无场景操作按钮。错误使用柔和红色及 alert，普通信息使用主题强调色及 status。`chat-composer-panel.tsx` 在输入框外侧上方装配 `chat-composer-notices.tsx`；后者负责运行时与自动审批设置异常、压缩完成或跳过提示的状态优先级和本地化，不持有请求或草稿状态。两者共用宽度容器并按文案自然撑高；提示和输入区内的 Follow-up/Steer 队列均占正常布局空间，不通过绝对定位叠放。模型恢复及附件局部状态保留各自入口。测试见 `tests/notice-card.test.tsx`、`tests/chat-composer-notices.test.tsx`。
 
 `chat-console.tsx` 通过 `model/chat-activity.ts` 将等待当前 Run 首次内容的状态投影为 `showActivity`，排除等待审批及初始加载；忽略旧 Run 和空消息开始，当前 Run 有文本、思考或工具内容后隐藏。`chat-timeline.tsx` 在记录末尾居中显示无外圈的三点 CSS 动画，减少动画偏好下保持静态。指示出现时复用底部跟随逻辑，不打断用户向上阅读，不新增请求或写入消息历史。回归见 `tests/chat-timeline.test.tsx` 和 `tests/chat-activity.test.ts`。
 

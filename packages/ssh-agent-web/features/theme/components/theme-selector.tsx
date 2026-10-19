@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, Contrast, Monitor, Moon, Sun, type LucideIcon } from "lucide-react";
+import { Check, Contrast, Cpu, Monitor, Moon, Sun, type LucideIcon } from "lucide-react";
 import { useIntl } from "react-intl";
 import type { MessageId } from "@/features/i18n/messages/zh-CN";
 import { useTheme } from "@/features/theme/components/theme-context";
@@ -15,6 +15,7 @@ const THEME_OPTIONS: readonly ThemeOption[] = [
 	{ value: "light", labelId: "theme.light.label", Icon: Sun },
 	{ value: "dark", labelId: "theme.dark.label", Icon: Moon },
 	{ value: "contrast", labelId: "theme.contrast.label", Icon: Contrast },
+	{ value: "ion", labelId: "theme.ion.label", Icon: Cpu },
 	{ value: "system", labelId: "theme.system.label", Icon: Monitor },
 ];
 

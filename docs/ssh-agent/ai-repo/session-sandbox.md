@@ -5,7 +5,7 @@
 ## 配置与交互
 
 - 配置属于 Session；同一 Workspace 的其他 Session 不受影响。新 Session 默认开启，SQLite v27 为已有 Session 增加 `sandbox_enabled=1`，保留其他字段和 revision。创建与更新 API 只接受布尔值，更新仍要求 `expectedRevision`。
-- Composer 菜单仅保留“沙盒模式”/“sandbox”开关入口。小字介绍远端进程的文件写入限制；右侧绿、灰、黄呼吸灯分别表示开启、关闭、切换中，状态同时提供无障碍标签与悬停说明。选择入口直接切换，不创建 Chat 消息、Agent Run 或 Tool Call，不要求先配置模型。只读模式统一在编辑会话中设置，不提供 Composer 入口。
+- Composer 菜单仅保留“沙盒模式”/“sandbox”开关入口。小字介绍远端进程的文件写入限制；右侧呼吸灯分别用主题成功色、中性色和警告色表示开启、关闭、切换中，状态同时提供无障碍标签与悬停说明。原有主题的开启色为绿色，ION 实验主题使用蓝色；颜色不改变沙盒配置。选择入口直接切换，不创建 Chat 消息、Agent Run 或 Tool Call，不要求先配置模型。只读模式统一在编辑会话中设置，不提供 Composer 入口。
 - Chat 页首在运行状态左侧常驻只读沙盒标识，以盾牌/划线盾牌和本地化短文案表示开启/只读/关闭；复用 Hook 的已确认 Session 设置，不提前展示尚未提交的切换结果。标识没有按钮、点击动作或配置入口。可写目录编辑统一放在侧边栏每个 Session 的铅笔编辑弹窗中；列表可跨目录选择、移除，也可显式复制最新 Workspace 默认值。
 - `/sandbox` 切换当前设置；兼容直接输入 `/sandbox on`、`/sandbox off`、`/sandbox status`。带附件或未知参数（包括已移除的 `read-only`）返回本地错误并保留草稿，不把命令发给模型。`on` 恢复所选目录可写，`off` 关闭沙盒并退出只读；原 `/sandbox` 仍反转开关。
 - 前端 Hook 先 GET 权威 Session，再以最新 revision PATCH；切换操作根据 GET 的最新值反转，避免过期 UI 快照导致反向操作。请求互斥，导航到其他 Session 后取消读取请求、忽略晚到结果；Terminal 刷新也复核取消信号。PATCH 失败后重新读取实际设置和 Terminal，覆盖“设置已提交但 PTY 重开失败”的情形。
