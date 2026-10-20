@@ -941,6 +941,96 @@ const MIGRATIONS = [
 		sql: `ALTER TABLE sessions ADD COLUMN sandbox_read_only INTEGER NOT NULL DEFAULT 0
 			CHECK (sandbox_read_only IN (0, 1) AND (sandbox_read_only = 0 OR sandbox_enabled = 1));`,
 	},
+	{
+		version: 35,
+		sql: `
+			CREATE TABLE diagnose_tasks (
+				id TEXT PRIMARY KEY,
+				session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+				workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+				request_id TEXT NOT NULL,
+				title TEXT NOT NULL CHECK (length(title) BETWEEN 1 AND 200),
+				status TEXT NOT NULL CHECK (status IN ('active', 'completed', 'cancelled')),
+				revision INTEGER NOT NULL CHECK (revision > 0),
+				current_sequence INTEGER NOT NULL DEFAULT 0 CHECK (current_sequence >= 0),
+				conclusion_markdown TEXT,
+				conclusion_request_json TEXT CHECK (conclusion_request_json IS NULL OR json_valid(conclusion_request_json)),
+				created_at INTEGER NOT NULL CHECK (created_at >= 0),
+				updated_at INTEGER NOT NULL CHECK (updated_at >= created_at),
+				finished_at INTEGER,
+				UNIQUE (session_id, request_id),
+				CHECK ((status = 'active' AND finished_at IS NULL AND conclusion_markdown IS NULL)
+					OR (status = 'cancelled' AND finished_at IS NOT NULL AND finished_at >= created_at AND conclusion_markdown IS NULL)
+					OR (status = 'completed' AND finished_at IS NOT NULL AND finished_at >= created_at AND conclusion_markdown IS NOT NULL AND length(trim(conclusion_markdown)) > 0))
+			) STRICT;
+			CREATE UNIQUE INDEX diagnose_active_session_idx ON diagnose_tasks(session_id) WHERE status = 'active';
+			CREATE TABLE diagnose_nodes (
+				task_id TEXT NOT NULL REFERENCES diagnose_tasks(id) ON DELETE CASCADE,
+				sequence INTEGER NOT NULL CHECK (sequence > 0),
+				direction TEXT NOT NULL CHECK (length(direction) BETWEEN 1 AND 500),
+				status TEXT NOT NULL CHECK (status IN ('diagnosing', 'confirmed', 'unconfirmed')),
+				explanation TEXT NOT NULL,
+				revision INTEGER NOT NULL CHECK (revision > 0),
+				created_at INTEGER NOT NULL,
+				updated_at INTEGER NOT NULL CHECK (updated_at >= created_at),
+				PRIMARY KEY (task_id, sequence),
+				CHECK (status = 'diagnosing' OR length(trim(explanation)) > 0)
+			) STRICT;
+			CREATE TRIGGER diagnose_task_immutable BEFORE UPDATE ON diagnose_tasks
+			WHEN OLD.status != 'active' OR NEW.id != OLD.id OR NEW.session_id != OLD.session_id
+				OR NEW.workspace_id != OLD.workspace_id OR NEW.request_id != OLD.request_id OR NEW.created_at != OLD.created_at
+				OR NEW.current_sequence < OLD.current_sequence OR NEW.current_sequence > OLD.current_sequence + 1
+				OR (NEW.current_sequence > OLD.current_sequence AND NOT EXISTS (SELECT 1 FROM diagnose_nodes WHERE task_id = OLD.id AND sequence = NEW.current_sequence))
+			BEGIN SELECT RAISE(ABORT, 'Ended diagnosis tasks are immutable'); END;
+			CREATE TRIGGER diagnose_node_current_only BEFORE UPDATE ON diagnose_nodes
+			WHEN NEW.task_id != OLD.task_id OR NEW.sequence != OLD.sequence OR NEW.created_at != OLD.created_at
+				OR NOT EXISTS (SELECT 1 FROM diagnose_tasks WHERE id = OLD.task_id AND status = 'active' AND current_sequence = OLD.sequence)
+			BEGIN SELECT RAISE(ABORT, 'Only the active current diagnosis record can change'); END;
+			CREATE TRIGGER diagnose_node_append_only BEFORE INSERT ON diagnose_nodes
+			WHEN NOT EXISTS (SELECT 1 FROM diagnose_tasks WHERE id = NEW.task_id AND status = 'active' AND current_sequence + 1 = NEW.sequence)
+				OR EXISTS (SELECT 1 FROM diagnose_nodes WHERE task_id = NEW.task_id AND sequence = NEW.sequence - 1
+					AND (status = 'diagnosing' OR length(trim(explanation)) = 0))
+			BEGIN SELECT RAISE(ABORT, 'Finish the current diagnosis record before appending'); END;
+			CREATE TABLE diagnose_tool_calls (
+				task_id TEXT NOT NULL REFERENCES diagnose_tasks(id) ON DELETE CASCADE,
+				run_id TEXT NOT NULL,
+				tool_call_id TEXT NOT NULL,
+				request_json TEXT NOT NULL CHECK (json_valid(request_json)),
+				result_json TEXT NOT NULL CHECK (json_valid(result_json)),
+				PRIMARY KEY (task_id, run_id, tool_call_id)
+			) STRICT;
+			CREATE TABLE diagnose_chat_runs (
+				run_id TEXT PRIMARY KEY REFERENCES chat_runs(id) ON DELETE CASCADE,
+				task_id TEXT NOT NULL REFERENCES diagnose_tasks(id) ON DELETE CASCADE
+			) STRICT;
+			CREATE TABLE diagnose_requests (
+				task_id TEXT NOT NULL REFERENCES diagnose_tasks(id) ON DELETE CASCADE,
+				request_id TEXT NOT NULL,
+				run_id TEXT NOT NULL REFERENCES chat_runs(id) ON DELETE CASCADE,
+				queue_item_id TEXT REFERENCES chat_queue_items(id) ON DELETE CASCADE,
+				PRIMARY KEY (task_id, request_id)
+			) STRICT;
+			CREATE TRIGGER diagnose_history_created AFTER INSERT ON diagnose_tasks
+			BEGIN
+				INSERT INTO chat_messages (id, session_id, run_id, sequence, message_type, message_json, created_at)
+				SELECT 'diagnose:' || NEW.id, NEW.session_id, NULL, COALESCE(MAX(sequence), 0) + 1, 'diagnose',
+					json_object('role', 'custom', 'customType', 'diagnose', 'display', json('true'), 'content', NEW.title,
+						'details', json_object('taskId', NEW.id, 'title', NEW.title, 'status', NEW.status, 'revision', NEW.revision),
+						'timestamp', NEW.created_at), NEW.created_at
+				FROM chat_messages WHERE session_id = NEW.session_id;
+			END;
+			CREATE TRIGGER diagnose_history_updated AFTER UPDATE ON diagnose_tasks
+			BEGIN
+				UPDATE chat_messages SET
+					sequence = CASE WHEN OLD.status = 'active' AND NEW.status != 'active'
+						THEN (SELECT COALESCE(MAX(sequence), 0) + 1 FROM chat_messages WHERE session_id = NEW.session_id) ELSE sequence END,
+					created_at = COALESCE(NEW.finished_at, NEW.created_at),
+					message_json = json_set(message_json, '$.content', NEW.title, '$.details.title', NEW.title,
+						'$.details.status', NEW.status, '$.details.revision', NEW.revision, '$.timestamp', COALESCE(NEW.finished_at, NEW.created_at))
+				WHERE session_id = NEW.session_id AND id = 'diagnose:' || NEW.id;
+			END;
+		`,
+	},
 ] as const;
 
 export function applyMigrations(database: DatabaseSync): void {

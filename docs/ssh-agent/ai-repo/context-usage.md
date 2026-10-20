@@ -25,3 +25,8 @@
 | 回归 | `packages/ssh-agent/test/chat-context-service.test.ts`、`packages/ssh-agent/test/context-compaction-runtime.test.ts` |
 
 前端契约见 [context-usage-integration.md](../frontend/context-usage-integration.md)。
+
+
+2026-10-19 Diagnose 接入：活动诊断的工具定义与三项轻量简报由 DiagnoseRuntime 共用投影加入运行时、离线占用和手动压缩 Context；任务结束后移除，报告正文不放入任务元数据或历史卡片。 详见 [Diagnose 功能路由](./diagnose.md)。
+
+同一投影还包含内置 gori-diagnosis Skill 的独立提示词块，其内容计入当前活动诊断的占用估算；结束后随诊断临时片段移除，不写入基础头部或历史消息。

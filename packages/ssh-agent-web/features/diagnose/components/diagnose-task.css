@@ -1,0 +1,50 @@
+.diagnose-task { --diagnose-blue: color-mix(in srgb, #5898d8 70%, var(--ink)); --diagnose-green: var(--success); --diagnose-yellow: var(--warning); display:flex; flex-direction:column; height:100%; min-height:0; color:var(--ink); background:var(--surface); position:relative; font-size:12px; }
+.diagnose-header { display:flex; align-items:center; justify-content:space-between; gap:16px; padding:20px 22px 16px; border-bottom:1px solid var(--line-soft); }
+.diagnose-header>div { min-width:0; }
+.diagnose-eyebrow { color:var(--text-muted); font-size:10px; letter-spacing:.1em; text-transform:uppercase; }
+.diagnose-header h2 { margin:5px 0 0; font-size:16px; font-weight:600; overflow-wrap:anywhere; }
+.diagnose-status { display:inline-flex; flex-shrink:0; align-items:center; width:max-content; border-radius:5px; padding:3px 7px; font-size:10px; font-weight:500; line-height:1.5; color:var(--text-secondary); background:color-mix(in srgb,var(--text-secondary) 10%,transparent); }
+.diagnose-status[data-status="active"], .diagnose-status[data-status="diagnosing"] { color:var(--diagnose-blue,#3676b6); background:color-mix(in srgb,var(--diagnose-blue,#3676b6) 12%,transparent); }
+.diagnose-status[data-status="confirmed"] { color:var(--diagnose-green,#347955); background:color-mix(in srgb,var(--diagnose-green,#347955) 13%,transparent); }
+.diagnose-status[data-status="unconfirmed"] { color:var(--diagnose-yellow,#92691e); background:color-mix(in srgb,var(--diagnose-yellow,#92691e) 14%,transparent); }
+.diagnose-scroll { flex:1; min-height:0; overflow:auto; overflow-anchor:none; padding:18px 22px; }
+.diagnose-records { max-width:920px; margin:0 auto; }
+.diagnose-record { padding:13px 0; border-bottom:1px solid var(--line-soft); }
+.diagnose-record-heading { width:100%; display:flex; align-items:center; gap:10px; text-align:left; color:inherit; background:none; border:0; cursor:pointer; }
+.diagnose-sequence { font-size:10px; font-variant-numeric:tabular-nums; color:var(--text-muted); }
+.diagnose-direction { flex:1; min-width:0; font-size:13px; font-weight:600; overflow-wrap:anywhere; }
+.diagnose-record-heading svg { color:var(--text-muted); flex-shrink:0; transform:rotate(-90deg); }
+.diagnose-record-heading svg.diagnose-chevron-open { transform:rotate(0); }
+.diagnose-explanation { padding:10px 0 1px 25px; }
+.diagnose-preview { margin:7px 24px 0 25px; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; color:var(--text-muted); font-size:11px; }
+.diagnose-muted, .diagnose-empty { color:var(--text-muted); line-height:1.9; }
+.diagnose-empty { padding:18px 2px; max-width:440px; }
+.diagnose-actions { display:flex; flex-wrap:wrap; gap:8px; align-items:center; padding:12px 22px; border-top:1px solid var(--line-soft); }
+.diagnose-task button:not(.diagnose-record-heading), .diagnose-history-card { cursor:pointer; }
+.diagnose-actions button, .diagnose-older, .diagnose-return, .diagnose-error button, .diagnose-conclusion button { padding:7px 11px; border:1px solid var(--line-soft); border-radius:7px; background:var(--surface-raised); color:var(--text-secondary); font-size:11px; }
+.diagnose-actions .diagnose-primary { background:var(--accent-soft); border-color:var(--accent-line); color:var(--accent); }
+.diagnose-copy-records { margin-left:auto; display:flex; align-items:center; justify-content:flex-end; flex-wrap:wrap; gap:8px; }
+.diagnose-copy-records button { display:inline-flex; align-items:center; gap:6px; }
+.diagnose-copy-records>span { font-size:11px; color:var(--danger); }
+.diagnose-task button:disabled { cursor:default; opacity:.5; }
+.diagnose-task button:focus-visible, .diagnose-history-card:focus-visible { outline:2px solid var(--accent); outline-offset:3px; }
+.diagnose-return { position:absolute; bottom:70px; left:50%; transform:translateX(-50%); box-shadow:var(--shadow-soft); }
+.diagnose-error { padding:10px 22px; color:var(--danger); overflow-wrap:anywhere; }
+.diagnose-error button { margin-left:8px; }
+.diagnose-request-note { margin:0; padding:0 22px 12px; color:var(--text-muted); font-size:10px; line-height:1.6; }
+.diagnose-conclusion { max-width:920px; margin:auto; }
+.diagnose-markdown { font-size:12px; line-height:1.9; overflow-wrap:anywhere; color:var(--text-secondary); }
+.diagnose-markdown h1, .diagnose-markdown h2, .diagnose-markdown h3 { color:var(--ink); line-height:1.5; font-weight:600; margin:1.3em 0 .55em; }
+.diagnose-markdown h1 { font-size:22px; } .diagnose-markdown h2 { font-size:18px; } .diagnose-markdown h3 { font-size:15px; }
+.diagnose-markdown p, .diagnose-markdown ul, .diagnose-markdown ol, .diagnose-markdown blockquote, .diagnose-markdown pre { margin:.7em 0; }
+.diagnose-markdown ul { list-style:disc; padding-left:1.6em; } .diagnose-markdown ol { list-style:decimal; padding-left:1.6em; }
+.diagnose-markdown blockquote { border-left:3px solid var(--line-soft); padding-left:14px; color:var(--text-muted); }
+.diagnose-markdown pre { white-space:pre; overflow:auto; border-radius:7px; padding:12px; background:var(--surface-raised); font-size:11px; }
+.diagnose-markdown code { font-family:var(--font-mono,monospace); }
+.diagnose-markdown a { color:var(--accent); text-decoration:underline; }
+.diagnose-markdown table { display:block; max-width:100%; overflow:auto; border-collapse:collapse; font-size:11px; }
+.diagnose-markdown th, .diagnose-markdown td { border:1px solid var(--line-soft); padding:6px 9px; }
+.diagnose-history-card { --diagnose-blue:color-mix(in srgb, #5898d8 70%, var(--ink)); display:flex; align-items:center; gap:12px; flex-wrap:wrap; text-align:left; width:100%; padding:14px 18px; background:var(--surface-raised); border:1px solid var(--line-soft); border-radius:10px; color:var(--text-secondary); font-size:11px; }
+.diagnose-history-card strong { flex:1; min-width:120px; overflow-wrap:anywhere; color:var(--ink); font-weight:600; }
+.diagnose-history-label { color:var(--text-muted); font-size:10px; }
+@media (max-width:1100px) { .diagnose-header { padding:10px 14px; } .diagnose-eyebrow { display:none; } .diagnose-header h2 { margin:0; font-size:13px; } .diagnose-scroll { padding:10px 14px; } .diagnose-actions { padding:8px 14px; } .diagnose-request-note { padding:0 14px 8px; } }

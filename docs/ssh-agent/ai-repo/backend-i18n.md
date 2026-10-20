@@ -43,3 +43,6 @@ Deployment REST 的领域错误通过 `deployment.error` 按请求 Locale 返回
 新增公开静态文本时必须先增加中英文词典 Key，再在领域边界携带描述符或为稳定 code 增加唯一映射。禁止在 HTTP/SSE 出口返回底层 Provider、SSH、SQLite 或文件系统原始异常。
 
 部署规则错误通过现有 DeploymentError 携带精确 code、field、动态原因及安全 details；Tool 授权和执行错误保持完整 JSON，HTTP 只本地化场景前缀，保留实际原因和字段。已知路径失败由部署层分类，未知基础设施异常仍按原内部错误策略处理，不能统一改成“命令或路径无效”。见 [deployment.md](./deployment.md)。
+
+
+2026-10-19 Diagnose 接入：DiagnoseError 在唯一 failure-policy 入口保留 code/status/field；已知 4xx 使用 diagnose.error 的中英文场景前缀和原始规则原因，内部错误仍通用化。诊断记录、问题标题和报告为动态内容，不翻译；diagnoses SSE 复用既有 Locale 投影。 详见 [Diagnose 功能路由](./diagnose.md)。

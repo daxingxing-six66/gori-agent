@@ -7,10 +7,12 @@ import { ChatFailureDetails } from "@/features/chat/components/chat-failure-deta
 import { ChatMessageRow } from "@/features/chat/components/chat-message";
 import type { ChatTimelineEntry } from "@/features/chat/model/chat-runtime-state";
 import type { ChatRun, ChatToolExecution, ToolApproval } from "@/features/chat/model/chat";
+import { conversationHistory } from "@/features/chat/model/conversation-history";
 import { DeploymentHistoryCard } from "@/features/deploy/components/deployment-history-card";
-import { conversationHistory } from "@/features/deploy/model/deployment-history";
 import { deploymentEntryId } from "@/features/deploy/model/deployment-history-entry";
 import { deploymentCompletionHistory } from "@/features/deploy/model/deployment-completion-history";
+import { DiagnoseHistoryCard } from "@/features/diagnose/components/diagnose-history-card";
+import { diagnoseCompletionHistory } from "@/features/diagnose/model/diagnose-completion-history";
 
 export const ChatTimeline = memo(function ChatTimeline({
 	showActivity,
@@ -27,6 +29,7 @@ export const ChatTimeline = memo(function ChatTimeline({
 	onRestoreDraft,
 	onOpenDeployment,
 	onOpenFile,
+	onOpenDiagnose,
 }: {
 	showActivity: boolean;
 	loading: boolean;
@@ -42,15 +45,17 @@ export const ChatTimeline = memo(function ChatTimeline({
 	onRestoreDraft(message: string): void;
 	onOpenDeployment?(id: string): void;
 	onOpenFile?(path: string): void;
+	onOpenDiagnose?(id: string): void;
 }) {
 	const intl = useIntl();
-	const entries = loading ? [] : deploymentCompletionHistory(conversationHistory(timeline), tools);
+	const entries = loading ? [] : diagnoseCompletionHistory(deploymentCompletionHistory(conversationHistory(timeline), tools), tools);
 	return (
 		<div className="chat-timeline min-h-full [&>*+*]:mt-8 [&>.chat-tool-only+.chat-tool-only]:mt-1">
 			{loading ? <div className="flex justify-center py-16 text-zinc-400"><LoaderCircle size={18} className="animate-spin" /></div> : null}
 			{loadingOlderMessages ? <div className="flex justify-center py-1.5 text-zinc-400" role="status" aria-label={intl.formatMessage({ id: "chat.history.loadingOlder" })}><LoaderCircle size={14} className="animate-spin" /></div> : null}
 			{!loading && !showActivity && entries.length === 0 ? <div className="grid min-h-[320px] place-items-center text-center"><div><p className="text-[13px] font-semibold text-zinc-700">{intl.formatMessage({ id: "chat.empty.title" })}</p><p className="mt-2 text-[10px] leading-5 text-zinc-400">{intl.formatMessage({ id: "chat.empty.description" })}</p></div></div> : null}
 			{entries.map((item) => {
+				if (item.kind === "diagnoseMessage") return <DiagnoseHistoryCard key={item.entry.key} identity={item} onOpen={() => onOpenDiagnose?.(item.taskId)} />;
 				if (item.kind === "message") return <ChatMessageRow key={item.entry.key} entry={item.entry} tools={tools} approvals={approvals} approvalMutationId={approvalMutationId} targetHost={targetHost} hideFailure={Boolean(run?.status === "failed" && run.failure?.errorId && item.entry.message.role === "assistant" && item.entry.message.failure?.errorId === run.failure.errorId)} onResolveApproval={onResolveApproval} onOpenFile={onOpenFile} />;
 				return <DeploymentHistoryCard key={`deployment:${deploymentEntryId(item)}`} entry={item} onOpen={() => onOpenDeployment?.(deploymentEntryId(item))} />;
 			})}

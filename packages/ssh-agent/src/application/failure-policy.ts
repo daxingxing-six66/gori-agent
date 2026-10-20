@@ -5,6 +5,7 @@ import { ChatCompactionError } from "../domain/context-compaction.ts";
 import { ManagementError } from "../domain/errors.ts";
 import { FileTransferError } from "../domain/file-transfer.ts";
 import { DeploymentError } from "../domain/deployment.ts";
+import { DiagnoseError } from "../domain/diagnose.ts";
 import { LocalFileSystemError } from "../domain/local-file-system.ts";
 import { SshAgentError } from "../domain/ssh-failure.ts";
 import { TerminalError } from "../domain/terminal.ts";
@@ -204,6 +205,9 @@ export function normalizePublicError(error: unknown): PublicErrorDescriptor {
 		);
 	}
 	if (error instanceof ChatError) return known(error.code, error.status, error);
+	if (error instanceof DiagnoseError) return known(error.code, error.status, error,
+		{ ...(error.field ? { field: error.field } : {}) },
+		error.status < 500 ? backendMessage("diagnose.error", { reason: error.message }) : undefined);
 	if (error instanceof DeploymentError) return known(error.code, error.status, error, {
 		...(error.field === undefined ? {} : { field: error.field }),
 		...(error.details === undefined ? {} : { details: error.details }),

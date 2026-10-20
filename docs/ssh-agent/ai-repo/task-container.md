@@ -1,6 +1,6 @@
 # Session 任务 Tab 容器
 
-适用于已有 Session 的通用任务容器、标签选择、关闭请求和会话布局。当前接入 Terminal、Deploy 与独立文件阅读器；不提供 Monitor、多个 Terminal 实例或通用工作流执行引擎。
+适用于已有 Session 的通用任务容器、标签选择、关闭请求和会话布局。当前接入 Terminal、Deploy、Diagnose 与独立文件阅读器；不提供 Monitor、多个 Terminal 实例或通用工作流执行引擎。
 
 ## 职责与契约
 
@@ -42,3 +42,6 @@
 | 通用选择、关闭保护、键盘和内容保留回归 | `packages/ssh-agent-web/tests/task-container.test.tsx` |
 
 定向测试采用 Node 环境的真实 React 输出与事件处理器检查，覆盖展示请求、页面保留和业务关闭隔离；Terminal 尺寸同步由 `tests/terminal-viewport-sync.test.ts` 覆盖。浏览器验证使用真实 React/xterm/ResizeObserver 与模拟 REST/SSE，核对桌面与窄屏覆盖范围、导航保留、收起恢复、scope 复位及连接不重建；不代表真实 SSH/PTY 或跨平台验证。已确认的长期约束见 [任务容器与 Terminal 重构约束](../design/task-container-terminal-refactor.md)。
+
+
+Diagnose 以固定功能 ID diagnose 接入；关闭仅隐藏，节点展开、双视图和滚动由自身 use-diagnose-view 保存。通用容器没有诊断生命周期或结论分支，详情见 [diagnose.md](./diagnose.md)。

@@ -1,5 +1,5 @@
 import { stat } from "node:fs/promises";
-import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
+import type { AgentMessage, ThinkingLevel } from "@earendil-works/pi-agent-core";
 import { getSupportedThinkingLevels, supportsConversationSystemMessages, type Models } from "@earendil-works/pi-ai";
 import type {
 	ChatMessageListCursor,
@@ -20,6 +20,7 @@ import type { IdGenerator } from "../../domain/ids.ts";
 import type { BackendLocale } from "../../i18n/message.ts";
 import { createChatContext } from "../chat-context.ts";
 import type { ChatRunEventHub } from "../chat-run-event-hub.ts";
+import type { DiagnoseRuntime } from "../diagnose-runtime.ts";
 import type { ChatRunRuntime } from "../chat-run-runtime.ts";
 import type { SessionActivityService } from "../session-activity/session-activity-service.ts";
 import { runFailure } from "../failure-policy.ts";
@@ -75,6 +76,7 @@ export interface ChatServiceDependencies {
 	localCwd: string;
 	deploymentSetupInstructions?: (sessionId: string) => Promise<string>;
 	deployments?: AgentDeploymentService;
+	diagnoses?: DiagnoseRuntime;
 	bindDeploymentRun(runId: string, deploymentRunId?: string): void;
 	ids: IdGenerator;
 	bindServerInteraction(sessionId: string, runId: string, mode: "command" | "terminal"): Promise<string | null>;
@@ -103,6 +105,7 @@ export class ChatService {
 	private readonly localCwd: string;
 	private readonly deploymentSetupInstructions?: (sessionId: string) => Promise<string>;
 	private readonly deployments?: AgentDeploymentService;
+	private readonly diagnoses?: DiagnoseRuntime;
 	private readonly bindDeploymentRun: ChatServiceDependencies["bindDeploymentRun"];
 	private readonly ids: IdGenerator;
 	private readonly bindServerInteraction: ChatServiceDependencies["bindServerInteraction"];
@@ -113,6 +116,7 @@ export class ChatService {
 	private readonly runningTasks = new Set<Promise<void>>();
 	private closing = false;
 	private readonly preparing = new Map<string, Promise<ChatRun>>();
+	private readonly taskStarts = new Set<string>();
 	private readonly active = new Map<string, ActiveRun>();
 	private readonly events: ChatRunEventHub;
 	private readonly approvals: ChatApprovalService;
@@ -135,6 +139,7 @@ export class ChatService {
 		this.localCwd = options.localCwd;
 		this.deploymentSetupInstructions = options.deploymentSetupInstructions;
 		this.deployments = options.deployments;
+		this.diagnoses = options.diagnoses;
 		this.bindDeploymentRun = options.bindDeploymentRun;
 		this.ids = options.ids;
 		this.bindServerInteraction = options.bindServerInteraction;
@@ -154,7 +159,16 @@ export class ChatService {
 
 	async hasActiveRun(sessionId: string): Promise<boolean> {
 		await this.reconcileRunSettlements(sessionId);
-		return this.active.has(sessionId) || this.preparing.has(sessionId);
+		return this.active.has(sessionId) || this.preparing.has(sessionId) || this.taskStarts.has(sessionId);
+	}
+
+	/** Reserve the idle Session only while creating business facts, before any model request. */
+	async initializeTask<T>(sessionId: string, create: () => Promise<T>): Promise<T> {
+		await this.reconcileRunSettlements(sessionId);
+		if (this.active.has(sessionId) || this.preparing.has(sessionId) || this.taskStarts.has(sessionId) || this.manualCompactions.has(sessionId))
+			throw new ChatError("chat_session_busy", "Finish the current Chat operation before starting a task", 409);
+		this.taskStarts.add(sessionId);
+		try { return await create(); } finally { this.taskStarts.delete(sessionId); }
 	}
 
 	async getActiveRun(sessionId: string): Promise<ChatRun | null> {
@@ -179,8 +193,7 @@ export class ChatService {
 		const model = this.catalog.getModel(run.providerId, run.modelId);
 		const systemPrompt = this.prompts.read(sessionId);
 		if (!model || systemPrompt === undefined) return null;
-		return this.context.usage(model, createChatContext(systemPrompt, this.context.load(sessionId),
-			this.deployments?.activeMode?.(sessionId) ?? null));
+		return this.context.usage(model, this.requestContext(sessionId, systemPrompt, this.context.load(sessionId)));
 	}
 
 	async createRun(input: CreateChatRunInput): Promise<ChatRun> {
@@ -188,6 +201,7 @@ export class ChatService {
 		await this.reconcileRunSettlements(input.sessionId);
 		const existing = this.chatRepository.findRunByRequest(input.sessionId, input.requestId);
 		if (existing) return existing;
+		if (this.taskStarts.has(input.sessionId)) throw new ChatError("chat_session_busy", "Session task is being initialized", 409);
 		if (this.preparing.has(input.sessionId)) throw new ChatError("chat_session_busy", "Session Run is being initialized", 409);
 		const task = this.startRun(input);
 		this.preparing.set(input.sessionId, task);
@@ -214,6 +228,8 @@ export class ChatService {
 			throw new ChatError("chat_session_busy", "Session already has an active Chat Run", 409);
 		const session = await this.sessions.findById(input.sessionId);
 		if (!session) throw new ChatError("chat_session_not_found", "Session not found", 404);
+		if (input.workflow) this.diagnoses?.assertDeploymentAvailable(session.id);
+		const diagnoseTaskId = this.diagnoses?.activeTaskId(session.id);
 		const mode = this.deployments?.activeMode?.(session.id);
 		const attached = input.workflow === undefined && mode?.run ? mode.run : undefined;
 		if (attached) deploymentRunId = attached.id;
@@ -280,6 +296,7 @@ export class ChatService {
 			let deploymentClaimed = false;
 			let deploymentPlanning: { discussionId: string; revision: number } | undefined;
 			try {
+				if (diagnoseTaskId) this.diagnoses?.bind(session.id, diagnoseTaskId, run.id);
 				const basePrompt = await this.prompts.initialize(session, workDir);
 				let systemPrompt = basePrompt;
 				if (input.workflow === "deployment_setup")
@@ -307,6 +324,7 @@ export class ChatService {
 					workDir,
 					history,
 					compactionSettings: this.contextCompactionSettings.get(),
+					...(diagnoseTaskId ? { diagnoseTaskId } : {}),
 					...(deploymentRunId === undefined ? {} : { deploymentRunId }),
 					...(deploymentRecovery ? { deploymentRecovery: true } : {}),
 					...(deploymentReview ? { deploymentReview: true } : {}),
@@ -455,7 +473,7 @@ export class ChatService {
 			const outcome = await this.context.compactContext({
 				sessionId,
 				run: null,
-				context: createChatContext(systemPrompt, messages, this.deployments?.activeMode?.(sessionId) ?? null),
+				context: this.requestContext(sessionId, systemPrompt, messages),
 				sessionModel: model,
 				settings: this.contextCompactionSettings.get(),
 				reason: "manual",
@@ -730,6 +748,11 @@ export class ChatService {
 	private async reconcileRunSettlements(sessionId: string): Promise<void> {
 		await this.pendingDeploymentSettlements.reconcile(sessionId);
 		this.pendingCommits.reconcile(sessionId);
+	}
+
+	private requestContext(sessionId: string, systemPrompt: string, messages: AgentMessage[]) {
+		const context = createChatContext(systemPrompt, messages, this.deployments?.activeMode?.(sessionId) ?? null);
+		return this.diagnoses?.context(context, sessionId) ?? context;
 	}
 
 	private async settleDeploymentBeforeChat(

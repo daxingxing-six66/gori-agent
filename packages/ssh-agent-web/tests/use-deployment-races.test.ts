@@ -106,6 +106,7 @@ class HookDriver {
 		for (const run of pending) run();
 		return this.value;
 	}
+	unmount(): void { for (const effect of this.effects) effect.cleanup?.(); }
 }
 
 function deferred<T>() {
@@ -172,7 +173,7 @@ beforeEach(async () => {
  api.beginDiscussion.mockResolvedValue(discussion); api.getDiscussion.mockResolvedValue(discussion);
  hooks = new HookDriver(); hooks.render(); await renderSettled();
 });
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => { hooks.unmount(); vi.unstubAllGlobals(); });
 
 describe("deployment task selection and durable mode", () => {
  it("opens module selection above the Composer without creating a task tab or deployment", async () => {

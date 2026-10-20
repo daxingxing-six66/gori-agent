@@ -26,7 +26,7 @@ import type { ChatRepository } from "../repositories/chat-repository.ts";
 import type { ChatAttachmentService } from "./chat-attachment-service.ts";
 import type { LlmModelCatalog } from "./llm-model-catalog.ts";
 import { addOpenCodeGoSessionHeaders } from "./opencode-go-session.ts";
-import { isDeploymentHistoryMessage, modelVisibleMessages } from "../deployment-history-message.ts";
+import { isChatUiHistoryMessage, modelVisibleMessages } from "../chat-ui-history-message.ts";
 
 const TARGET_PERCENT = 30;
 const MINIMUM_REDUCTION_PERCENT = 30;
@@ -216,7 +216,7 @@ export class ChatContextService {
 				attempt === 1
 					? targetTokens
 					: Math.max(1, Math.floor(targetTokens * (SECOND_ATTEMPT_KEEP_RECENT_PERCENT / 100)));
-			const projections = this.#repository.listMessages(input.sessionId).filter((projection) => !isDeploymentHistoryMessage(projection.message));
+			const projections = this.#repository.listMessages(input.sessionId).filter((projection) => !isChatUiHistoryMessage(projection.message));
 			const projectionAttachments = projections.flatMap((projection) => projection.attachments ?? []);
 			const entries = projections.map((projection, index) =>
 				toCompactionEntry(projection, index === 0 ? null : projections[index - 1]!.id, (message) =>

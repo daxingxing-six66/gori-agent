@@ -51,6 +51,7 @@ import { bubblewrapInspectDefinition, bubblewrapInstallDefinition, createBubblew
 import { sessionSandboxInstructions, type SessionSandboxPolicy } from "./session-sandbox-policy.ts";
 import { deploymentProviderMessages, deploymentStateInstructions } from "../deployment-runtime-context.ts";
 import { DeploymentError } from "../../domain/deployment.ts";
+import type { DiagnoseRuntime } from "../diagnose-runtime.ts";
 
 type ToolCallCoordinator = Pick<ChatToolCallCoordinator, "beforeToolCall" | "requestSftpOverwriteApproval">;
 type QueueService = Pick<ChatQueueService, "cancelSteeringAfterTurn">;
@@ -65,6 +66,7 @@ export interface ChatAgentRuntimeFactoryOptions {
 	attachments: Pick<ChatAttachmentService, "hydrateProviderContext">;
 	decisions: Pick<ChatUserDecisionService, "request">;
 	deployments?: AgentDeploymentService;
+	diagnoses?: DiagnoseRuntime;
 	bubblewrapInstallations?: BubblewrapInstallationService;
 	sandboxPolicy?: Pick<SessionSandboxPolicy, "mode"> & Partial<Pick<SessionSandboxPolicy, "instructions" | "readOnly">>;
 	createRemoteTool(sessionId: string, abortRun?: () => void, agentRunId?: string): AgentTool;
@@ -92,6 +94,7 @@ export class ChatAgentRuntimeFactory {
 	readonly #attachments: ChatAgentRuntimeFactoryOptions["attachments"];
 	readonly #decisions: ChatAgentRuntimeFactoryOptions["decisions"];
 	readonly #deployments?: ChatAgentRuntimeFactoryOptions["deployments"];
+	readonly #diagnoses?: DiagnoseRuntime;
 	readonly #bubblewrapInstallations?: ChatAgentRuntimeFactoryOptions["bubblewrapInstallations"];
 	readonly #sandboxPolicy?: ChatAgentRuntimeFactoryOptions["sandboxPolicy"];
 	readonly #createRemoteTool: ChatAgentRuntimeFactoryOptions["createRemoteTool"];
@@ -110,6 +113,7 @@ export class ChatAgentRuntimeFactory {
 		this.#attachments = options.attachments;
 		this.#decisions = options.decisions;
 		this.#deployments = options.deployments;
+		this.#diagnoses = options.diagnoses;
 		this.#bubblewrapInstallations = options.bubblewrapInstallations;
 		this.#sandboxPolicy = options.sandboxPolicy;
 		this.#createRemoteTool = options.createRemoteTool;
@@ -128,6 +132,7 @@ export class ChatAgentRuntimeFactory {
 		history: AgentMessage[];
 		compactionSettings?: ChatCompactionSettings;
 		deploymentRunId?: string;
+		diagnoseTaskId?: string;
 		deploymentRecovery?: boolean;
 		deploymentReview?: boolean;
 		deploymentPlanning?: { discussionId: string; revision: number };
@@ -276,10 +281,14 @@ export class ChatAgentRuntimeFactory {
 				: unavailableTool(bubblewrapInstallDefinition);
 			const ordinaryTools = [...localTools, remoteTool, terminalTool, sftpUploadTool, sftpDownloadTool,
 				bubblewrapInspectTool, bubblewrapInstallTool, createAskUserDecisionTool({ run: input.run, decisions: this.#decisions })].map(enforceReadOnly);
-			const synchronizeDeployment = (context: AgentContext): AgentContext => ({ ...context,
-				systemPrompt: `${systemPrompt}\n\n${deploymentStateInstructions(currentMode())}`,
-				tools: configureFileToolConcurrency([...ordinaryTools, ...deploymentTools()], env),
-			});
+			const synchronizeTaskContext = (context: AgentContext): AgentContext => {
+				const synchronized = { ...context,
+					systemPrompt: `${systemPrompt}\n\n${deploymentStateInstructions(currentMode())}`,
+					tools: configureFileToolConcurrency([...ordinaryTools, ...deploymentTools(),
+						...(this.#diagnoses?.tools(input.run.sessionId, input.diagnoseTaskId, input.run.id) ?? [])], env),
+				};
+				return this.#diagnoses?.project(synchronized, input.run.sessionId, input.diagnoseTaskId) ?? synchronized;
+			};
 			let requestAttempt = 0;
 			const agent = this.#createAgent({
 				onRunFailure: (error) => requireRuntime().captureFailure(error),
@@ -287,7 +296,7 @@ export class ChatAgentRuntimeFactory {
 					systemPrompt,
 					model: input.model,
 					thinkingLevel: input.run.thinkingLevel,
-					tools: configureFileToolConcurrency([...ordinaryTools, ...deploymentTools()], env),
+					tools: synchronizeTaskContext({ systemPrompt, messages: input.history, tools: [] }).tools,
 					messages: input.history,
 				},
 				streamFn: async (selectedModel, context, options) => {
@@ -327,12 +336,12 @@ export class ChatAgentRuntimeFactory {
 				},
 				convertToLlm: (messages) => convertToLlm(deploymentProviderMessages(messages, currentMode())),
 				afterToolCall: async ({ context }) => {
-					const latest = synchronizeDeployment(context);
+					const latest = synchronizeTaskContext(context);
 					context.tools = latest.tools;
 					context.systemPrompt = latest.systemPrompt;
 					return undefined;
 				},
-				beforeProviderRequest: ({ context }) => ({ context: synchronizeDeployment(context) }),
+				beforeProviderRequest: ({ context }) => ({ context: synchronizeTaskContext(context) }),
 				...(contextService === undefined
 					? {}
 					: {
@@ -342,7 +351,7 @@ export class ChatAgentRuntimeFactory {
 									const outcome = await contextService.compactContext({
 										sessionId: input.run.sessionId,
 										run: input.run,
-										context: synchronizeDeployment(contextService.synchronizeRuntimeMode(
+										context: synchronizeTaskContext(contextService.synchronizeRuntimeMode(
 											input.run.sessionId, context, input.run.serverInteractionMode,
 										)),
 										sessionModel: model,
@@ -351,7 +360,7 @@ export class ChatAgentRuntimeFactory {
 										force: false,
 										signal,
 									});
-										const synchronized = synchronizeDeployment(contextService.synchronizeRuntimeMode(
+										const synchronized = synchronizeTaskContext(contextService.synchronizeRuntimeMode(
 										input.run.sessionId, outcome.context, input.run.serverInteractionMode,
 									));
 									contextService.recordProviderRequest(input.run.id, model, synchronized);
@@ -366,16 +375,16 @@ export class ChatAgentRuntimeFactory {
 									const outcome = await contextService.compactContext({
 										sessionId: input.run.sessionId,
 										run: input.run,
-										context: contextService.synchronizeRuntimeMode(
+										context: synchronizeTaskContext(contextService.synchronizeRuntimeMode(
 											input.run.sessionId, context, input.run.serverInteractionMode,
-										),
+										)),
 										sessionModel: model,
 										settings: compactionSettings,
 										reason: "overflow",
 										force: true,
 										signal,
 									});
-									return { context: synchronizeDeployment(contextService.synchronizeRuntimeMode(
+									return { context: synchronizeTaskContext(contextService.synchronizeRuntimeMode(
 										input.run.sessionId, outcome.context, input.run.serverInteractionMode,
 									)) };
 								} catch (error) {

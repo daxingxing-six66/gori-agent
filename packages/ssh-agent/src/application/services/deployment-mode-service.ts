@@ -6,6 +6,7 @@ import type { DeploymentSessionRepository } from "../repositories/deployment-ses
 import type { TransactionRunner } from "../transaction-runner.ts";
 import { deploymentInputError, deploymentObject, deploymentText } from "../deployment-validation.ts";
 import type { WorkspaceEventHub } from "../workspace-event-hub.ts";
+import type { SessionTaskModePolicy } from "./session-task-mode-policy.ts";
 
 interface FinishRequest { outcome: DeploymentOutcome; reason?: string }
 
@@ -17,6 +18,7 @@ export class DeploymentModeService {
 		runs: DeploymentRepository;
 		transactions: TransactionRunner;
 		events: WorkspaceEventHub;
+		taskModes?: SessionTaskModePolicy;
 	};
 	private readonly finishing = new Map<string, Promise<DeploymentModeView>>();
 	// Retained after a failed commit. A retry settles the same request, never replays work.
@@ -42,6 +44,7 @@ export class DeploymentModeService {
 
 	/** The caller's transaction also creates the Discussion and formal history message. */
 	enter(discussion: DeploymentDiscussion): void {
+		this.options.taskModes?.assertCanStart(discussion.sessionId, "deploy");
 		if (this.options.sessions.active(discussion.sessionId))
 			throw new DeploymentError("deployment_session_busy", "Exit the current deployment before starting another", 409);
 		this.options.sessions.insert({ id: discussion.id, sessionId: discussion.sessionId, workspaceId: discussion.workspaceId,

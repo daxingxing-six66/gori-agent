@@ -5,8 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 import { ChatTimeline } from "../features/chat/components/chat-timeline";
 import { chatRuntimeReducer, initialChatRuntimeState, type ChatTimelineEntry } from "../features/chat/model/chat-runtime-state";
 import type { ChatMessage, ChatToolExecution } from "../features/chat/model/chat";
-import { conversationHistory } from "../features/deploy/model/deployment-history";
-import type { ConversationHistoryEntry } from "../features/deploy/model/deployment-history-entry";
+import { conversationHistory, type ConversationHistoryEntry } from "../features/chat/model/conversation-history";
 import { subscribeDeploymentEvents } from "../features/deploy/runtime/deployment-event-stream";
 import { enUSMessages } from "../features/i18n/messages/en-US";
 import { zhCNMessages } from "../features/i18n/messages/zh-CN";
@@ -22,7 +21,7 @@ function finish(outcome: "success" | "failed" | "cancelled", position = "finishe
 			...(outcome === "failed" ? { reason: "Health check returned HTTP 503" } : {}) } } };
 }
 const timeline = (messages: ChatMessage[]) => chatRuntimeReducer(initialChatRuntimeState, { type: "hydrate", messages }).timeline;
-const ids = (entries: ConversationHistoryEntry[]) => entries.map((entry) => entry.kind === "message" ? entry.entry.key : entry.kind === "deploymentMessage" ? entry.deploymentId : entry.kind === "discussion" ? entry.discussion.id : entry.run.id);
+const ids = (entries: ConversationHistoryEntry[]) => entries.map((entry) => entry.kind === "message" ? entry.entry.key : entry.kind === "diagnoseMessage" ? entry.taskId : entry.kind === "deploymentMessage" ? entry.deploymentId : entry.kind === "discussion" ? entry.discussion.id : entry.run.id);
 function render(messages: ChatMessage[], locale: "en-US" | "zh-CN" = "en-US", tools?: Record<string, ChatToolExecution>) {
 	const state = chatRuntimeReducer(initialChatRuntimeState, { type: "hydrate", messages });
 	return renderToStaticMarkup(createElement(IntlProvider, { locale, messages: locale === "en-US" ? enUSMessages : zhCNMessages },
@@ -154,7 +153,7 @@ describe("deployment completion history", () => {
 		expect(entries.filter((entry) => entry.kind === "deploymentMessage")).toHaveLength(1);
 	});
 
-	it("receives a scoped message update through the deployment stream", () => {
+	it("receives a scoped message update through the deployment stream", async () => {
 		const listeners = new Map<string, (event: MessageEvent) => void>();
 		const close = vi.fn();
 		vi.stubGlobal("EventSource", class { addEventListener(type: string, listener: (event: MessageEvent) => void) { listeners.set(type, listener); } close = close; });
@@ -162,6 +161,7 @@ describe("deployment completion history", () => {
 		try {
 			const dispose = subscribeDeploymentEvents({ sessionId: "session", workspaceId: "workspace", locale: "en-US",
 				onRun: vi.fn(), onDiscussion: vi.fn(), onTask: vi.fn(), onLog: vi.fn(), onReconnect: vi.fn(), onMessage });
+			await Promise.resolve();
 			const send = (sessionId: string) => listeners.get("deployment.message.updated")!(new MessageEvent("deployment.message.updated", { data: JSON.stringify({ sessionId, message: finish("success") }) }));
 			send("other"); expect(onMessage).not.toHaveBeenCalled();
 			send("session"); expect(onMessage).toHaveBeenCalledWith(finish("success"));

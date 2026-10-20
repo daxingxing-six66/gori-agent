@@ -10,7 +10,8 @@ export type SessionUseKind =
 	| "attachment_upload"
 	| "terminal_open"
 	| "terminal_session"
-	| "deployment_run";
+	| "deployment_run"
+	| "diagnose_request";
 
 export interface SessionUseLease {
 	release(): void;
@@ -42,6 +43,7 @@ const USE_KINDS: readonly SessionUseKind[] = [
 	"terminal_open",
 	"terminal_session",
 	"deployment_run",
+	"diagnose_request",
 ];
 
 export class SessionLifecycleCoordinator {
@@ -108,7 +110,7 @@ export class SessionLifecycleCoordinator {
 		if (state.counts.chat_run > 0) {
 			throw new ManagementError("session_has_active_chat_run", "Session has an active Chat Run");
 		}
-		const blockingKinds: readonly SessionUseKind[] = ["chat_compaction", "command_operation", "deployment_run", "terminal_open", "session_update"];
+		const blockingKinds: readonly SessionUseKind[] = ["chat_compaction", "command_operation", "deployment_run", "diagnose_request", "terminal_open", "session_update"];
 		if (blockingKinds.some((kind) => state.counts[kind] > 0)) {
 			throw new ManagementError("session_has_active_operations", "Finish active Session operations before changing its execution environment");
 		}

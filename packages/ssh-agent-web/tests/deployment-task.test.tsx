@@ -7,7 +7,7 @@ import { DeploymentPipeline } from "../features/deploy/components/deployment-pip
 import { deploymentReviewState } from "../features/deploy/model/deployment-review";
 import { DeploymentModulePicker } from "../features/deploy/components/deployment-module-picker";
 import { ChatTimeline } from "../features/chat/components/chat-timeline";
-import { conversationHistory } from "../features/deploy/model/deployment-history";
+import { conversationHistory } from "../features/chat/model/conversation-history";
 import { DeploymentLogStore } from "../features/deploy/runtime/deployment-log-store";
 import type { DeploymentRun } from "../features/deploy/model/deployment";
 import type { DeploymentTask, DeploymentLogChunk } from "../features/deploy/model/deployment-task";

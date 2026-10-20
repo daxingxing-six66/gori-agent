@@ -65,7 +65,7 @@ Bubblewrap 事实沿用现有 JSON 列，无 schema migration：保存 `backend=
 
 升级回归：`packages/ssh-agent/test/chat-prompt-migration.test.ts` 使用冻结的两种 v16 SQL fixture 验证带数据升级、空快照升级、原文保留、模式消息修补、不可变约束、级联删除、回滚重试及幂等性。
 
-`context-compaction-api.test.ts` 从冻结的 `test/fixtures/schema-v11.sql` 创建带合法 Workspace/Session 与消息的旧库，在外键开启时验证升级到当前 v34、消息原文和顺序保留、类型/Usage 回填及重复迁移幂等性。不要从最新 schema 反向删表模拟旧版，以免遗留后续版本的触发器与外键。`llm-provider-api.test.ts` 的重开测试验证当前 schema 下凭据可解密、迁移记录及执行时间不被重写，不冒充 v3 升级测试。
+`context-compaction-api.test.ts` 从冻结的 `test/fixtures/schema-v11.sql` 创建带合法 Workspace/Session 与消息的旧库，在外键开启时验证升级到当前 v35、消息原文和顺序保留、类型/Usage 回填及重复迁移幂等性。不要从最新 schema 反向删表模拟旧版，以免遗留后续版本的触发器与外键。`llm-provider-api.test.ts` 的重开测试验证当前 schema 下凭据可解密、迁移记录及执行时间不被重写，不冒充 v3 升级测试。
 
 v28 为 Workspace 与 Session 追加 nullable `sandbox_writable_roots_json` 数组列。旧 Workspace 的非根远端 cwd 原样回填为单元素列表，`/` 回填为空列表；已有 Session 复制所属 Workspace 的范围。migration 不改 revision、头部、历史命令或 Terminal 事实。nullable 仅兼容旧 Repository 调用；`stored-sandbox-writable-roots.ts` 将 null 解释为缺省，显式空列表表示未配置，不回退到 cwd，非空列表完整校验路径和数量。服务创建时总是保存独立列表。
 
@@ -81,3 +81,6 @@ v33 新增 `deployment_history_finished` 触发器：模式首次进入终态时
 v34 为 Session 追加 `sandbox_read_only`，默认 0，并要求只读时 `sandbox_enabled=1`。既有 Session 的 revision、目录与历史保持不变，Repository 保存和恢复新标记；实际受限审计仍使用 `workspace_write` 与 `/tmp` 根。升级、幂等和文件重开回归见 `read-only-sandbox.test.ts`。
 
 UI 历史单独使用 `sqlite-chat-history-query.ts`，复用 SqliteChatRepository 的消息/附件投影：正式部署消息优先，缺失正式消息的旧 Run/活动讨论合成精简 custom 条目，v33 旧结束入口按结束位置挂接原始 sequence。按锚点分组分页，附属卡片 historyOrder=1，空 transcript 的锚点为 0；同组不拆开。该读模型不新增迁移、不更新消息、Run 或 Discussion；模型、压缩和 Usage 原读取方法继续读取原 transcript。回归见 `chat-message-pagination-api.test.ts`，包括原始消息逐字保持。
+
+
+2026-10-19 Diagnose 接入：v35 追加 diagnose_tasks/nodes/tool_calls 三个业务表，以及 diagnose_chat_runs/requests 两个 Chat 技术关联表。单 Session 活动唯一、当前节点条件写与历史/终态 UPDATE 触发器保证顺序规则；结论、节点收口和终态原子提交，回执同事务去重。稳定 diagnose 历史消息创建/标题更新/结束移动由触发器完成，继续使用统一 Chat 历史读取。重启保留诊断任务，不重放执行。 详见 [Diagnose 功能路由](./diagnose.md)。

@@ -79,6 +79,9 @@ export class ChatToolAuthorizationPolicy {
 			case "sftp_download":
 				return { kind: "defer_to_tool" };
 			case "read":
+			case "diagnose_update":
+			case "diagnose_inspect":
+			case "diagnose_finish":
 			case "ask_user_decision":
 			case "bubblewrap_inspect":
 			case "deployment_inspect":

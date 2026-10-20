@@ -1,4 +1,5 @@
 import type { Session } from "../domain/session.ts";
+import type { DiagnoseNode, DiagnoseTask } from "../domain/diagnose.ts";
 import type { FileTransfer } from "../domain/file-transfer.ts";
 import type { DeploymentDiscussion, DeploymentExecutableStage, DeploymentRun, DeploymentStageView } from "../domain/deployment.ts";
 import type { DeploymentModeView } from "../domain/deployment-session.ts";
@@ -46,6 +47,9 @@ export type WorkspaceEvent =
 	| { type: "connection.snapshot"; data: ConnectionPoolSnapshot }
 	| { type: "session.updated"; data: Pick<Session, "id" | "workspaceId" | "displayName" | "revision" | "updatedAt"> }
 	| { type: "transfer.updated"; data: FileTransfer }
+	| { type: "diagnose.task.updated"; data: DiagnoseTask }
+	| { type: "diagnose.node.updated"; data: { sessionId: string; workspaceId: string; node: DiagnoseNode } }
+	| { type: "diagnose.message.created" | "diagnose.message.updated"; data: { sessionId: string; message: ChatMessageProjection } }
 	| { type: "deployment.updated"; data: DeploymentRun }
 	| { type: "deployment.started" | "deployment.finished"; data: DeploymentModeView }
 	| { type: "deployment.message.created" | "deployment.message.updated"; data: { sessionId: string; message: ChatMessageProjection } }
@@ -54,7 +58,7 @@ export type WorkspaceEvent =
 		revision: number; view: DeploymentStageView } }
 	| { type: "deployment.discussion.updated"; data: DeploymentDiscussion };
 
-export type WorkspaceEventTopic = "monitoring" | "connection" | "transfers" | "sessions" | "deployments";
+export type WorkspaceEventTopic = "monitoring" | "connection" | "transfers" | "sessions" | "deployments" | "diagnoses";
 
 interface Subscriber {
 	topics: ReadonlySet<WorkspaceEventTopic>;
@@ -181,6 +185,7 @@ export class WorkspaceEventHub {
 function topicFor(type: WorkspaceEvent["type"]): WorkspaceEventTopic {
 	if (type === "session.updated") return "sessions";
 	if (type.startsWith("deployment.")) return "deployments";
+	if (type.startsWith("diagnose.")) return "diagnoses";
 	if (type.startsWith("monitor.")) return "monitoring";
 	if (type === "connection.snapshot") return "connection";
 	return "transfers";

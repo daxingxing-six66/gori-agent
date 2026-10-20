@@ -52,10 +52,13 @@ export function useChatRuntime(sessionId: string) {
 	const compactionControllerRef = useRef<AbortController | null>(null);
 	const olderMessagesRequestRef = useRef(false);
 	const queueMutationRef = useRef<symbol | null>(null);
+	const submissionRef = useRef<symbol | null>(null);
 	useEffect(() => {
 		queueMutationRef.current = null;
+		submissionRef.current = null;
+		setSubmitting(false);
 		setQueueMutationId(null);
-		return () => { queueMutationRef.current = null; };
+		return () => { queueMutationRef.current = null; submissionRef.current = null; };
 	}, [sessionId]);
 	useEffect(() => { stateRef.current = state; }, [state]);
 	useEffect(() => () => {
@@ -64,15 +67,17 @@ export function useChatRuntime(sessionId: string) {
 	}, [sessionId]);
 
 	const synchronize = useCallback(async (options: { afterSequence?: number; merge: boolean }) => {
+		// Read Run state first: an ended snapshot must be followed by its final persisted messages.
+		const activeRun = await chatApi.getActiveRun(sessionId);
 		const page = options.afterSequence === undefined
 			? await chatApi.listMessages(sessionId, { limit: 100 })
 			: { messages: await listMessagePages(sessionId, options.afterSequence), nextBeforeSequence: null };
-		const activeRun = await chatApi.getActiveRun(sessionId);
 		const [approvals, decisions, queue] = await Promise.allSettled([
 			chatApi.listApprovals(sessionId),
 			chatApi.listPendingDecisions(sessionId),
 			activeRun.run ? chatApi.listQueue(sessionId, activeRun.run.id) : Promise.resolve({ items: [] }),
 		]);
+		if (historySession.current !== sessionId) return;
 		dispatch({
 			type: options.merge ? "mergePersisted" : "hydrate",
 			messages: page.messages,
@@ -173,10 +178,18 @@ export function useChatRuntime(sessionId: string) {
 		};
 	}, [contextUsageStore, locale, runId, sessionId, synchronize]);
 
+	const attachRun = useCallback(async (run: ChatRun) => {
+		if (run.sessionId !== sessionId || historySession.current !== sessionId) return;
+		dispatch({ type: "setRun", run });
+		await synchronize({ afterSequence: stateRef.current.maxSequence, merge: true });
+	}, [sessionId, synchronize]);
+
 	const submit = useCallback(async ({ message, attachments, model, thinkingLevel, behavior, serverInteractionMode, workflow, deploymentRunId, deploymentDiscussionId }: SubmitInput): Promise<ChatRun | null> => {
 		const normalized = message.trim();
 		const attachmentIds = attachments.map((attachment) => attachment.id);
-		if ((!normalized && attachmentIds.length === 0) || submitting) return null;
+		if ((!normalized && attachmentIds.length === 0) || submissionRef.current) return null;
+		const submission = Symbol();
+		submissionRef.current = submission;
 		const requestId = crypto.randomUUID();
 		setSubmitting(true);
 		setRequestError(null);
@@ -184,6 +197,7 @@ export function useChatRuntime(sessionId: string) {
 			const currentRun = stateRef.current.run;
 			if (activeChatRun(currentRun)) {
 				const queued = await chatApi.enqueue(sessionId, currentRun.id, { requestId, behavior, message: normalized, attachmentIds });
+				if (historySession.current !== sessionId) return null;
 				dispatch({
 					type: "event",
 					event: { type: "queue.updated", data: { id: queued.id, behavior, message: normalized, status: "pending" } },
@@ -204,17 +218,23 @@ export function useChatRuntime(sessionId: string) {
 					...(deploymentRunId === undefined ? {} : { deploymentRunId }),
 					...(deploymentDiscussionId === undefined ? {} : { deploymentDiscussionId }),
 				});
+				if (historySession.current !== sessionId) return null;
 				dispatch({ type: "setRun", run });
 				return run;
 			}
 		} catch (requestError) {
-			dispatch({ type: "removeOptimistic", requestId });
-			setRequestError(requestError);
+			if (historySession.current === sessionId) {
+				dispatch({ type: "removeOptimistic", requestId });
+				setRequestError(requestError);
+			}
 			throw requestError;
 		} finally {
-			setSubmitting(false);
+			if (submissionRef.current === submission) {
+				submissionRef.current = null;
+				setSubmitting(false);
+			}
 		}
-	}, [sessionId, submitting]);
+	}, [sessionId]);
 
 	const cancel = useCallback(async (): Promise<void> => {
 		const currentRun = stateRef.current.run;
@@ -333,6 +353,7 @@ export function useChatRuntime(sessionId: string) {
 		} catch (failure) { if (historySession.current === sessionId) setRequestError(failure); }
 	}, [sessionId]);
 	return {
+		attachRun,
 		receiveHistoryMessage,
 		refreshHistory,
 		contextUsage,

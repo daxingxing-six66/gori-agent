@@ -5,6 +5,9 @@ import type { SshAgentManagementApi } from "../application/management-api.ts";
 import type { AttachmentService } from "../application/services/attachment-service.ts";
 import type { ChatService } from "../application/services/chat-service.ts";
 import type { DeploymentService } from "../application/services/deployment-service.ts";
+import type { DiagnoseService } from "../application/services/diagnose-service.ts";
+import type { DiagnoseChatCoordinator } from "../application/services/diagnose-chat-coordinator.ts";
+import { handleDiagnoseRoute } from "./diagnose-routes.ts";
 import type { FileTransferService } from "../application/services/file-transfer-service.ts";
 import type { LocalFileSystemService } from "../application/services/local-file-system-service.ts";
 import type { TerminalSessionService } from "../application/services/terminal-session-service.ts";
@@ -50,6 +53,8 @@ export function createSshAgentHttpHandler(options: {
 	broker: Pick<SshConnectionPoolControl, "snapshotWorkspace">;
 	chat: ChatService;
 	deployments: DeploymentService;
+	diagnoses?: DiagnoseService;
+	diagnoseChat?: DiagnoseChatCoordinator;
 	localFiles: LocalFileSystemService;
 	terminals: TerminalSessionService;
 	attachments: AttachmentService;
@@ -82,6 +87,8 @@ async function route(
 		broker: Pick<SshConnectionPoolControl, "snapshotWorkspace">;
 		chat: ChatService;
 		deployments: DeploymentService;
+		diagnoses?: DiagnoseService;
+		diagnoseChat?: DiagnoseChatCoordinator;
 		localFiles: LocalFileSystemService;
 		terminals: TerminalSessionService;
 		attachments: AttachmentService;
@@ -111,6 +118,10 @@ async function route(
 	}
 	const deploymentResponse = await handleDeploymentRoute(options.deployments, request, segments);
 	if (deploymentResponse !== null) return deploymentResponse;
+	if (options.diagnoses && options.diagnoseChat) {
+		const response = await handleDiagnoseRoute(options.diagnoses, options.diagnoseChat, request, segments);
+		if (response !== null) return response;
+	}
 	const attachmentResponse = await handleAttachmentRoute(options.attachments, request, url, segments);
 	if (attachmentResponse !== null) return attachmentResponse;
 	if (matches(segments, ["api", "settings", "compaction"])) {
@@ -647,7 +658,7 @@ function transferLimit(url: URL): number {
 	return limit;
 }
 function parseTopics(url: URL): ReadonlySet<WorkspaceEventTopic> {
-	const allowed = new Set<WorkspaceEventTopic>(["monitoring", "connection", "transfers", "sessions", "deployments"]);
+	const allowed = new Set<WorkspaceEventTopic>(["monitoring", "connection", "transfers", "sessions", "deployments", "diagnoses"]);
 	const values = (url.searchParams.get("topics") ?? "monitoring,connection,transfers").split(",");
 	const topics = new Set<WorkspaceEventTopic>();
 	for (const value of values) {

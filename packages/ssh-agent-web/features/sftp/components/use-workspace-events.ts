@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { parseSessionUpdate, type SessionUpdate } from "@/features/workspace/model/session-update";
 import { useLocale } from "@/features/i18n/components/locale-context";
-import { eventUrlWithLocale } from "@/shared/events/client";
+import { subscribeWorkspaceEvents } from "@/shared/events/workspace-events";
 import { nextWorkspaceEventStreamState } from "../model/sftp-state";
 import type {
 	ConnectionPoolSnapshot,
@@ -37,7 +37,7 @@ export function useWorkspaceEvents(
 	}, [handlers]);
 	useEffect(() => {
 		let receivedReady = false;
-		const events = new EventSource(eventUrlWithLocale(`/api/workspaces/${encodeURIComponent(workspaceId)}/events?topics=${encodeURIComponent(topicKey)}`, locale));
+		const events: Record<string, (event: Event) => void> = {};
 		const listen = <T,>(name: string, callback: ((value: T) => void) | undefined) => {
 			const listener = (event: Event) => {
 				try {
@@ -46,31 +46,25 @@ export function useWorkspaceEvents(
 					/* Ignore malformed server events and wait for the next snapshot. */
 				}
 			};
-			events.addEventListener(name, listener);
-			return () => events.removeEventListener(name, listener);
+			events[name] = listener;
 		};
-		events.onopen = () => setStreamState((current) => nextWorkspaceEventStreamState(current, "open"));
-		events.onerror = () => setStreamState((current) => nextWorkspaceEventStreamState(current, "error"));
-		const removers = [
-			listen<unknown>("session.updated", (value) => {
-				const session = parseSessionUpdate(value);
-				if (session && session.workspaceId === workspaceId) handlersRef.current.onSession?.(session);
-			}),
-			listen<RemoteMetricsSnapshot>("monitor.snapshot", (value) => handlersRef.current.onMetrics?.(value)),
-			listen<MonitorError>("monitor.error", (value) => handlersRef.current.onMonitorError?.(value)),
-			listen<ConnectionPoolSnapshot>("connection.snapshot", (value) => handlersRef.current.onConnection?.(value)),
-			listen<FileTransfer>("transfer.updated", (value) => handlersRef.current.onTransfer?.(value)),
-			listen("stream.ready", () => {
-				setStreamState((current) => nextWorkspaceEventStreamState(current, "ready"));
-				handlersRef.current.onReady?.();
-				if (receivedReady) handlersRef.current.onReconnect?.();
-				receivedReady = true;
-			}),
-		];
-		return () => {
-			for (const remove of removers) remove();
-			events.close();
-		};
+		listen<unknown>("session.updated", (value) => {
+			const session = parseSessionUpdate(value);
+			if (session && session.workspaceId === workspaceId) handlersRef.current.onSession?.(session);
+		});
+		listen<RemoteMetricsSnapshot>("monitor.snapshot", (value) => handlersRef.current.onMetrics?.(value));
+		listen<MonitorError>("monitor.error", (value) => handlersRef.current.onMonitorError?.(value));
+		listen<ConnectionPoolSnapshot>("connection.snapshot", (value) => handlersRef.current.onConnection?.(value));
+		listen<FileTransfer>("transfer.updated", (value) => handlersRef.current.onTransfer?.(value));
+		listen("stream.ready", () => {
+			setStreamState((current) => nextWorkspaceEventStreamState(current, "ready"));
+			handlersRef.current.onReady?.();
+			if (receivedReady) handlersRef.current.onReconnect?.();
+			receivedReady = true;
+		});
+		return subscribeWorkspaceEvents({ workspaceId, locale, topics: topicKey.split(","), events,
+			onOpen: () => setStreamState((current) => nextWorkspaceEventStreamState(current, "open")),
+			onError: () => setStreamState((current) => nextWorkspaceEventStreamState(current, "error")) });
 	}, [locale, topicKey, workspaceId]);
 	return streamState;
 }

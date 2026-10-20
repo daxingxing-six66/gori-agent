@@ -76,3 +76,6 @@ Workspace POST/PATCH 通过 `sandboxWritableRoots` 设置独立可写目录默�
 | 环境配置测试 | [server-environment.test.ts](../../../packages/ssh-agent/test/server-environment.test.ts) |
 
 新增接口时通常需要同步检查 handler、request validation、Management API、前端联调文档和相应定向测试。
+
+
+2026-10-19 Diagnose 接入：独立 diagnose-routes 在 `/api/sessions/:id/diagnoses` 分发创建/定位、active、元数据、nodes、conclusion-requests、conclusion 和 cancel。模型写入仅通过服务端绑定工具。Workspace SSE 新增 diagnoses topic，不发送报告正文。 详见 [Diagnose 功能路由](./diagnose.md)。

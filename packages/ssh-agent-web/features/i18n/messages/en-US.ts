@@ -14,6 +14,7 @@ import { enUSStatisticsMessages } from "@/features/i18n/messages/en-US/statistic
 import { enUSDeployTaskMessages } from "@/features/i18n/messages/en-US/deploy-task";
 import { enUSFileReaderMessages } from "@/features/i18n/messages/en-US/file-reader";
 import { enUSSessionActivityMessages } from "@/features/i18n/messages/en-US/session-activity";
+import { enUSDiagnoseMessages } from "@/features/i18n/messages/en-US/diagnose";
 
 export const enUSMessages = {
 	...enUSCommonMessages,
@@ -31,4 +32,5 @@ export const enUSMessages = {
 	...enUSDeployTaskMessages,
 	...enUSFileReaderMessages,
 	...enUSSessionActivityMessages,
+	...enUSDiagnoseMessages,
 } satisfies Record<MessageId, string>;

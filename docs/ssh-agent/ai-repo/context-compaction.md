@@ -64,3 +64,8 @@
 | HTTP 路由和请求校验 | `packages/ssh-agent/src/api/http-handler.ts`、`packages/ssh-agent/src/api/request-validation.ts` |
 
 前端接口和 SSE payload 见 [context-compaction-api.md](../frontend/context-compaction-api.md)。
+
+
+2026-10-19 Diagnose 接入：诊断工具与三项临时简报由 DiagnoseRuntime 共用投影加入运行时、离线占用及手动压缩 Context，原阈值/超限恢复回调前后刷新。UI 历史过滤已提取为 chat-ui-history-message.ts，只过滤 deployment/diagnose 两种 custom 消息，其他 custom 类型保持原有行为。 详见 [Diagnose 功能路由](./diagnose.md)。
+
+内置 gori-diagnosis Skill 同样通过该临时提示词投影参与估算和压缩前后的请求恢复；不依赖摘要记住 Skill，也不将它追加到 transcript 或改写基础头部。重复投影保留一份，任务结束后移除。

@@ -30,6 +30,7 @@ import { validateRecoveryInput, type DeploymentRecoveryInput } from "../deployme
 import type { RemoteSandboxRoute } from "./remote-sandbox-routing.ts";
 import { SessionSandboxPolicy } from "./session-sandbox-policy.ts";
 import type { DeploymentModeService } from "./deployment-mode-service.ts";
+import type { SessionTaskModePolicy } from "./session-task-mode-policy.ts";
 import { executeDeploymentBuild } from "./deployment-local-build.ts";
 import type { DeploymentModeView, DeploymentOutcome } from "../../domain/deployment-session.ts";
 import { deploymentAwaitsResume } from "../../domain/deployment-session.ts";
@@ -70,6 +71,7 @@ interface DeploymentServiceOptions {
 	repository: DeploymentRepository;
 	discussions?: DeploymentDiscussionRepository;
 	modes?: DeploymentModeService;
+	taskModes?: SessionTaskModePolicy;
 	executions?: DeploymentExecutionRepository;
 	transactions?: TransactionRunner;
 	events: WorkspaceEventHub;
@@ -504,7 +506,7 @@ export class DeploymentService {
 						if (!this.discussionRepository().updateDiscussing(proposedDiscussion, current.revision)) throw discussionConflict();
 						this.options.repository.insert(run);
 					});
-				} else this.options.repository.insert(run);
+				} else await this.insertLegacyTask(run);
 			}
 			catch (error) {
 				const current = this.options.repository.findByPlanningAgentRunId(sessionId, agentRunId);
@@ -596,9 +598,18 @@ export class DeploymentService {
 			...fullAccessApprovalsForPlan(plan, now),
 			createdAt: now, updatedAt: now,
 		};
-		this.options.repository.insert(run);
+		await this.insertLegacyTask(run);
 		this.publish(run);
 		return run;
+	}
+
+	private async insertLegacyTask(run: DeploymentRun): Promise<void> {
+		const insert = () => {
+			this.options.taskModes?.assertCanStart(run.sessionId, "deploy");
+			this.options.repository.insert(run);
+		};
+		if (this.options.transactions) await this.options.transactions.run(insert);
+		else insert();
 	}
 
 	get(sessionId: string, id: string): DeploymentRun {
@@ -1592,6 +1603,7 @@ export class DeploymentService {
 	}
 
 	private async requireWritableSession(sessionId: string): Promise<void> {
+		this.options.taskModes?.assertCanStart(sessionId, "deploy");
 		if (await this.sandboxPolicy.readOnly(sessionId))
 			throw new DeploymentError("deployment_sandbox_route_changed", "Deployment is unavailable in read-only mode. Select a writable Session sandbox mode first.", 409);
 	}

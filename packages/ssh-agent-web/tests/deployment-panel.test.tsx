@@ -8,7 +8,7 @@ import { DeploymentModulePicker } from "../features/deploy/components/deployment
 import { deploymentModuleOptions } from "../features/deploy/model/deployment-module-options";
 import { ChatTimeline } from "../features/chat/components/chat-timeline";
 import { DeploymentLogStore } from "../features/deploy/runtime/deployment-log-store";
-import { conversationHistory } from "../features/deploy/model/deployment-history";
+import { conversationHistory } from "../features/chat/model/conversation-history";
 import { deploymentNeedsReview, deploymentReviewState } from "../features/deploy/model/deployment-review";
 import type { DeploymentDiscussion, DeploymentProfileSummary, DeploymentRun } from "../features/deploy/model/deployment";
 import type { ChatTimelineEntry } from "../features/chat/model/chat-runtime-state";

@@ -17,6 +17,7 @@ vi.mock("../features/i18n/components/use-localized-error-message", () => ({ useL
 vi.mock("../features/i18n/components/locale-context", () => ({ useLocale: () => ({ locale: "zh-CN" }) }));
 vi.mock("../features/chat/api/chat-api", () => ({ chatApi: {
 	cancelRun: vi.fn(), listMessages: vi.fn(), getActiveRun: vi.fn(), listApprovals: vi.fn(), listPendingDecisions: vi.fn(), listQueue: vi.fn(),
+	createRun: vi.fn(),
 } }));
 import { chatApi } from "../features/chat/api/chat-api";
 import { useChatRuntime } from "../features/chat/runtime/use-chat-runtime";
@@ -36,6 +37,19 @@ beforeEach(() => {
 });
 
 describe("stop response synchronization", () => {
+	it("submits once before React rerenders and attaches ordinary Chat without a competing history hydration", async () => {
+		projected = initialChatRuntimeState;
+		let complete!: (run: ChatRun) => void;
+		vi.mocked(chatApi.createRun).mockImplementation(() => new Promise((resolve) => { complete = resolve; }));
+		const runtime = useChatRuntime("session");
+		const input = { message: "观察一下", attachments: [], model: { id: "model", providerId: "provider" },
+			thinkingLevel: "off" as const, behavior: "follow_up" as const, serverInteractionMode: "command" as const };
+		const first = runtime.submit(input); const duplicate = runtime.submit(input);
+		expect(await duplicate).toBeNull(); expect(chatApi.createRun).toHaveBeenCalledOnce();
+		complete({ ...run, requestId: vi.mocked(chatApi.createRun).mock.calls[0]![1].requestId }); await first;
+		expect(projected.timeline).toHaveLength(1); expect(projected.timeline[0]?.runId).toBe(run.id);
+		expect(chatApi.listMessages).not.toHaveBeenCalled();
+	});
 	it("retains queued controls while the same Run resumes, even if the recovery request fails", async () => {
 		vi.mocked(chatApi.cancelRun).mockResolvedValue(run);
 		vi.mocked(chatApi.listQueue).mockRejectedValue(new Error("offline"));

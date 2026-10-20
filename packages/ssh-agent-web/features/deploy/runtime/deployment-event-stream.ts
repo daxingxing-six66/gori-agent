@@ -1,4 +1,4 @@
-import { eventUrlWithLocale } from "@/shared/events/client";
+import { subscribeWorkspaceEvents } from "@/shared/events/workspace-events";
 import type { SupportedLocale } from "@/features/i18n/model/locale";
 import { isAgentMessage, isRecord, type ChatMessage } from "@/features/chat/model/chat";
 import { isDeploymentDiscussion, isDeploymentRun, type DeploymentDiscussion, type DeploymentRun } from "../model/deployment";
@@ -10,14 +10,13 @@ export function subscribeDeploymentEvents(options: {
 	onTask(task: DeploymentTask): void; onLog(chunk: DeploymentLogChunk): void; onMessage?(message: ChatMessage): void;
 	onReconnect(): void;
 }): () => void {
-	let disposed = false;
-	const stream = new EventSource(eventUrlWithLocale(`/api/workspaces/${encodeURIComponent(options.workspaceId)}/events?topics=deployments`, options.locale));
-	const listen = (type: string, accept: (value: unknown) => void) => stream.addEventListener(type, (event) => {
-		if (disposed || !(event instanceof MessageEvent) || typeof event.data !== "string") return;
+	const events: Record<string, (event: Event) => void> = {};
+	const listen = (type: string, accept: (value: unknown) => void) => { events[type] = (event) => {
+		if (!(event instanceof MessageEvent) || typeof event.data !== "string") return;
 		let value: unknown;
 		try { value = JSON.parse(event.data); } catch { return; }
 		accept(value);
-	});
+	}; };
 	listen("deployment.updated", (value) => {
 		if (isDeploymentRun(value) && value.sessionId === options.sessionId && value.workspaceId === options.workspaceId) options.onRun(value);
 	});
@@ -39,6 +38,6 @@ export function subscribeDeploymentEvents(options: {
 			options.onMessage?.({ id: entry.id, sequence: entry.sequence, createdAt: entry.createdAt, message: entry.message,
 				...(typeof entry.runId === "string" ? { runId: entry.runId } : {}) });
 	});
-	stream.addEventListener("stream.ready", () => { if (!disposed) options.onReconnect(); });
-	return () => { disposed = true; stream.close(); };
+	events["stream.ready"] = () => options.onReconnect();
+	return subscribeWorkspaceEvents({ workspaceId: options.workspaceId, locale: options.locale, topics: ["deployments"], events });
 }

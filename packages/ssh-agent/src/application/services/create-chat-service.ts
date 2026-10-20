@@ -26,6 +26,7 @@ import type { BubblewrapInstallationService } from "./bubblewrap-installation-se
 import type { SshTargetSnapshot } from "../../domain/ssh-target.ts";
 import type { RemoteSandboxRoute } from "./remote-sandbox-routing.ts";
 import { SessionSandboxPolicy } from "./session-sandbox-policy.ts";
+import type { DiagnoseRuntime } from "../diagnose-runtime.ts";
 
 export interface CreateChatServiceOptions {
 	prompts: ChatPromptService;
@@ -40,6 +41,7 @@ export interface CreateChatServiceOptions {
 	localCwd: string;
 	deploymentSetupInstructions?: (sessionId: string) => Promise<string>;
 	deployments?: AgentDeploymentService;
+	diagnoses?: DiagnoseRuntime;
 	previewDeploymentRemoteStage?: (sessionId: string, deploymentRunId: string,
 		stage: "restart" | "verify") => { readonly command: string; readonly mode: "workspace_write" | "full_access"; readonly sessionAuthorized?: boolean } | undefined;
 	resolveRemoteTarget?: (sessionId: string) => Promise<SshTargetSnapshot>;
@@ -123,6 +125,7 @@ export function createChatService(options: CreateChatServiceOptions): ChatServic
 			attachments: options.chatAttachments,
 			decisions,
 			deployments: options.deployments,
+			diagnoses: options.diagnoses,
 			bubblewrapInstallations: options.bubblewrapInstallations,
 			createRemoteTool: options.createRemoteTool,
 			createTerminalTool: options.createTerminalTool,
@@ -139,6 +142,7 @@ export function createChatService(options: CreateChatServiceOptions): ChatServic
 		localCwd: options.localCwd,
 		...(options.deploymentSetupInstructions === undefined ? {} : { deploymentSetupInstructions: options.deploymentSetupInstructions }),
 		...(options.deployments === undefined ? {} : { deployments: options.deployments }),
+		...(options.diagnoses ? { diagnoses: options.diagnoses } : {}),
 		bindDeploymentRun: (runId, deploymentRunId) => authorization.bindDeploymentRun(runId, deploymentRunId),
 		ids: options.ids,
 		bindServerInteraction: options.bindServerInteraction,

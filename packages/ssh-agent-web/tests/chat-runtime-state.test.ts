@@ -219,6 +219,31 @@ describe("Chat runtime state", () => {
 		expect(state.timeline[0]?.optimisticRequestId).toBeUndefined();
 	});
 
+	it("reconciles persistence before SSE without removing an earlier identical user message", () => {
+		const older = { id: "old", sequence: 1, runId: "old-run", createdAt: 1,
+			message: { role: "user" as const, content: "观察一下", timestamp: 1 } };
+		const current = { id: "new", sequence: 2, runId: run.id, createdAt: 11,
+			message: { role: "user" as const, content: "观察一下", timestamp: 11 } };
+		let state = chatRuntimeReducer(initialChatRuntimeState, { type: "hydrate", messages: [older] });
+		state = chatRuntimeReducer(state, { type: "optimisticUser", requestId: run.requestId, message: "观察一下", attachments: [], timestamp: 10 });
+		state = chatRuntimeReducer(state, { type: "setRun", run });
+		state = chatRuntimeReducer(state, { type: "mergePersisted", messages: [older] });
+		expect(state.timeline).toHaveLength(2);
+		state = chatRuntimeReducer(state, { type: "mergePersisted", messages: [current] });
+		expect(state.timeline).toHaveLength(2);
+		expect(state.timeline.every((entry) => !entry.optimisticRequestId)).toBe(true);
+		state = chatRuntimeReducer(state, { type: "event", event: { type: "message_end", data: { type: "message_end", message: current.message } } });
+		expect(state.timeline).toHaveLength(2);
+	});
+
+	it("reconciles a history response that arrives before the create-Run acknowledgement", () => {
+		let state = chatRuntimeReducer(initialChatRuntimeState, { type: "optimisticUser", requestId: run.requestId, message: "观察一下", attachments: [], timestamp: 10 });
+		state = chatRuntimeReducer(state, { type: "mergePersisted", messages: [{ id: "user", sequence: 1, runId: run.id, createdAt: 11,
+			message: { role: "user", content: "观察一下", timestamp: 11 } }] });
+		state = chatRuntimeReducer(state, { type: "setRun", run });
+		expect(state.timeline).toHaveLength(1); expect(state.timeline[0]?.sequence).toBe(1);
+	});
+
 	it("renders persisted image attachments and retains optimistic images after the user SSE event", () => {
 		const attachment: SessionAttachment = {
 			id: "attachment-1",

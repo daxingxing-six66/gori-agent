@@ -11,7 +11,7 @@
 
 ## 当前边界
 
-- 前端 Workspace SSE 由各功能适配器订阅，统一通过独立事件 origin 与普通 REST 连接额度隔离；传输层不解析业务事件或合并 topic，见 [transport-channels.md](./transport-channels.md)。
+- 前端 Workspace SSE 由各功能适配器订阅，统一通过独立事件 origin 与普通 REST 连接额度隔离；shared/events/workspace-events.ts 按 Workspace + Locale 复用连接并合并请求 topics，业务解析、状态推导和重连补读仍归原适配器。消费者离开只取消其订阅，见 [transport-channels.md](./transport-channels.md)。
 
 - 后端共享 Broker 的上传和下载共用 20 个活动名额、3000 个 FIFO 等待位置；满队列返回 `transfer_queue_full`，公开异常状态 429，Tool 失败提示支持中英文。排队不新增 Transfer 状态，目录/stat/delete 不占传输名额。Agent 下载收到数据后才打开本地临时文件，空文件在下载成功后创建。
 

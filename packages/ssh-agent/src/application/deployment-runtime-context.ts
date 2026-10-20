@@ -1,6 +1,6 @@
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import type { DeploymentModeView } from "../domain/deployment-session.ts";
-import { modelVisibleMessages } from "./deployment-history-message.ts";
+import { modelVisibleMessages } from "./chat-ui-history-message.ts";
 
 export function deploymentStateInstructions(mode: DeploymentModeView | null): string {
 	return `<deployment-state>\n${JSON.stringify(mode ? {

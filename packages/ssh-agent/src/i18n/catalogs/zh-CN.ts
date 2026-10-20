@@ -1,6 +1,7 @@
 import type { BackendMessageKey } from "./en-US.ts";
 
 export const zhCNMessages = {
+	"diagnose.error": "诊断请求失败：{reason}",
 	"approval.remote_session_unconfined": "此 Session 已关闭沙箱。命令将使用 SSH 用户的文件系统权限执行：{command}。是否批准本次命令？",
 	"management.session_configuration_in_progress": "Session 执行环境正在切换，请等待 Terminal 重开后再试。",
 	"approval.remote_full_access": "本次命令将不受远端文件系统沙箱约束，使用 SSH 用户权限执行。理由：{justification}。是否仅批准本次调用？",

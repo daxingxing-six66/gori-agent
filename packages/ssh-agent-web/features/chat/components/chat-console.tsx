@@ -40,6 +40,9 @@ import { useDeployment } from "@/features/deploy/runtime/use-deployment";
 import { useDeploymentReview } from "@/features/deploy/runtime/use-deployment-review";
 import { FileReaderPage } from "@/features/file-reader/components/file-reader-page";
 import { useFileReaderTabs } from "@/features/file-reader/runtime/use-file-reader-tabs";
+import { useDiagnose } from "@/features/diagnose/runtime/use-diagnose";
+import { diagnoseCommand } from "@/features/diagnose/model/diagnose-command";
+import { DiagnoseTaskPage } from "@/features/diagnose/components/diagnose-task-page";
 import "./chat-task-layout.css";
 
 export function ChatConsole({ sessionId }: { sessionId: string }) {
@@ -51,6 +54,9 @@ export function ChatConsole({ sessionId }: { sessionId: string }) {
 	const deployment = useDeployment(sessionId, item?.workspace.id, { onHistoryMessage: runtime.receiveHistoryMessage, onHistoryResync: runtime.refreshHistory });
 	const modelSelection = useChatModelSelection(sessionId, runtime.loading, runtime.state.run);
 	const { model, thinkingLevel, loading: modelSelectionLoading, error: modelSelectionError } = modelSelection;
+	const diagnose = useDiagnose({ sessionId, workspaceId: item?.workspace.id, model, thinkingLevel,
+		serverInteractionMode: terminalMode.status?.effectiveServerInteractionMode ?? "command", attachRun: runtime.attachRun,
+		onHistoryMessage: runtime.receiveHistoryMessage, onHistoryResync: runtime.refreshHistory });
 	const [autoAuditPending, setAutoAuditPending] = useState(false);
 	const [autoAuditOverride, setAutoAuditOverride] = useState<boolean | null>(null);
 	const [autoAuditError, setAutoAuditError] = useState<unknown>(null);
@@ -67,13 +73,13 @@ export function ChatConsole({ sessionId }: { sessionId: string }) {
 	const [activeTaskTabId, setActiveTaskTabId] = useState<string | null>("terminal");
 	const active = activeChatRun(runtime.state.run);
 	const sandbox = useSessionSandbox({ sessionId, session: item?.session, refreshSessions: refresh,
-		refreshTerminal: terminalMode.refresh, disabled: active || runtime.submitting || runtime.compacting || autoAuditPending || planningSubmitting || deployment.busy || terminalMode.loading || terminalMode.mutating || terminalMode.status?.transitionInProgress === true });
+		refreshTerminal: terminalMode.refresh, disabled: active || runtime.submitting || runtime.compacting || autoAuditPending || planningSubmitting || deployment.busy || diagnose.busy || terminalMode.loading || terminalMode.mutating || terminalMode.status?.transitionInProgress === true });
 	const showActivity = waitingForChatResponse(runtime.state, runtime.loading, runtime.submitting);
 	const autoAuditChecked = autoAuditOverride ?? item?.session.autoAudit ?? false;
 	const terminalTask = useTerminalTask({ sessionId, mode: terminalMode, runActive: active,
 		submitting: runtime.submitting, sandboxPending: sandbox.pending });
 	const fileReader = useFileReaderTabs(sessionId, item?.session.workDir);
-	const taskDisplay = useTaskContainerDisplay(sessionId, terminalTask.present || deployment.open || fileReader.documents.length > 0);
+	const taskDisplay = useTaskContainerDisplay(sessionId, terminalTask.present || deployment.open || diagnose.open || fileReader.documents.length > 0);
 	const openFile = useCallback((path: string) => {
 		setActiveTaskTabId(fileReader.open(path));
 		taskDisplay.reveal();
@@ -92,6 +98,10 @@ export function ChatConsole({ sessionId }: { sessionId: string }) {
 				: undefined;
 	const composerTools: readonly ChatComposerTool[] = [
 		...sandbox.tools,
+		{ id: "diagnose", icon: "diagnose", name: intl.formatMessage({ id: "diagnose.tool.name" }),
+			description: intl.formatMessage({ id: "diagnose.tool.description" }), keywords: ["diagnose", "诊断", "排查"],
+			disabled: diagnose.busy || sandbox.pending || (!diagnose.activeTask && (active || !!deployment.activeTask)),
+			...(diagnose.activeTask ? { status: { label: intl.formatMessage({ id: "diagnose.status.active" }), tone: "active" as const } } : {}) },
 		{
 			id: "deploy",
 			icon: "deploy",
@@ -99,7 +109,7 @@ export function ChatConsole({ sessionId }: { sessionId: string }) {
 			description: intl.formatMessage({ id: "deploy.tool.description" }),
 			keywords: ["deploy", "部署", "发布", "流水线"],
 			...(deployment.activeTask ? { status: { label: intl.formatMessage({ id: "deploy.task.started" }), tone: "active" as const } } : {}),
-			disabled: (!deployment.activeTask && (active || sandbox.readOnly)) || deployment.busy || sandbox.pending,
+			disabled: (!deployment.activeTask && (active || sandbox.readOnly || !!diagnose.activeTask)) || deployment.busy || sandbox.pending,
 		},
 		{
 			id: "terminal",
@@ -175,6 +185,7 @@ export function ChatConsole({ sessionId }: { sessionId: string }) {
 	useEffect(() => {
 		if (deployment.open) setActiveTaskTabId("deploy");
 	}, [deployment.open]);
+	useEffect(() => { if (diagnose.open) setActiveTaskTabId("diagnose"); }, [diagnose.open]);
 
 	useEffect(() => {
 		if (deployment.pickerOpen) taskDisplay.changeMode("docked");
@@ -206,6 +217,8 @@ export function ChatConsole({ sessionId }: { sessionId: string }) {
 		const localResult = await sandbox.execute(message, attachments.length > 0);
 		if (localResult !== null) return localResult;
 		if (sandbox.pending) return false;
+		const diagnoseResult = await diagnose.execute(message, attachments);
+		if (diagnoseResult !== null) { if (diagnoseResult) { setActiveTaskTabId("diagnose"); taskDisplay.reveal(); } return diagnoseResult; }
 		if (terminalMode.loading || terminalMode.status?.transitionInProgress || runtime.submitting) return false;
 		if (!active && !model) return false;
 		try {
@@ -233,7 +246,7 @@ export function ChatConsole({ sessionId }: { sessionId: string }) {
 			}
 			return false;
 		}
-	}, [active, model, modelSelection.selectModel, modelSelection.selectThinkingLevel, runtime.submit, runtime.submitting, sandbox.execute, sandbox.pending, terminalMode.loading, terminalMode.status?.effectiveServerInteractionMode, terminalMode.status?.transitionInProgress, thinkingLevel]);
+	}, [active, diagnose.execute, taskDisplay.reveal, model, modelSelection.selectModel, modelSelection.selectThinkingLevel, runtime.submit, runtime.submitting, sandbox.execute, sandbox.pending, terminalMode.loading, terminalMode.status?.effectiveServerInteractionMode, terminalMode.status?.transitionInProgress, thinkingLevel]);
 
 	const updateAutoAudit = async (checked: boolean) => {
 		if (!item || active || autoAuditPending || sandbox.pending) return;
@@ -263,6 +276,9 @@ export function ChatConsole({ sessionId }: { sessionId: string }) {
 		}
 		if (toolId === "sandbox") { void sandbox.execute("/sandbox"); return; }
 		if (sandbox.pending) return;
+		if (toolId === "diagnose") {
+			void diagnose.show().then((shown) => { if (shown) { setActiveTaskTabId("diagnose"); taskDisplay.reveal(); } }); return;
+		}
 		if (toolId === "deploy" && (!sandbox.readOnly || deployment.activeTask) && (!active || deployment.activeTask) && !deployment.busy) {
 			if (deployment.pickerOpen) { deployment.closePicker(); composerRef.current?.focus(); return; }
 			void deployment.show().then((surface) => {
@@ -271,7 +287,7 @@ export function ChatConsole({ sessionId }: { sessionId: string }) {
 			return;
 		}
 		if (toolId === "compact" && compactionDisabledReason === undefined) void runtime.compact();
-	}, [active, compactionDisabledReason, deployment, runtime.compact, sandbox.execute, sandbox.pending, sandbox.readOnly, taskDisplay.reveal, terminalTask.menuDisabledReason, terminalTask.reveal]);
+	}, [active, compactionDisabledReason, deployment, diagnose.show, runtime.compact, sandbox.execute, sandbox.pending, sandbox.readOnly, taskDisplay.reveal, terminalTask.menuDisabledReason, terminalTask.reveal]);
 
 	const requestBubblewrapInstallation = useCallback(async () => {
 		if (!model || active || sandbox.readOnly || sandbox.pending || runtime.submitting || terminalMode.status?.effectiveServerInteractionMode !== "command") return;
@@ -375,6 +391,12 @@ export function ChatConsole({ sessionId }: { sessionId: string }) {
 	for (const document of fileReader.documents) taskTabs.push({ id: document.id, title: document.name,
 		close: { label: intl.formatMessage({ id: "fileReader.close" }, { name: document.name }), onRequestClose: () => fileReader.close(document.id) },
 		content: <FileReaderPage key={`${sessionId}:${document.id}`} sessionId={sessionId} document={document} /> });
+	if (diagnose.open && diagnose.selectedTaskId) taskTabs.push({ id: "diagnose", title: "Diagnose",
+		close: { label: intl.formatMessage({ id: "diagnose.close" }), onRequestClose: diagnose.hide },
+		content: <DiagnoseTaskPage key={`${sessionId}:${diagnose.selectedTaskId}`} sessionId={sessionId} taskId={diagnose.selectedTaskId}
+			visible={activeTaskTabId === "diagnose" && taskDisplay.mode !== "collapsed"}
+			entry={diagnose.selected} busy={diagnose.busy} error={diagnose.error} view={diagnose.view}
+			onConclude={() => { void diagnose.conclude(); }} onCancel={() => { void diagnose.cancel(); }} onRetry={() => { void diagnose.refresh(); }} onOlder={diagnose.loadOlder} /> });
 
 	if (treeLoading && tree === null) return <div className="grid h-dvh place-items-center text-sm text-zinc-400">{intl.formatMessage({ id: "session.loading" })}</div>;
 	if (!item) return <div className="grid h-dvh place-items-center text-sm text-zinc-500">{intl.formatMessage({ id: "session.notFound" })}</div>;
@@ -386,7 +408,7 @@ export function ChatConsole({ sessionId }: { sessionId: string }) {
 			<WorkspaceSidebar activeWorkspaceId={item.workspace.id} activeSessionId={item.session.id}
 				onSessionUpdated={async (updatedId) => { if (updatedId === sessionId) await terminalMode.refresh(); }} />
 			<main
-				className={`session-console page-main page-main-chat ${taskTabs.length > 0 ? "session-console-tasks-present" : ""} ${(terminalTask.expanded || deployment.open || fileReader.documents.length > 0) && taskDisplay.mode === "docked" ? "session-console-tasks-active" : ""}`}
+				className={`session-console page-main page-main-chat ${taskTabs.length > 0 ? "session-console-tasks-present" : ""} ${(terminalTask.expanded || deployment.open || diagnose.open || fileReader.documents.length > 0) && taskDisplay.mode === "docked" ? "session-console-tasks-active" : ""}`}
 				data-task-display={taskDisplay.mode}
 				data-task-container-scope
 				style={{ "--task-panel-width": TASK_CONTAINER_DEFAULTS.sidePanelWidth,
@@ -414,6 +436,7 @@ export function ChatConsole({ sessionId }: { sessionId: string }) {
 				<div className="session-console-chat relative min-h-0">
 					<div ref={scrollRef} className="app-scrollbar h-full overflow-y-auto" onScroll={handleChatScroll}>
 						<ChatTimeline showActivity={showActivity} loading={runtime.loading} loadingOlderMessages={runtime.loadingOlderMessages} timeline={runtime.state.timeline} tools={runtime.state.tools} approvals={runtime.state.approvals} approvalMutationId={runtime.approvalMutationId} targetHost={targetHost} run={runtime.state.run} latestUserText={latestUserText} onResolveApproval={resolveApproval} onRestoreDraft={restoreDraft} onOpenFile={openFile}
+							onOpenDiagnose={(id) => { setActiveTaskTabId("diagnose"); taskDisplay.reveal(); diagnose.openHistory(id); }}
 							onOpenDeployment={(id) => { setActiveTaskTabId("deploy"); taskDisplay.reveal(); void deployment.openHistory(id); }} />
 						{activeDeploymentRun && deploymentReview && deploymentReview.pendingExceptions.length > 0 ? <div data-deployment-review tabIndex={-1} className="mx-auto max-w-[820px] px-5 py-5 lg:px-8">
 							<DeploymentFullAccessReview run={activeDeploymentRun} stages={deploymentReview.exceptionStages}
@@ -440,19 +463,19 @@ export function ChatConsole({ sessionId }: { sessionId: string }) {
 					onSelectThinkingLevel={modelSelection.selectThinkingLevel}
 					composerTools={composerTools}
 					onToolSelect={selectComposerTool}
-					submitting={runtime.submitting || sandbox.pending}
+					submitting={runtime.submitting || sandbox.pending || diagnose.busy}
 					cancelling={runtime.cancelling}
 					terminalBusy={terminalMode.loading || terminalMode.status?.transitionInProgress === true}
 					onSubmit={submit}
-					isLocalCommand={isSessionSandboxCommand}
+					isLocalCommand={(message) => isSessionSandboxCommand(message) || diagnoseCommand(message) !== null}
 					onCancel={cancelRun}
 					autoAuditChecked={autoAuditChecked}
 					autoAuditPending={autoAuditPending || sandbox.pending}
 					autoAuditError={autoAuditError}
 					onClearAutoAuditError={() => setAutoAuditError(null)}
 					onUpdateAutoAudit={(checked) => void updateAutoAudit(checked)}
-					runtimeError={runtime.error}
-					onClearRuntimeError={() => runtime.setError(null)}
+					runtimeError={runtime.error ?? diagnose.error}
+					onClearRuntimeError={() => { runtime.setError(null); diagnose.clearError(); }}
 					manualCompactionResult={runtime.manualCompactionResult}
 					compacting={runtime.compacting}
 					onClearManualCompactionResult={runtime.clearManualCompactionResult}

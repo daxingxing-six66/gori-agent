@@ -78,6 +78,12 @@ import { Ssh2ChannelBroker } from "../infrastructure/ssh/ssh2-channel-broker.ts"
 import { Ssh2HostKeyProbe } from "../infrastructure/ssh/ssh2-host-key-probe.ts";
 import { SqliteStatisticsQuery } from "../infrastructure/sqlite/sqlite-statistics-query.ts";
 import { StatisticsService } from "../application/statistics/statistics-service.ts";
+import { SqliteDiagnoseRepository } from "../infrastructure/sqlite/sqlite-diagnose-repository.ts";
+import { DiagnoseService } from "../application/services/diagnose-service.ts";
+import { DiagnoseChatCoordinator } from "../application/services/diagnose-chat-coordinator.ts";
+import { SessionTaskModePolicy } from "../application/services/session-task-mode-policy.ts";
+import { DiagnoseRuntime } from "../application/diagnose-runtime.ts";
+import { hasActiveDeploymentTask } from "../infrastructure/sqlite/sqlite-session-task-mode-facts.ts";
 
 export interface CreateSqliteManagementBackendOptions {
 	connectionTester?: SshConnectionTester;
@@ -106,6 +112,7 @@ export interface SqliteManagementBackend {
 	commandOperations: CommandOperationService;
 	fileTransfers: FileTransferService;
 	deployments: DeploymentService;
+	diagnoses: DiagnoseService;
 	attachments: AttachmentService;
 	terminalSessions: TerminalSessionService;
 	terminalInteractions: TerminalInteractionService;
@@ -133,6 +140,7 @@ export function createSqliteManagementBackend(options: CreateSqliteManagementBac
 		const deploymentRepository = new SqliteDeploymentRepository(database);
 		const deploymentDiscussions = new SqliteDeploymentDiscussionRepository(database);
 		const deploymentSessions = new SqliteDeploymentSessionRepository(database);
+		const diagnoseRepository = new SqliteDiagnoseRepository(database);
 		const deploymentExecutions = new SqliteDeploymentExecutionRepository(database);
 		const fileTransferRepository = new SqliteFileTransferRepository(database);
 		const chatRepository = new SqliteChatRepository(database);
@@ -168,8 +176,12 @@ export function createSqliteManagementBackend(options: CreateSqliteManagementBac
 		});
 		const targets = new DefaultSshTargetResolver({ sessions, workspaces, credentials: sshCredentials, hostTrust });
 		const events = new WorkspaceEventHub();
+		const taskModes = new SessionTaskModePolicy({ hasDiagnose: (id) => !!diagnoseRepository.active(id),
+			hasDeploy: (id) => hasActiveDeploymentTask(database, id) });
+		const diagnoses = new DiagnoseService({ repository: diagnoseRepository, sessions, transactions, events, clock, ids, modes: taskModes });
+		const diagnoseRuntime = new DiagnoseRuntime(diagnoses);
 		const deploymentModes = new DeploymentModeService({ sessions: deploymentSessions, discussions: deploymentDiscussions,
-			runs: deploymentRepository, transactions, events });
+			runs: deploymentRepository, transactions, events, taskModes });
 		const fileTransfers = new FileTransferService({
 			transfers: fileTransferRepository,
 			targets,
@@ -218,6 +230,7 @@ export function createSqliteManagementBackend(options: CreateSqliteManagementBac
 			repository: deploymentRepository,
 			discussions: deploymentDiscussions,
 			modes: deploymentModes,
+			taskModes,
 			executions: deploymentExecutions,
 			transactions,
 			events,
@@ -303,6 +316,7 @@ export function createSqliteManagementBackend(options: CreateSqliteManagementBac
 			localCwd,
 			deploymentSetupInstructions: (sessionId) => deployments.setupInstructions(sessionId),
 			deployments,
+			diagnoses: diagnoseRuntime,
 			previewDeploymentRemoteStage: (sessionId, deploymentRunId, stage) =>
 				deployments.previewRemoteStage(sessionId, deploymentRunId, stage),
 			resolveRemoteTarget: (sessionId) => targets.resolve(sessionId),
@@ -358,6 +372,7 @@ export function createSqliteManagementBackend(options: CreateSqliteManagementBac
 			sessions,
 			localCwd,
 		});
+		const diagnoseChat = new DiagnoseChatCoordinator({ diagnoses, chat, repository: chatRepository, lifecycle: sessionLifecycle });
 		const credentialService = new DefaultCredentialService({
 			credentials: sshCredentials,
 			secrets,
@@ -417,6 +432,8 @@ export function createSqliteManagementBackend(options: CreateSqliteManagementBac
 				broker: connectionPool,
 				chat,
 				deployments,
+				diagnoses,
+				diagnoseChat,
 				localFiles,
 				terminals: terminalSessions,
 				attachments,
@@ -427,6 +444,7 @@ export function createSqliteManagementBackend(options: CreateSqliteManagementBac
 			commandOperations,
 			fileTransfers,
 			deployments,
+			diagnoses,
 			attachments,
 			terminalSessions,
 			terminalInteractions,

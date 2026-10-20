@@ -62,7 +62,7 @@ Profile hash、SSH 主机指纹、凭据版本、远端用户、Workspace revisi
 
 ## 前端职责与当前完成边界
 
-- 部署事件使用独立的事件 origin，与历史、状态和其他 REST 请求的连接额度隔离。`deployment-event-stream.ts` 保留 Session 过滤、结构验证与重连补读，地址通过 `shared/events/client.ts` 生成；见 [transport-channels.md](./transport-channels.md)。
+- 部署事件使用独立的事件 origin，与历史、状态和其他 REST 请求的连接额度隔离。`deployment-event-stream.ts` 保留 Session 过滤、结构验证与重连补读，通过 shared/events/workspace-events.ts 与同 Workspace/Locale 的标题、监控和 Diagnose 复用一条 EventSource；取消 Deploy 消费者不关闭其他功能订阅。见 [transport-channels.md](./transport-channels.md)。
 
 - `ChatConsole` 负责装配 Terminal/Deploy Tab，通用 TaskContainer 没有部署业务导入。`DeploymentTaskPage` 展示服务、目标、待确认计划，开始后再显示横向阶段、当前步骤、文件真实字节（自适应 B/KiB/MiB/GiB）、阶段错误和日志；放大复用原容器，不覆盖左侧导航。Tab × 只隐藏，退出部署走独立接口；只有所展示任务确实是当前活动部署才提供退出按钮，模块选择已移至 Composer 上拉面板，任务页不再接收 Profile 或选择/配置回调。部署结算 reason 不再作为页首长段文字展示，模型结论仍归中间会话，持久化原因和阶段错误不变。
 - 待确认计划使用竖向时间轴，四个阶段保留 Hammer/Upload/RotateCw/ShieldCheck 图标，节点间距 32px，默认收起；展开通过短连接线延伸到独立内容卡片，避免整块折叠表格堆叠。构建显示步骤数量并可展开完整 cwd/命令；产物显示文件名与目标摘要，进一步展开查看完整源/目标。样式局限在 `deployment-plan.css` 并使用主题语义色。开始按钮位于分隔线上方、右对齐、32px 高，使用中性高对比表面和轻微阴影；禁用与启动中反馈保留。
@@ -74,7 +74,7 @@ Profile hash、SSH 主机指纹、凭据版本、远端用户、Workspace revisi
 - `DeploymentHistoryCard` 与局部 `deployment-history-card.css` 统一展示服务端统一历史消息（含旧 Run/Discussion 的只读投影）。采用约 38px 高、与对话内容区等宽的单行技术风格，服务靠左、耗时与状态靠右，通过加深底色、较强边框和状态侧线增强辨识度：部署图标、服务名、MM:SS（超过一小时为 H:MM:SS）耗时和图形状态。成功使用圆形勾、失败使用圆形叉、取消使用圆形短横线，状态图标不加外层方框；不显示部署记录标题、IP、日期、详情文案或失败说明，完整信息从点击打开的原 Deploy Tab 查看。长服务名省略并保留 title，状态有双语无障碍名称。`ChatTimeline` 只装配，不持有部署卡片 UI；Deploy 不导入 `chat-tool-details`/`chat-transfer-details`，上传/下载不读取部署状态。
 - `deployment-completion-history.ts` 仅做前端展示替换：`deployment_finish` 确实 completed、非工具错误，结果 JSON 含准确部署 ID、success/failed outcome 及 deploymentMode=false，并存在同 ID/同 outcome 的结束卡片时，将唯一卡片放在该 Tool Call 位置，隐藏原结束入口。混合 Assistant 消息按原内容顺序拆分，保留正文、其他工具与失败报告；原始历史、工具结果和模型上下文不改写。缺少卡片、运行中、错误/无效结果和取消均沿用原渲染，不以请求参数或相邻位置猜测成功。
 - 阶段失败的状态和日志已经通过部署工具结果及可信状态返回当前模型，不再显示“让模型分析修复”选择卡片，也不从前端按钮额外启动 deployment_recovery Run。`model/deployment-review.ts` 的 deploymentReviewState/deploymentNeedsReview 只在初始计划、待确认修订、已确认修订待继续或实际需要命令权限决定时为真；单纯失败（含历史修订后再次失败）不显示空审阅卡片，右侧不误报待处理。
-- `deployment-history-entry.ts` 独立持有入口类型、custom 元数据读取和统一摘要，卡片与结束工具匹配复用该摘要。`deployment-history.ts` 只处理已有消息识别与右侧 Run 缓存去重，旧记录合并和定位归后端；`deployment-completion-history.ts` 分开匹配已完成工具及替换混合消息，不在通用工具组件加入部署分支。
+- `deployment-history-entry.ts` 独立持有部署入口类型、custom 元数据读取和统一摘要，卡片与结束工具匹配复用该摘要。统一条目识别与 ConversationHistoryEntry 已移至 `features/chat/model/conversation-history.ts`，同时接入 Diagnose；`deployment-history.ts` 只处理右侧 Run 缓存去重，旧记录合并和定位仍归后端。`deployment-completion-history.ts` 保留 Deploy 的完成结果/ID/outcome 校验，调用共享 `features/chat/model/task-completion-history.ts` 完成混合内容拆分、结束位置替换、重复入口移除和原失败报告保留。Diagnose 通过自己的适配器复用该机制，不混合两者的状态机，也不在通用工具组件增加任务分支。
 - `model/deployment-task.ts` 只保存任务/日志契约及响应校验；审阅规则归 `model/deployment-review.ts`。`use-deployment-review.ts` 在最近有效审批到期时用单次 timeout 刷新共享审阅快照，同时更新右侧计划审阅和中间权限审批；停止或卸载清理 timeout，不轮询 Chat。DeploymentReview 在右侧展示传入快照，计划摘要由 DeploymentPlanOverview 负责，逐命令权限按钮由中间的 DeploymentFullAccessReview 负责；修订继续复用 RecoveryReview/StepSummary。部署 SSE 复用 isRecord，逐字段收窄后构造 ChatMessage，不用双重类型断言跳过边界。
 - 部署计划确认与修订在右侧 `DeploymentReview` 交互，普通工具、Full Access 权限审批和 UserDecisionPanel 仍在中间。放大页可直接审核计划；需要命令权限或用户问题时提示返回中间。简洁补充框复用同一 Session 的 submit/queue 链路，不展示另一套聊天。发送同步锁阻止同一帧重复提交；成功只清空已提交且未改写的文本，旧 Session 迟到响应不清空新 Session 草稿。结束或停靠后的隐藏表单不接受提交。
 - 日志整体折叠状态在增量追加时保留；错误定位先展开整块日志，再于 DOM 提交后仅滚动日志视口并聚焦，避免移动外层任务页面。主动浏览旧日志时停止跟随，隐藏视口不使用零高度滚动测量；兼容历史尾部可定位错误但不伪造执行记录。
@@ -103,7 +103,7 @@ Profile hash、SSH 主机指纹、凭据版本、远端用户、Workspace revisi
 | 模式生命周期 | `domain/deployment-session.ts`、`deployment-mode-service.ts`、Deployment Session Repository 与 SQLite 实现 |
 | 阶段顺序/失效、执行和日志 | `deployment-stage-state.ts`、`deployment-service.ts`、`deployment-execution-recorder.ts`、`domain/deployment-execution.ts`、Execution Repository/SQLite |
 | Plan 与修订校验、本地构建复用 | `deployment-plan-proposal.ts`、`deployment-recovery-proposal.ts`、`deployment-validation.ts`、`deployment-file-system-error.ts`、`deployment-local-build.ts` |
-| Chat 绑定、工具与模型投影 | `chat-service.ts`、`chat-agent-runtime-factory.ts`、`deployment-agent-tool.ts`、`deployment-runtime-context.ts`、`deployment-history-message.ts` |
+| Chat 绑定、工具与模型投影 | `chat-service.ts`、`chat-agent-runtime-factory.ts`、`deployment-agent-tool.ts`、`deployment-runtime-context.ts`、`chat-ui-history-message.ts` |
 | API、迁移与装配 | `deployment-routes.ts`、`migrations.ts` v23–26/v30–33、`create-sqlite-management-backend.ts`、`workspace-event-hub.ts` |
 | Composer 模块上拉选择 | `features/deploy/components/deployment-module-picker.tsx`、`deployment-module-picker.css`、`model/deployment-module-options.ts` |
 | 页面、审批与日志 | `features/deploy/components/deployment-task-page.tsx`、`deployment-pipeline.tsx`、`deployment-stage-icon.tsx`、`deployment-build-steps.tsx`、`deployment-logs.tsx`、`deployment-review.tsx`、`deployment-plan-overview.tsx`、`deployment-plan.css`、`deployment-task.css` |
@@ -116,3 +116,6 @@ Profile hash、SSH 主机指纹、凭据版本、远端用户、Workspace revisi
 模块上拉入口回归见 `use-deployment-races.test.ts`、`deployment-panel.test.tsx` 和 `deployment-task-interactions.test.tsx`：只读打开、活动任务定位、关闭/切换 Session 的迟到响应、选择后打开讨论、重名模块、键盘/焦点、外部关闭及重复点击。浏览器在现有本地 Session 验证真实展开位置和关闭行为；本次 UI 调整不发起模型或远端部署。
 
 统一历史回归见 `chat-message-pagination-api.test.ts`：latest/before/after、相同锚点的多个卡片不拆页、跨 Session 过滤、正式消息优先、v33 旧入口定位、孤立讨论、仅有旧部署而无聊天的锚点 0、原库消息不改写。`historyOrder=1` 表示卡片在锚点之后，limit 限制 sequence 分组数，附属旧卡片可使条目数超过 limit；详情见 [Chat 历史契约](../frontend/chat-stream-integration.md)。前端覆盖分页面逆序合并、加载中隐藏孤立卡片、无独立部署历史请求及原结束工具替换。Run 状态发生变化时通过同一 Chat 历史接口更新摘要，不把 Run 快照另插入时间线。
+
+
+2026-10-19 Diagnose 接入：部署模式与活动 Diagnose 互斥，SessionTaskModePolicy 在模式创建及旧 Prepare/直接提案的最终插入事务内复检。deployment_setup 的 Chat Run 同样拒绝活动诊断。历史仍可查看；UI 历史过滤已提取为 chat-ui-history-message.ts，部署生命周期、阶段与权限保持原规则。 详见 [Diagnose 功能路由](./diagnose.md)。

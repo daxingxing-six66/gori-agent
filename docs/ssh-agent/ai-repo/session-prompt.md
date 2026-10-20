@@ -57,3 +57,8 @@ Terminal 模式切换保留头部和工具 schema 前缀；历史只追加。Ses
 测试使用临时 SQLite 和 faux/本地序列化，不连接真实 SSH 或付费模型。
 
 v17 升级兼容早期带 `initial_mode` 必填列的 v16 数据库，保留已存在快照的四个公共字段，不重新组装头部。历史生成的模式消息缺少事件 ID 时仅补齐 `runtimeEventId`；升级测试见 `packages/ssh-agent/test/chat-prompt-migration.test.ts`。
+
+
+2026-10-19 Diagnose 接入：DiagnoseRuntime 每次请求读取冻结绑定，以可替换的临时 `<diagnose-runtime>` 片段提供工具指引和 direction/status/explanation 三项 JSON 简报，说明预览最多 300 字符。不保存简报历史、不改基础快照、不提升日志角色，也不向工具调用/结果组内插入消息。 详见 [Diagnose 功能路由](./diagnose.md)。
+
+活动诊断还在同一临时片段的独立 `<diagnose-skill>` 块注入内置 gori-diagnosis/SKILL.md 原文，指导记录与结论质量。Skill 在后端实例初始化时读取，跨轮复用；普通或已结束诊断不注入，重复投影不累积，基础头部快照不保存该内容。它与三项任务简报分开，不新增执行门禁。

@@ -6,7 +6,6 @@ export type DeploymentConversationEntry =
 	| { kind: "deploymentMessage"; entry: ChatTimelineEntry; deploymentId: string; title: string; run?: DeploymentRun }
 	| { kind: "discussion"; discussion: DeploymentDiscussion }
 	| { kind: "deployment"; run: DeploymentRun };
-export type ConversationHistoryEntry = { kind: "message"; entry: ChatTimelineEntry } | DeploymentConversationEntry;
 export type DeploymentHistoryStatus = DeploymentRun["status"] | "discussing";
 interface DeploymentMessageResult {
 	outcome: "success" | "failed" | "cancelled";

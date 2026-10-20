@@ -16,6 +16,19 @@ const deployment = (id: string, sequence: number): ChatMessage => ({
 });
 
 describe("structured Chat history", () => {
+	it("keeps one diagnosis card as its timestamp and sequence move, and rejects delayed metadata", () => {
+		const diagnosis = (id: string, sequence: number, revision: number, timestamp: number): ChatMessage => ({
+			id: `diagnose:${id}`, sequence, createdAt: timestamp, message: { role: "custom", customType: "diagnose", display: true,
+				content: "Task", details: { taskId: id, title: "Task", revision }, timestamp } });
+		const first = diagnosis("a", 1, 1, 10);
+		let state = chatRuntimeReducer(initialChatRuntimeState, { type: "hydrate", messages: [first, diagnosis("b", 2, 1, 10)] });
+		expect(state.timeline).toHaveLength(2);
+		const finished = diagnosis("a", 3, 4, 20);
+		state = chatRuntimeReducer(state, { type: "mergePersisted", messages: [finished] });
+		state = chatRuntimeReducer(state, { type: "mergePersisted", messages: [first, diagnosis("a", 3, 3, 20)] });
+		expect(state.timeline).toHaveLength(2);
+		expect(state.timeline.at(-1)?.message).toEqual(finished.message);
+	});
 	it("accepts custom text and block content through the same SSE message boundary", () => {
 		const message = deployment("release", 1).message;
 		expect(isAgentMessage(message)).toBe(true);

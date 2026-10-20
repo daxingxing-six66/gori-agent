@@ -11,7 +11,7 @@ import { RemoteSandboxApprovalStore } from "../src/application/services/remote-s
 import { WorkspaceEventHub } from "../src/application/workspace-event-hub.ts";
 import { deploymentProviderMessages } from "../src/application/deployment-runtime-context.ts";
 import { createChatContext } from "../src/application/chat-context.ts";
-import { modelVisibleMessages } from "../src/application/deployment-history-message.ts";
+import { modelVisibleMessages } from "../src/application/chat-ui-history-message.ts";
 import { applyMigrations } from "../src/infrastructure/sqlite/migrations.ts";
 import { SqliteChatRepository } from "../src/infrastructure/sqlite/sqlite-chat-repository.ts";
 import { SqliteDeploymentDiscussionRepository } from "../src/infrastructure/sqlite/sqlite-deployment-discussion-repository.ts";

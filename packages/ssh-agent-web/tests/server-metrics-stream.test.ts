@@ -20,12 +20,13 @@ class TestEventSource extends EventTarget {
 describe("server metrics EventSource adapter", () => {
 	afterEach(() => vi.unstubAllGlobals());
 
-	it("subscribes only to monitoring and ignores malformed or foreign events", () => {
+	it("subscribes only to monitoring and ignores malformed or foreign events", async () => {
 		vi.stubGlobal("EventSource", TestEventSource);
 		const onSnapshot = vi.fn();
 		const onConnection = vi.fn();
 		const onError = vi.fn();
 		const close = openServerMetricsStream({ workspaceId: "ws/one", locale: "en-US", onSnapshot, onConnection, onError });
+		await Promise.resolve();
 		const source = TestEventSource.latest;
 		expect(source.url).toContain("/api/workspaces/ws%2Fone/events?topics=monitoring&locale=en-US");
 		const snapshot = { workspaceId: "ws/one", sampledAt: 1000, cpu: { usagePercent: 3.4 },

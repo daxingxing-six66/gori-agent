@@ -123,11 +123,12 @@ function hydrate(state: ChatRuntimeState, messages: ChatMessage[], approvals: To
 	const persisted = messages.map((message) => {
 		const incoming = toTimelineEntry(message);
 		const current = currentByKey.get(incoming.key);
-		return current?.sequence !== undefined && current.sequence > message.sequence ? current : incoming;
+		return current && isNewerEntry(current, incoming) ? current : incoming;
 	});
 	const persistedFingerprints = new Set(persisted.map((entry) => messageFingerprint(entry.message)));
 	const retained = merge
-		? state.timeline.filter((entry) => entry.sequence === undefined && !persistedFingerprints.has(messageFingerprint(entry.message)))
+		? state.timeline.filter((entry) => entry.sequence === undefined && !persistedFingerprints.has(messageFingerprint(entry.message)) &&
+			!hasCommittedUser(entry, persisted))
 		: [];
 	const timeline = dedupeTimeline([...(merge ? state.timeline.filter((entry) => entry.sequence !== undefined) : []), ...persisted, ...retained]);
 	// Message-only pagination must not discard pending controls restored by REST or SSE.
@@ -259,10 +260,13 @@ function mergeQueueEntry(current: ChatQueueEntry | undefined, incoming: ChatQueu
 }
 
 function applyRun(state: ChatRuntimeState, run: ChatRun | null): ChatRuntimeState {
-	if (activeChatRun(run)) return { ...state, run };
+	const boundTimeline = run ? state.timeline.map((entry) => entry.optimisticRequestId === run.requestId ? { ...entry, runId: run.id } : entry) : state.timeline;
+	const timeline = boundTimeline.filter((entry) => !hasCommittedUser(entry, boundTimeline));
+	if (activeChatRun(run)) return { ...state, run, timeline };
 	return {
 		...state,
 		run,
+		timeline,
 		approvals: Object.fromEntries(Object.entries(state.approvals).filter(([, approval]) => approval.status !== "pending")),
 		decisions: Object.fromEntries(Object.entries(state.decisions).filter(([, decision]) => decision.status !== "pending")),
 		queue: {},
@@ -272,7 +276,8 @@ function applyRun(state: ChatRuntimeState, run: ChatRun | null): ChatRuntimeStat
 function reduceMessage(state: ChatRuntimeState, message: AgentMessage, final: boolean): ChatRuntimeState {
 	let timeline = state.timeline;
 	if (message.role === "user") {
-		const optimisticIndex = timeline.findIndex((entry) => entry.optimisticRequestId !== undefined && userText(entry.message) === userText(message));
+		const optimisticIndex = timeline.findIndex((entry) => entry.optimisticRequestId !== undefined &&
+			(entry.runId === undefined || entry.runId === state.run?.id) && userText(entry.message) === userText(message));
 		if (optimisticIndex >= 0) {
 			const next = [...timeline];
 			const optimisticEntry = next[optimisticIndex]!;
@@ -283,7 +288,7 @@ function reduceMessage(state: ChatRuntimeState, message: AgentMessage, final: bo
 				...(optimisticEntry.attachments === undefined ? {} : { attachments: optimisticEntry.attachments }),
 				final,
 			};
-			timeline = next;
+			timeline = dedupeTimeline(next);
 		} else timeline = upsertTimeline(timeline, { key: messageKey(message), runId: state.run?.id, message, final });
 	} else {
 		timeline = upsertTimeline(timeline, { key: messageKey(message), runId: state.run?.id, message, final });
@@ -337,7 +342,7 @@ function dedupeTimeline(timeline: ChatTimelineEntry[]): ChatTimelineEntry[] {
 		const key = messageFingerprint(entry.message);
 		const current = byFingerprint.get(key);
 		// A delayed page/event must not replace a newer persisted revision that moved in history.
-		if (current?.sequence !== undefined && entry.sequence !== undefined && current.sequence > entry.sequence) continue;
+		if (current && isNewerEntry(current, entry)) continue;
 		if (!current || entry.sequence !== undefined || (entry.final && !current.final)) byFingerprint.set(key, entry);
 	}
 	return [...byFingerprint.values()].sort(compareTimelineEntries);
@@ -358,13 +363,32 @@ function messageFingerprint(message: AgentMessage): string {
 	if (message.role === "custom" && message.customType === "deployment" &&
 		isRecord(message.details) && typeof message.details.deploymentId === "string")
 		return `deployment:${message.details.deploymentId}`;
+	if (message.role === "custom" && message.customType === "diagnose" &&
+		isRecord(message.details) && typeof message.details.taskId === "string")
+		return `diagnose:${message.details.taskId}`;
 	return `${message.role}:${message.timestamp}${message.role === "toolResult" ? `:${message.toolCallId}` : ""}`;
+}
+
+function isNewerEntry(current: ChatTimelineEntry, incoming: ChatTimelineEntry): boolean {
+	if (current.sequence === undefined || incoming.sequence === undefined) return false;
+	if (current.sequence !== incoming.sequence) return current.sequence > incoming.sequence;
+	const left = current.message;
+	const right = incoming.message;
+	return left.role === "custom" && right.role === "custom" && left.customType === right.customType &&
+		isRecord(left.details) && isRecord(right.details) && typeof left.details.revision === "number" &&
+		typeof right.details.revision === "number" && left.details.revision > right.details.revision;
 }
 
 function userText(message: AgentMessage): string {
 	if (message.role !== "user") return "";
 	if (typeof message.content === "string") return message.content;
 	return message.content.flatMap((content) => content.type === "text" ? [content.text] : []).join("");
+}
+
+function hasCommittedUser(entry: ChatTimelineEntry, entries: ChatTimelineEntry[]): boolean {
+	return entry.optimisticRequestId !== undefined && entry.runId !== undefined && entries.some((candidate) =>
+		candidate.sequence !== undefined && candidate.runId === entry.runId && candidate.message.role === "user" &&
+		userText(candidate.message) === userText(entry.message));
 }
 
 export function approvalForTool(approvals: Record<string, ToolApproval>, toolCallId: string): ToolApproval | undefined {

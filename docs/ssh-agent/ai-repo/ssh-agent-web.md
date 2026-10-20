@@ -63,7 +63,7 @@ Chat 的 `UserDecisionPanel` 在输入框上方向上展开，显示模型提供
 
 ## 功能路由
 
-普通请求使用 `shared/api/client.ts`，所有 EventSource 地址使用独立的 `shared/events/client.ts`，通过不同 origin 隔离浏览器连接额度。各功能适配器保留事件解析、重连与取消；后端双监听和构建配置见 [transport-channels.md](./transport-channels.md)。
+普通请求使用 `shared/api/client.ts`，所有 EventSource 地址使用独立的 `shared/events/client.ts`，通过不同 origin 隔离浏览器连接额度。Workspace 各功能由 shared/events/workspace-events.ts 按 Workspace + Locale 复用一条连接，请求 topics 并集，按消费者引用清理；业务解析与 ready 后的补读仍由原功能负责。Chat Run、Terminal attachment 和全局活动保留独立连接，同页完整场景共 4 条。后端双监听、连接复用与构建配置见 [transport-channels.md](./transport-channels.md)。
 
 `@` 非空文件检索由 `features/chat/runtime/use-local-file-search.ts` 持有防抖、取消和响应身份，`local-files-api.ts` 只发一次后端索引查询；菜单显示最多 80 项，支持包含忽略文件、手动刷新及部分结果提示。规则与性能预算见 [local-file-search.md](./local-file-search.md)。
 
@@ -130,7 +130,7 @@ Chat 错误展示复用 `features/chat/components/chat-failure-details.tsx`，�
 | `features/*/components/` | 功能 UI、表单和 React hook；部分复杂客户端编排也在此层 |
 | `features/*/model/` | 前端契约类型、纯状态转换、校验和解析函数 |
 | `features/*/runtime/` | Chat/Terminal 的长生命周期连接、恢复和运行时编排 |
-| `shared/` | 跨功能 API 客户端与错误语义 |
+| `shared/` | 跨功能 API 客户端、事件地址、Workspace 连接复用与错误语义 |
 | `lib/` | 仅供未挂载的历史原型使用的数据，不是已接入功能的数据源 |
 | `tests/` | API 客户端、纯状态和关键交互的定向测试 |
 
@@ -150,7 +150,7 @@ Chat 错误展示复用 `features/chat/components/chat-failure-details.tsx`，�
 
 新 Session 创建时复制 Workspace 的可写目录列表，之后独立保存；Workspace 更新不覆盖已有 Session。侧边栏每个 Session 的铅笔入口打开 `features/session/components/session-edit-dialog.tsx`：先读取权威 Session，再在 `session-dialog.tsx` 一起编辑名称、本地目录、自动审批、只读模式及多目录，允许显式复制最新 Workspace 默认列表。“只读”复选框位于目录标题后方同一行，信息图标悬浮或聚焦展示说明；勾选后下方选择和移除区显示禁用蒙层并禁用按钮，隐藏目录继承说明，取消后恢复已选目录。恢复 Workspace 默认目录改为标题行右侧的刷新图标，保留悬浮标题和无障碍名称，只读时禁用。提交沿用编辑时 revision，冲突不能自动覆盖；目录未变时省略字段，一次保存携带编辑快照 revision；保存成功或可能已提交的 PTY 重开失败都会刷新树及当前 Terminal。页首沙盒标识恢复为只读图标与短文案，`use-session-sandbox.ts` 只负责 `/sandbox` 切换。前端纯校验及新旧审计解析位于 `features/workspace/model/sandbox-writable-roots.ts`，回归见 `tests/sandbox-writable-roots.test.tsx`、`tests/session-edit-dialog.test.tsx` 和 `tests/use-session-sandbox.test.ts`。
 
-部署历史卡片由 `features/deploy/components/deployment-history-card.tsx` 与局部 CSS 独立呈现，`model/deployment-history.ts` 只识别服务端历史条目及缓存 Run，统一分页和旧记录结束位置由后端 Chat 历史查询负责，入口解析和卡片/结束工具共享摘要归 `deployment-history-entry.ts`。成功/失败/取消复用同一消息 ID；通用 Chat reducer 只按较新 sequence 防止旧 REST/SSE 覆盖，部署事件仍走独立 adapter。`deployment-completion-history.ts` 在精确匹配已完成的结束工具结果时，用同一张卡片替换该工具展示并移除原重复入口，保留其他消息内容，不改取消或错误展示。上传/下载继续走 `chat-transfer-details.tsx`，不共享 Deploy 的状态、卡片或样式。
+部署历史卡片由 `features/deploy/components/deployment-history-card.tsx` 与局部 CSS 独立呈现，`model/deployment-history.ts` 只负责 Run 缓存，入口解析和卡片摘要归 `deployment-history-entry.ts`。聊天条目统一由 `features/chat/model/conversation-history.ts` 识别，包含 Deploy 和 Diagnose；后端仍负责统一分页和旧记录结束位置。两类任务各自校验结束工具结果，复用 `features/chat/model/task-completion-history.ts` 的内容分段、工具位置替换、唯一入口及错误保留。诊断回显元数据与匹配逻辑分别归 `features/diagnose/model/diagnose-history-entry.ts` 和 `diagnose-completion-history.ts`，卡片只呈现并打开对应 Tab。成功/失败/取消继续沿用各自持久化身份和状态；普通 read/write 入口、上传/下载详情和审批保持原渲染。回归见 `diagnose-completion-history.test.tsx` 与原部署完成历史测试。
 
 阶段失败不再触发“让模型分析修复”卡片。`model/deployment-review.ts` 的 `deploymentReviewState()` 集中计算真实审阅需求；`use-deployment-review.ts` 在最近有效审批到期时用单次 timeout 刷新共享快照，ChatConsole 的右侧计划审阅和中间权限审批使用同一份结果，不每秒轮询聊天。DeploymentReview 仅呈现快照，无需决定时返回空；权限按钮由独立 DeploymentFullAccessReview 呈现。任务契约/校验保留在 deployment-task.ts，不混入审阅规则。计划确认、待审修订、确认后继续及必要的逐命令权限决定保留，移除额外启动恢复 Run 的按钮与回调。
 
@@ -159,3 +159,6 @@ Deploy 模块选择由 ChatConsole 装配到 Composer 的通用 `aboveInputPanel
 ChatTimeline 不再接收 deployments/discussion 或部署历史分页回调，消息和部署入口都来自同一次 Chat 历史响应；加载完成前不渲染独立到达的卡片。前端 reducer 用 sequence/historyOrder 稳定合并锚点及附属旧卡片，重复页或先到的旧页不打乱同组顺序。原部署结束工具的精确展示替换和右侧日志查询保留。
 
 右侧 Deploy 待确认计划使用 deployment-plan-overview.tsx 的竖向时间轴：保留阶段图标，32px 节点间距，默认收起，展开通过连接线延伸为独立内容卡片。deployment-plan.css 管理局部样式；开始按钮在分隔线上方，32px 高、中性高对比色与轻微阴影。use-deployment-execution.ts 处理确认意图、重复点击和迟到响应，后端确认开始后才由独立 DeploymentPipeline 显示准备及四个执行节点；计划不会提前显示执行成功，进入执行页面后移除底部计划折叠入口；开始前审阅和必要修订确认保留。执行节点与计划复用 deployment-stage-icon.tsx 的 Hammer/Upload/RotateCw/ShieldCheck，图标位于横向连接线上；阶段结果以颜色、小状态标记及无障碍名称表达，点击继续切换日志。prepare 使用 ClipboardList 清单图标作为第一个可见节点，详情复用 DeploymentPlanOverview 展示本次计划，不提供重复执行按钮。查看准备时隐藏执行日志区域，原日志页面保持挂载，切回执行节点继续查看日志；浏览计划不改变真实执行阶段。普通工具和 Full Access 审批仍在中间，历史计划不获得当前部署的操作回调。任务页不展示结算 reason 的长篇总结，模型结论保留在中间会话。DeploymentBuildSteps 独立提供右对齐的步骤上一/下一命令浏览，引用块背景及左边线强化命令，浏览不改变真实执行状态；DeploymentLogs 将同阶段各次执行按原文连续追加到一个视口，通过日志标题整块折叠，不再创建执行分组卡片；错误定位和跟随输出会展开日志。
+
+
+2026-10-19 Diagnose 接入：Diagnose 独立位于 features/diagnose，包含 API/契约、REST+SSE 事实 Hook、用户动作 Hook、视图状态及记录/结论组件。ChatConsole 只装配菜单和稳定 diagnose Tab；useChatRuntime.attachRun 复用后端已创建 Run 的状态恢复与原 SSE。结论在同 Tab 独立阅读页，Tab 关闭只隐藏，历史选择与活动任务分离。 详见 [Diagnose 功能路由](./diagnose.md)。

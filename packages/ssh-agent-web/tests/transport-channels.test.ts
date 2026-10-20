@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ChatEventStream } from "../features/chat/runtime/chat-event-stream";
 import { subscribeDeploymentEvents } from "../features/deploy/runtime/deployment-event-stream";
+import { subscribeDiagnoseEvents } from "../features/diagnose/runtime/diagnose-event-stream";
 import { openServerMetricsStream } from "../features/server-metrics/runtime/server-metrics-stream";
 import { SessionActivityConnection } from "../features/session-activity/runtime/session-activity-connection";
 import { SessionActivityStore } from "../features/session-activity/runtime/session-activity-store";
@@ -44,19 +45,26 @@ describe("browser transport channels", () => {
 		const closeMetrics = openServerMetricsStream({ workspaceId: "ws / 1", locale: "en-US", onSnapshot: vi.fn(), onConnection: vi.fn(), onError: vi.fn() });
 		const closeDeploy = subscribeDeploymentEvents({ workspaceId: "ws / 1", sessionId: "session / 1", locale: "en-US",
 			onRun: vi.fn(), onDiscussion: vi.fn(), onTask: vi.fn(), onLog: vi.fn(), onReconnect: vi.fn() });
+		const onDiagnoseReconnect = vi.fn();
+		const closeDiagnose = subscribeDiagnoseEvents({ workspaceId: "ws / 1", sessionId: "session / 1", locale: "en-US",
+			onTask: vi.fn(), onNode: vi.fn(), onMessage: vi.fn(), onReconnect: onDiagnoseReconnect });
 		useWorkspaceEvents("ws / 1", ["sessions", "transfers"], {});
 		try {
+			await Promise.resolve();
 			const urls = TestEventSource.sources.map((source) => new URL(source.url));
-			expect(urls).toHaveLength(6);
+			// Chat + Terminal + global activity + all Workspace features stay below the six-connection limit.
+			expect(urls).toHaveLength(4);
 			expect(urls.every((url) => url.origin === "http://127.0.0.1:3002")).toBe(true);
 			expect(urls.filter((url) => url.pathname !== "/api/session-activity/events").every((url) => url.searchParams.get("locale") === "en-US")).toBe(true);
 			expect(urls[0]!.pathname).toBe("/api/sessions/session%20%2F%201/chat/runs/run%20%2F%201/events");
 			expect(urls[1]!.searchParams.get("afterSequence")).toBe("9");
-			expect(urls[5]!.searchParams.get("topics")).toBe("sessions,transfers");
+			expect(urls[3]!.searchParams.get("topics")).toBe("deployments,diagnoses,monitoring,sessions,transfers");
+			TestEventSource.sources[3]!.dispatchEvent(new MessageEvent("stream.ready", { data: "{}" }));
+			expect(onDiagnoseReconnect).toHaveBeenCalledOnce();
 			await apiRequest("/api/llm/providers");
 			expect(fetchMock).toHaveBeenCalledWith("/api/llm/providers", expect.any(Object));
 		} finally {
-			chat.close(); terminal.close(); activity.stop(); closeMetrics(); closeDeploy();
+			chat.close(); terminal.close(); activity.stop(); closeMetrics(); closeDeploy(); closeDiagnose();
 			for (const cleanup of effects.cleanup.splice(0)) cleanup();
 		}
 		expect(TestEventSource.sources.every((source) => source.close.mock.calls.length === 1)).toBe(true);
