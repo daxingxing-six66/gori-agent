@@ -39,7 +39,9 @@
 
 简报用 direction/status/explanation 三个 JSON 数据字段，说明预览最多 300 字符。当前实现通过临时 `<diagnose-runtime>` 请求头部片段投影，不向消息数组插入简报，因此工具调用和结果保持原连续组；基础快照不改写，重复投影替换自身片段，不累加。活动请求、离线占用与手动压缩共用适配器；自动压缩前后及超限恢复继续走既有回调。简报不包含完整历史、报告或催促推进要求。
 
-内置指导 Skill 位于 `packages/ssh-agent/resources/skills/gori-diagnosis/SKILL.md`，指导关键记录取舍、三个字段的表述边界、观察/推测/未知区分及直接回答用户问题的结论，并包含少量正反例。它不增加阶段、调用次数或业务门禁。DiagnoseRuntime 初始化时读取该固定资源一次，仅在当前绑定任务仍 active 时，把完整 Skill 放入临时片段中的独立 `<diagnose-skill>` 块，与三项简报分开；跨 Chat Run、占用估算和压缩使用同一投影。重复投影替换整个自身片段，结束后移除 Skill 和简报。包内 resources 随既有打包配置保留，源码与 dist 使用相同相对资源路径；修改 Skill 后需重新加载后端实例。
+内置指导 Skill 位于 `packages/ssh-agent/resources/skills/gori-diagnosis/SKILL.md`，当前采用用户提供的 v2 节点输出契约：开场建立问题方向节点，每条关键证据一个节点，同一证据的新进展更新当前节点；说明按“证据／范围／边界”三行组织并控制在 300 字内，方向不超过 40 字，开场说明不超过 150 字；完整结论由 `diagnose_finish` 汇总，并区分已证实、高概率与无法证实。上述要求通过提示词指导模型，不新增后端格式、字数或调用次数门禁，服务端原有节点终态与追加约束仍然生效。
+
+DiagnoseRuntime 初始化时读取该固定资源一次，仅在当前绑定任务仍 active 时，把完整 Skill 放入临时片段中的独立 `<diagnose-skill>` 块，与三项简报分开；跨 Chat Run、占用估算和压缩使用同一投影。重复投影替换整个自身片段，结束后移除 Skill 和简报。包内 resources 随既有打包配置保留，源码与 dist 使用相同相对资源路径；修改 Skill 后需重新加载后端实例。
 
 ## SQLite 与幂等
 

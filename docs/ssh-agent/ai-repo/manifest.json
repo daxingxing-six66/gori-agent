@@ -1014,7 +1014,7 @@
 				"packages/ssh-agent/test/chat-context-service.test.ts": "sha256:9b2bcd99213d13584cc56a79a5f80b9c74b06866ba200859fd652d0172f2db12",
 				"packages/ssh-agent/test/context-compaction-api.test.ts": "sha256:6b6a8d3567c0c44803faed532379f84baec144f3b52ecae7089221a368b69f40",
 				"packages/ssh-agent/test/context-compaction-runtime.test.ts": "sha256:1a56ae3a28bd8bb469a3296035bab379285877aae51a024a6b3233dd9c1e1586",
-				"packages/ssh-agent/resources/skills/gori-diagnosis/SKILL.md": "sha256:a22bb954108af4fb819cbae1bda24ecfcba6116a6a3a679acbec75edf6de1843",
+				"packages/ssh-agent/resources/skills/gori-diagnosis/SKILL.md": "sha256:f6195f22501ff9296fe3a63a892776157ac24e144a1cd1f1476cf024657b9f8d",
 				"packages/ssh-agent/src/application/diagnose-runtime.ts": "sha256:8bef4d8ed4e3e9c4117c76c2da9bdd6425b9a3bb3445fd765b758cc30ccea67c"
 			}
 		},
@@ -1956,7 +1956,7 @@
 				"packages/ssh-agent/src/api/http-handler.ts": "sha256:5785ff2b654f4fbb747f3b062c736e6f0a3397656363223a90c9d502baeaf3df",
 				"packages/ssh-agent/test/chat-context-service.test.ts": "sha256:9b2bcd99213d13584cc56a79a5f80b9c74b06866ba200859fd652d0172f2db12",
 				"packages/ssh-agent/test/context-compaction-runtime.test.ts": "sha256:1a56ae3a28bd8bb469a3296035bab379285877aae51a024a6b3233dd9c1e1586",
-				"packages/ssh-agent/resources/skills/gori-diagnosis/SKILL.md": "sha256:a22bb954108af4fb819cbae1bda24ecfcba6116a6a3a679acbec75edf6de1843",
+				"packages/ssh-agent/resources/skills/gori-diagnosis/SKILL.md": "sha256:f6195f22501ff9296fe3a63a892776157ac24e144a1cd1f1476cf024657b9f8d",
 				"packages/ssh-agent/src/application/diagnose-runtime.ts": "sha256:8bef4d8ed4e3e9c4117c76c2da9bdd6425b9a3bb3445fd765b758cc30ccea67c"
 			}
 		},
@@ -2230,7 +2230,7 @@
 				"packages/ssh-agent/src/domain/deployment-session.ts": "sha256:4ca6cf998a4d2b7badf2b51093820b5731ecb63df259f9b1a6f6609bd597611c",
 				"packages/ssh-agent/src/application/services/deployment-mode-service.ts": "sha256:7c307dd3e6c63b8a30ff5d477c6eca57796fa751ca64eb000509dd95a5c2a283",
 				"packages/ssh-agent/test/tool-message-recovery.test.ts": "sha256:0cb8224f758cdb399bcaa704d6c0270fccbcd63b0a60fb976ead0334764de341",
-				"packages/ssh-agent/resources/skills/gori-diagnosis/SKILL.md": "sha256:a22bb954108af4fb819cbae1bda24ecfcba6116a6a3a679acbec75edf6de1843",
+				"packages/ssh-agent/resources/skills/gori-diagnosis/SKILL.md": "sha256:f6195f22501ff9296fe3a63a892776157ac24e144a1cd1f1476cf024657b9f8d",
 				"packages/ssh-agent/src/application/diagnose-runtime.ts": "sha256:8bef4d8ed4e3e9c4117c76c2da9bdd6425b9a3bb3445fd765b758cc30ccea67c"
 			}
 		},
@@ -3362,7 +3362,7 @@
 				"packages/ssh-agent-web/features/diagnose/api/read-diagnose-records.ts": "sha256:da99e4df466d8fb419521840175cfa82d5d32a4093bbb37aab65003437e8ffb8",
 				"packages/ssh-agent-web/features/diagnose/components/diagnose-copy-records.tsx": "sha256:55e18e8e950298d6a2cbfff877d8c5523d63a2582c01a25b9500d864f7b8875a",
 				"packages/ssh-agent-web/tests/diagnose-records-copy.test.ts": "sha256:0a9aebf1fad06c8a6b1ac751bdcfbaaea7c94466ca9ea84ff596c08b40aa20a8",
-				"packages/ssh-agent/resources/skills/gori-diagnosis/SKILL.md": "sha256:a22bb954108af4fb819cbae1bda24ecfcba6116a6a3a679acbec75edf6de1843"
+				"packages/ssh-agent/resources/skills/gori-diagnosis/SKILL.md": "sha256:f6195f22501ff9296fe3a63a892776157ac24e144a1cd1f1476cf024657b9f8d"
 			}
 		}
 	]
