@@ -1,6 +1,14 @@
 import type { BackendMessageKey } from "./en-US.ts";
 
 export const zhCNMessages = {
+	"chatgpt.busy": "另一个 ChatGPT 连接操作仍在进行中",
+	"chatgpt.sign_in_failed": "ChatGPT 登录失败或已超时，请重新登录。",
+	"chatgpt.permission_required": "请使用符合条件的 Plus 或 Pro 账号，并授权使用 ChatGPT 套餐后重试。",
+	"chatgpt.not_found": "本次 ChatGPT 登录已不存在，请重新开始登录。",
+	"chatgpt.model_discovery_failed": "无法获取此 ChatGPT 账号的模型，请重试获取模型或重新登录。",
+	"chatgpt.disconnect_failed": "无法确认 ChatGPT 会话已撤销，请重试断开，或在 ChatGPT 设置中断开 Gori。",
+	"chatgpt.local_browser_required": "请在与 Gori 后端同一台电脑上的浏览器中连接 ChatGPT。",
+	"provider.chatgpt_usage_limit": "ChatGPT 套餐用量不可用或已达上限，请前往 Provider 设置，在 ChatGPT 中管理用量。",
 	"diagnose.error": "诊断请求失败：{reason}",
 	"approval.remote_session_unconfined": "此 Session 已关闭沙箱。命令将使用 SSH 用户的文件系统权限执行：{command}。是否批准本次命令？",
 	"management.session_configuration_in_progress": "Session 执行环境正在切换，请等待 Terminal 重开后再试。",

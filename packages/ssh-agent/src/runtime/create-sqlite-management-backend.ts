@@ -4,7 +4,7 @@ import { RemoteSandboxCoordinator } from "../infrastructure/sandbox/remote-sandb
 import { RemoteSandboxApprovalStore } from "../application/services/remote-sandbox-approval-store.ts";
 import { evaluateRemoteSandboxRoute } from "../application/services/remote-sandbox-routing.ts";
 import { BubblewrapInstallationService } from "../application/services/bubblewrap-installation-service.ts";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { resolveDataDirectory } from "../data-directory.ts";
 import { ChatPromptService } from "../application/services/chat-prompt-service.ts";
 import { SqliteChatPromptRepository } from "../infrastructure/sqlite/sqlite-chat-prompt-repository.ts";
@@ -12,7 +12,13 @@ import { ConnectionTestService, type SshConnectionTester } from "../application/
 import { Ssh2ConnectionTester } from "../infrastructure/ssh/ssh2-connection-tester.ts";
 import { randomUUID } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
-import type { CredentialStore, MutableModels } from "@earendil-works/pi-ai";
+import type { CredentialStore, Model, MutableModels } from "@earendil-works/pi-ai";
+import { ChatGptService } from "../application/services/chatgpt-service.ts";
+import { CHATGPT_PROVIDER_ID } from "../domain/chatgpt.ts";
+import { ChatGptOAuthClient } from "../infrastructure/chatgpt/chatgpt-oauth.ts";
+import { ChatGptRegistrationStore } from "../infrastructure/chatgpt/chatgpt-registration-store.ts";
+import { chatGptProvider } from "../infrastructure/chatgpt/chatgpt-provider.ts";
+import { startChatGptLogin } from "../infrastructure/chatgpt/chatgpt-login.ts";
 import { createSshAgentHttpHandler, type SshAgentHttpHandler } from "../api/http-handler.ts";
 import { SshAgentManagementApi } from "../application/management-api.ts";
 import { AttachmentService } from "../application/services/attachment-service.ts";
@@ -99,6 +105,7 @@ export interface CreateSqliteManagementBackendOptions {
 	llmCatalogBaseUrl?: string;
 	llmCatalogFetch?: typeof fetch;
 	llmCatalogRefreshIntervalMs?: number;
+	chatgpt?: { fetch?: typeof fetch; registrationPath?: string; loginTimeoutMs?: number };
 }
 
 export type LlmModelsFactory = (credentials: CredentialStore) => MutableModels;
@@ -248,6 +255,15 @@ export function createSqliteManagementBackend(options: CreateSqliteManagementBac
 			clock,
 		});
 		const llmModels = options.llmModelsFactory(llmCredentials);
+		const chatGptOAuth = options.chatgpt ? new ChatGptOAuthClient(options.chatgpt.fetch) : undefined;
+		const chatGptRegistrations = options.chatgpt ? new ChatGptRegistrationStore(options.chatgpt.registrationPath ??
+			(options.databasePath === ":memory:" ? undefined : join(dirname(options.databasePath), "chatgpt-registration.json"))) : undefined;
+		const chatGptBaseline = llmModels.getModels("openai")
+			.filter((model): model is Model<"openai-responses"> => model.api === "openai-responses");
+		const resetChatGptModels = () => {
+			if (chatGptOAuth) llmModels.setProvider(chatGptProvider({ oauth: chatGptOAuth, baseline: chatGptBaseline, fetch: options.chatgpt?.fetch }));
+		};
+		resetChatGptModels();
 		const customLlmProviderRepository = new SqliteCustomLlmProviderRepository(database);
 		const customLlmProviders = new DefaultCustomLlmProviderService({
 			repository: customLlmProviderRepository,
@@ -263,9 +279,19 @@ export function createSqliteManagementBackend(options: CreateSqliteManagementBac
 			models: llmModels,
 			repository: new SqliteLlmModelCatalogRepository(database),
 			clock,
+			accountScopedProviders: chatGptOAuth ? [CHATGPT_PROVIDER_ID] : [],
 			...(options.llmCatalogBaseUrl === undefined ? {} : { baseUrl: options.llmCatalogBaseUrl }),
 			...(options.llmCatalogFetch === undefined ? {} : { fetch: options.llmCatalogFetch }),
 		});
+		const chatgpt = chatGptOAuth && chatGptRegistrations ? new ChatGptService({
+			credentials: llmCredentials, catalog: llmModelCatalog, resetModels: resetChatGptModels,
+			hasActiveRun: () => chatRepository.hasActiveProvider(CHATGPT_PROVIDER_ID),
+			authorization: {
+				start: (previous, newAccount) => startChatGptLogin({ oauth: chatGptOAuth, registrations: chatGptRegistrations,
+					previous, newAccount, timeoutMs: options.chatgpt?.loginTimeoutMs }),
+				revoke: (credential, signal) => chatGptOAuth.revoke(credential, signal),
+			},
+		}) : undefined;
 		const contextCompactionSettings = new ContextCompactionSettingsService({
 			repository: contextCompactionSettingsRepository,
 			catalog: llmModelCatalog,
@@ -423,6 +449,7 @@ export function createSqliteManagementBackend(options: CreateSqliteManagementBac
 		return {
 			api,
 			handleRequest: createSshAgentHttpHandler({
+				chatgpt,
 				connectionTests,
 				statistics: new StatisticsService(new SqliteStatisticsQuery(database), () => clock.now()),
 				probeRemoteSandbox: async (workspaceId, signal) => sandbox.refreshCapabilities(await targets.resolveWorkspace(workspaceId), signal),
@@ -456,6 +483,7 @@ export function createSqliteManagementBackend(options: CreateSqliteManagementBac
 					...(abortRun === undefined ? {} : { abortRun }),
 				}),
 			close: async () => {
+				await chatgpt?.close();
 				connectionTests.close();
 				clearInterval(heartbeat);
 				llmModelRefresh.close();

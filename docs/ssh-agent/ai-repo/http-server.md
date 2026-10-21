@@ -17,6 +17,8 @@ Workspace POST/PATCH 通过 `sandboxWritableRoots` 设置独立可写目录默�
 
 ## 当前边界
 
+- Server 默认装配 ChatGPT 订阅连接；`/api/llm/chatgpt` 处理账号展示、授权开始/轮询/取消、模型刷新和撤销。OAuth 回调使用本机临时 loopback 监听，不复用 API/事件端口；后台关闭时取消在途登录。见 [chatgpt-provider.md](./chatgpt-provider.md)。
+
 - 全局只读统计挂载在 `/api/statistics/options|overview|models|runs|run-records|workspaces`，由独立路由和查询服务处理，复用共享异常与 Locale 边界，不调用 Chat/Terminal/Deployment 业务服务。见 [statistics.md](./statistics.md) 和 [HTTP 契约](../frontend/statistics-api.md)。
 
 - 用户决策使用 `GET /api/sessions/:sessionId/chat/decisions` 恢复待决题，`POST /api/sessions/:sessionId/chat/decisions/:decisionId/answer` 提交按题序排列的 `{ answers }`；Session、题目数量和答案类型在服务边界验证，重复同答幂等，冲突或过期返回错误。当前 Run SSE 发送 `decision.requested` 与 `decision.resolved`。见 [user-decision.md](./user-decision.md)。
@@ -79,3 +81,7 @@ Workspace POST/PATCH 通过 `sandboxWritableRoots` 设置独立可写目录默�
 
 
 2026-10-19 Diagnose 接入：独立 diagnose-routes 在 `/api/sessions/:id/diagnoses` 分发创建/定位、active、元数据、nodes、conclusion-requests、conclusion 和 cancel。模型写入仅通过服务端绑定工具。Workspace SSE 新增 diagnoses topic，不发送报告正文。 详见 [Diagnose 功能路由](./diagnose.md)。
+
+## Node 出站网络代理
+
+CLI 在 Backend 创建前通过 `server/environment-proxy.ts` 安装环境 HTTP/HTTPS 代理，原生 fetch 和使用它的 SDK 共用；HTTP_PROXY/HTTPS_PROXY/NO_PROXY 的小写变量优先，始终绕过 localhost、127.0.0.1、[::1]，显式 NO_PROXY=* 继续全直连。代理 URL 只接受 HTTP/HTTPS，错误与启动日志不公开 URL 或密码；未配置时不替换 dispatcher。SIGINT/SIGTERM 在后端收尾后恢复原 dispatcher 并关闭连接；库调用不自动修改宿主全局网络。先在启动终端导出变量再重启后端，`.env` 不自动加载。回归见 `test/environment-proxy.test.ts`，ChatGPT 网络阶段见 [chatgpt-provider.md](./chatgpt-provider.md)。

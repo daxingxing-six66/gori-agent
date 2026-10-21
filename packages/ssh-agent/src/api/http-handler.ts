@@ -43,6 +43,8 @@ import {
 import { handleTerminalRoute } from "./terminal-routes.ts";
 import { handleStatisticsRoute } from "./statistics-routes.ts";
 import type { StatisticsService } from "../application/statistics/statistics-service.ts";
+import type { ChatGptService } from "../application/services/chatgpt-service.ts";
+import { handleChatGptRoute } from "./chatgpt-routes.ts";
 
 export type SshAgentHttpHandler = (request: Request) => Promise<Response>;
 
@@ -60,6 +62,7 @@ export function createSshAgentHttpHandler(options: {
 	attachments: AttachmentService;
 	connectionTests: ConnectionTestService;
 	statistics?: StatisticsService;
+	chatgpt?: ChatGptService;
 	probeRemoteSandbox?: (workspaceId: string, signal: AbortSignal) => Promise<RemoteSandboxFacts>;
 }): SshAgentHttpHandler {
 	return async (request) => {
@@ -94,6 +97,7 @@ async function route(
 		attachments: AttachmentService;
 		connectionTests: ConnectionTestService;
 		statistics?: StatisticsService;
+		chatgpt?: ChatGptService;
 		probeRemoteSandbox?: (workspaceId: string, signal: AbortSignal) => Promise<RemoteSandboxFacts>;
 	},
 	request: Request,
@@ -106,6 +110,10 @@ async function route(
 		.filter((segment) => segment.length > 0)
 		.map((segment) => decodeURIComponent(segment));
 	if (segments[0] !== "api") return notFound();
+	if (options.chatgpt) {
+		const response = await handleChatGptRoute(options.chatgpt, request, segments);
+		if (response !== null) return response;
+	}
 	if (matches(segments, ["api", "session-activity", "events"]) && request.method === "GET") {
 		return new Response(options.chat.activity.subscribe(request.signal), { headers: {
 			"content-type": "text/event-stream", "cache-control": "no-store, no-transform",

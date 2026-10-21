@@ -1,4 +1,12 @@
 export const enUSMessages = {
+	"chatgpt.busy": "Another ChatGPT connection operation is still running",
+	"chatgpt.sign_in_failed": "ChatGPT sign-in failed or expired. Try signing in again.",
+	"chatgpt.permission_required": "Authorize ChatGPT plan usage with an eligible Plus or Pro account, then try again.",
+	"chatgpt.not_found": "This ChatGPT sign-in attempt no longer exists. Start a new sign-in.",
+	"chatgpt.model_discovery_failed": "Could not load this ChatGPT account's models. Retry model discovery or sign in again.",
+	"chatgpt.disconnect_failed": "Could not confirm ChatGPT session revocation. Retry disconnecting, or disconnect Gori in ChatGPT Settings.",
+	"chatgpt.local_browser_required": "Open Gori in a browser on the same computer as its backend to connect ChatGPT.",
+	"provider.chatgpt_usage_limit": "ChatGPT plan usage is unavailable or its limit was reached. Open Provider settings to manage usage in ChatGPT.",
 	"diagnose.error": "Diagnosis request failed: {reason}",
 	"approval.remote_session_unconfined": "Sandboxing is disabled for this Session. This command will run with the SSH user's filesystem permissions: {command}. Approve this command?",
 	"management.session_configuration_in_progress": "The Session execution environment is changing. Try again after the Terminal restart finishes.",

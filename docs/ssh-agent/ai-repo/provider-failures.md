@@ -2,6 +2,8 @@
 
 ## 边界
 
+- ChatGPT 套餐额度耗尽/不可用错误使用 `provider.chatgpt_usage_limit` 提示前往设置管理用量，并标为不可重试；其他 Provider 分类不变。OAuth 登录安全诊断属于独立连接流程。见 [chatgpt-provider.md](./chatgpt-provider.md)。
+
 - `application/provider-failure-classification.ts` 负责原因提取、脱敏、长度限制和重试属性，`application/provider-failure.ts` 负责模型事件流边界。只信任 Provider 终态错误响应、可识别的 HTTP 异常及网络异常；未知应用异常保持通用提示。
 - 聊天在 Attachment 水合完成后才进入模型错误边界，覆盖首次请求、Tool 后续请求和消费队列后的请求。不改变正常流事件、Usage 或上下文超限识别所用的原始错误文本。
 - 压缩通过请求局部的 Models 适配层捕获摘要错误，包括 split-turn 的前缀摘要。在 PI 包装为 `CompactionError` 前保存安全描述，外层 `ChatCompactionError` 保留 cause。请求开始清除旧状态；不同 Run 和不同压缩尝试互不共享失败原因。

@@ -47,7 +47,7 @@ describe("locale state", () => {
 	it("keeps both catalogs complete and all ICU messages parseable", () => {
 		expect(Object.keys(enUSMessages).sort()).toEqual(Object.keys(zhCNMessages).sort());
 		expect(zhCNMessages["provider.title"]).toBe("模型提供商");
-		expect(enUSMessages["provider.title"]).toBe("LLM Provider");
+		expect(enUSMessages["provider.title"]).toBe("Model providers");
 		for (const [locale, messages] of [["zh-CN", zhCNMessages], ["en-US", enUSMessages]] as const) {
 			const errors: Error[] = [];
 			const intl = createIntl({ locale, messages, onError: (error) => errors.push(error) }, createIntlCache());

@@ -31,8 +31,10 @@ SSH Agent 直接使用 `pi-ai` 提供的内置 Provider 和 Model 目录，不�
 - `apiKey` 和 `environment` 中的值只写，不能进入日志、持久化前端状态、错误追踪或 analytics。
 - 后端响应绝不返回 API Key、OAuth Token 或环境认证值。
 - 创建 Credential 时不传 `expectedRevision`；替换时必须携带最后读取到的 revision。
-- OAuth 能力会显示在 Provider 的 `auth.oauth` 中，但当前没有 OAuth HTTP 登录流程，前端不能手工提交 access/refresh token。
+- OAuth 能力会显示在 Provider 的 `auth.oauth` 中；`openai-chatgpt` 使用独立连接流程，其他 OAuth Provider 尚未开放登录。前端不能手工提交 access/refresh token。
 - Provider 的 `configured` 也可能来自后端进程环境或云平台 ambient credentials；此时 `credential` 可以为 `null`。
+
+设置页使用“账号与密钥”和“自定义服务”两个页签，表单保存或返回后保留来源页签。“账号与密钥”集中显示订阅账号与内置服务 API Key，其添加选择器只列内置服务；自定义服务的密钥创建、更新和删除入口直接位于对应服务行，不在两个列表中重复显示。无认证服务不显示密钥入口。列表用名称、端点和可用状态呈现，revision 继续用于表单并发控制。授权、写入或等待异步表单导航期间禁止切页签与关闭设置；页签支持方向键与 Home/End。
 
 ## 2. 接口定义、请求体与响应体
 
@@ -232,7 +234,7 @@ GET /api/llm/providers/:providerId/models
 }
 ```
 
-Model 按 `name, id` 排序。`supportedThinkingLevels` 由 `pi-ai` 的 `getSupportedThinkingLevels(model)` 生成，是 Chat Run 可提交强度的唯一事实来源；非推理模型只返回 `["off"]`，`xhigh` 和 `max` 只有模型显式支持时才会出现。前端不能只根据 `reasoning` 推断可选强度。未知 Provider 返回 `404 not_found`。模型目录为空是合法状态，动态 Provider 可能尚未刷新目录。
+静态 Provider 的 Model 按 `name, id` 排序，动态 Provider 保留发现顺序。`supportedThinkingLevels` 由 `pi-ai` 的 `getSupportedThinkingLevels(model)` 生成，是 Chat Run 可提交强度的唯一事实来源；非推理模型只返回 `["off"]`，`xhigh` 和 `max` 只有模型显式支持时才会出现。前端不能只根据 `reasoning` 推断可选强度。未知 Provider 返回 `404 not_found`。模型目录为空是合法状态，动态 Provider 可能尚未刷新目录。
 
 ### 2.6 获取所有已保存 Credential
 
@@ -333,3 +335,19 @@ DELETE /api/llm/providers/:providerId/credential?expectedRevision=2
 | 409 | `llm_provider_conflict` | 刷新 Provider 列表并更换自定义 Provider ID |
 | 409 | `llm_provider_in_use` | 等待当前 Chat Run 完成后重试更新或删除 |
 | 500 | `secret_store_failed` | 展示通用保存失败；不得记录原始请求体 |
+
+
+## 3. ChatGPT 订阅连接
+
+`openai-chatgpt` 在“账号与密钥”页签使用独立紧凑卡片，保留一个当前账号；所有 Workspace 共用，切换账号会替换当前凭据。已连接时显示账号与套餐状态，常显“管理用量”；重新登录、刷新模型、切换账号和断开收进“更多操作”，断开仍需确认。菜单支持 Escape、外部点击和焦点离开关闭；未登录时显示套餐/本机授权说明及登录入口，等待时保留手动打开浏览器和取消。后端不返回 access/refresh/id token，前端不提交这些值。浏览器需与 Gori 后端在同一电脑，授权回调使用独立临时 loopback 端口。
+
+- `GET /api/llm/chatgpt` 返回 `{ connected, email, sharing, manageUsageUrl }`。
+- `POST /api/llm/chatgpt/sign-in` 接收 JSON `{ newAccount?: boolean }`，返回 `{ id, status, authorizationUrl }`；新账号显式使用 newAccount=true。
+- `GET /api/llm/chatgpt/sign-in/:id` 返回 pending/connected/cancelled/failed；失败包含安全 errorCode，可含 `{ stage, reason, httpStatus?, transportCode?, upstreamCode? }` 的 failure，不返回原始响应正文。
+- `DELETE /api/llm/chatgpt/sign-in/:id` 取消等待；`POST /api/llm/chatgpt/models` 刷新当前账号模型；`DELETE /api/llm/chatgpt` 撤销并断开连接。
+
+授权等待默认 10 分钟，首次 token/身份请求各 30 秒。模型发现 20 秒，刷新与撤销各 15 秒；连接层可更早失败。HTTP 403 的 `unsupported_country_region_territory` 明确提示后端网络地区受限，不作为超时或身份校验错误处理。活动 ChatGPT Run 会阻止切换账号和断开；撤销失败保留连接供重试。通用 Credential DELETE 不用于该 Provider。
+
+授权成功后重新读取连接和 Provider 列表；账号模型保留服务端顺序。模型获取失败可单独重试，不能显示成账号未登录。原理、能力保护值和完整验证边界见 [ChatGPT Provider 路由](../ai-repo/chatgpt-provider.md)。
+
+ChatGPT 的 GPT-6.1 Sol / GPT-6 Astra 支持 low、medium、high、xhigh、max；GPT-6 Sol / GPT-6 Luna 另有 off（请求映射为 none），四者均无 minimal。后端在内置基线缺失时补齐这些准确 slug 的思考能力，前端继续按 supportedThinkingLevels 渲染。原先只有 off 的会话切换/恢复到前两种模型时，按现有规则选首个 low；仍受支持的原强度保留，不强制选择更高档位。

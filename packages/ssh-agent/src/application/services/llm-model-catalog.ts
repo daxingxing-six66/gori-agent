@@ -20,6 +20,8 @@ export interface DefaultLlmModelCatalogOptions {
 	clock: Clock;
 	baseUrl?: string;
 	fetch?: typeof fetch;
+	/** Account-scoped providers discover models with their own credentials, rather than pi.dev. */
+	accountScopedProviders?: readonly string[];
 }
 
 export class DefaultLlmModelCatalog implements LlmModelCatalog {
@@ -29,6 +31,8 @@ export class DefaultLlmModelCatalog implements LlmModelCatalog {
 	private readonly baseUrl: string;
 	private readonly fetch: typeof fetch;
 	private readonly snapshots = new Map<string, LlmModelCatalogSnapshot>();
+	private readonly accountScopedProviders: ReadonlySet<string>;
+	private readonly removedAccountModels = new Map<string, Set<string>>();
 
 	constructor(options: DefaultLlmModelCatalogOptions) {
 		this.models = options.models;
@@ -36,10 +40,13 @@ export class DefaultLlmModelCatalog implements LlmModelCatalog {
 		this.clock = options.clock;
 		this.baseUrl = options.baseUrl ?? DEFAULT_CATALOG_BASE_URL;
 		this.fetch = options.fetch ?? globalThis.fetch;
+		this.accountScopedProviders = new Set(options.accountScopedProviders);
 		for (const snapshot of this.repository.list()) this.snapshots.set(snapshot.providerId, snapshot);
 	}
 
 	getModels(providerId: string): readonly Model<Api>[] {
+		if (this.accountScopedProviders.has(providerId)) return this.models.getModels(providerId)
+			.filter((model) => !this.removedAccountModels.get(providerId)?.has(model.id));
 		return this.snapshots.get(providerId)?.models ?? this.models.getModels(providerId);
 	}
 
@@ -49,6 +56,14 @@ export class DefaultLlmModelCatalog implements LlmModelCatalog {
 
 	async refresh(providerId: string, signal?: AbortSignal): Promise<void> {
 		if (!this.models.getProvider(providerId)) throw new Error(`Unknown LLM provider: ${providerId}`);
+		if (this.accountScopedProviders.has(providerId)) {
+			const result = await this.models.refresh({ providers: [providerId], force: true, signal });
+			if (result.aborted) throw new Error("Model discovery cancelled");
+			const error = result.errors.get(providerId);
+			if (error) throw error;
+			this.removedAccountModels.delete(providerId);
+			return;
+		}
 		const stored = this.snapshots.get(providerId);
 		const url = new URL(`/api/models/providers/${encodeURIComponent(providerId)}`, this.baseUrl);
 		const response = await this.fetch(url, {
@@ -78,6 +93,12 @@ export class DefaultLlmModelCatalog implements LlmModelCatalog {
 		const models = this.getModels(providerId);
 		const next = models.filter((model) => model.id !== modelId);
 		if (next.length === models.length) return false;
+		if (this.accountScopedProviders.has(providerId)) {
+			const removed = this.removedAccountModels.get(providerId) ?? new Set<string>();
+			removed.add(modelId);
+			this.removedAccountModels.set(providerId, removed);
+			return true;
+		}
 		const etag = this.snapshots.get(providerId)?.etag;
 		this.publish({
 			providerId,

@@ -47,6 +47,7 @@ export function createSshAgentServer(options: CreateSshAgentServerOptions): SshA
 			...(options.maxRequestBodyBytes === undefined ? {} : { maxRequestBodyBytes: options.maxRequestBodyBytes }),
 		});
 		backend = createSqliteManagementBackend({
+			chatgpt: {},
 			databasePath: options.databasePath,
 			credentialEncryptionKey: options.credentialEncryptionKey,
 			llmModelsFactory: options.llmModelsFactory,

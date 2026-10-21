@@ -1,12 +1,14 @@
 "use client";
 
-import { Bot, Check, KeyRound, Plus, RotateCw, Trash2 } from "lucide-react";
+import { Trash2 } from "lucide-react";
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { useIntl, type IntlShape } from "react-intl";
 import { CustomSelect, type CustomSelectOption } from "@/components/custom-select";
 import { useLocalizedErrorMessage } from "@/features/i18n/components/use-localized-error-message";
 import { llmProviderApi } from "@/features/llm-provider/api/llm-provider-api";
 import { CustomProviderEditor } from "@/features/llm-provider/components/custom-provider-editor";
+import { ProviderList, type ProviderListTab } from "@/features/llm-provider/components/provider-list";
+import { ChatGptConnection } from "@/features/llm-provider/components/chatgpt-connection";
 import { useLlmProviders } from "@/features/llm-provider/components/llm-provider-context";
 import {
 	type CustomLlmProvider,
@@ -16,6 +18,7 @@ import {
 } from "@/features/llm-provider/model/llm-provider";
 import { SettingsSectionPanel } from "@/features/settings/components/settings-section-panel";
 import { ApiError } from "@/shared/errors/api-error";
+import "./provider-settings.css";
 
 type LlmProviderSettingsView = "list" | "credential-create" | "credential-edit" | "custom-create" | "custom-edit";
 
@@ -49,12 +52,14 @@ export function LlmProviderSettings({
 	const localizedErrorMessage = useLocalizedErrorMessage();
 	const { providers, loading, error: providersError, refreshProviders } = useLlmProviders();
 	const [view, setView] = useState<LlmProviderSettingsView>("list");
+	const [listTab, setListTab] = useState<ProviderListTab>("connections");
 	const [selectedProviderId, setSelectedProviderId] = useState("");
 	const [selectedCustomProvider, setSelectedCustomProvider] = useState<CustomLlmProvider | null>(null);
 	const [customProviders, setCustomProviders] = useState<readonly CustomLlmProvider[] | null>(null);
 	const [customLoading, setCustomLoading] = useState(false);
 	const [customError, setCustomError] = useState<unknown>(null);
 	const [customBusy, setCustomBusy] = useState(false);
+	const [navigationBusy, setNavigationBusy] = useState(false);
 	const [apiKey, setApiKey] = useState("");
 	const [submitting, setSubmitting] = useState(false);
 	const [deleting, setDeleting] = useState(false);
@@ -62,8 +67,8 @@ export function LlmProviderSettings({
 	const [localError, setLocalError] = useState<string | null>(null);
 	const [fieldError, setFieldError] = useState<string | null>(null);
 	const [conflictCredential, setConflictCredential] = useState<LlmProviderCredential | null>(null);
-	const busy = submitting || deleting || customBusy;
-	const providerState = deriveLlmProviderState(providers ?? []);
+	const busy = submitting || deleting || customBusy || navigationBusy;
+	const providerState = deriveLlmProviderState((providers ?? []).filter((provider) => provider.id !== "openai-chatgpt"));
 	const selectedProvider = providers?.find((provider) => provider.id === selectedProviderId) ?? null;
 	const currentCredential = conflictCredential ?? selectedProvider?.credential ?? null;
 
@@ -118,6 +123,8 @@ export function LlmProviderSettings({
 	};
 
 	const startCredentialCreate = async (providerId = "") => {
+		if (busy) return;
+		setNavigationBusy(true);
 		setLocalError(null);
 		try {
 			await refreshProviders();
@@ -127,6 +134,8 @@ export function LlmProviderSettings({
 			clearSecret();
 		} catch (requestError) {
 			setLocalError(localizedErrorMessage(requestError));
+		} finally {
+			setNavigationBusy(false);
 		}
 	};
 
@@ -140,6 +149,8 @@ export function LlmProviderSettings({
 	};
 
 	const startCustomEdit = async (providerId: string) => {
+		if (busy) return;
+		setNavigationBusy(true);
 		setCustomLoading(true);
 		setLocalError(null);
 		try {
@@ -151,6 +162,7 @@ export function LlmProviderSettings({
 			void refreshCustomProviders().catch(() => undefined);
 		} finally {
 			setCustomLoading(false);
+			setNavigationBusy(false);
 		}
 	};
 
@@ -253,7 +265,9 @@ export function LlmProviderSettings({
 		}
 	};
 
-	const providerOptions: CustomSelectOption[] = providerState.configurableProviders.map((provider) => ({
+	const providerOptions: CustomSelectOption[] = providerState.configurableProviders
+		.filter((provider) => listTab === "custom" ? provider.id === selectedProviderId : !provider.custom)
+		.map((provider) => ({
 		value: provider.id,
 		label: provider.name,
 		description: provider.auth.apiKey
@@ -273,7 +287,7 @@ export function LlmProviderSettings({
 						name: selectedCustomProvider?.name ?? intl.formatMessage({ id: "provider.custom.title" }),
 					});
 	const description = view === "list"
-		? intl.formatMessage({ id: "settings.provider.description" })
+		? intl.formatMessage({ id: "provider.connections.description" })
 		: view === "custom-create" || view === "custom-edit"
 			? intl.formatMessage({ id: "provider.custom.form.description" })
 			: intl.formatMessage({ id: "provider.credential.description" });
@@ -294,6 +308,10 @@ export function LlmProviderSettings({
 
 			{view === "list" ? (
 				<ProviderList
+					activeTab={listTab}
+					onTabChange={setListTab}
+					busy={busy}
+					subscription={providers?.some((provider) => provider.id === "openai-chatgpt") ? <ChatGptConnection disabled={navigationBusy} onBusyChange={setCustomBusy} /> : null}
 					providers={providers}
 					providersError={providersError}
 					providerState={providerState}
@@ -353,160 +371,6 @@ export function LlmProviderSettings({
 				/>
 			)}
 		</SettingsSectionPanel>
-	);
-}
-
-function ProviderList({
-	providers,
-	providersError,
-	providerState,
-	loading,
-	customProviders,
-	customError,
-	customLoading,
-	onReloadProviders,
-	onReloadCustomProviders,
-	onCreateCustom,
-	onEditCustom,
-	onCreateCredential,
-	onEditCredential,
-}: {
-	providers: readonly LlmProvider[] | null;
-	providersError: unknown;
-	providerState: ReturnType<typeof deriveLlmProviderState>;
-	loading: boolean;
-	customProviders: readonly CustomLlmProvider[] | null;
-	customError: unknown;
-	customLoading: boolean;
-	onReloadProviders(): void;
-	onReloadCustomProviders(): void;
-	onCreateCustom(): void;
-	onEditCustom(providerId: string): void;
-	onCreateCredential(providerId?: string): void;
-	onEditCredential(provider: LlmProvider): void;
-}) {
-	const intl = useIntl();
-	const localizedErrorMessage = useLocalizedErrorMessage();
-	return (
-		<>
-			<div className="mb-5 flex items-end justify-between gap-4">
-				<div>
-					<p className="text-[11px] font-semibold text-zinc-800">{intl.formatMessage({ id: "provider.custom.title" })}</p>
-					<p className="mt-1 text-[9px] leading-4 text-zinc-400">{intl.formatMessage({ id: "provider.custom.description" })}</p>
-				</div>
-				<button type="button" className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg bg-[#397b5c] px-3 text-[9px] font-semibold text-white transition hover:bg-[#326e52] disabled:cursor-not-allowed disabled:opacity-45" disabled={customLoading} onClick={onCreateCustom}>
-					<Plus size={13} /> {intl.formatMessage({ id: "provider.custom.add" })}
-				</button>
-			</div>
-
-			{customError && customProviders === null ? <ReloadState message={localizedErrorMessage(customError)} onReload={onReloadCustomProviders} /> : null}
-			{customLoading && customProviders === null ? <p className="py-8 text-center text-[10px] text-zinc-400">{intl.formatMessage({ id: "provider.custom.loading" })}</p> : null}
-			{customProviders !== null && customProviders.length === 0 ? (
-				<div className="rounded-2xl border border-dashed border-[#cfd8d2] bg-[#f8faf8] px-6 py-8 text-center">
-					<span className="mx-auto grid h-9 w-9 place-items-center rounded-xl bg-[#eaf2ec] text-[#397b5c]"><Bot size={16} /></span>
-					<p className="mt-3 text-[10px] font-semibold text-zinc-700">{intl.formatMessage({ id: "provider.custom.empty" })}</p>
-					<p className="mt-1 text-[9px] text-zinc-400">{intl.formatMessage({ id: "provider.custom.empty.description" })}</p>
-				</div>
-			) : null}
-			<div className="space-y-2.5">
-				{customProviders?.map((provider) => {
-					const catalogProvider = providers?.find((entry) => entry.id === provider.id);
-					const credentialRequired = provider.authMode === "api_key" && catalogProvider?.credential === null;
-					return (
-						<div key={provider.id} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-4 rounded-xl border border-[var(--line-soft)] px-4 py-4 transition hover:border-[#cfd8d2] hover:bg-[#fdfefd]">
-							<button type="button" className="flex min-w-0 items-center gap-3.5 text-left" onClick={() => onEditCustom(provider.id)}>
-								<ProviderIdentity provider={provider} configured={catalogProvider?.configured ?? false} />
-							</button>
-							<span className="text-right">
-								{credentialRequired ? (
-									<button type="button" className="h-8 rounded-lg border border-[#b9cec0] px-3 text-[8px] font-semibold text-[#397b5c] hover:bg-[#f3f8f5]" onClick={() => onCreateCredential(provider.id)}>
-										{intl.formatMessage({ id: "provider.credential.configure" })}
-									</button>
-								) : <ProviderStatus configured={catalogProvider?.configured ?? false} />}
-							</span>
-						</div>
-					);
-				})}
-			</div>
-
-			<div className="my-6 border-t border-[var(--line-soft)]" />
-			<div className="mb-5 flex items-end justify-between gap-4">
-				<div>
-					<p className="text-[11px] font-semibold text-zinc-800">{intl.formatMessage({ id: "provider.credential.title" })}</p>
-					<p className="mt-1 text-[9px] leading-4 text-zinc-400">{intl.formatMessage({ id: "provider.credential.list.description" })}</p>
-				</div>
-				<button type="button" className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg border border-[var(--line)] bg-white px-3 text-[9px] font-semibold text-[#397b5c] transition hover:border-[#b9cec0] disabled:cursor-not-allowed disabled:opacity-45" disabled={loading} onClick={() => onCreateCredential()}>
-					<Plus size={13} /> {intl.formatMessage({ id: "provider.credential.add" })}
-				</button>
-			</div>
-
-			{providersError && providers === null ? <ReloadState message={localizedErrorMessage(providersError)} onReload={onReloadProviders} /> : null}
-			{loading && providers === null ? <p className="py-12 text-center text-[10px] text-zinc-400">{intl.formatMessage({ id: "provider.credential.loading" })}</p> : null}
-			{providers !== null && providerState.credentialProviders.length === 0 ? (
-				<div className="rounded-2xl border border-dashed border-[#cfd8d2] bg-[#f8faf8] px-6 py-8 text-center">
-					<span className="mx-auto grid h-9 w-9 place-items-center rounded-xl bg-[#eaf2ec] text-[#397b5c]"><KeyRound size={16} /></span>
-					<p className="mt-3 text-[10px] font-semibold text-zinc-700">{intl.formatMessage({ id: "provider.credential.empty" })}</p>
-					<p className="mt-1 text-[9px] text-zinc-400">{intl.formatMessage({ id: "provider.credential.empty.description" })}</p>
-				</div>
-			) : null}
-			<div className="space-y-2.5">
-				{providerState.credentialProviders.map((provider) => {
-					const credential = provider.credential;
-					if (!credential) return null;
-					return (
-						<button type="button" key={provider.id} className="group grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-5 rounded-xl border border-[var(--line-soft)] px-4 py-4 text-left transition hover:border-[#cfd8d2] hover:bg-[#fdfefd]" onClick={() => onEditCredential(provider)}>
-							<span className="flex min-w-0 items-center gap-3.5">
-								<span className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl border text-[9px] font-bold tracking-[0.04em] ${provider.configured ? "border-[#d3e2d8] bg-[#edf4f0] text-[#397b5c]" : "border-zinc-200 bg-zinc-50 text-zinc-500"}`}>{initials(provider.name)}</span>
-								<span className="min-w-0">
-									<span className="flex items-center gap-2"><strong className="truncate text-[11px] font-semibold text-zinc-800">{provider.name}</strong><span className="font-mono text-[8px] text-zinc-400">{provider.id}</span></span>
-									<span className="mt-1.5 block truncate font-mono text-[9px] text-zinc-400">{provider.baseUrl ?? intl.formatMessage({ id: "provider.credential.endpoint.fixed" })}</span>
-								</span>
-							</span>
-							<span className="text-right">
-								<ProviderStatus configured={provider.configured} />
-								<span className="mt-1 block text-[8px] text-zinc-400">revision {credential.revision} · {intl.formatDate(credential.updatedAt, { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" })}</span>
-							</span>
-						</button>
-					);
-				})}
-			</div>
-		</>
-	);
-}
-
-function ProviderIdentity({ provider, configured }: { provider: CustomLlmProvider; configured: boolean }) {
-	const intl = useIntl();
-	return (
-		<>
-			<span className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl border text-[9px] font-bold tracking-[0.04em] ${configured ? "border-[#d3e2d8] bg-[#edf4f0] text-[#397b5c]" : "border-zinc-200 bg-zinc-50 text-zinc-500"}`}>{initials(provider.name)}</span>
-			<span className="min-w-0">
-				<span className="flex items-center gap-2"><strong className="truncate text-[11px] font-semibold text-zinc-800">{provider.name}</strong><span className="rounded bg-zinc-100 px-1.5 py-0.5 text-[7px] font-semibold text-zinc-500">{intl.formatMessage({ id: "provider.custom.badge" })}</span></span>
-				<span className="mt-1.5 block truncate font-mono text-[9px] text-zinc-400">{provider.baseUrl}</span>
-				<span className="mt-1 block text-[8px] text-zinc-400">{provider.api} · {intl.formatMessage({ id: "provider.models.count" }, { count: provider.models.length })} · revision {provider.revision}</span>
-			</span>
-		</>
-	);
-}
-
-function ProviderStatus({ configured }: { configured: boolean }) {
-	const intl = useIntl();
-	return (
-		<span className={`inline-flex items-center gap-1.5 text-[9px] font-semibold ${configured ? "text-[#397b5c]" : "text-zinc-400"}`}>
-			{configured ? <Check size={12} /> : <span className="h-1.5 w-1.5 rounded-full bg-zinc-300" />}
-			{intl.formatMessage({ id: configured ? "provider.status.available" : "provider.status.authPending" })}
-		</span>
-	);
-}
-
-function ReloadState({ message, onReload }: { message: string; onReload(): void }) {
-	const intl = useIntl();
-	return (
-		<div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-5 text-center">
-			<p className="text-[10px] text-rose-700">{message}</p>
-			<button type="button" className="mt-3 inline-flex items-center gap-1.5 text-[9px] font-semibold text-rose-700" onClick={onReload}>
-				<RotateCw size={12} /> {intl.formatMessage({ id: "common.reload" })}
-			</button>
-		</div>
 	);
 }
 

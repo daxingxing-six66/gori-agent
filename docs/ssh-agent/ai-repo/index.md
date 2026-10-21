@@ -17,6 +17,7 @@
 | Workspace、Session、Credential 的实体、Service、Repository 和生命周期约束 | [management-domain.md](./management-domain.md) | `packages/ssh-agent/src/domain/`、`packages/ssh-agent/src/application/` |
 | Guard 配置、规则 ID、匹配模式和整体 PATCH 语义 | [guard.md](./guard.md) | `packages/ssh-agent/src/domain/guard.ts`、`packages/ssh-agent/src/application/services/guard-service.ts` |
 | LLM Provider/Model 目录、Provider Credential 和 pi-ai 接入 | [llm-provider.md](./llm-provider.md) | `packages/ssh-agent/src/domain/llm-provider.ts`、`packages/ssh-agent/src/application/services/llm-provider-service.ts` |
+| ChatGPT 订阅登录、账号模型、token 刷新和 Responses 适配 | [chatgpt-provider.md](./chatgpt-provider.md) | `packages/ssh-agent/src/application/services/chatgpt-service.ts`、`packages/ssh-agent/src/infrastructure/chatgpt/` |
 | 创建工作区前测试地址与草稿凭据、临时 SSH 认证和取消 | [connection-test.md](./connection-test.md) | `packages/ssh-agent/src/application/services/connection-test-service.ts`、`packages/ssh-agent-web/features/workspace/components/workspace-dialog.tsx` |
 | SSH Connection Key、连接复用、Channel、主机校验、保活和重连 | [connection-runtime.md](./connection-runtime.md) | `packages/ssh-agent/src/infrastructure/ssh/ssh2-connection-pool.ts` |
 | Session 命令 FIFO、进程并发限制与排队超时 | [command-execution.md](./command-execution.md) | `packages/ssh-agent/src/application/services/session-command-scheduler.ts` |

@@ -9,9 +9,9 @@
 - 读取模型时优先使用 SQLite 快照；没有快照时使用 `pi-ai` 基线。模型列表与 Chat Run 使用同一个有效目录，避免列表可见但运行选择来源不同。
 - 上游明确返回当前所选模型的 `ModelError` 且消息为 `Model <id> is not supported` 时，Chat Runtime 不再次拉取，而是从有效目录和 SQLite 快照中直接删除该模型，并返回稳定错误 `chat_model_not_supported`。删除会保留目录 ETag，远端目录未变化时的 `304` 不会重新加入该模型；远端目录版本变化后才重新精确替换。不维护 unavailable/deprecated 等中间状态。
 - Provider 目录返回 `pi-ai` 声明的厂商名称和默认 `baseUrl`；没有固定地址时 `baseUrl` 为 `null`，它不代表运行期最终解析出的有效地址。
-- 每个 `providerId` 最多保存一个应用级 Credential。当前 HTTP 只允许写入 `api_key`，OAuth 类型由底层 Store 支持但尚未开放多阶段登录 API。
+- 每个 `providerId` 最多保存一个应用级 Credential。通用 Credential PUT 只允许写入 `api_key`；独立的 `openai-chatgpt` 通过专用登录 API 保存 OAuth，使用当前账号订阅。账号目录与协议边界见 [chatgpt-provider.md](./chatgpt-provider.md)。
 - API Key 和 Provider 环境认证值只写；读接口只返回类型、revision 和时间。
-- `SqliteLlmProviderCredentialStore` 实现 `pi-ai` 的 `CredentialStore`，OAuth 自动刷新未来可沿用同一个串行 `modify` 契约。
+- `SqliteLlmProviderCredentialStore` 实现 `pi-ai` 的 `CredentialStore`，ChatGPT OAuth 自动刷新沿用同一个串行 `modify` 契约。
 - Credential 使用 revision 做乐观并发控制；创建不传 `expectedRevision`，替换必须传当前 revision，删除通过查询参数传 revision。
 - Provider 目录响应会调用 `pi-ai` 的 `checkAuth()`，因此 `configured` 同时反映 SQLite Credential 和环境/ambient auth。
 - Model 目录使用 `pi-ai` 的 `getSupportedThinkingLevels()` 返回每个模型准确支持的思考强度；`reasoning` 不能替代该列表。
@@ -21,7 +21,7 @@
 - 自定义 Provider ID 必须使用 `custom-` 前缀且不可修改；模型数组更新采用精确替换。Provider 更新和删除受 revision 乐观锁保护，存在 active Chat Run 时返回 `llm_provider_in_use`。
 - 自定义 Provider 的创建规则集中在独立 factory；SQLite mapper 将行、`compat_json` 和 `models_json` 作为不可信数据完整校验，再构造领域对象。损坏的持久化聚合不会进入运行时 Model Catalog。
 - 自定义 Provider 使用用户维护的静态模型目录，不参与 `pi.dev` 启动或两小时刷新。删除 Provider 会同步清除 Credential、Secret 和遗留目录快照；API Key 切换为无认证时也会原子清除 Credential。
-- OAuth HTTP 流程不属于当前实现。
+- 其他厂商的 OAuth HTTP 流程尚未开放。ChatGPT 使用独立连接和撤销接口，通用 Credential DELETE 拒绝该 Provider。静态 Provider 模型按名称排序，动态 Provider 保留发现顺序。ChatGPT 账号目录不经过 pi.dev 或通用 SQLite 快照，上述静态目录刷新规则不适用于它。
 - Provider 管理和模型选择异常在 HTTP/Chat SSE 出口通过稳定 code 本地化；Provider/Model 名称与 ID、上游响应和模型输出不翻译，底层 Provider 异常不得直接返回浏览器。
 
 Chat 模型另需支持按历史位置保留 system 消息；目前聊天适配为 OpenAI Completions/Responses 与 Mistral，不支持的协议在 Run 创建前返回 `chat_system_messages_unsupported`。管理目录能力保持原样，详见 [session-prompt.md](./session-prompt.md)。

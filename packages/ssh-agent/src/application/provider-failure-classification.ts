@@ -95,7 +95,7 @@ export function normalizeProviderFailure(
 			: "Could not connect to the model service";
 	const reason = safeReason(text);
 	if (!reason) return undefined;
-	const permanent =
+	const permanent = (model.provider === "openai-chatgpt" && /subscription_sharing_usage_(?:limit_exceeded|unavailable)/.test(`${code ?? ""} ${reason}`)) ||
 		/insufficient[_ ]quota|quota.{0,40}exhausted|credit|balance|billing|payment|required.*recharg|余额|额度.*(?:不足|耗尽)|unsupported_country|(?:country|region|territory).*not supported|invalid[_ ](?:param|api)|authentication|permission|max_tokens.*(?:must|limit|exceed|large)/i.test(
 			`${code ?? ""} ${reason}`,
 		);
@@ -113,6 +113,8 @@ export function providerFailureDescriptor(
 	failure: ProviderFailure,
 	scene: "chat" | "compaction" | "removed" = "chat",
 ): BackendMessageDescriptor {
+	if (failure.providerId === "openai-chatgpt" && /subscription_sharing_usage_(?:limit_exceeded|unavailable)/.test(`${failure.upstreamCode ?? ""} ${failure.reason}`))
+		return backendMessage("provider.chatgpt_usage_limit");
 	if (scene === "chat" && /^4(?:00|13)\s*(?:status code)?\s*\(no body\)/i.test(failure.reason))
 		return backendMessage("provider.empty_error_body", { status: failure.upstreamStatus ?? 400 });
 	const reason = `${failure.reason}${failure.upstreamStatus ? ` (HTTP ${failure.upstreamStatus})` : ""}`;

@@ -10,6 +10,8 @@ Bubblewrap 事实沿用现有 JSON 列，无 schema migration：保存 `backend=
 
 ## 当前边界
 
+- ChatGPT OAuth 沿用现有 LLM Credential 加密表，无 schema migration。数据库旁的注册文件只存 host/client/subject，无 token；账号模型只在进程内发现，不作为通用目录快照恢复。见 [chatgpt-provider.md](./chatgpt-provider.md)。
+
 - v22 新增 `chat_user_decisions`：持久化 Session/Run/Tool Call 绑定、问题 JSON、答案 JSON 和 pending/answered/cancelled/interrupted 状态。Repository 在读取边界解析问题与答案，按每题实际选项数量校验推荐项与答案索引，不限定为三个选项；启动恢复将遗留 pending 决策标记为 interrupted，Run 仍按现有重启逻辑失败。见 [user-decision.md](./user-decision.md)。
 
 - 使用 Node `node:sqlite`，启动时开启 foreign keys、busy timeout；文件数据库使用 WAL。

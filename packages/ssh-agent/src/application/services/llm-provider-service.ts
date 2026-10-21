@@ -1,5 +1,6 @@
 import { getSupportedThinkingLevels, type Models } from "@earendil-works/pi-ai";
 import { ManagementError } from "../../domain/errors.ts";
+import { CHATGPT_PROVIDER_ID } from "../../domain/chatgpt.ts";
 import type { Clock } from "../../domain/ids.ts";
 import type {
 	ConfigureLlmProviderApiKeyInput,
@@ -91,9 +92,8 @@ export class DefaultLlmProviderService implements LlmProviderService {
 					contextWindow: model.contextWindow,
 					maxTokens: model.maxTokens,
 				}),
-			)
-			.sort(compareByNameAndId);
-		return { providerId, models };
+			);
+		return { providerId, models: this.models.getProvider(providerId)?.refreshModels ? models : models.sort(compareByNameAndId) };
 	}
 
 	listCredentials(): Promise<readonly LlmProviderCredential[]> {
@@ -135,6 +135,7 @@ export class DefaultLlmProviderService implements LlmProviderService {
 	}
 
 	async deleteCredential(input: DeleteLlmProviderCredentialInput): Promise<void> {
+		if (input.providerId === CHATGPT_PROVIDER_ID) throw new ManagementError("validation_error", "Disconnect ChatGPT using its connection settings", "providerId");
 		await this.transactions.run(async () => this.credentials.deleteCredential(input));
 	}
 

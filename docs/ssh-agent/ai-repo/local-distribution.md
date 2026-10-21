@@ -18,6 +18,7 @@
 - 后端 cwd 设为数据目录，本地工作目录设为其 `workspace/`；日志写入数据目录的 `logs/`。启动器不自动迁移旧用户数据。
 - 先等待 API 与事件两个后端健康检查，再启动网页服务；任一子进程失败会关闭另一进程。SIGINT/SIGTERM 关闭子进程，超时后强制结束。
 - `.env.example` 仅是参考，启动器不会自动加载 `.env`。内部变量名仍用 SSH_AGENT；不能把秘密放入 NEXT_PUBLIC 变量。
+- CLI 入口启动时读取已导出的 HTTP_PROXY/HTTPS_PROXY/NO_PROXY（小写优先），为原生 fetch 及其 SDK 安装环境代理，始终绕过本机 loopback；HTTP/HTTPS 代理 URL 可用，SOCKS ALL_PROXY 不用于 fetch。启动器继承父 Shell 环境，不执行 proxy_on 或读取 Shell 配置。先在同一终端启用代理再启动；已有进程需重启，dist 代码更新需先构建。配置与回归见 `server/environment-proxy.ts` 和 `test/environment-proxy.test.ts`。
 
 安装、迁移与平台验证范围见根 README、[migration.md](../../migration.md) 和 [release-readiness.md](../../release-readiness.md)。
 

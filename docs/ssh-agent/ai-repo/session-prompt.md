@@ -33,6 +33,8 @@ SQLite v16 引入、v17 统一兼容后的结构使用触发器让 Terminal 状�
 
 ## 请求与压缩
 
+ChatGPT 订阅 Provider 在共享工具配对修复后，按 SIWC 要求把请求副本中的 system 映射为同位置 developer；不写回历史、不降为 user、不移动到头部，也不影响普通 API Key/Codex 适配器的角色。见 [chatgpt-provider.md](./chatgpt-provider.md)。
+
 `convertToLlm` 保留 system role。OpenAI Chat Completions、Responses（含共享转换器的 Azure/Codex）及 Mistral 适配器保留 system 消息的历史位置，但工具调用与对应结果必须组成连续消息组：若运行时 system 事件落在调用与结果之间，`transformMessages` 仅在 Provider 请求投影中将这些事件延后到完整结果组之后，保留事件之间的顺序和真实角色，不提前生成缺失结果。SQLite 原始 sequence 不变。真正缺失、重复或失去父调用的结果处理见 [chat-failures.md](./chat-failures.md)。本地 faux 用于测试。不支持会话内 system 的 API 在创建 Run 前返回本地化 `409 chat_system_messages_unsupported`，不静默降级为 user 或移动到头部。目录管理仍保留原能力；第三方兼容服务的实际接收能力需另行验证。
 
 压缩只替换有效历史，固定头部不变。最新权威模式若落入摘要区，会以原 system 消息保留在 retained tail；摘要请求期间发生的新模式事件也加入尾部，避免被新 compact 行的 sequence 边界遮蔽。每次 Provider 请求及压缩返回后复核最新持久化模式：同一事件不重复插入，若与当前 Run 绑定模式不一致则停止并返回模式冲突，不继续使用已失效 PTY。
