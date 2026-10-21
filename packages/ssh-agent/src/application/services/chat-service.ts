@@ -267,11 +267,11 @@ export class ChatService {
 			const attachmentIds = input.attachmentIds ?? [];
 			if (!message && attachmentIds.length === 0)
 				throw new ChatError("chat_message_invalid", "message must not be empty");
-			await this.attachments.validateReferences(session.id, attachmentIds, model);
+			const validatedAttachments = await this.attachments.validateReferences(session.id, attachmentIds, model);
 			let history = this.context.load(session.id);
-			this.attachments.requireImageModelForContext(model, history);
+			await this.attachments.requireImageModelForContext(session.id, model, history);
 			const now = Date.now();
-			const userMessage = createChatUserMessage(message, attachmentIds, now);
+			const userMessage = createChatUserMessage(message, attachmentIds, now, validatedAttachments);
 			const runId = this.ids.next();
 			const terminalSessionId = await this.bindServerInteraction(session.id, runId, input.serverInteractionMode);
 			if (terminalSessionId !== null) terminalBinding = { runId, terminalSessionId };

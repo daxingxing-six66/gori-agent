@@ -14,6 +14,8 @@ import {
 import type { ChatMessage, ChatQueueBehavior, ChatRun, ManualChatCompactionResult, ToolApproval } from "@/features/chat/model/chat";
 import type { UserDecision, UserDecisionAnswer } from "@/features/chat/model/user-decision";
 import { ChatEventStream } from "@/features/chat/runtime/chat-event-stream";
+import { listMessagePages } from "@/features/chat/runtime/chat-message-history";
+import { useChatAttachmentHistory } from "@/features/chat/runtime/use-chat-attachment-history";
 import type { LlmModel, ThinkingLevel } from "@/features/llm-provider/model/llm-provider";
 import type { SessionAttachment } from "@/features/session/api/session-attachment-api";
 
@@ -47,6 +49,7 @@ export function useChatRuntime(sessionId: string) {
 	const [decisionMutationId, setDecisionMutationId] = useState<string | null>(null);
 	const [requestError, setRequestError] = useState<unknown>(null);
 	const stateRef = useRef<ChatRuntimeState>(state);
+	const receiveAttachmentHistory = useChatAttachmentHistory(sessionId, stateRef, dispatch, setRequestError);
 	const historySession = useRef(sessionId);
 	historySession.current = sessionId;
 	const compactionControllerRef = useRef<AbortController | null>(null);
@@ -160,6 +163,7 @@ export function useChatRuntime(sessionId: string) {
 				return;
 			}
 			dispatch({ type: "event", event });
+			receiveAttachmentHistory(event);
 			if (event.type === "compaction.completed") {
 				void synchronize({ afterSequence: stateRef.current.maxSequence, merge: true }).catch(setRequestError);
 			}
@@ -176,7 +180,7 @@ export function useChatRuntime(sessionId: string) {
 			unsubscribeConnection();
 			stream.close();
 		};
-	}, [contextUsageStore, locale, runId, sessionId, synchronize]);
+	}, [contextUsageStore, locale, receiveAttachmentHistory, runId, sessionId, synchronize]);
 
 	const attachRun = useCallback(async (run: ChatRun) => {
 		if (run.sessionId !== sessionId || historySession.current !== sessionId) return;
@@ -380,15 +384,4 @@ export function useChatRuntime(sessionId: string) {
 		compact,
 		clearManualCompactionResult: () => setManualCompactionResult(null),
 	};
-}
-
-async function listMessagePages(sessionId: string, afterSequence: number): Promise<ChatMessage[]> {
-	const messages: ChatMessage[] = [];
-	let cursor = afterSequence;
-	for (;;) {
-		const response = await chatApi.listMessages(sessionId, { afterSequence: cursor, limit: 100 });
-		messages.push(...response.messages);
-		if (response.nextSequence === null || response.messages.length === 0) return messages;
-		cursor = response.messages.at(-1)?.sequence ?? cursor;
-	}
 }

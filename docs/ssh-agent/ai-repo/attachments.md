@@ -1,6 +1,6 @@
 # Session Attachment 代码路由
 
-适用于 Session 本地附件的原始字节上传、SQLite 元数据、磁盘一致性、安全边界、列表查询和 Session 删除协同。图片附件如何被 Chat 引用并临时投影给 Provider，见 [chat-image-input.md](./chat-image-input.md)。
+适用于 Session 本地附件的原始字节上传、SQLite 元数据、磁盘一致性、安全边界、图片回显、文本预览、列表查询和 Session 删除协同。附件如何被 Chat 引用并临时投影给 Provider，见 [chat-image-input.md](./chat-image-input.md)。
 
 ## 当前边界
 
@@ -13,7 +13,8 @@
 - 上传持有 `attachment_upload` Session lifecycle lease，删除屏障建立后拒绝新上传，活动上传会阻止 Session 删除。Session 数据库删除成功后清理精确的附件目录；清理失败只记录日志。
 - 上传、列表和 Chat 消息历史的 Attachment HTTP 投影增加受控相对 `contentUrl`，不把该 URL 或宿主机绝对路径写入数据库。内容接口按 `sessionId + attachmentId` 校验归属，通过无符号链接方式打开文件，并与 Chat 输入共用 JPEG、PNG、WebP 真实格式识别。
 - 图片内容以原始字节流返回，包含真实 `Content-Type`、`Content-Length`、`ETag`、`private, max-age=31536000, immutable` 和 `X-Content-Type-Options: nosniff`。匹配 `If-None-Match` 时返回 `304`。非受支持图片不能通过该接口回显。
-- Attachment 基础领域不提供删除、覆盖、版本管理或通用文件下载。上传接口本身仍不解析图片内容；图片校验延迟到 Chat 引用或受控内容读取阶段。
+- 文本文档通过 `GET /api/sessions/:sessionId/attachments/:attachmentId/text` 返回受控 JSON 预览。先检查 Session 归属、文本名称白名单、存储路径及目录链，再复用 `readLocalTextFile` 的普通文件、无符号链接、严格 UTF-8 和 1 MiB 限制；实际大小必须与元数据相同。返回 `path` 仅为附件文件名，不泄露宿主机绝对路径；`Cache-Control: no-store`。
+- Attachment 基础领域不提供删除、覆盖、版本管理或通用文件下载。上传接口本身仍不解析内容；图片和文本校验延迟到 Chat 引用或受控内容读取阶段。文本附件正文只有在模型主动调用 `read` 后才作为 Tool Result 进入对话。
 
 ## HTTP 契约
 
@@ -42,6 +43,14 @@ If-None-Match: "previous-etag"
 
 成功时流式返回图片原始字节；缓存仍有效时返回 `304`。接口不接收 `storagePath`，也不返回 Base64。
 
+文本预览接口：
+
+```http
+GET /api/sessions/:sessionId/attachments/:attachmentId/text
+```
+
+成功返回 `200 { path, name, content, size, modifiedAt }`。`path` 与 `name` 均为后端最终附件名；前端使用 Session 和 ID 读取，不拼接磁盘路径。上传仍允许 20 MiB，预览超过 1 MiB 返回 `local_file_too_large`；非文本、损坏编码和非法控制字符返回已有 Reader 错误码，非支持的文档名称返回 `attachment_text_format_unsupported`。
+
 ## 代码位置
 
 | 关注点 | 代码位置 |
@@ -50,6 +59,7 @@ If-None-Match: "previous-etag"
 | Repository 端口 | [attachment-repository.ts](../../../packages/ssh-agent/src/application/repositories/attachment-repository.ts) |
 | 文件校验、流式写入、自动命名、受控读取和清理 | [attachment-service.ts](../../../packages/ssh-agent/src/application/services/attachment-service.ts) |
 | JPEG、PNG、WebP 共享格式识别 | [attachment-image-inspector.ts](../../../packages/ssh-agent/src/application/services/attachment-image-inspector.ts) |
+| 文本文档类型与安全预览 | `packages/ssh-agent/src/application/services/attachment-text-inspector.ts`、`packages/ssh-agent/src/application/services/read-local-text-file.ts` |
 | SQLite Repository 和 migration | [sqlite-attachment-repository.ts](../../../packages/ssh-agent/src/infrastructure/sqlite/sqlite-attachment-repository.ts)、[migrations.ts](../../../packages/ssh-agent/src/infrastructure/sqlite/migrations.ts) |
 | HTTP 路由和 Node 流式适配 | [attachment-routes.ts](../../../packages/ssh-agent/src/api/attachment-routes.ts)、[node-http-server.ts](../../../packages/ssh-agent/src/server/node-http-server.ts) |
 | Runtime 装配和 Session 删除协同 | [create-sqlite-management-backend.ts](../../../packages/ssh-agent/src/runtime/create-sqlite-management-backend.ts)、[session-service.ts](../../../packages/ssh-agent/src/application/services/session-service.ts) |

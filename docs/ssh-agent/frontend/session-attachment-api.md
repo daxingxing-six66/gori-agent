@@ -1,6 +1,6 @@
 # Session Attachment 前端接口
 
-当前后端提供 Session 附件上传和列表查询。图片上传成功后可把 Attachment ID 随 Chat Run 或 Queue 提交，详见 [Chat 图片附件前端联调](./chat-image-attachment-integration.md)。前端不要把 `storagePath` 当作任意本地文件访问接口。
+当前后端提供 Session 附件上传、列表、图片回显和文本预览。图片/文本上传成功后可把 Attachment ID 随 Chat Run 或 Queue 提交，详见 [Chat 附件前端联调](./chat-image-attachment-integration.md)。前端不要把 `storagePath` 当作任意本地文件访问接口。
 
 ## 上传
 
@@ -104,6 +104,31 @@ const src = new URL(attachment.contentUrl, backendApiBaseUrl).toString();
 
 前端应使用 `loading="lazy"`，让浏览器只请求当前需要显示的图片。非 JPEG、PNG、WebP 附件仍可上传和列出，但内容接口不会将其作为图片返回。
 
+## 文本预览
+
+Markdown、TXT、JSON、CSV、YAML、配置、日志和代码等受支持的 UTF-8 文本附件通过 ID 读取：
+
+```http
+GET /api/sessions/:sessionId/attachments/:attachmentId/text
+Accept-Language: zh-CN
+```
+
+成功返回 `200`：
+
+```ts
+interface AttachmentText {
+  path: string; // 与 name 相同，仅文件名，不是宿主机绝对路径
+  name: string;
+  content: string;
+  size: number;
+  modifiedAt: number;
+}
+```
+
+此接口按 Session/附件 ID 校验归属，复用安全文本阅读器，返回 `Cache-Control: no-store`；不接收客户端路径。只预览不超过 1 MiB 的严格 UTF-8 文本，空文件合法，超过上限返回 413，不返回截断片段。20 MiB 的上传限制不变。PDF、Word、Excel 不属于本次文本范围。
+
+前端将结果交给现有右侧文件阅读器 Tab；重复点击定位并刷新同一附件，不同 Session 相互隔离。文档正文不随 Chat JSON 或首次模型请求自动提交，后端只追加本地文件引用和 `read` 提示。
+
 ## 错误
 
 错误结构沿用后端统一协议：
@@ -132,9 +157,12 @@ Attachment 稳定错误码：
 | `attachment_upload_cancelled` | 499 | 请求取消 |
 | `attachment_content_cancelled` | 499 | 图片内容读取取消 |
 | `attachment_image_format_unsupported` | 415 | 附件不是 JPEG、PNG 或 WebP |
+| `attachment_text_format_unsupported` | 415 | 附件名称不属于受支持的文本类型 |
 | `attachment_content_invalid` | 415 | 图片容器或尺寸信息无效 |
 | `attachment_changed` | 409 | 附件上传后发生变化 |
 | `attachment_storage_unavailable` | 500 | 后端附件存储不可用 |
 | `session_has_active_attachment_upload` | 409 | Session 有活动上传，暂不能删除 |
 
 错误 `message` 已按 `Accept-Language` 本地化，前端仍按稳定 `code` 做程序分支。
+
+文本预览还复用 `local_file_too_large` (413)、`local_file_not_text` (415)、符号链接和文件访问等 Reader 稳定错误码。

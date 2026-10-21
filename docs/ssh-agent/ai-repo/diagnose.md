@@ -4,7 +4,7 @@
 
 ## 行为与状态
 
-- `/diagnose` 或 Composer 的 Diagnose 入口开始或定位任务；`/diagnose 问题` 将问题和图片附件交给原 Chat 链路。没有问题时由模型询问。已有活动任务的无参数入口只定位，不新增消息或模型请求。
+- `/diagnose` 或 Composer 的 Diagnose 入口开始或定位任务；`/diagnose 问题` 将问题和图片/UTF-8 文本文档附件交给原 Chat 链路；文档沿统一附件投影追加 read 提示，不直接注入正文。没有问题时由模型询问。已有活动任务的无参数入口只定位，不新增消息或模型请求。
 - 一个 Session 最多一个活动诊断，与 Deploy 模式互斥；部署旧 Prepare/直接提案的最终插入也检查共享策略。`deployment_setup` 在 Run 创建时拒绝活动诊断。历史选择与活动模式分开，查看旧任务不改变模型绑定。
 - `DiagnoseTask` 状态为 active/completed/cancelled。completed 只表示保存了结论，允许未定位根因。普通 Run 完成、失败、停止、页面隐藏、断线或服务重启都不结束活动诊断。
 - `DiagnoseNode` 只有 direction/status/explanation 三个业务字段。status 为 diagnosing/confirmed/unconfirmed。仅当前节点可修订；追加下一条前，当前节点须为 confirmed/unconfirmed 且说明非空。unconfirmed 可说明信息不足或转向理由，不要求证明、排除或关联证据。

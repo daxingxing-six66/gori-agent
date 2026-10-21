@@ -1,7 +1,13 @@
+import type { SessionAttachment } from "@/features/session/api/session-attachment-api";
+
+export type ReaderSource =
+	| { kind: "local"; path: string }
+	| { kind: "attachment"; attachmentId: string };
+
 export interface ReaderDocument {
 	id: string;
-	path: string;
 	name: string;
+	source: ReaderSource;
 	revision: number;
 }
 
@@ -24,5 +30,14 @@ export function readerPath(path: string, workDir?: string | null): string {
 
 export function readerDocument(path: string, workDir?: string | null): ReaderDocument {
 	const normalized = readerPath(path, workDir);
-	return { id: `reader:${normalized}`, path: normalized, name: normalized.split("/").at(-1) || normalized, revision: 0 };
+	return { id: `reader:local:${normalized}`, source: { kind: "local", path: normalized }, name: normalized.split("/").at(-1) || normalized, revision: 0 };
+}
+
+export function attachmentReaderDocument(attachment: Pick<SessionAttachment, "id" | "sessionId" | "name">): ReaderDocument {
+	return {
+		id: `reader:attachment:${attachment.sessionId}:${attachment.id}`,
+		name: attachment.name,
+		source: { kind: "attachment", attachmentId: attachment.id },
+		revision: 0,
+	};
 }

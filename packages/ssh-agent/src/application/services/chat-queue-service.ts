@@ -63,10 +63,10 @@ export class ChatQueueService {
 		const attachmentIds = input.attachmentIds ?? [];
 		if (!message && attachmentIds.length === 0)
 			throw new ChatError("chat_message_invalid", "message must not be empty");
-		await this.#attachments.validateReferences(run.sessionId, attachmentIds, model);
+		const validatedAttachments = await this.#attachments.validateReferences(run.sessionId, attachmentIds, model);
 		const id = this.#ids.next();
 		const createdAt = this.#clock();
-		const userMessage = createChatUserMessage(message, attachmentIds, createdAt);
+		const userMessage = createChatUserMessage(message, attachmentIds, createdAt, validatedAttachments);
 		this.#repository.insertQueueItem({
 			id,
 			sessionId: run.sessionId,

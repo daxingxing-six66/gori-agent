@@ -15,6 +15,7 @@ import { useIntl } from "react-intl";
 import { localFilesApi, type LocalFileEntry } from "@/features/chat/api/local-files-api";
 import { useLocalFileSearch } from "@/features/chat/runtime/use-local-file-search";
 import { useLocalizedErrorMessage } from "@/features/i18n/components/use-localized-error-message";
+import { attachmentFileKind } from "@/features/session/model/attachment-file";
 import {
 	fileBadgeForName,
 	mimeTypeForLocalFile,
@@ -322,7 +323,7 @@ export const ChatTokenEditor = forwardRef<ChatTokenEditorHandle, ChatTokenEditor
 		const files = clipboardFiles(event.clipboardData);
 		if (files.length > 0) {
 			event.preventDefault();
-			insertPlainTextAtSelection(event.clipboardData.getData("text/plain"));
+			insertPlainTextAtSelection(clipboardTextToInsert(event.clipboardData, files));
 			syncValueAndMenu(true);
 			onFiles?.(files);
 			return;
@@ -520,6 +521,12 @@ export function clipboardFiles(clipboardData: Pick<DataTransfer, "files" | "item
 		const file = item.getAsFile();
 		return file ? [file] : [];
 	});
+}
+
+export function clipboardTextToInsert(clipboardData: Pick<DataTransfer, "getData">, files: readonly File[]): string {
+	// A document's accompanying clipboard text may be its full contents. Keep it out of the message body.
+	if (files.some((file) => attachmentFileKind(file.name, file.type) !== "image")) return "";
+	return clipboardData.getData("text/plain");
 }
 
 function serializeChildren(parent: Node): string {

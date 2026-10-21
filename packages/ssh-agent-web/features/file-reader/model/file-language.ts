@@ -19,9 +19,9 @@ const extensions: Readonly<Record<string, string>> = {
 
 export function fileLanguage(path: string): string {
 	const name = path.replaceAll("\\", "/").split("/").at(-1)?.toLowerCase() ?? "";
-	if (name === "dockerfile" || name.startsWith("dockerfile.")) return "dockerfile";
-	if (name === "makefile" || name === "gnumakefile") return "makefile";
-	if (name === ".env" || name.startsWith(".env.")) return "ini";
+	if (/^dockerfile(?:-\d+)?(?:\.|$)/u.test(name)) return "dockerfile";
+	if (/^(?:makefile|gnumakefile)(?:-\d+)?$/u.test(name)) return "makefile";
+	if (/^\.env(?:-\d+)?(?:\.|$)/u.test(name)) return "ini";
 	return extensions[name.split(".").at(-1) ?? ""] ?? "plaintext";
 }
 

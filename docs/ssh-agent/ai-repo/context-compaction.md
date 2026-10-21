@@ -18,7 +18,7 @@
 - 压缩摘要是普通 `chat_messages` 行，`message_type=compact`。`message_json` 继续保存完整消息，包括 summary、retained tail、tokens before、details、reason、attempt、实际摘要模型、Usage 和 timestamp。自动压缩关联 `run_id`，手动压缩的 `run_id` 为 null。
 - 部署历史入口属于 UI 元数据；`modelVisibleMessages()` 在历史加载、估算、压缩准备和 retained tail 投影中过滤 deployment custom 消息，避免被通用转换器当作 user 指令或进入摘要。
 - Context 加载只使用最新 compact 消息、其 retained tail 和该消息之后的记录。旧消息仍保留在数据库和消息列表中，因而时间线与后续二次压缩都有明确边界。
-- 图片附件引用参与 payload 估算，每张图片按 PI 的图片估算成本计入，但 Base64 不参与估算或摘要。压缩准备阶段只使用 `[Image attachment: name]` 文本标记和无二进制图片占位；进入摘要区的旧图片不再保留引用，retained tail 中的图片消息恢复为原文本和 `attachmentIds` 后再持久化。
+- 图片附件引用参与 payload 估算，每张图片按 PI 的图片估算成本计入，但 Base64 不参与估算或摘要。压缩准备阶段只使用 `[Image attachment: name]` 文本标记和无二进制图片占位；进入摘要区的旧图片不再保留引用，retained tail 中的图片消息恢复为原文本和 `attachmentIds` 后再持久化。文档附件只计算路径/read 提示的文本成本，不生成图片占位。含文档消息持有服务端校验后的 `attachmentKinds`，避免无 I/O 的估算误计图片；压缩准备从附件元数据补回文件名、路径与 read 提示，不读取正文。retained tail 恢复原文本、ID 和类型提示；Provider 安全读取仍检查真实文件。
 - 手动 `POST /api/sessions/:sessionId/chat/compactions` 忽略触发阈值，但复用相同模型选择、最多两次压缩、收益判断和持久化。它与 Chat Run 互斥，并持有 Session lifecycle lease。
 - 有效 Provider Usage 加后续消息估算超过近期保留预算时，按消息字符估算与 Usage 占用的比例缩小切分预算；字符估算只分配保留范围，不能否定已知超额。失效或错误响应的 Usage 不参与修正。确实无法合法切分时返回 `chat_context_no_compactable_history`，不误报 `nothing_to_compact`；不改变自动触发阈值及二次压缩条件。
 - 压缩失败的稳定 code 和后端固定 SSE 说明通过消息描述符在浏览器出口本地化；压缩摘要正文、Provider 输出、模型 ID 和 Token 数据保持原样。

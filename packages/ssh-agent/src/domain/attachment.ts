@@ -19,6 +19,7 @@ export type AttachmentErrorCode =
 	| "attachment_upload_cancelled"
 	| "attachment_content_cancelled"
 	| "attachment_image_format_unsupported"
+	| "attachment_text_format_unsupported"
 	| "attachment_content_invalid"
 	| "attachment_changed"
 	| "attachment_storage_unavailable";

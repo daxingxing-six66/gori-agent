@@ -11,6 +11,9 @@ export async function handleAttachmentRoute(
 ): Promise<Response | null> {
 	if (segments[1] !== "sessions" || segments[3] !== "attachments") return null;
 	const sessionId = segments[2] as string;
+	if (segments.length === 6 && segments[5] === "text" && request.method === "GET") {
+		return json(await attachments.readText(sessionId, segments[4] as string, request.signal));
+	}
 	if (segments.length === 6 && segments[5] === "content" && request.method === "GET") {
 		return contentResponse(attachments, request, sessionId, segments[4] as string);
 	}

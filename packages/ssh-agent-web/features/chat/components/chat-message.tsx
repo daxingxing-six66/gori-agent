@@ -3,7 +3,7 @@
 import { BookOpen, Check, ChevronDown, CircleAlert, Clock3, Copy, Download, FilePenLine, LoaderCircle, MessageCircleQuestion, Minimize2, Rocket, SquareTerminal, Upload } from "lucide-react";
 import { memo, useId, useMemo, useState } from "react";
 import { useIntl, type IntlShape } from "react-intl";
-import { ChatImagePreviewDialog, formatImageMetadata, type ImageDimensions } from "@/features/chat/components/chat-image-preview-dialog";
+import { ChatMessageAttachments } from "@/features/chat/components/chat-message-attachments";
 import { ChatFailureDetails } from "@/features/chat/components/chat-failure-details";
 import { toolDetailsPresentation } from "@/features/chat/components/chat-tool-details";
 import { ChatMarkdown } from "@/features/chat/components/chat-markdown";
@@ -11,7 +11,6 @@ import { ChatComposerMessage } from "@/features/chat/components/chat-reference";
 import { approvalForTool, type ChatTimelineEntry } from "@/features/chat/model/chat-runtime-state";
 import { type ChatToolExecution, type ThinkingContent, type ToolApproval, type ToolCallContent, type ToolUpdate } from "@/features/chat/model/chat";
 import type { SessionAttachment } from "@/features/session/api/session-attachment-api";
-import { apiUrl } from "@/shared/api/client";
 
 export const ChatMessageRow = memo(function ChatMessageRow({
 	entry,
@@ -22,6 +21,7 @@ export const ChatMessageRow = memo(function ChatMessageRow({
 	targetHost,
 	onResolveApproval,
 	onOpenFile,
+	onOpenAttachment,
 }: {
 	entry: ChatTimelineEntry;
 	hideFailure?: boolean;
@@ -31,6 +31,7 @@ export const ChatMessageRow = memo(function ChatMessageRow({
 	targetHost?: string;
 	onResolveApproval(approval: ToolApproval, approved: boolean): void;
 	onOpenFile?(path: string): void;
+	onOpenAttachment?(attachment: SessionAttachment): void;
 }) {
 	const intl = useIntl();
 	const message = entry.message;
@@ -50,7 +51,7 @@ export const ChatMessageRow = memo(function ChatMessageRow({
 	}
 	if (message.role === "user") {
 		const text = typeof message.content === "string" ? message.content : message.content.flatMap((part) => part.type === "text" ? [part.text] : []).join("");
-		return <UserMessageBubble message={text} attachments={entry.attachments ?? []} final={entry.final} />;
+		return <UserMessageBubble message={text} attachments={entry.attachments ?? []} final={entry.final} onOpenAttachment={onOpenAttachment} />;
 	}
 	// Task metadata is projected by its feature. REST history can also contain
 	// newer roles before this client knows them; never assume they are Assistant.
@@ -70,10 +71,14 @@ export const ChatMessageRow = memo(function ChatMessageRow({
 	);
 });
 
-function UserMessageBubble({ message, attachments, final }: { message: string; attachments: SessionAttachment[]; final: boolean }) {
+function UserMessageBubble({ message, attachments, final, onOpenAttachment }: {
+	message: string;
+	attachments: SessionAttachment[];
+	final: boolean;
+	onOpenAttachment?(attachment: SessionAttachment): void;
+}) {
 	const intl = useIntl();
 	const [copied, setCopied] = useState(false);
-	const imageAttachments = attachments.filter(isDisplayableImageAttachment);
 	const copy = async () => {
 		try {
 			await navigator.clipboard.writeText(message);
@@ -86,7 +91,7 @@ function UserMessageBubble({ message, attachments, final }: { message: string; a
 	const label = intl.formatMessage({ id: copied ? "chat.message.copied" : "chat.message.copy" });
 	return (
 		<div className={`flex min-w-0 flex-col items-end gap-2 ${final ? "" : "opacity-70"}`}>
-			{imageAttachments.length > 0 ? <div className="w-1/2 min-w-0"><SentImageAttachments attachments={imageAttachments} /></div> : null}
+			<ChatMessageAttachments attachments={attachments} onOpenAttachment={onOpenAttachment} />
 			{message ? <div className="w-fit min-w-0 max-w-[78%]">
 				<div className="chat-user-bubble border border-line-soft bg-surface-muted px-3 py-3 text-[14px] leading-6 text-ink">
 					<ChatComposerMessage message={message} />
@@ -99,37 +104,6 @@ function UserMessageBubble({ message, attachments, final }: { message: string; a
 			</div> : null}
 		</div>
 	);
-}
-
-function SentImageAttachments({ attachments }: { attachments: SessionAttachment[] }) {
-	const intl = useIntl();
-	const [selectedAttachmentId, setSelectedAttachmentId] = useState<string | null>(null);
-	const [dimensionsById, setDimensionsById] = useState<Record<string, ImageDimensions>>({});
-	const images = attachments.map((attachment) => ({
-		id: attachment.id,
-		name: attachment.name,
-		size: attachment.size,
-		src: apiUrl(attachment.contentUrl),
-		dimensions: dimensionsById[attachment.id],
-	}));
-	const selectedIndex = images.findIndex((image) => image.id === selectedAttachmentId);
-	return (
-		<div className="app-scrollbar flex snap-x snap-mandatory gap-2 overflow-x-auto overscroll-x-contain pb-1">
-			{images.map((image) => <button key={image.id} type="button" className="group relative h-24 w-24 shrink-0 snap-start first:ml-auto overflow-hidden rounded-xl border border-black/10 bg-[var(--surface-muted)] text-left shadow-[0_1px_2px_rgb(15_23_42/8%)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]" onClick={() => setSelectedAttachmentId(image.id)} aria-label={intl.formatMessage({ id: "chat.attachment.preview" }, { name: image.name })}>
-				<img src={image.src} loading="lazy" decoding="async" alt={image.name} className="h-full w-full object-cover transition duration-200 group-hover:scale-[1.03] group-focus-visible:scale-[1.03]" onLoad={(event) => {
-					const dimensions = { width: event.currentTarget.naturalWidth, height: event.currentTarget.naturalHeight };
-					setDimensionsById((current) => current[image.id]?.width === dimensions.width && current[image.id]?.height === dimensions.height ? current : { ...current, [image.id]: dimensions });
-				}} />
-				<span className="pointer-events-none absolute inset-x-0 bottom-0 bg-[linear-gradient(transparent,rgba(0,0,0,0.78))] px-2 pb-1.5 pt-8 text-white opacity-0 transition group-hover:opacity-100 group-focus-visible:opacity-100"><span className="block truncate text-[8px] font-semibold">{image.name}</span><span className="mt-0.5 block truncate text-[7px] text-white/75">{formatImageMetadata(intl, image)}</span></span>
-			</button>)}
-			{selectedIndex >= 0 ? <ChatImagePreviewDialog images={images} initialIndex={selectedIndex} onClose={() => setSelectedAttachmentId(null)} /> : null}
-		</div>
-	);
-}
-
-function isDisplayableImageAttachment(attachment: SessionAttachment): boolean {
-	const mimeType = attachment.mimeType.toLowerCase();
-	return mimeType === "image/jpeg" || mimeType === "image/png" || mimeType === "image/webp";
 }
 
 function ThinkingBlock({ content, streaming, hasText }: { content: ThinkingContent; streaming: boolean; hasText: boolean }) {

@@ -11,12 +11,13 @@ import "./file-reader.css";
 
 export function FileReaderPage({ sessionId, document }: { sessionId: string; document: ReaderDocument }) {
 	const intl = useIntl();
-	const { file, loading, error, refresh } = useReaderFile(sessionId, document.path, document.revision);
-	const language = fileLanguage(file?.path ?? document.path);
+	const { file, loading, error, refresh } = useReaderFile(sessionId, document.source, document.revision);
+	const path = file?.path ?? (document.source.kind === "local" ? document.source.path : document.name);
+	const language = fileLanguage(path);
 	return <section className="file-reader" aria-label={intl.formatMessage({ id: "fileReader.label" }, { name: document.name })} aria-busy={loading}>
 		<header className="file-reader-header">
 			{language === "markdown" ? <BookOpen size={15} aria-hidden="true" /> : <FileCode2 size={15} aria-hidden="true" />}
-			<span className="file-reader-path" title={file?.path ?? document.path}>{file?.path ?? document.path}</span>
+			<span className="file-reader-path" title={path}>{path}</span>
 			<button type="button" className="file-reader-refresh" onClick={refresh} disabled={loading}
 				aria-label={intl.formatMessage({ id: "fileReader.refresh" })} title={intl.formatMessage({ id: "fileReader.refresh" })}>
 				<RefreshCw size={14} className={loading ? "animate-spin" : ""} aria-hidden="true" />

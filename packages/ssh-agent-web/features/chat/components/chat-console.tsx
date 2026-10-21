@@ -84,6 +84,12 @@ export function ChatConsole({ sessionId }: { sessionId: string }) {
 		setActiveTaskTabId(fileReader.open(path));
 		taskDisplay.reveal();
 	}, [fileReader.open, taskDisplay.reveal]);
+	const openAttachment = useCallback((attachment: SessionAttachment) => {
+		const tabId = fileReader.openAttachment(attachment);
+		if (tabId === null) return;
+		setActiveTaskTabId(tabId);
+		taskDisplay.reveal();
+	}, [fileReader.openAttachment, taskDisplay.reveal]);
 	const terminalStatus = { label: terminalTask.label,
 		tone: terminalTask.tone === "positive" ? "active" as const
 			: terminalTask.tone === "warning" ? "pending" as const : "inactive" as const };
@@ -436,6 +442,7 @@ export function ChatConsole({ sessionId }: { sessionId: string }) {
 				<div className="session-console-chat relative min-h-0">
 					<div ref={scrollRef} className="app-scrollbar h-full overflow-y-auto" onScroll={handleChatScroll}>
 						<ChatTimeline showActivity={showActivity} loading={runtime.loading} loadingOlderMessages={runtime.loadingOlderMessages} timeline={runtime.state.timeline} tools={runtime.state.tools} approvals={runtime.state.approvals} approvalMutationId={runtime.approvalMutationId} targetHost={targetHost} run={runtime.state.run} latestUserText={latestUserText} onResolveApproval={resolveApproval} onRestoreDraft={restoreDraft} onOpenFile={openFile}
+							onOpenAttachment={openAttachment}
 							onOpenDiagnose={(id) => { setActiveTaskTabId("diagnose"); taskDisplay.reveal(); diagnose.openHistory(id); }}
 							onOpenDeployment={(id) => { setActiveTaskTabId("deploy"); taskDisplay.reveal(); void deployment.openHistory(id); }} />
 						{activeDeploymentRun && deploymentReview && deploymentReview.pendingExceptions.length > 0 ? <div data-deployment-review tabIndex={-1} className="mx-auto max-w-[820px] px-5 py-5 lg:px-8">
@@ -467,6 +474,7 @@ export function ChatConsole({ sessionId }: { sessionId: string }) {
 					cancelling={runtime.cancelling}
 					terminalBusy={terminalMode.loading || terminalMode.status?.transitionInProgress === true}
 					onSubmit={submit}
+					onOpenAttachment={openAttachment}
 					isLocalCommand={(message) => isSessionSandboxCommand(message) || diagnoseCommand(message) !== null}
 					onCancel={cancelRun}
 					autoAuditChecked={autoAuditChecked}

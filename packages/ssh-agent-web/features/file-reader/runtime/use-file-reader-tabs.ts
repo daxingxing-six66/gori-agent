@@ -1,15 +1,15 @@
 "use client";
 
 import { useCallback, useMemo, useState } from "react";
-import { readerDocument, type ReaderDocument } from "../model/reader-file";
+import type { SessionAttachment } from "@/features/session/api/session-attachment-api";
+import { attachmentReaderDocument, readerDocument, type ReaderDocument } from "../model/reader-file";
 
 /** Reader tabs have no terminal/deployment lifecycle or task-container dependency. */
 export function useFileReaderTabs(sessionId: string, workDir?: string | null) {
 	const scope = useMemo(() => ({ sessionId, workDir }), [sessionId, workDir]);
 	const [state, setState] = useState<{ scope: typeof scope; documents: ReaderDocument[] }>({ scope, documents: [] });
 	const documents = state.scope === scope ? state.documents : [];
-	const open = useCallback((path: string) => {
-		const document = readerDocument(path, workDir);
+	const openDocument = useCallback((document: ReaderDocument) => {
 		setState((current) => {
 			const documents = current.scope === scope ? current.documents : [];
 			return { scope, documents: documents.some((entry) => entry.id === document.id)
@@ -17,9 +17,14 @@ export function useFileReaderTabs(sessionId: string, workDir?: string | null) {
 				: [...documents, document] };
 		});
 		return document.id;
-	}, [scope, workDir]);
+	}, [scope]);
+	const open = useCallback((path: string) => openDocument(readerDocument(path, workDir)), [openDocument, workDir]);
+	const openAttachment = useCallback((attachment: SessionAttachment) => {
+		if (attachment.sessionId !== sessionId) return null;
+		return openDocument(attachmentReaderDocument(attachment));
+	}, [openDocument, sessionId]);
 	const close = useCallback((id: string) => {
 		setState((current) => current.scope !== scope ? current : { scope, documents: current.documents.filter((entry) => entry.id !== id) });
 	}, [scope]);
-	return { documents, open, close };
+	return { documents, open, openAttachment, close };
 }

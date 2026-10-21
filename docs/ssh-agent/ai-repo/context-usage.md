@@ -5,6 +5,7 @@
 ## 边界
 
 - `ChatContextService.usage()` 复用 `estimate().corrected`，只读估算，不请求 Provider、读取图片或触发压缩。
+- 含文档的用户消息保存服务端校验产生的 `attachmentKinds`，供同步、无 I/O 估算区分图片和文本。文档只计文件引用/read 提示的文字成本，不读取正文、不增加图片占位；旧图片消息未保存类型提示时保持原估算。实际 Provider 校验继续检查真实附件，不信任类型提示。
 - `createChatContext()` 接收已保存的 System Prompt 快照，共用普通工具的静态定义；离线查询和手动压缩读取当前部署模式，仅在活动模式中加入对应讨论、待审或执行工具及结束工具，结束后不再计算部署定义。工具估算只保留 Provider 的 name/description/parameters，避免 label 等执行元数据影响结果。
 - `ChatRunRuntime.context` 使用活动 Agent 的模型对应 Prompt/Tools，消息由 `ChatContextService.load()` 按持久化 compact 边界恢复。Agent transcript 不会随 Loop Context 替换而删除旧历史，不能直接用完整 transcript 作为占用输入。
 - `turn_end` 处理结束后推送一次 `context.updated`。每次自动 `compaction.completed` 后推送已保存的 Context 占用；手动压缩只返回 HTTP 快照。

@@ -1,8 +1,12 @@
-import { access, mkdtemp, readFile, rm } from "node:fs/promises";
+import { access, mkdtemp, readFile, rm, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fauxProvider } from "@earendil-works/pi-ai";
 import { afterEach, describe, expect, it } from "vitest";
+import { ChatAttachmentService } from "../src/application/services/chat-attachment-service.ts";
+import { createChatUserMessage } from "../src/domain/chat-attachment.ts";
 import type { IdGenerator } from "../src/domain/ids.ts";
+import { SqliteAttachmentRepository } from "../src/infrastructure/sqlite/sqlite-attachment-repository.ts";
 import { createSqliteManagementBackend } from "../src/runtime/create-sqlite-management-backend.ts";
 import { createNodeHttpServer } from "../src/server/node-http-server.ts";
 import { createTestLlmModels } from "./test-llm-models.ts";
@@ -163,6 +167,67 @@ describe("Session Attachment API", () => {
 		} finally {
 			await backend.close();
 		}
+	});
+
+	it("previews scoped UTF-8 documents using filenames without exposing backend paths", async () => {
+		const directory = await temporaryDirectory();
+		const backend = createBackend(directory);
+		try {
+			const sessionId = await createSession(backend.handleRequest);
+			const other = await createSession(backend.handleRequest);
+			const uploaded = await upload(backend.handleRequest, `/api/sessions/${sessionId}/attachments?name=notes.md`, Buffer.from("# 标题\nbody"), { "content-type": "application/octet-stream" });
+			const attachment = uploaded.body as { id: string; storagePath: string };
+			const preview = await request(backend.handleRequest, "GET", `/api/sessions/${sessionId}/attachments/${attachment.id}/text`);
+			expect(preview).toMatchObject({ status: 200, body: { path: "notes.md", name: "notes.md", content: "# 标题\nbody", size: Buffer.byteLength("# 标题\nbody") } });
+			expect(JSON.stringify(preview.body)).not.toContain(directory);
+			expect(await request(backend.handleRequest, "GET", `/api/sessions/${other}/attachments/${attachment.id}/text`)).toMatchObject({ status: 404, body: { error: { code: "attachment_not_found" } } });
+			await rm(join(directory, attachment.storagePath));
+			await symlink(join(directory, "outside.txt"), join(directory, attachment.storagePath));
+			expect(await request(backend.handleRequest, "GET", `/api/sessions/${sessionId}/attachments/${attachment.id}/text`)).toMatchObject({ status: 403, body: { error: { code: "local_file_path_symlink_not_allowed" } } });
+		} finally { await backend.close(); }
+	});
+
+	it("bounds document previews and rejects invalid encodings, control bytes and non-document files", async () => {
+		const directory = await temporaryDirectory();
+		const backend = createBackend(directory);
+		try {
+			const sessionId = await createSession(backend.handleRequest);
+			for (const [name, bytes, status, code] of [
+				["bad.txt", Buffer.from([0xff, 0xfe]), 415, "local_file_not_text"],
+				["binary.md", Buffer.from("a\u0000b"), 415, "local_file_not_text"],
+				["huge.log", Buffer.alloc(1024 * 1024 + 1, 97), 413, "local_file_too_large"],
+				["video.mp4", Buffer.from("some text"), 415, "attachment_text_format_unsupported"],
+			] as const) {
+				const uploaded = await upload(backend.handleRequest, `/api/sessions/${sessionId}/attachments?name=${name}`, bytes);
+				const attachment = uploaded.body as { id: string };
+				expect(await request(backend.handleRequest, "GET", `/api/sessions/${sessionId}/attachments/${attachment.id}/text`)).toMatchObject({ status, body: { error: { code } } });
+			}
+		} finally { await backend.close(); }
+	});
+
+	it("previews automatically renamed dotenv-family documents", async () => {
+		const directory = await temporaryDirectory();
+		const backend = createBackend(directory);
+		try {
+			const sessionId = await createSession(backend.handleRequest);
+			const path = `/api/sessions/${sessionId}/attachments?name=.env.local`;
+			await upload(backend.handleRequest, path, Buffer.from("FIRST=value"));
+			const second = await upload(backend.handleRequest, path, Buffer.from("SECOND=value"));
+			const attachment = second.body as { id: string; name: string };
+			expect(attachment.name).toBe(".env-1.local");
+			expect(await request(backend.handleRequest, "GET", `/api/sessions/${sessionId}/attachments/${attachment.id}/text`)).toMatchObject({
+				status: 200, body: { path: ".env-1.local", content: "SECOND=value" },
+			});
+			const service = new ChatAttachmentService({ attachments: new SqliteAttachmentRepository(backend.database), attachmentBaseDir: directory });
+			const model = fauxProvider({ provider: "dotenv-test", models: [{ id: "text", input: ["text"] }] }).getModel("text");
+			if (!model) throw new Error("Test model unavailable");
+			const validated = await service.validateReferences(sessionId, [attachment.id], model);
+			const message = createChatUserMessage("check", [attachment.id], 1, validated);
+			const hydrated = await service.hydrateProviderContext(sessionId, { systemPrompt: "", messages: [message] }, model);
+			expect(JSON.stringify(hydrated.messages[0])).toContain(".env-1.local");
+			expect(JSON.stringify(hydrated.messages[0])).toContain("Use the read tool");
+			expect(JSON.stringify(hydrated.messages[0])).not.toContain("SECOND=value");
+		} finally { await backend.close(); }
 	});
 
 	it("streams above the JSON limit and coordinates upload with Session deletion", async () => {

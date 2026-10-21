@@ -96,6 +96,7 @@ const CODE_MESSAGES: Readonly<Record<string, BackendMessageKey>> = {
 	chat_attachment_not_found: "chat.attachment_not_found",
 	chat_attachment_image_format_unsupported: "chat.attachment_image_format_unsupported",
 	chat_attachment_content_invalid: "chat.attachment_content_invalid",
+	chat_attachment_text_invalid: "chat.attachment_text_invalid",
 	chat_attachment_changed: "chat.attachment_changed",
 	chat_attachment_storage_unavailable: "chat.attachment_storage_unavailable",
 	chat_model_image_input_unsupported: "chat.model_image_input_unsupported",
@@ -172,6 +173,7 @@ const CODE_MESSAGES: Readonly<Record<string, BackendMessageKey>> = {
 	attachment_content_cancelled: "attachment.content_cancelled",
 	attachment_image_format_unsupported: "attachment.image_format_unsupported",
 	attachment_content_invalid: "attachment.content_invalid",
+	attachment_text_format_unsupported: "attachment.text_format_unsupported",
 	attachment_changed: "attachment.changed",
 	attachment_storage_unavailable: "attachment.storage_unavailable",
 };

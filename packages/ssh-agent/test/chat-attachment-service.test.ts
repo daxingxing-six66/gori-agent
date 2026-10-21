@@ -55,6 +55,70 @@ describe("ChatAttachmentService", () => {
 		]);
 	});
 
+	it("validates documents for text-only models and appends trusted read references without contents", async () => {
+		const secret = "# private document body 中文";
+		const fixture = await createFixture([{ id: "doc", name: "notes.md", bytes: Buffer.from(secret), declaredMimeType: "image/png" }]);
+		const validated = await fixture.service.validateReferences("session-1", ["doc"], fixture.textModel);
+		expect(validated[0]).toMatchObject({ kind: "text" });
+		const message = createChatUserMessage("summarize", ["doc"], 1, validated);
+		await expect(fixture.service.requireImageModelForContext("session-1", fixture.textModel, [message])).resolves.toBeUndefined();
+		const context = await fixture.service.hydrateProviderContext("session-1", { systemPrompt: "", messages: [message] }, fixture.textModel);
+		const serialized = JSON.stringify(context.messages[0]);
+		expect(serialized).not.toContain(secret);
+		expect(serialized).toContain("Use the read tool");
+		expect(serialized).toContain("notes.md");
+		expect(serialized).toContain(fixture.sessionDirectory);
+		expect(serialized).not.toContain('"type":"image"');
+		expect(message.content).toBe("summarize");
+		const estimated = fixture.service.compactionProjection(message);
+		expect(JSON.stringify(estimated)).not.toContain('"type":"image"');
+		const projected = fixture.service.compactionProjection(message, fixture.attachments);
+		expect(JSON.stringify(projected)).toContain(fixture.sessionDirectory);
+		expect(fixture.service.restoreCompactionMessage(projected)).toEqual(message);
+	});
+
+	it("preserves image capability checks in mixed messages and ignores forged attachment kinds", async () => {
+		const fixture = await createFixture([
+			{ id: "doc", name: "a.txt", bytes: Buffer.from("short text") },
+			{ id: "png", name: "picture.txt", bytes: pngBytes(), declaredMimeType: "text/plain" },
+		]);
+		await expect(fixture.service.validateReferences("session-1", ["doc", "png"], fixture.textModel)).rejects.toMatchObject({ code: "chat_model_image_input_unsupported" });
+		const message = { ...createChatUserMessage("", ["png"], 1), attachmentKinds: { png: "text" as const } };
+		await expect(fixture.service.requireImageModelForContext("session-1", fixture.textModel, [message])).rejects.toMatchObject({ code: "chat_model_image_input_unsupported" });
+		await expect(fixture.service.hydrateProviderContext("session-1", { systemPrompt: "", messages: [message] }, fixture.textModel)).rejects.toMatchObject({ code: "chat_model_image_input_unsupported" });
+	});
+
+	it("rejects invalid UTF-8, binary documents and cross-session document IDs", async () => {
+		const fixture = await createFixture([
+			{ id: "invalid", name: "bad.md", bytes: Buffer.from([0xc3, 0x28]) },
+			{ id: "binary", name: "binary.txt", bytes: Buffer.from("abc\u0000def") },
+		]);
+		for (const id of ["invalid", "binary"]) {
+			await expect(fixture.service.validateReferences("session-1", [id], fixture.textModel)).rejects.toMatchObject({ code: "chat_attachment_text_invalid" });
+		}
+		await expect(fixture.service.validateReferences("session-2", ["binary"], fixture.textModel)).rejects.toMatchObject({ code: "chat_attachment_not_found" });
+	});
+
+	it("validates UTF-8 across stream boundaries and supports common extensionless documents", async () => {
+		const fixture = await createFixture([
+			{ id: "boundary", name: "readme.txt", bytes: Buffer.from(`${"a".repeat(65_535)}中`) },
+			{ id: "env", name: ".env.local", bytes: Buffer.from("KEY=value") },
+			{ id: "docker", name: "Dockerfile-1", bytes: Buffer.from("FROM scratch") },
+			{ id: "ignore", name: "foo.gitignore", bytes: Buffer.from("node_modules") },
+		]);
+		await expect(fixture.service.validateReferences("session-1", ["boundary", "env", "docker", "ignore"], fixture.textModel)).resolves.toHaveLength(4);
+	});
+
+	it("validates and hydrates automatically renamed dotenv-family documents", async () => {
+		const fixture = await createFixture([{ id: "env", name: ".env-1.local", bytes: Buffer.from("SECOND=value") }]);
+		const validated = await fixture.service.validateReferences("session-1", ["env"], fixture.textModel);
+		const message = createChatUserMessage("check", ["env"], 1, validated);
+		const hydrated = await fixture.service.hydrateProviderContext("session-1", { systemPrompt: "", messages: [message] }, fixture.textModel);
+		expect(JSON.stringify(hydrated.messages[0])).toContain(".env-1.local");
+		expect(JSON.stringify(hydrated.messages[0])).toContain("Use the read tool");
+		expect(JSON.stringify(hydrated.messages[0])).not.toContain("SECOND=value");
+	});
+
 	it("rejects unsupported models, invalid IDs, wrong Sessions, and excessive images", async () => {
 		const fixture = await createFixture([{ id: "png", name: "one.png", bytes: pngBytes() }]);
 		await expect(fixture.service.validateReferences("session-1", ["png"], fixture.textModel)).rejects.toMatchObject({

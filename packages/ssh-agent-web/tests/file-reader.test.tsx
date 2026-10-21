@@ -2,7 +2,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { ReaderContent } from "../features/file-reader/components/reader-content";
 import { fileLanguage, highlightedCode, MAX_HIGHLIGHT_CHARACTERS } from "../features/file-reader/model/file-language";
-import { readerDocument, readerPath } from "../features/file-reader/model/reader-file";
+import { attachmentReaderDocument, readerDocument, readerPath } from "../features/file-reader/model/reader-file";
 
 describe("file reader content", () => {
 	it.each([
@@ -10,6 +10,8 @@ describe("file reader content", () => {
 		["config.yaml", "yaml", "enabled: true"], ["index.js", "javascript", "const count = 1;"],
 		["View.tsx", "typescript", "const count: number = 1;"], ["Main.java", "java", "public class Main {}"],
 		["Dockerfile", "dockerfile", "FROM alpine:latest"], ["Makefile", "makefile", "all:\n\techo ok"],
+		["Dockerfile-1", "dockerfile", "FROM alpine:latest"], ["Makefile-1", "makefile", "all:\n\techo ok"],
+		[".env-1.local", "ini", "PORT=8080"],
 	])("detects and highlights %s", (path, language, content) => {
 		expect(fileLanguage(path)).toBe(language);
 		const html = renderToStaticMarkup(<ReaderContent path={path} content={content} />);
@@ -50,5 +52,12 @@ describe("file reader content", () => {
 		expect(readerDocument("./src/../README.md", "/work/project")).toEqual(readerDocument("/work/project/README.md"));
 		expect(readerDocument("src/index.ts", "/work").id).not.toBe(readerDocument("test/index.ts", "/work").id);
 		expect(readerPath("..\\src\\main.ts", "C:\\work\\project")).toBe("C:/work/src/main.ts");
+	});
+	it("identifies attachment readers by Session and ID rather than filenames or local paths", () => {
+		const first = attachmentReaderDocument({ sessionId: "session-a", id: "id-a", name: "notes.md" });
+		expect(first).toMatchObject({ name: "notes.md", source: { kind: "attachment", attachmentId: "id-a" } });
+		expect(first.id).not.toBe(attachmentReaderDocument({ sessionId: "session-a", id: "id-b", name: "notes.md" }).id);
+		expect(first.id).not.toBe(attachmentReaderDocument({ sessionId: "session-b", id: "id-a", name: "notes.md" }).id);
+		expect(first.id).not.toBe(readerDocument("attachment:session-a:id-a").id);
 	});
 });

@@ -25,7 +25,7 @@ Deployment REST 的领域错误通过 `deployment.error` 按请求 Locale 返回
 - Tool `onUpdate` 继续使用既有 `status/progress/text` 协议。SSH Agent 包内可附加 `messageDescriptor`，浏览器出口把它转换成原有 `message: string` 并移除内部元数据。
 - `toolName`、Tool schema、Tool 参数描述和 System Prompt 不翻译。审批展示名称由消息 Key 选择，不增加新的公共字段或审批类型。
 - Attachment 名称、MIME 类型和路径属于动态数据，不翻译；名称非法、类型非法、大小超限/不一致、内容读取取消、图片格式/内容无效、上传后变化和存储不可用通过稳定 code 在统一异常出口生成中英文静态消息。
-- Chat 图片引用、格式/内容变化和模型图片能力错误同样使用稳定 code。本地化只改变公开说明，不改变 Attachment ID、图片顺序、模型 ID 或 Provider 请求内容。
+- Chat 图片/文本附件引用、格式/内容变化、文档 UTF-8 无效和模型图片能力错误同样使用稳定 code。文本预览使用 attachment.text_format_unsupported 及原 Reader 文件错误；附件计数提示统一为四个图片或文档。本地化只改变公开说明，不改变 Attachment ID、图片顺序、模型 ID 或 Provider 请求内容。
 
 ## 代码位置
 

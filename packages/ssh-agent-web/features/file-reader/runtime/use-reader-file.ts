@@ -1,19 +1,24 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { fileReaderApi, type ReaderFile } from "../api/file-reader-api";
+import type { ReaderSource } from "../model/reader-file";
 
-export function useReaderFile(sessionId: string, path: string, revision: number) {
+export function useReaderFile(sessionId: string, source: ReaderSource, revision: number) {
 	const [retry, setRetry] = useState(0);
-	const [state, setState] = useState<{ file: ReaderFile | null; loading: boolean; error: unknown }>({ file: null, loading: true, error: null });
+	const reference = source.kind === "local" ? source.path : source.attachmentId;
+	const scope = useMemo(() => ({ sessionId, kind: source.kind, reference }), [sessionId, source.kind, reference]);
+	const [state, setState] = useState<{ scope: typeof scope; file: ReaderFile | null; loading: boolean; error: unknown }>({ scope, file: null, loading: true, error: null });
 	useEffect(() => {
 		const request = new AbortController();
-		setState((current) => ({ ...current, loading: true, error: null }));
-		void fileReaderApi.read(sessionId, path, request.signal).then(
-			(file) => { if (!request.signal.aborted) setState({ file, loading: false, error: null }); },
-			(error: unknown) => { if (!request.signal.aborted) setState({ file: null, loading: false, error }); },
+		setState((current) => ({ scope, file: current.scope === scope ? current.file : null, loading: true, error: null }));
+		const read = scope.kind === "attachment" ? fileReaderApi.readAttachment : fileReaderApi.read;
+		void read(scope.sessionId, scope.reference, request.signal).then(
+			(file) => { if (!request.signal.aborted) setState({ scope, file, loading: false, error: null }); },
+			(error: unknown) => { if (!request.signal.aborted) setState({ scope, file: null, loading: false, error }); },
 		);
 		return () => request.abort();
-	}, [sessionId, path, revision, retry]);
-	return { ...state, refresh: () => setRetry((value) => value + 1) };
+	}, [scope, revision, retry]);
+	const visible = state.scope === scope ? state : { file: null, loading: true, error: null };
+	return { file: visible.file, loading: visible.loading, error: visible.error, refresh: () => setRetry((value) => value + 1) };
 }

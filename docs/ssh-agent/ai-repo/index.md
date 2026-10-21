@@ -35,8 +35,8 @@
 | 聊天和压缩的厂商原因提取、安全展示和重试属性 | [provider-failures.md](./provider-failures.md) | `packages/ssh-agent/src/application/provider-failure.ts` |
 | 系统和 Session 本地目录浏览、绝对路径契约和文件系统边界 | [local-file-system.md](./local-file-system.md) | `packages/ssh-agent/src/application/services/local-file-system-service.ts` |
 | `@` 文件/路径模糊检索、候选索引、忽略规则、缓存与性能预算 | [local-file-search.md](./local-file-search.md) | `packages/ssh-agent/src/application/services/local-file-search-index.ts`、`packages/ssh-agent-web/features/chat/runtime/use-local-file-search.ts` |
-| Session 附件上传、自动命名、受控图片回显、SQLite 元数据和生命周期约束 | [attachments.md](./attachments.md) | `packages/ssh-agent/src/application/services/attachment-service.ts` |
-| Chat 图片附件引用、真实格式校验、Provider 多模态投影和引用持久化 | [chat-image-input.md](./chat-image-input.md) | `packages/ssh-agent/src/application/services/chat-attachment-service.ts` |
+| Session 附件上传、自动命名、图片回显、文本预览、SQLite 元数据和生命周期约束 | [attachments.md](./attachments.md) | `packages/ssh-agent/src/application/services/attachment-service.ts` |
+| Chat 图片/文本附件引用、内容校验、多模态投影、read 提示和引用持久化 | [chat-image-input.md](./chat-image-input.md) | `packages/ssh-agent/src/application/services/chat-attachment-service.ts` |
 | SFTP 文件管理、Transfer、Workspace SSE 和 Linux 实时监控 | [sftp-monitoring.md](./sftp-monitoring.md) | `packages/ssh-agent/src/application/services/file-transfer-service.ts`、`packages/ssh-agent/src/application/services/remote-metrics-service.ts` |
 | REST/SSE 独立连接额度、双监听传输、构建配置和关闭 | [transport-channels.md](./transport-channels.md) | `packages/ssh-agent/src/server/management-http-transport.ts`、`packages/ssh-agent-web/shared/events/client.ts` |
 | Session 页首 CPU/内存/网络速率、共享监控缓存和默认网卡统计 | [session-server-metrics.md](./session-server-metrics.md) | `packages/ssh-agent-web/features/server-metrics/`、`packages/ssh-agent/src/application/monitoring/remote-network-sampler.ts` |
@@ -53,7 +53,7 @@
 | Session 上下文占用查询、Turn/压缩完成快照与 SSE | [context-usage.md](./context-usage.md) | `packages/ssh-agent/src/application/chat-context.ts`、`packages/ssh-agent/src/application/services/chat-context-service.ts` |
 | 长周期 SSH PTY、Canonical State、打开/清理、输入策略/状态记录、Observation 和只读前端 | [terminal-interaction.md](./features/terminal-interaction.md) | `packages/ssh-agent/src/application/services/terminal-session-service.ts`、`packages/ssh-agent/src/application/services/terminal-interaction-service.ts`、`packages/ssh-agent/src/application/terminal/`、`packages/ssh-agent-web/features/terminal/` |
 | Session 通用任务 Tab、放大/收起展示、标签关闭、页面保留与 Terminal 接入 | [task-container.md](./task-container.md) | `packages/ssh-agent-web/features/task-container/`、`packages/ssh-agent-web/features/chat/components/chat-task-layout.css` |
-| 读写工具的文件阅读器、独立标签、语法高亮、Markdown 预览及本地内容读取 | [file-reader.md](./file-reader.md) | `packages/ssh-agent-web/features/file-reader/`、`packages/ssh-agent/src/application/services/read-local-text-file.ts` |
+| 读写工具/文本附件的文件阅读器、独立标签、语法高亮与 Markdown 预览 | [file-reader.md](./file-reader.md) | `packages/ssh-agent-web/features/file-reader/`、`packages/ssh-agent/src/application/services/read-local-text-file.ts` |
 | SSH Agent Web 页面、前端功能、客户端状态、API/SSE 和测试位置 | [ssh-agent-web.md](./ssh-agent-web.md) | `packages/ssh-agent-web/app/`、`packages/ssh-agent-web/components/`、`packages/ssh-agent-web/features/` |
 | Web 明亮、暗部、明暗分层实验、ION 离子终端、跟随系统主题及 Terminal 动态配色 | [theme.md](./theme.md) | `packages/ssh-agent-web/features/theme/`、`packages/ssh-agent-web/features/settings/`、`packages/ssh-agent-web/app/globals.css` |
 | Web 中英文界面、Locale 首屏恢复、类型化消息目录和语言切换 | [i18n.md](./i18n.md) | `packages/ssh-agent-web/features/i18n/`、`packages/ssh-agent-web/app/layout.tsx` |
@@ -73,13 +73,13 @@ Workspace/Credential 前端契约见 [workspace-credential-integration.md](../fr
 
 ## 当前实现边界
 
-已经实现：Workspace 管理、Credential/Host Trust、Guard、LLM Provider、SSH exec Connection Pool、命令 Operation、Session 附件上传和受控图片回显、图片附件 Chat 输入，以及 Workspace 级 SFTP 文件管理、六状态 Transfer、流式上传下载、Workspace SSE 和 Linux 实时监控。
+已经实现：Workspace 管理、Credential/Host Trust、Guard、LLM Provider、SSH exec Connection Pool、命令 Operation、Session 附件上传、受控图片回显和文本预览、图片多模态与文档 read 提示，以及 Workspace 级 SFTP 文件管理、六状态 Transfer、流式上传下载、Workspace SSE 和 Linux 实时监控。
 
 已经实现的 Terminal Interaction MVP：用户手动开启独立模式，后端维持长周期 PTY 和 Canonical State，Agent 使用专用 Tool，浏览器通过 snapshot + SSE 只读投影并同步 owner resize，Interaction/Input/Observation/Timeline 持久化到 SQLite。
 
 已经接入的 `/deploy` 主链路：服务选择时创建稳定身份、正式历史消息和 Session 部署模式；Plan 提案由模型在中间会话发起，计划审阅在右侧 Deploy Tab；确认启动后展示准备及四个执行阶段的横向图标节点，准备详情可查看计划，其余节点展示执行事实与日志，普通工具和 Full Access 审批保留在中间。模式跨 Chat Run，正式工具串行推进，同阶段/上游重做保留输出并使下游事实失效；用户或模型通过明确结束用例退出。普通工具保持原模式与授权规则，部署专用定义动态装配。已完成定向回归及授权的独立 Java 项目真实发布验收，包括失败修复、三类结束、Terminal 多 Tab、日志与窄屏/明暗主题；实测平台与沙箱边界见 [deployment.md](./deployment.md) 和设计文档第 16–17 节。
 
-尚未实现：附件删除、非图片附件的通用内容下载和 LLM 输入、图片生成、断点续传、Transfer 历史自动清理、主机密钥重新信任/预置信任/SSH CA、Chat 多 Lane/Fork 和跨进程 delta 重放。Terminal MVP 不允许用户输入、不自动开启模式，使用 REST + SSE 而不引入 WebSocket。
+尚未实现：附件删除、任意二进制附件的通用下载和 LLM 输入、PDF/Office 文档解析、图片生成、断点续传、Transfer 历史自动清理、主机密钥重新信任/预置信任/SSH CA、Chat 多 Lane/Fork 和跨进程 delta 重放。Terminal MVP 不允许用户输入、不自动开启模式，使用 REST + SSE 而不引入 WebSocket。
 
 ## 文档防腐机制
 

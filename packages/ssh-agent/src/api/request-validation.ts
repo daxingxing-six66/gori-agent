@@ -1,6 +1,6 @@
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import { ChatError, type ChatQueueBehavior } from "../domain/chat.ts";
-import { MAX_CHAT_IMAGE_ATTACHMENTS } from "../domain/chat-attachment.ts";
+import { MAX_CHAT_ATTACHMENTS } from "../domain/chat-attachment.ts";
 import type { ChatCompactionModelSelection } from "../domain/context-compaction.ts";
 import type { CreateCredentialInput, CredentialSecret } from "../domain/credential.ts";
 import { ManagementError } from "../domain/errors.ts";
@@ -418,10 +418,10 @@ function parseAttachmentIds(body: JsonObject): { attachmentIds?: string[] } {
 	if (!Array.isArray(body.attachmentIds)) {
 		throw new ChatError("chat_attachment_ids_invalid", "attachmentIds must be an array", 400);
 	}
-	if (body.attachmentIds.length > MAX_CHAT_IMAGE_ATTACHMENTS) {
+	if (body.attachmentIds.length > MAX_CHAT_ATTACHMENTS) {
 		throw new ChatError(
 			"chat_attachment_limit_exceeded",
-			`A Chat message can contain at most ${MAX_CHAT_IMAGE_ATTACHMENTS} image Attachments`,
+			`A Chat message can contain at most ${MAX_CHAT_ATTACHMENTS} Attachments`,
 			400,
 		);
 	}

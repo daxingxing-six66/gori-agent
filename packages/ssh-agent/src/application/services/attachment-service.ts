@@ -1,6 +1,6 @@
 import { resolveDataDirectory } from "../../data-directory.ts";
 import { constants } from "node:fs";
-import { type FileHandle, link, lstat, mkdir, open, rm } from "node:fs/promises";
+import { type FileHandle, link, lstat, mkdir, open, realpath, rm } from "node:fs/promises";
 import { join, posix, resolve } from "node:path";
 import { Readable } from "node:stream";
 import { type Attachment, AttachmentError } from "../../domain/attachment.ts";
@@ -13,6 +13,9 @@ import {
 	detectAttachmentImageMimeType,
 } from "./attachment-image-inspector.ts";
 import type { SessionLifecycleCoordinator } from "./session-lifecycle-coordinator.ts";
+import type { LocalTextFile } from "../../domain/local-file-system.ts";
+import { isTextAttachmentName } from "./attachment-text-inspector.ts";
+import { readLocalTextFile } from "./read-local-text-file.ts";
 
 export const MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024;
 
@@ -191,6 +194,30 @@ export class AttachmentService {
 				error,
 			);
 		}
+	}
+
+	async readText(sessionId: SessionId, attachmentId: string, signal?: AbortSignal): Promise<LocalTextFile> {
+		await this.#requireSession(sessionId);
+		const [attachment] = await this.#attachments.findBySessionIdAndIds(sessionId, [attachmentId]);
+		if (!attachment) throw new AttachmentError("attachment_not_found", "Attachment was not found in this Session", 404);
+		if (!isTextAttachmentName(attachment.name)) {
+			throw new AttachmentError("attachment_text_format_unsupported", "Only text documents can be previewed", 415);
+		}
+		const expectedPath = posix.join("attachments", "sessions", sessionId, attachment.name);
+		if (attachment.storagePath !== expectedPath || attachment.size > MAX_ATTACHMENT_BYTES) {
+			throw new AttachmentError("attachment_changed", "Attachment changed after upload", 409);
+		}
+		throwIfContentAborted(signal);
+		const baseDirectory = await realpath(this.#baseDir);
+		await this.#assertSessionDirectory(sessionId);
+		const directory = await realpath(join(this.#sessionsDir, sessionId));
+		if (directory !== join(baseDirectory, "attachments", "sessions", sessionId)) {
+			throw new AttachmentError("attachment_storage_unavailable", "Attachment storage is unavailable", 500);
+		}
+		const file = await readLocalTextFile(directory, join(directory, attachment.name));
+		throwIfContentAborted(signal);
+		if (file.size !== attachment.size) throw new AttachmentError("attachment_changed", "Attachment changed after upload", 409);
+		return { ...file, path: attachment.name, name: attachment.name };
 	}
 
 	async cleanupSession(sessionId: SessionId): Promise<void> {
