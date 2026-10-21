@@ -15,6 +15,7 @@ import type { ToolApproval } from "@/features/chat/model/chat";
 import type { SessionAttachment } from "@/features/session/api/session-attachment-api";
 import { useChatModelSelection } from "@/features/chat/runtime/use-chat-model-selection";
 import { useChatRuntime } from "@/features/chat/runtime/use-chat-runtime";
+import { useChatComposerHistory } from "@/features/chat/runtime/use-chat-composer-history";
 import { resolveConfiguredModel } from "@/features/llm-provider/api/llm-provider-api";
 import { thinkingLevelForModel } from "@/features/llm-provider/model/llm-provider";
 import { sessionApi } from "@/features/session/api/session-api";
@@ -152,6 +153,7 @@ export function ChatConsole({ sessionId }: { sessionId: string }) {
 		if (!message || message.role !== "user") return "";
 		return typeof message.content === "string" ? message.content : message.content.flatMap((part) => part.type === "text" ? [part.text] : []).join("");
 	}, [runtime.state.timeline]);
+	const recentUserTexts = useChatComposerHistory(sessionId, runtime.state.timeline, runtime.loading);
 
 	useEffect(() => {
 		planningRequestRef.current = null;
@@ -458,6 +460,7 @@ export function ChatConsole({ sessionId }: { sessionId: string }) {
 					ref={composerRef}
 					contextUsage={runtime.contextUsage}
 					sessionId={item.session.id}
+					recentUserTexts={recentUserTexts}
 					active={active}
 					model={model}
 					thinkingLevel={thinkingLevel}

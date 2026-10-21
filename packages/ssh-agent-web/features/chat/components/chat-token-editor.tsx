@@ -18,6 +18,7 @@ import { useLocalizedErrorMessage } from "@/features/i18n/components/use-localiz
 import { attachmentFileKind } from "@/features/session/model/attachment-file";
 import {
 	fileBadgeForName,
+	hasChatComposerContent,
 	mimeTypeForLocalFile,
 	parseChatComposerMessage,
 	serializeChatComposerReference,
@@ -48,8 +49,10 @@ interface ChatTokenEditorProps {
 	autoFocus?: boolean;
 	placeholder: string;
 	tools?: readonly ChatComposerTool[];
+	navigatingHistory?: boolean;
 	onChange(value: string): void;
 	onSubmit(): void;
+	onNavigateHistory?(direction: "older" | "newer"): boolean;
 	onToolSelect?(toolId: string): void;
 	onFiles?(files: File[]): void;
 }
@@ -72,8 +75,10 @@ export const ChatTokenEditor = forwardRef<ChatTokenEditorHandle, ChatTokenEditor
 	autoFocus = false,
 	placeholder,
 	tools = EMPTY_TOOLS,
+	navigatingHistory = false,
 	onChange,
 	onSubmit,
+	onNavigateHistory,
 	onToolSelect,
 	onFiles,
 }, forwardedRef) {
@@ -136,6 +141,7 @@ export const ChatTokenEditor = forwardRef<ChatTokenEditorHandle, ChatTokenEditor
 		const editor = editorRef.current;
 		if (!editor || synchronizedValueRef.current === value) return;
 		renderMessage(editor, value);
+		if (document.activeElement === editor) moveCaretToEnd(editor);
 		synchronizedValueRef.current = value;
 	}, [value]);
 
@@ -280,6 +286,7 @@ export const ChatTokenEditor = forwardRef<ChatTokenEditorHandle, ChatTokenEditor
 	};
 
 	const keyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+		if (composingRef.current || event.nativeEvent.isComposing || event.keyCode === 229) return;
 		if (menuOpen) {
 			if (event.key === "ArrowDown" || event.key === "ArrowUp") {
 				event.preventDefault();
@@ -308,13 +315,22 @@ export const ChatTokenEditor = forwardRef<ChatTokenEditorHandle, ChatTokenEditor
 				return;
 			}
 		}
+		if ((event.key === "ArrowUp" || event.key === "ArrowDown") && !disabled && !event.repeat
+			&& !event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey && editorRef.current) {
+			const direction = event.key === "ArrowUp" ? "older" : "newer";
+			const editorValue = serializeEditor(editorRef.current);
+			const canNavigate = navigatingHistory
+				? editorValue === canonicalEditorValue(value)
+				: direction === "older" && !hasChatComposerContent(value) && !hasChatComposerContent(editorValue);
+			if (canNavigate && onNavigateHistory?.(direction)) event.preventDefault();
+			return;
+		}
 		if (event.key === "Backspace" && removeReferenceBeforeCaret(editorRef.current)) {
 			event.preventDefault();
 			syncValueAndMenu(true);
 			return;
 		}
 		if (event.key !== "Enter" || event.shiftKey) return;
-		if (composingRef.current || event.nativeEvent.isComposing || event.keyCode === 229) return;
 		event.preventDefault();
 		onSubmit();
 	};
@@ -471,6 +487,16 @@ function renderMessage(editor: HTMLElement, message: string): void {
 	editor.replaceChildren(fragment);
 }
 
+function moveCaretToEnd(editor: HTMLElement): void {
+	const selection = window.getSelection();
+	if (!selection) return;
+	const range = document.createRange();
+	range.selectNodeContents(editor);
+	range.collapse(false);
+	selection.removeAllRanges();
+	selection.addRange(range);
+}
+
 function createReferenceElement(reference: ChatComposerReference): HTMLSpanElement {
 	const token = document.createElement("span");
 	token.className = "chat-reference-token";
@@ -497,6 +523,13 @@ function referenceFromElement(element: HTMLElement): ChatComposerReference | nul
 
 function serializeEditor(editor: HTMLElement): string {
 	return serializeChildren(editor).replaceAll("\u00a0", " ");
+}
+
+function canonicalEditorValue(message: string): string {
+	return parseChatComposerMessage(message)
+		.map((part) => part.type === "text" ? part.text : serializeChatComposerReference(part.reference))
+		.join("")
+		.replaceAll("\u00a0", " ");
 }
 
 function insertPlainTextAtSelection(text: string): void {

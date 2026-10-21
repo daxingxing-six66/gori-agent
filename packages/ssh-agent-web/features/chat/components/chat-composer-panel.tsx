@@ -1,7 +1,7 @@
 "use client";
 
 import { CornerDownLeft, LoaderCircle, Paperclip, Send, ShieldCheck, Square, X } from "lucide-react";
-import { forwardRef, type ReactNode, useEffect, useImperativeHandle, useRef, useState } from "react";
+import { forwardRef, type ReactNode, useEffect, useImperativeHandle, useRef } from "react";
 import { useIntl } from "react-intl";
 import { ToggleSwitch } from "@/components/toggle-switch";
 import { ChatComposerNotices } from "@/features/chat/components/chat-composer-notices";
@@ -9,6 +9,7 @@ import { ChatContextUsageIndicator } from "@/features/chat/components/chat-conte
 import type { ChatContextUsage } from "@/features/chat/model/chat-context-usage";
 import { ChatAttachmentUploads } from "@/features/chat/components/chat-attachment-uploads";
 import { useChatAttachmentUploads } from "@/features/chat/runtime/use-chat-attachment-uploads";
+import { useChatComposerDraft } from "@/features/chat/runtime/use-chat-composer-draft";
 import { ChatTokenEditor, type ChatComposerTool, type ChatTokenEditorHandle } from "@/features/chat/components/chat-token-editor";
 import { hasChatComposerContent, visibleChatComposerText } from "@/features/chat/model/chat-composer";
 import type { AgentMessage, ChatQueueEntry, ManualChatCompactionResult } from "@/features/chat/model/chat";
@@ -23,6 +24,7 @@ export interface ChatComposerPanelHandle {
 
 export const ChatComposerPanel = forwardRef<ChatComposerPanelHandle, {
 	sessionId: string;
+	recentUserTexts: readonly string[];
 	contextUsage: ChatContextUsage | null;
 	active: boolean;
 	model: LlmModel | null;
@@ -61,6 +63,7 @@ export const ChatComposerPanel = forwardRef<ChatComposerPanelHandle, {
 	aboveInputPanel?: ReactNode;
 }>(function ChatComposerPanel({
 	sessionId,
+	recentUserTexts,
 	contextUsage,
 	active,
 	model,
@@ -103,7 +106,7 @@ export const ChatComposerPanel = forwardRef<ChatComposerPanelHandle, {
 	const fileInputRef = useRef<HTMLInputElement>(null);
 	const latestSessionIdRef = useRef(sessionId);
 	latestSessionIdRef.current = sessionId;
-	const [draft, setDraft] = useState("");
+	const { draft, navigatingHistory, setDraft, clearForSubmission, navigateHistory } = useChatComposerDraft(sessionId);
 	const attachmentUploads = useChatAttachmentUploads(sessionId);
 	const { attachments, pending: hasPendingUploads } = attachmentUploads;
 	const hasContent = hasChatComposerContent(draft);
@@ -113,7 +116,6 @@ export const ChatComposerPanel = forwardRef<ChatComposerPanelHandle, {
 	const canSubmit = !submitting && !terminalBusy && !hasPendingUploads && (localCommand || active || model !== null);
 
 	useEffect(() => {
-		setDraft("");
 		if (fileInputRef.current) fileInputRef.current.value = "";
 	}, [sessionId]);
 
@@ -123,19 +125,21 @@ export const ChatComposerPanel = forwardRef<ChatComposerPanelHandle, {
 			setDraft(message);
 			requestAnimationFrame(() => editorRef.current?.focus());
 		},
-	}), []);
+	}), [setDraft]);
 
 	const submit = async () => {
 		const message = draft.trim();
 		if ((!hasChatComposerContent(message) && attachments.length === 0) || !canSubmit) return;
 		const submittedSessionId = sessionId;
-		setDraft("");
-		const accepted = await onSubmit(message, attachments);
-		if (latestSessionIdRef.current !== submittedSessionId) return;
-		if (!accepted) {
-			setDraft((current) => current || message);
-			return;
+		const restore = clearForSubmission();
+		let accepted = false;
+		try {
+			accepted = await onSubmit(message, attachments);
+		} finally {
+			if (!accepted) restore();
 		}
+		if (latestSessionIdRef.current !== submittedSessionId) return;
+		if (!accepted) return;
 		attachmentUploads.clearSubmitted(attachments.map((attachment) => attachment.id));
 	};
 
@@ -157,7 +161,7 @@ export const ChatComposerPanel = forwardRef<ChatComposerPanelHandle, {
 					{modelSelectionError ? <div className="mb-1 flex w-full items-center justify-between gap-3 rounded-lg bg-[var(--warning-soft)] px-3 py-2 text-[11px] leading-5 text-[var(--warning)]"><span>{modelSelectionError}</span>{modelSelectionRetryable ? <button type="button" className="shrink-0 font-semibold underline underline-offset-2" onClick={onRetryModelSelection}>{intl.formatMessage({ id: "chat.model.reload" })}</button> : null}</div> : null}
 					{queue.length > 0 ? <QueuePreview items={queue} active={active} mutationId={queueMutationId} onCancel={onCancelQueued} onPromote={onPromoteQueued} /> : null}
 					<ChatAttachmentUploads uploads={attachmentUploads.uploads} limitNotice={attachmentUploads.limitNotice} onDismiss={attachmentUploads.dismiss} onOpenAttachment={onOpenAttachment} />
-					<ChatTokenEditor ref={editorRef} sessionId={sessionId} value={draft} placeholder={intl.formatMessage({ id: "session.new.composer.placeholder" })} tools={composerTools} onChange={setDraft} onSubmit={() => void submit()} onToolSelect={onToolSelect} onFiles={attachmentUploads.addFiles} />
+					<ChatTokenEditor key={sessionId} ref={editorRef} sessionId={sessionId} value={draft} navigatingHistory={navigatingHistory} placeholder={intl.formatMessage({ id: "session.new.composer.placeholder" })} tools={composerTools} onChange={setDraft} onSubmit={() => void submit()} onNavigateHistory={(direction) => navigateHistory(direction, recentUserTexts)} onToolSelect={onToolSelect} onFiles={attachmentUploads.addFiles} />
 					<div className="chat-composer-controls">
 						<div className="flex min-w-0 items-center">
 							<input ref={fileInputRef} type="file" className="hidden" multiple aria-label={intl.formatMessage({ id: "chat.attachment.add" })} onChange={(event) => {
