@@ -27,6 +27,7 @@ import { useSftpTransferManagerOptional } from "@/features/sftp/components/sftp-
 import { WorkspaceDialog } from "@/features/workspace/components/workspace-dialog";
 import { useWorkspaceTree } from "@/features/workspace/components/workspace-tree-context";
 import { SidebarSessionRow } from "./sidebar-session-row";
+import { useSidebarScroll } from "./use-sidebar-scroll";
 
 interface WorkspaceSidebarProps {
 	activeWorkspaceId?: string;
@@ -40,7 +41,8 @@ export function WorkspaceSidebar({ activeWorkspaceId, activeSessionId, homePage 
 	const intl = useIntl();
 	const localizedErrorMessage = useLocalizedErrorMessage();
 	const router = useRouter();
-	const { tree, loading, error, refresh, workspaceExpansion, setWorkspaceExpanded } = useWorkspaceTree();
+	const { tree, loading, error, refresh, workspaceExpansion, setWorkspaceExpanded, sidebarScrollTop } = useWorkspaceTree();
+	const sidebarScroll = useSidebarScroll(sidebarScrollTop, tree !== null, activeSessionId);
 	const { openSettings } = useSettings();
 	const transferManager = useSftpTransferManagerOptional();
 	const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -128,7 +130,7 @@ export function WorkspaceSidebar({ activeWorkspaceId, activeSessionId, homePage 
 							{error ? <div className="mb-3 rounded-lg border border-[var(--danger-line)] bg-[var(--danger-soft)] p-2.5 text-[12px] leading-5 text-[var(--danger)]"><p>{localizedErrorMessage(error)}</p><button className="mt-1 font-semibold underline" onClick={() => void refresh()}>{intl.formatMessage({ id: "common.reload" })}</button></div> : null}
 							{mutationError ? <button className="mb-3 rounded-lg border border-[var(--danger-line)] bg-[var(--danger-soft)] p-2.5 text-left text-[12px] leading-5 text-[var(--danger)]" onClick={() => setMutationError(null)}>{mutationError}</button> : null}
 							{loading && tree === null ? <p className="px-2 py-4 text-[12px] text-[var(--text-muted)]">{intl.formatMessage({ id: "workspace.loading" })}</p> : null}
-							<div className="app-scrollbar min-h-0 space-y-1 overflow-y-auto">
+							<div ref={sidebarScroll.ref} onScroll={sidebarScroll.onScroll} className="app-scrollbar min-h-0 space-y-1 overflow-y-auto">
 								{tree?.workspaces.map(({ workspace, sessions }) => {
 									const activeWorkspace = activeWorkspaceId === workspace.id;
 									const expanded = workspaceExpansion[workspace.id] ?? activeWorkspace;

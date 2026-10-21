@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext } from "react";
+import { createContext, useContext, type RefObject } from "react";
 import type { WorkspaceSessionTree } from "@/features/workspace/model/workspace";
 import type { ApiError } from "@/shared/errors/api-error";
 
@@ -11,6 +11,7 @@ export interface WorkspaceTreeContextValue {
 	refresh(): Promise<void>;
 	workspaceExpansion: Record<string, boolean>;
 	setWorkspaceExpanded(workspaceId: string, expanded: boolean): void;
+	sidebarScrollTop: RefObject<number>;
 }
 
 export const WorkspaceTreeContext = createContext<WorkspaceTreeContextValue | null>(null);

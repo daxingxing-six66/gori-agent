@@ -12,6 +12,8 @@
 
 侧边栏的工作区展开状态由根布局中的 `WorkspaceTreeProvider` 按工作区 ID 独立保存，切换工作区或会话页面不会收起其他工作区。首次进入尚无展开记录的工作区时默认展开；手动收起（包括当前工作区）会保留到本次页面生命周期结束，刷新浏览器后重新初始化。
 
+侧边栏列表的滚动位置同样由根级 `WorkspaceTreeProvider` 用 ref 保存，滚动时不触发共享树重新渲染。页面内的侧栏因会话切换重新挂载时，`components/use-sidebar-scroll.ts` 在布局阶段恢复位置；当前选中会话已可见时保持原位置，超出视口时只滚动列表使其可见，不移动整个页面或抢占输入焦点。列表尚未加载或抽屉无可用高度时等待恢复，收起再展开继续保留位置；同一会话的标题/活动更新不将用户拉回选中项。该状态仅存于当前根布局生命周期，刷新浏览器后重置。回归见 `tests/sidebar-scroll.test.ts`。
+
 左侧会话行由独立 `components/sidebar-session-row.tsx` 展示，右侧固定槽通过 `features/session-activity/` 显示运行旋转、审批/回答等待和本次观察到的完成、失败、停止图标；悬浮或键盘聚焦时编辑/删除优先显示，标题与左侧导航圆点不移动。点击会话清除该会话当前已结束结果的未读标识，已读按 Run ID 保存在当前浏览器，刷新/重连不复现，新 Run 可重新提示；正在运行或等待处理的状态继续显示。当前可见会话成功完成会自动已读并直接清除运行标识，其他会话及后台完成结果保留提醒；失败、停止和待处理状态不自动清除。根布局挂载共享 Provider，通过一个全局流观察，只向 Store 上报路由与页面可见性，自动已读归 Store 处理，前端按 Session ID 独立通知目标行。初始不批量回填历史结果；断线清除旧显示，重连恢复本进程的快照。WorkspaceSidebar 只装配导航与管理回调，不参与状态归约和聊天生命周期。边界见 [session-activity.md](./session-activity.md)。
 
 桌面 `WorkspaceSidebar` 展开宽度保持 256px，收起宽度为 44px，展开与设置按钮居中。宽度变化由 Terminal 容器已有的 `ResizeObserver` 感知，owner 在防抖后测量、提交行列数，服务端确认事件再同步 xterm；布局样式不直接改 PTY geometry，也不重新建立 attachment。
@@ -71,7 +73,7 @@ Chat 的 `UserDecisionPanel` 在输入框上方向上展开，显示模型提供
 
 | 要修改的前端功能 | 首要文件 | 状态、协议和辅助文件 | 对应测试 |
 |---|---|---|---|
-| Workspace/Session 树加载与全局刷新 | `features/workspace/components/workspace-tree-provider.tsx` | `workspace-tree-context.ts`、`features/workspace/api/workspace-api.ts`、`features/workspace/model/workspace.ts` | `tests/api-clients.test.ts` |
+| Workspace/Session 树加载、全局刷新及导航滚动恢复 | `features/workspace/components/workspace-tree-provider.tsx` | `workspace-tree-context.ts`、`components/use-sidebar-scroll.ts`、`features/workspace/api/workspace-api.ts`、`features/workspace/model/workspace.ts` | `tests/api-clients.test.ts`、`tests/sidebar-scroll.test.ts` |
 | Workspace 创建、编辑、删除和远端目录选择 | `features/workspace/components/workspace-dialog.tsx`、`features/workspace/components/workspace-edit-dialog.tsx`、`components/workspace-console.tsx` | `features/workspace/components/workspace-form.tsx`、`workspace-form.css`、`remote-directory-picker.tsx`、`name-dialog.tsx`、`features/workspace/api/workspace-api.ts`；创建时复用 Credential 草稿和临时 SFTP 浏览，编辑时使用工作区 SFTP API | `tests/workspace-connection-test.test.tsx`、`tests/workspace-edit-dialog.test.tsx`、`tests/api-clients.test.ts` |
 | SSH Credential 创建、列表、切换、删除 | `features/credential/components/credential-manager.tsx` | `credential-manager.css`、`credential-dialog.tsx`、`api/credential-api.ts`、`model/credential.ts` | `tests/api-clients.test.ts` |
 | Session 创建、首次发送前选择工作目录、命名、自动审批、重命名和删除 | `features/session/components/new-session-chat.tsx`、`components/workspace-sidebar.tsx` | `session-edit-dialog.tsx`、`session-dialog.tsx`、`session-delete-dialog.tsx`、`local-directory-picker.tsx`、`api/session-api.ts`、`model/session.ts`、`features/workspace/model/session-update.ts` | `tests/session-title.test.tsx`、`tests/session-directory-picker.test.tsx`、`tests/api-clients.test.ts` |

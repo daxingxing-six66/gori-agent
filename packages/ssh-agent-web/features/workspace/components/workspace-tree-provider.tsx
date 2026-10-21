@@ -10,6 +10,7 @@ import { ApiError } from "@/shared/errors/api-error";
 
 export function WorkspaceTreeProvider({ children }: { children: React.ReactNode }) {
 	const loadVersion = useRef(0);
+	const sidebarScrollTop = useRef(0);
 	const [tree, setTree] = useState<WorkspaceSessionTree | null>(null);
 	const [loading, setLoading] = useState(true);
 	const [error, setError] = useState<ApiError | null>(null);
@@ -49,7 +50,7 @@ export function WorkspaceTreeProvider({ children }: { children: React.ReactNode 
 	const onReady = useCallback(() => { void load(); }, [load]);
 
 	const value = useMemo(
-		() => ({ tree, loading, error, refresh: () => load(), workspaceExpansion, setWorkspaceExpanded }),
+		() => ({ tree, loading, error, refresh: () => load(), workspaceExpansion, setWorkspaceExpanded, sidebarScrollTop }),
 		[tree, loading, error, load, workspaceExpansion, setWorkspaceExpanded],
 	);
 	return <WorkspaceTreeContext.Provider value={value}><WorkspaceSessionEvents tree={tree} onSession={onSession} onReady={onReady} />{children}</WorkspaceTreeContext.Provider>;
