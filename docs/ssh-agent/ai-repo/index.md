@@ -42,6 +42,7 @@
 | Session 页首 CPU/内存/网络速率、共享监控缓存和默认网卡统计 | [session-server-metrics.md](./session-server-metrics.md) | `packages/ssh-agent-web/features/server-metrics/`、`packages/ssh-agent/src/application/monitoring/remote-network-sampler.ts` |
 | 文件工具路径冲突、整批串并行与共享 SFTP Channel | [file-tool-concurrency.md](./file-tool-concurrency.md) | `packages/ssh-agent/src/application/services/file-tool-concurrency.ts`、`packages/ssh-agent/src/infrastructure/ssh/ssh2-sftp-channel-pool.ts` |
 | 新会话首条消息自动标题、模型命名和 SSE 更新 | [session-title.md](./session-title.md) | `packages/ssh-agent/src/application/services/session-title-service.ts` |
+| 动态状态追加、18 工具固定目录、缓存指纹与压缩恢复 | [runtime-context.md](./runtime-context.md) | `packages/ssh-agent/src/application/services/chat-runtime-context-service.ts`、`packages/ssh-agent/src/domain/runtime-context.ts` |
 | 首次 Run 固定头部、环境快照、模式 system 消息与缓存边界 | [session-prompt.md](./session-prompt.md) | `packages/ssh-agent/src/application/services/chat-prompt-service.ts`、`packages/ssh-agent/src/application/chat-context.ts` |
 | Session Chat、Pi Agent 事件、本地工具、审批、队列和压缩 | [chat-runtime.md](./chat-runtime.md) | `packages/ssh-agent/src/application/services/chat-service.ts`、`packages/agent/src/harness/agent-harness.ts` |
 | 左侧会话运行标识、等待状态、事件归约与全局活动流 | [session-activity.md](./session-activity.md) | `packages/ssh-agent/src/application/session-activity/`、`packages/ssh-agent-web/features/session-activity/` |
@@ -78,7 +79,7 @@ Workspace/Credential 前端契约见 [workspace-credential-integration.md](../fr
 
 已经实现的 Terminal Interaction MVP：用户手动开启独立模式，后端维持长周期 PTY 和 Canonical State，Agent 使用专用 Tool，浏览器通过 snapshot + SSE 只读投影并同步 owner resize，Interaction/Input/Observation/Timeline 持久化到 SQLite。
 
-已经接入的 `/deploy` 主链路：服务选择时创建稳定身份、正式历史消息和 Session 部署模式；Plan 提案由模型在中间会话发起，计划审阅在右侧 Deploy Tab；确认启动后展示准备及四个执行阶段的横向图标节点，准备详情可查看计划，其余节点展示执行事实与日志，普通工具和 Full Access 审批保留在中间。模式跨 Chat Run，正式工具串行推进，同阶段/上游重做保留输出并使下游事实失效；用户或模型通过明确结束用例退出。普通工具保持原模式与授权规则，部署专用定义动态装配。已完成定向回归及授权的独立 Java 项目真实发布验收，包括失败修复、三类结束、Terminal 多 Tab、日志与窄屏/明暗主题；实测平台与沙箱边界见 [deployment.md](./deployment.md) 和设计文档第 16–17 节。
+已经接入的 `/deploy` 主链路：服务选择时创建稳定身份、正式历史消息和 Session 部署模式；Plan 提案由模型在中间会话发起，计划审阅在右侧 Deploy Tab；确认启动后展示准备及四个执行阶段的横向图标节点，准备详情可查看计划，其余节点展示执行事实与日志，普通工具和 Full Access 审批保留在中间。模式跨 Chat Run，正式工具串行推进，同阶段/上游重做保留输出并使下游事实失效；用户或模型通过明确结束用例退出。普通工具保持原模式与授权规则；全部 18 个定义固定，部署执行入口按绑定装配，状态变化追加消息。已完成定向回归及授权的独立 Java 项目真实发布验收，包括失败修复、三类结束、Terminal 多 Tab、日志与窄屏/明暗主题；实测平台与沙箱边界见 [deployment.md](./deployment.md) 和设计文档第 16–17 节。
 
 尚未实现：附件删除、任意二进制附件的通用下载和 LLM 输入、PDF/Office 文档解析、图片生成、断点续传、Transfer 历史自动清理、主机密钥重新信任/预置信任/SSH CA、Chat 多 Lane/Fork 和跨进程 delta 重放。Terminal MVP 不允许用户输入、不自动开启模式，使用 REST + SSE 而不引入 WebSocket。
 

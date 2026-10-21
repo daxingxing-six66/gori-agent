@@ -9,7 +9,8 @@ import { DeploymentModeService } from "../src/application/services/deployment-mo
 import { DeploymentService } from "../src/application/services/deployment-service.ts";
 import { RemoteSandboxApprovalStore } from "../src/application/services/remote-sandbox-approval-store.ts";
 import { WorkspaceEventHub } from "../src/application/workspace-event-hub.ts";
-import { deploymentProviderMessages } from "../src/application/deployment-runtime-context.ts";
+import { projectRuntimeSnapshots, isRuntimeContextMessage } from "../src/domain/runtime-context.ts";
+import { deploymentRuntimeSnapshot } from "../src/application/deployment-runtime-context.ts";
 import { createChatContext } from "../src/application/chat-context.ts";
 import { modelVisibleMessages } from "../src/application/chat-ui-history-message.ts";
 import { applyMigrations } from "../src/infrastructure/sqlite/migrations.ts";
@@ -130,24 +131,25 @@ describe("durable deployment mode", () => {
 			expect(database.prepare("PRAGMA foreign_key_check").all()).toEqual([]);
 		} finally { database.close(); }
 	});
-	it("counts deployment tools in offline contexts only while the current mode permits them", async () => {
+	it("keeps the same deployment catalog in offline contexts across every mode", async () => {
 		const names = (service: DeploymentService) => createChatContext("snapshot", [], service.activeMode("session"))
 			.tools!.filter((tool) => tool.name.startsWith("deployment_")).map((tool) => tool.name).sort();
+		const expected = ["deployment_execute_next", "deployment_finish", "deployment_inspect", "deployment_propose_plan", "deployment_propose_recovery"];
 		const discussion = await harness();
-		expect(names(discussion.service)).toEqual([]);
+		expect(names(discussion.service)).toEqual(expected);
 		const started = await discussion.begin();
-		expect(names(discussion.service)).toEqual(["deployment_finish", "deployment_propose_plan"]);
+		expect(names(discussion.service)).toEqual(expected);
 		await discussion.service.finishDeployment("session", started.id, "cancelled");
-		expect(names(discussion.service)).toEqual([]);
+		expect(names(discussion.service)).toEqual(expected);
 
 		const execution = await harness();
 		const planned = await execution.propose();
-		expect(names(execution.service)).toEqual(["deployment_finish", "deployment_inspect"]);
+		expect(names(execution.service)).toEqual(expected);
 		await execution.service.claimForAgent("session", planned.id, "execution");
-		expect(names(execution.service)).toEqual(["deployment_execute_next", "deployment_finish", "deployment_inspect", "deployment_propose_recovery"]);
+		expect(names(execution.service)).toEqual(expected);
 		const finished = await execution.service.finishDeployment("session", planned.id, "failed", "Cannot deploy");
-		expect(names(execution.service)).toEqual([]);
-		expect(createChatContext("snapshot", [], finished).tools!.some((tool) => tool.name.startsWith("deployment_"))).toBe(false);
+		expect(names(execution.service)).toEqual(expected);
+		expect(createChatContext("snapshot", [], finished).tools!.some((tool) => tool.name.startsWith("deployment_"))).toBe(true);
 	});
 
 	it("creates one ordered formal history message and restores mode from SQLite", async () => {
@@ -271,17 +273,19 @@ describe("durable deployment mode", () => {
 			{ role: "toolResult" as const, toolCallId: "files", toolName: "read",
 				content: [{ type: "text" as const, text: "module references" }], isError: false, timestamp: 3 },
 		];
-		const projected = deploymentProviderMessages(messages, service.activeMode("session"));
+		const projected = projectRuntimeSnapshots(messages, [deploymentRuntimeSnapshot(service.activeMode("session"), "session")]);
 		expect(projected.slice(0, -1)).toEqual(messages);
 		expect(projected.at(-1)).toMatchObject({ role: "system", content: [{ type: "text" }] });
 		const state = projected.at(-1)!;
 		if (state.role !== "system") throw new Error("Expected system deployment state");
-		expect(JSON.parse(state.content[0]!.text.split("\n")[1]!)).toMatchObject({ deploymentMode: true,
-			selection: { source: "user", profileFile: discussion.profileFile,
-				profileHash: discussion.profileHash, module: discussion.module } });
+		if (!isRuntimeContextMessage(state)) throw new Error("Expected runtime state");
+		expect(state.runtimeContext).toMatchObject({ active: true, data: {
+			selection: { source: "user", profileFile: discussion.profileFile, profileHash: discussion.profileHash, module: discussion.module } } });
 		expect(messages).toHaveLength(3);
-		expect(deploymentProviderMessages(messages, service.activeMode("session"))).toEqual(projected);
-		expect(deploymentProviderMessages(messages, null)).toEqual(messages);
+		expect(projectRuntimeSnapshots(projected, [deploymentRuntimeSnapshot(service.activeMode("session"), "session")])).toEqual(projected);
+		const ended = projectRuntimeSnapshots(projected, [deploymentRuntimeSnapshot(null, "session")]);
+		expect(ended.slice(0, projected.length)).toEqual(projected);
+		expect(ended.at(-1)).toMatchObject({ runtimeContext: { channel: "deployment", active: false } });
 	});
 
 	it("derives the same selection from persisted discussion facts through review and execution", async () => {

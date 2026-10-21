@@ -26,12 +26,17 @@ import type { BubblewrapInstallationService } from "./bubblewrap-installation-se
 import type { SshTargetSnapshot } from "../../domain/ssh-target.ts";
 import type { RemoteSandboxRoute } from "./remote-sandbox-routing.ts";
 import { SessionSandboxPolicy } from "./session-sandbox-policy.ts";
+import type { RuntimeContextRepository } from "../repositories/runtime-context-repository.ts";
+import { ChatRuntimeContextService } from "./chat-runtime-context-service.ts";
+import { ChatRuntimeFacts } from "./chat-runtime-facts.ts";
 import type { DiagnoseRuntime } from "../diagnose-runtime.ts";
 
 export interface CreateChatServiceOptions {
 	prompts: ChatPromptService;
 	titles?: SessionTitleService;
 	chatRepository: ChatRepository;
+	runtimeContexts?: RuntimeContextRepository;
+	terminalFacts?: ChatAgentRuntimeFactoryOptions["terminalFacts"];
 	chatAttachments: ChatAttachmentService;
 	sessions: SessionRepository;
 	models: Models;
@@ -66,6 +71,9 @@ export function createChatService(options: CreateChatServiceOptions): ChatServic
 	const contextCompactionSettings = options.contextCompactionSettings ?? {
 		get: () => ({ triggerPercent: 80, model: null, revision: 1, updatedAt: 0 }),
 	};
+	const runtimeContexts = options.runtimeContexts ? new ChatRuntimeContextService(options.runtimeContexts) : undefined;
+	const sandboxPolicy = new SessionSandboxPolicy(options.sessions);
+	const runtimeFacts = new ChatRuntimeFacts({ sandboxPolicy, diagnoses: options.diagnoses, deployments: options.deployments, terminalFacts: options.terminalFacts });
 	const events = new ChatRunEventHub();
 	const activity = new SessionActivityService(events);
 	const approvals = new ChatApprovalService({
@@ -76,6 +84,7 @@ export function createChatService(options: CreateChatServiceOptions): ChatServic
 	});
 	const decisions = new ChatUserDecisionService({ repository: options.chatRepository, ids: options.ids, events });
 	const context = new ChatContextService({
+		runtimeContexts: options.runtimeContexts,
 		repository: options.chatRepository,
 		models: options.models,
 		catalog: options.catalog,
@@ -116,7 +125,10 @@ export function createChatService(options: CreateChatServiceOptions): ChatServic
 	const runtimeFactory =
 		options.runtimeFactory ??
 		new ChatAgentRuntimeFactory({
-			sandboxPolicy: new SessionSandboxPolicy(options.sessions),
+			sandboxPolicy,
+			runtimeContexts,
+			runtimeFacts,
+			terminalFacts: options.terminalFacts,
 			models: options.models,
 			toolCalls,
 			queues,
@@ -133,6 +145,8 @@ export function createChatService(options: CreateChatServiceOptions): ChatServic
 			createSftpDownloadTool: options.createSftpDownloadTool,
 		});
 	return new ChatService({
+		runtimeContexts,
+		runtimeFacts,
 		prompts: options.prompts,
 		...(options.titles ? { titles: options.titles } : {}),
 		chatRepository: options.chatRepository,

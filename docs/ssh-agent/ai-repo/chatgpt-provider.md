@@ -65,3 +65,6 @@ CLI 在创建 Backend 前通过 `server/environment-proxy.ts` 安装 undici 环�
 已核对共享 HTTP/Backend 装配、目录、消息目录及依赖变化对现有 SSH、SFTP、Terminal、Deploy、Diagnose、Session、压缩和统计入口的影响；其业务生命周期与既有功能文档仍一致。代理定向回归检查原生 fetch 的 HTTP/HTTPS 路由、大小写优先级、NO_PROXY、loopback 绕过、关闭恢复及配置错误脱敏；公开身份端点的连通性不等于真实账号完整授权或付费推理验收。
 
 实现依据：[Cookbook](https://developers.openai.com/cookbook/articles/sign-in-with-chatgpt)、[登录](https://developers.openai.com/siwc/token-sharing-open-source/sign-in)、[模型与推理](https://developers.openai.com/siwc/token-sharing-open-source/models-and-inference)、[预览限制](https://developers.openai.com/siwc/token-sharing-open-source/preview-limitations)。本地开源/个人使用与收费、面向其他用户的远程托管接入条件不同，以官方最新说明为准。
+
+
+2026-10-21 缓存修复：主模型调用始终透传稳定 Session ID，接通已有 prompt_cache_key；全部 18 工具定义固定，运行状态以持久化消息追加。订阅适配继续只在原位置映射 developer，并发送完整历史。结构回归覆盖最终 input 的旧前缀保留；缓存指纹与实际 Usage 的口径和限制见 [runtime-context.md](./runtime-context.md)，不以离线测试推断订阅额度收益。

@@ -59,7 +59,7 @@ function errorResponse(status: number, headers?: Record<string, string>): Respon
 function completionResponse(toolCall = false): Response {
 	const delta = toolCall
 		? { tool_calls: [{ index: 0, id: "call-1", type: "function",
-			function: { name: "remote_server_call", arguments: "{}" } }] }
+			function: { name: "remote_server_call", arguments: JSON.stringify({ command: "true" }) } }] }
 		: { content: "Recovered" };
 	const chunks = [
 		{ id: "completion-1", choices: [{ index: 0, delta }] },

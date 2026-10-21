@@ -1031,6 +1031,19 @@ const MIGRATIONS = [
 			END;
 		`,
 	},
+	{
+		version: 36,
+		sql: `
+			CREATE TABLE chat_runtime_context_heads (
+				session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+				channel TEXT NOT NULL,
+				revision INTEGER NOT NULL CHECK (revision > 0),
+				content_hash TEXT NOT NULL,
+				message_id TEXT NOT NULL REFERENCES chat_messages(id) ON DELETE CASCADE,
+				PRIMARY KEY (session_id, channel)
+			) STRICT;
+		`,
+	},
 ] as const;
 
 export function applyMigrations(database: DatabaseSync): void {

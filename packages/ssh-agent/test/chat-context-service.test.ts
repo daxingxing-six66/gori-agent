@@ -3,11 +3,13 @@ import { createModels, fauxAssistantMessage, fauxProvider, type Models } from "@
 import { describe, expect, it, vi } from "vitest";
 import type { ChatEventPublisher } from "../src/application/chat-run-event-hub.ts";
 import type { ChatRepository, StoredChatCompaction } from "../src/application/repositories/chat-repository.ts";
+import type { RuntimeContextRepository } from "../src/application/repositories/runtime-context-repository.ts";
 import type { ChatAttachmentService } from "../src/application/services/chat-attachment-service.ts";
 import { ChatContextService } from "../src/application/services/chat-context-service.ts";
 import type { ChatMessageProjection, ChatRun } from "../src/domain/chat.ts";
 import { createChatUserMessage } from "../src/domain/chat-attachment.ts";
 import type { StoredChatCompactionMessage } from "../src/domain/context-compaction.ts";
+import { isRuntimeContextMessage, runtimeContextMessage } from "../src/domain/runtime-context.ts";
 
 type ContextRepository = Pick<ChatRepository, "appendCompaction" | "latestCompaction" | "listMessages" | "latestSystemMessage">;
 
@@ -89,6 +91,7 @@ function createService(
 		contextWindow?: number;
 		provider?: string;
 		log?: (event: Record<string, unknown>) => void;
+		runtimeContexts?: RuntimeContextRepository;
 	} = {},
 ) {
 	const faux = fauxProvider({
@@ -101,6 +104,7 @@ function createService(
 		model: faux.getModel(),
 		service: new ChatContextService({
 			repository,
+			runtimeContexts: options.runtimeContexts,
 			models,
 			catalog: { getModel: () => faux.getModel() },
 			ids: { next: () => "compaction-1" },
@@ -117,6 +121,51 @@ function createService(
 }
 
 describe("ChatContextService", () => {
+	it("correlates private prefix diagnostics with usage without logging prompt data", () => {
+		const { repository } = createRepository([]);
+		const log = vi.fn();
+		const { service, model } = createService(repository, { log });
+		const context = { systemPrompt: "private-header", messages: [createChatUserMessage("private-message", [], 1)], tools: [] };
+		service.recordProviderRequest("run-1", model, context, "session-1");
+		service.recordProviderRequest("run-1", model, context, "session-1");
+		service.recordProviderRequest("run-1", model, { ...context, messages: [...context.messages, createChatUserMessage("new", [], 2)] }, "session-1");
+		service.recordProviderRequest("run-1", model, { ...context, systemPrompt: "changed" }, "session-1");
+		expect(log.mock.calls.map(([entry]) => entry.firstChanged)).toEqual(["initial", "unchanged", "append", "systemPrompt"]);
+		const response = fauxAssistantMessage("partial", { stopReason: "error" });
+		response.usage = { ...response.usage, input: 10, cacheRead: 90, cacheWrite: 0, output: 5 };
+		service.recordProviderResponse("run-1", response);
+		expect(log.mock.calls.at(-1)?.[0]).toMatchObject({ type: "cache.usage", requestId: log.mock.calls[3]![0].requestId,
+			input: 100, cached: 90, uncached: 10, output: 5, cacheRate: 0.9, stopReason: "error" });
+		expect(JSON.stringify(log.mock.calls)).not.toMatch(/private-header|private-message|partial/);
+	});
+
+	it.each(["manual", "threshold", "overflow"] as const)("retains newly committed facts and guidance during %s compaction", async (reason) => {
+		const protocol = runtimeContextMessage({ channel: "protocol", scope: "session-1", active: true, data: {} }, 1, "protocol", 1);
+		const skill = runtimeContextMessage({ channel: "diagnose-instructions", scope: "task-1", active: true, data: {}, instructions: "inspect current node" }, 1, "skill", 2);
+		const old = runtimeContextMessage({ channel: "sandbox", scope: "session-1", active: true, data: { readOnly: false } }, 1, "old", 3);
+		const current = runtimeContextMessage({ channel: "sandbox", scope: "session-1", active: true, data: { readOnly: true } }, 2, "new", 6);
+		const mode = { role: "system" as const, runtimeEventId: "mode-on", runtimeMode: "terminal", content: [{ type: "text" as const, text: "<terminal-model-on>" }], timestamp: 4 };
+		const history = createChatUserMessage("history".repeat(4000), [], 5);
+		const recent = fauxAssistantMessage("recent", { timestamp: 6 });
+		const messages = [protocol, skill, old, mode, history, recent];
+		const { repository, compactions } = createRepository(messages.map((message, index) => projection(index + 1, message)));
+		const heads = { latest: vi.fn(() => [protocol, skill, old]), synchronize: vi.fn() } satisfies RuntimeContextRepository;
+		// A normal system state message must not shadow the Terminal mode record.
+		Object.assign(repository, { latestRuntimeModeMessage: () => projection(4, mode) });
+		const { service, model } = createService(repository, { runtimeContexts: heads, compact: async () => {
+			heads.latest.mockReturnValue([protocol, skill, current]);
+			return { ok: true, value: { summary: "history", tokensBefore: 8000, retainedTail: [old, recent] } };
+		} });
+		const result = await service.compactContext({ sessionId: "session-1", run: null, context: { systemPrompt: "immutable", messages, tools: [] },
+			sessionModel: model, settings: { triggerPercent: 80, model: null, revision: 1, updatedAt: 1 }, reason, force: true });
+		const retained = compactions[0]!.retainedTail;
+		expect(retained.filter(isRuntimeContextMessage)).toEqual([protocol, skill, current]);
+		expect(retained).toContain(mode);
+		expect(retained).not.toContain(old);
+		expect(service.load("session-1")).toEqual(result.context.messages);
+		expect(service.synchronizeRuntimeMode("session-1", result.context, "terminal")).toBe(result.context);
+	});
+
 	it.each([false, true])("preserves authoritative mode across compaction (transition during summary: %s)", async (duringSummary) => {
 		const mode = { role: "system" as const, runtimeEventId: "mode-on", runtimeMode: "terminal",
 			content: [{ type: "text" as const, text: "<terminal-model-on>" }], timestamp: 1 };

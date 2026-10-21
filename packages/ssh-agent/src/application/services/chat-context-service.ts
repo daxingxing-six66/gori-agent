@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import {
 	type AgentMessage,
 	type CompactResult,
@@ -26,6 +27,8 @@ import type { ChatRepository } from "../repositories/chat-repository.ts";
 import type { ChatAttachmentService } from "./chat-attachment-service.ts";
 import type { LlmModelCatalog } from "./llm-model-catalog.ts";
 import { addOpenCodeGoSessionHeaders } from "./opencode-go-session.ts";
+import type { RuntimeContextRepository } from "../repositories/runtime-context-repository.ts";
+import { canonicalRuntimeJson, preserveRuntimeContext } from "../../domain/runtime-context.ts";
 import { isChatUiHistoryMessage, modelVisibleMessages } from "../chat-ui-history-message.ts";
 
 const TARGET_PERCENT = 30;
@@ -35,7 +38,7 @@ const CALIBRATION_ALPHA = 0.2;
 const CALIBRATION_MIN = 1;
 const CALIBRATION_MAX = 2;
 
-type ContextRepository = Pick<ChatRepository, "appendCompaction" | "latestCompaction" | "listMessages" | "latestSystemMessage">;
+type ContextRepository = Pick<ChatRepository, "appendCompaction" | "latestCompaction" | "listMessages" | "latestSystemMessage" | "latestRuntimeModeMessage">;
 
 interface EstimateSnapshot {
 	raw: number;
@@ -55,6 +58,7 @@ export interface ChatCompactionOutcome<T extends ChatContext = ChatContext> {
 }
 
 export class ChatContextService {
+	readonly #runtimeContexts?: RuntimeContextRepository;
 	readonly #repository: ContextRepository;
 	readonly #models: Models;
 	readonly #catalog: Pick<LlmModelCatalog, "getModel">;
@@ -64,10 +68,13 @@ export class ChatContextService {
 	readonly #clock: () => number;
 	readonly #compact: typeof compact;
 	readonly #calibration = new Map<string, number>();
-	readonly #pendingEstimates = new Map<string, { modelKey: string; raw: number }>();
+	readonly #pendingEstimates = new Map<string, { modelKey: string; raw: number; requestId: string }>();
+	readonly #prefixes = new Map<string, { header: string; tools: string; messages: string[]; model: string; settings: string }>();
+	#requestSequence = 0;
 	readonly #log: (event: Record<string, unknown>) => void;
 
 	constructor(options: {
+		runtimeContexts?: RuntimeContextRepository;
 		repository: ContextRepository;
 		models: Models;
 		catalog: Pick<LlmModelCatalog, "getModel">;
@@ -78,6 +85,7 @@ export class ChatContextService {
 		compact?: typeof compact;
 		log?: (event: Record<string, unknown>) => void;
 	}) {
+		this.#runtimeContexts = options.runtimeContexts;
 		this.#repository = options.repository;
 		this.#models = options.models;
 		this.#catalog = options.catalog;
@@ -106,7 +114,7 @@ export class ChatContextService {
 
 	/** Terminal loss may happen between tool turns; append its committed event once. */
 	synchronizeRuntimeMode<T extends ChatContext>(sessionId: string, context: T, mode: ChatRun["serverInteractionMode"]): T {
-		const latest = this.#repository.latestSystemMessage(sessionId)?.message;
+		const latest = (this.#repository.latestRuntimeModeMessage?.(sessionId) ?? this.#repository.latestSystemMessage(sessionId))?.message;
 		if (!isRuntimeModeMessage(latest)) return context;
 		if (latest.runtimeMode !== mode) {
 			throw new ChatError("server_interaction_mode_conflict", "Server interaction mode changed during the run", 409);
@@ -117,17 +125,38 @@ export class ChatContextService {
 		return { ...context, messages: [...context.messages, latest] };
 	}
 
-	recordProviderRequest(runId: string, model: Model<Api>, context: ChatContext): EstimateSnapshot {
+	recordProviderRequest(runId: string, model: Model<Api>, context: ChatContext, sessionId = runId, settings: unknown = null): EstimateSnapshot {
 		const estimate = this.estimate(model, context);
-		this.#pendingEstimates.set(runId, { modelKey: modelKey(model), raw: estimate.raw });
+		const hash = (value: unknown) => createHash("sha256").update(canonicalRuntimeJson(value)).digest("hex");
+		const current = { header: hash(context.systemPrompt), tools: hash(context.tools?.map(({ name, description, parameters }) => ({ name, description, parameters }))),
+			messages: context.messages.map(hash), model: modelKey(model), settings: hash({ api: model.api, settings }) };
+		const previous = this.#prefixes.get(sessionId);
+		let firstChanged = previous ? current.messages.length === previous.messages.length ? "unchanged" : "append" : "initial";
+		if (previous) {
+			if (previous.model !== current.model) firstChanged = "model";
+			else if (previous.settings !== current.settings) firstChanged = "settings";
+			else if (previous.tools !== current.tools) firstChanged = "tools";
+			else if (previous.header !== current.header) firstChanged = "systemPrompt";
+			else { const at = previous.messages.findIndex((entry, index) => current.messages[index] !== entry); if (at >= 0) firstChanged = `messages[${at}]`; }
+		}
+		const requestId = `${runId}:${++this.#requestSequence}`;
+		this.#prefixes.delete(sessionId); this.#prefixes.set(sessionId, current);
+		if (this.#prefixes.size > 256) this.#prefixes.delete(this.#prefixes.keys().next().value!);
+		this.#log({ type: "cache.prefix", layer: "application-context", requestId, sessionId, model: current.model,
+			headerHash: current.header, toolsHash: current.tools, settingsHash: current.settings, messageCount: current.messages.length, firstChanged });
+		this.#pendingEstimates.set(runId, { modelKey: modelKey(model), raw: estimate.raw, requestId });
 		return estimate;
 	}
 
 	recordProviderResponse(runId: string, message: AssistantMessage): void {
 		const pending = this.#pendingEstimates.get(runId);
 		this.#pendingEstimates.delete(runId);
-		if (!pending || message.stopReason === "error" || message.stopReason === "aborted") return;
+		if (!pending) return;
 		const actual = message.usage.input + message.usage.cacheRead + message.usage.cacheWrite;
+		this.#log({ type: "cache.usage", requestId: pending.requestId, input: actual, cached: message.usage.cacheRead,
+			cacheWrite: message.usage.cacheWrite, uncached: message.usage.input, output: message.usage.output,
+			stopReason: message.stopReason, cacheRate: actual > 0 ? message.usage.cacheRead / actual : null });
+		if (message.stopReason === "error" || message.stopReason === "aborted") return;
 		if (pending.raw <= 0 || actual <= 0) return;
 		const previous = this.#calibration.get(pending.modelKey) ?? 1;
 		const observed = actual / pending.raw;
@@ -334,11 +363,11 @@ export class ChatContextService {
 			const message: StoredChatCompactionMessage = {
 				role: "compactionSummary",
 				summary: result.summary,
-				retainedTail: preserveRuntimeMode(
+				retainedTail: preserveRuntimeContext(context.messages, preserveRuntimeMode(
 					context.messages,
 					result.retainedTail.map((entry) => this.#attachments.restoreCompactionMessage(entry)),
-					this.#repository.latestSystemMessage(input.sessionId)?.message,
-				),
+					(this.#repository.latestRuntimeModeMessage?.(input.sessionId) ?? this.#repository.latestSystemMessage(input.sessionId))?.message,
+				), this.#runtimeContexts?.latest(input.sessionId) ?? []),
 				tokensBefore: result.tokensBefore,
 				details: result.details,
 				usage: result.usage,

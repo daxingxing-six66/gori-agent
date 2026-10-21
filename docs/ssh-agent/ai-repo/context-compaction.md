@@ -6,7 +6,7 @@
 
 - 摘要请求的厂商原因在 PI 错误包装前提取，统一复用模型错误模块。手动 HTTP、自动 SSE、失败 Assistant 与 Run failure 保留相同安全原因和 retryable；内部 cause/stack 只进入日志。见 [provider-failures.md](./provider-failures.md)。
 
-- 占用展示复用同一估算。手动压缩和离线占用查询由 `application/chat-context.ts` 构造包含已保存头部快照、普通工具及当前活动模式所需部署工具的 Context；未启用或已结束部署不计算部署定义。活动 Run 仍以真实运行时 payload 为准。自动压缩每次提交摘要后另发 `context.updated`，手动响应包含 `contextUsage`。见 [context-usage.md](./context-usage.md)。
+- 占用展示复用同一估算。实际请求、离线占用及手动压缩使用固定头部、同一 18 工具目录与状态格式。只读查询预览尚未提交事实而不写消息；手动压缩先提交真实状态，避免把预览 ID 保存为历史。见 [context-usage.md](./context-usage.md)。
 
 - Agent Core 提供 `beforeProviderRequest` 和 `recoverProviderError` 两个通用扩展点。前者可在每次 Provider 调用前替换 Run 内 Context、模型或 thinking level；后者只接收尚未产生有效流式内容、尚未写入 transcript 的终态错误，并且最多恢复重试一次。`transformContext` 仍只转换单次请求，不替换 Run 内 Context。
 - `pi-ai` 在 Agent 边界通过 `isContextOverflow()` 把不同 Provider 的超限文本规范化为 `AssistantMessage.errorCode="context_overflow"`。已经发送文本、思考内容或 Tool Call 的失败不回滚、不重试。
@@ -24,7 +24,7 @@
 - 压缩失败的稳定 code 和后端固定 SSE 说明通过消息描述符在浏览器出口本地化；压缩摘要正文、Provider 输出、模型 ID 和 Token 数据保持原样。
 - 压缩准备和摘要失败包装时保留原始 cause，失败日志输出异常栈及 cause；CLI 将日志写入本地滚动文件，见 [logging.md](./logging.md)。公开响应仍不暴露诊断栈。
 
-最新 runtime system 模式记录在每次压缩中单独保留，不依靠摘要转述；摘要请求期间新提交的模式也会保留，避免被 compact 边界吞掉。头部不重组，详见 [session-prompt.md](./session-prompt.md)。
+协议、各通道最高版本及仍生效的 Skill/工作流在每次压缩中单独保留，旧状态可在有效上下文重建时移除；数据库原消息保留。Terminal 权威模式通过独立 typed 查询恢复，不被普通 system 事件遮蔽；摘要期间新提交的状态 head 与模式事件同样保留，避免被 compact 边界吞掉。头部和工具目录不重组，详见 [runtime-context.md](./runtime-context.md)。
 
 ## 固定算法参数
 
@@ -66,6 +66,6 @@
 前端接口和 SSE payload 见 [context-compaction-api.md](../frontend/context-compaction-api.md)。
 
 
-2026-10-19 Diagnose 接入：诊断工具与三项临时简报由 DiagnoseRuntime 共用投影加入运行时、离线占用及手动压缩 Context，原阈值/超限恢复回调前后刷新。UI 历史过滤已提取为 chat-ui-history-message.ts，只过滤 deployment/diagnose 两种 custom 消息，其他 custom 类型保持原有行为。 详见 [Diagnose 功能路由](./diagnose.md)。
+诊断状态通过统一持久化追加机制加入运行时；原阈值/超限恢复回调保持。UI 历史过滤位于 chat-ui-history-message.ts，只过滤 deployment/diagnose 两种 custom 消息，其他 custom 类型保持原有行为。详见 [Diagnose 功能路由](./diagnose.md)。
 
-内置 gori-diagnosis Skill 同样通过该临时提示词投影参与估算和压缩前后的请求恢复；不依赖摘要记住 Skill，也不将它追加到 transcript 或改写基础头部。重复投影保留一份，任务结束后移除。
+内置 gori-diagnosis Skill 以独立通道状态消息参与估算，压缩保留最新有效指引原文；结束追加 inactive，而不是下一次请求删除旧片段。

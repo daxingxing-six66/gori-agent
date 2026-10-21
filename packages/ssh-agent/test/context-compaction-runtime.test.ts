@@ -10,6 +10,32 @@ import { createSqliteManagementBackend } from "../src/runtime/create-sqlite-mana
 import { createTestLlmModels } from "./test-llm-models.ts";
 
 describe("context compaction runtime", () => {
+	it("blocks the provider on runtime journal failure and resumes without duplicate state after retry", async () => {
+		const faux = fauxProvider({ provider: "journal-failure", models: [{ id: "model", contextWindow: 128_000 }] });
+		faux.setResponses([fauxAssistantMessage("done")]);
+		const backend = createBackend(faux);
+		try {
+			const { sessionId } = await createSession(backend.handleRequest);
+			backend.database.exec(`CREATE TRIGGER fail_journal BEFORE INSERT ON chat_messages
+				WHEN json_extract(NEW.message_json,'$.runtimeContext.version')=1 BEGIN SELECT RAISE(ABORT,'injected journal failure'); END`);
+			const input = { requestId: "journal-first", providerId: "journal-failure", modelId: "model", message: "hello", serverInteractionMode: "command" };
+			const created = await request(backend.handleRequest, "POST", `/api/sessions/${sessionId}/chat/runs`, input);
+			await waitForRun(backend.handleRequest, sessionId);
+			expect(new SqliteChatRepository(backend.database).findRun((created.body as { id: string }).id, sessionId)).toMatchObject({
+				status: "failed", failure: { code: "chat_persistence_failed" },
+			});
+			expect(faux.state.callCount).toBe(0);
+			expect(backend.database.prepare("SELECT count(*) AS n FROM chat_runtime_context_heads").get()?.n).toBe(0);
+			backend.database.exec("DROP TRIGGER fail_journal");
+			await request(backend.handleRequest, "POST", `/api/sessions/${sessionId}/chat/runs`, { ...input, requestId: "journal-retry" });
+			await waitForRun(backend.handleRequest, sessionId);
+			expect(faux.state.callCount).toBe(1);
+			const rows = backend.database.prepare("SELECT revision FROM chat_runtime_context_heads").all();
+			expect(rows).toHaveLength(7);
+			expect(rows.every(row => row.revision === 1)).toBe(true);
+		} finally { await backend.close(); }
+	});
+
 	it.each([false, true])("preserves one failure identity for a new greeting (overflow: %s)", async (overflow) => {
 		const faux = fauxProvider({ provider: "opencode-go", models: [{ id: "model", contextWindow: 128_000 }] });
 		faux.setResponses([
@@ -331,7 +357,7 @@ describe("context compaction runtime", () => {
 				expect(before.status).toBe(200);
 				const tokens = (before.body as { contextUsage: { contextTokens: number } }).contextUsage.contextTokens;
 				expect(tokens).toBeGreaterThan(1_200);
-				expect(tokens).toBeLessThan(5_000);
+				expect(tokens).toBeLessThan(10_000);
 				await backend.close();
 				backend = createBackend(faux, databasePath);
 				expect(await request(backend.handleRequest, "GET", path)).toEqual(before);
@@ -394,7 +420,7 @@ describe("context compaction runtime", () => {
 			}
 			const latest = frames.filter((frame) => frame.includes("event: context.updated")).at(-1)!;
 			const snapshot = JSON.parse(latest.match(/data: ([^\n]+)/)![1]);
-			// Idle estimates omit transient trusted runtime instructions but keep the same model and history.
+			// Idle estimates use the same persisted state format and fixed tool catalog.
 			const idle = await request(backend.handleRequest, "GET", path);
 			expect(idle).toMatchObject({
 				status: 200,
@@ -418,7 +444,7 @@ describe("context compaction runtime", () => {
 	it("compacts persisted history before the provider request", async () => {
 		const faux = fauxProvider({
 			provider: "compaction-preflight",
-			models: [{ id: "model", contextWindow: 4_000, maxTokens: 1_000 }],
+			models: [{ id: "model", contextWindow: 16_000, maxTokens: 1_000 }],
 		});
 		faux.setResponses([
 			fauxAssistantMessage("history summary"),
@@ -431,8 +457,8 @@ describe("context compaction runtime", () => {
 					`/api/sessions/${row!.session_id}/chat/context-usage`,
 				);
 				const usage = (response.body as { contextUsage: { contextTokens: number } }).contextUsage;
-				// Original persisted history alone exceeds 4,000 tokens; active usage must honor the compact boundary.
-				expect(usage.contextTokens).toBeLessThan(3_200);
+				// History plus the fixed catalog exceeds the threshold; active usage must honor the compact boundary.
+				expect(usage.contextTokens).toBeLessThan(12_800);
 				return fauxAssistantMessage("provider response");
 			},
 		]);
@@ -445,7 +471,7 @@ describe("context compaction runtime", () => {
 				providerId: "compaction-preflight",
 				modelId: "model",
 				turns: 4,
-				charactersPerMessage: 2_000,
+				charactersPerMessage: 6_000,
 			});
 
 			const created = await request(backend.handleRequest, "POST", `/api/sessions/${sessionId}/chat/runs`, {
@@ -477,8 +503,8 @@ describe("context compaction runtime", () => {
 	it("compacts and retries once after an uncommitted provider overflow", async () => {
 		const faux = fauxProvider({
 			provider: "compaction-overflow",
-			// Complete tool schemas plus history fit below the 4,800-token preflight threshold.
-			models: [{ id: "model", contextWindow: 6_000, maxTokens: 1_000 }],
+			// The fixed catalog and history fit below preflight, with enough history for an overflow cut.
+			models: [{ id: "model", contextWindow: 16_000, maxTokens: 1_000 }],
 		});
 		faux.setResponses([
 			fauxAssistantMessage("", {
@@ -486,6 +512,7 @@ describe("context compaction runtime", () => {
 				errorMessage: "400 prompt too long; exceeded max context length by 1000 tokens",
 			}),
 			fauxAssistantMessage("history summary"),
+			fauxAssistantMessage("turn summary"),
 			fauxAssistantMessage("recovered"),
 		]);
 		const backend = createBackend(faux);
@@ -497,7 +524,7 @@ describe("context compaction runtime", () => {
 				providerId: "compaction-overflow",
 				modelId: "model",
 				turns: 4,
-				charactersPerMessage: 1_000,
+				charactersPerMessage: 3_500,
 			});
 
 			const created = await request(backend.handleRequest, "POST", `/api/sessions/${sessionId}/chat/runs`, {
@@ -522,7 +549,7 @@ describe("context compaction runtime", () => {
 				stopReason: "stop",
 				content: [{ type: "text", text: "recovered" }],
 			});
-			expect(faux.state.callCount).toBe(3);
+			expect(faux.state.callCount).toBe(4);
 		} finally {
 			await backend.close();
 		}
@@ -531,7 +558,7 @@ describe("context compaction runtime", () => {
 	it("uses the same compactor for a manual request and keeps run_id null", async () => {
 		const faux = fauxProvider({
 			provider: "compaction-manual",
-			models: [{ id: "model", contextWindow: 6_000, maxTokens: 1_000 }],
+			models: [{ id: "model", contextWindow: 16_000, maxTokens: 1_000 }],
 		});
 		faux.setResponses([fauxAssistantMessage("history summary"), fauxAssistantMessage("turn summary")]);
 		const backend = createBackend(faux);
@@ -543,7 +570,7 @@ describe("context compaction runtime", () => {
 				providerId: "compaction-manual",
 				modelId: "model",
 				turns: 4,
-				charactersPerMessage: 2_000,
+				charactersPerMessage: 6_000,
 			});
 			const settings = await request(backend.handleRequest, "GET", "/api/settings/compaction");
 			const revision = (settings.body as { revision: number }).revision;
@@ -564,7 +591,7 @@ describe("context compaction runtime", () => {
 				status: 200,
 				body: {
 					status: "completed",
-					contextUsage: { source: "estimated", providerId: "compaction-manual", contextWindow: 6_000 },
+					contextUsage: { source: "estimated", providerId: "compaction-manual", contextWindow: 16_000 },
 					reason: "manual",
 					attempts: 1,
 					message: { message: { role: "compactionSummary", reason: "manual" } },
@@ -598,7 +625,7 @@ describe("context compaction runtime", () => {
 		});
 		const faux = fauxProvider({
 			provider: "compaction-busy",
-			models: [{ id: "model", contextWindow: 4_000, maxTokens: 1_000 }],
+			models: [{ id: "model", contextWindow: 16_000, maxTokens: 1_000 }],
 		});
 		faux.setResponses([async () => pending]);
 		const backend = createBackend(faux);
@@ -620,6 +647,8 @@ describe("context compaction runtime", () => {
 				status: 200,
 				body: { contextUsage: { source: "estimated", providerId: "compaction-busy" } },
 			});
+			for (let attempt = 0; faux.state.callCount === 0 && attempt < 100; attempt++)
+				await new Promise(resolve => setTimeout(resolve, 5));
 			expect(faux.state.callCount).toBe(1);
 			release?.(fauxAssistantMessage("done"));
 			await waitForRun(backend.handleRequest, sessionId);

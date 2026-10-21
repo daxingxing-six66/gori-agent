@@ -60,6 +60,7 @@ import { CredentialCipher } from "../infrastructure/sqlite/credential-cipher.ts"
 import { openSshAgentDatabase } from "../infrastructure/sqlite/database.ts";
 import { LlmProviderCredentialCipher } from "../infrastructure/sqlite/llm-provider-credential-cipher.ts";
 import { SqliteAttachmentRepository } from "../infrastructure/sqlite/sqlite-attachment-repository.ts";
+import { SqliteRuntimeContextRepository } from "../infrastructure/sqlite/sqlite-runtime-context-repository.ts";
 import { SqliteChatRepository } from "../infrastructure/sqlite/sqlite-chat-repository.ts";
 import { SqliteCommandOperationRepository } from "../infrastructure/sqlite/sqlite-command-operation-repository.ts";
 import { SqliteContextCompactionSettingsRepository } from "../infrastructure/sqlite/sqlite-context-compaction-settings-repository.ts";
@@ -326,6 +327,11 @@ export function createSqliteManagementBackend(options: CreateSqliteManagementBac
 			ids,
 		});
 		chat = createChatService({
+			runtimeContexts: new SqliteRuntimeContextRepository(database, transactions),
+			terminalFacts: (sessionId) => {
+				const terminal = terminalSessions.getActor(sessionId)?.view;
+				return terminal ? { terminalSessionId: terminal.id, sandbox: terminal.sandbox } : null;
+			},
 			sandboxApprovals,
 			assessRemoteSandbox: async (sessionId, declaredWritePaths, signal) => {
 				const target = await targets.resolve(sessionId);

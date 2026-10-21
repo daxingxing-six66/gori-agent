@@ -22,3 +22,8 @@
 | 回归测试 | `packages/ssh-agent/test/file-logger.test.ts` |
 
 启用新日志入口需要重新加载后端进程；不会恢复旧进程已经丢失的异常信息。
+
+
+## 上下文缓存观测
+
+`ChatContextService` 发出 `cache.prefix`（头部/工具/设置 SHA-256、消息数、首个变化组件）与 `cache.usage`（真实输入、缓存读取/写入、未缓存输入、输出、命中比例），以 requestId 关联。不记录提示词、参数或摘要正文。指纹属于应用 Context 层，不能当作最终 HTTP 字节或供应商命中证明；进程内保留最近 256 个 Session，重启从 initial 开始。Session ID 始终透传主模型调用以接通已有缓存键。细节和限制见 [runtime-context.md](./runtime-context.md)。

@@ -438,6 +438,11 @@ export class SqliteChatRepository implements ChatRepository {
 		return changed.changes === 1 ? decisionFromRow(this.database.prepare("SELECT * FROM chat_user_decisions WHERE id = ?").get(decisionId)) : undefined;
 	}
 
+	latestRuntimeModeMessage(sessionId: string): ChatMessageProjection | undefined {
+		const row = this.database.prepare("SELECT * FROM chat_messages WHERE session_id = ? AND message_type = 'system' AND json_extract(message_json, '$.runtimeMode') IN ('command','terminal') ORDER BY sequence DESC LIMIT 1").get(sessionId);
+		return row ? messageFromRow(row, []) : undefined;
+	}
+
 	latestSystemMessage(sessionId: string): ChatMessageProjection | undefined {
 		const row = this.database.prepare("SELECT * FROM chat_messages WHERE session_id = ? AND message_type = 'system' ORDER BY sequence DESC LIMIT 1").get(sessionId);
 		return row ? messageFromRow(row, []) : undefined;

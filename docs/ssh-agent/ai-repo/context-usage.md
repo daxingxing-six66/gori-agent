@@ -6,11 +6,11 @@
 
 - `ChatContextService.usage()` 复用 `estimate().corrected`，只读估算，不请求 Provider、读取图片或触发压缩。
 - 含文档的用户消息保存服务端校验产生的 `attachmentKinds`，供同步、无 I/O 估算区分图片和文本。文档只计文件引用/read 提示的文字成本，不读取正文、不增加图片占位；旧图片消息未保存类型提示时保持原估算。实际 Provider 校验继续检查真实附件，不信任类型提示。
-- `createChatContext()` 接收已保存的 System Prompt 快照，共用普通工具的静态定义；离线查询和手动压缩读取当前部署模式，仅在活动模式中加入对应讨论、待审或执行工具及结束工具，结束后不再计算部署定义。工具估算只保留 Provider 的 name/description/parameters，避免 label 等执行元数据影响结果。
+- `createChatContext()` 接收已保存的 System Prompt 快照，共用按名称排序的 18 工具定义。所有模式和结束状态均计算同样的 name/description/parameters，不含 label 等执行元数据。
 - `ChatRunRuntime.context` 使用活动 Agent 的模型对应 Prompt/Tools，消息由 `ChatContextService.load()` 按持久化 compact 边界恢复。Agent transcript 不会随 Loop Context 替换而删除旧历史，不能直接用完整 transcript 作为占用输入。
 - `turn_end` 处理结束后推送一次 `context.updated`。每次自动 `compaction.completed` 后推送已保存的 Context 占用；手动压缩只返回 HTTP 快照。
 - 查询接口根据活动 Runtime 或最近 Run 的模型、固定头部快照和有效历史估算。无 Run、模型已移除或旧 Session 尚未初始化头部快照时返回 null；不需要凭证。未消费 Queue 和流式片段不计入。
-- 活动 Runtime 的 Prompt/Tools 包含当前可信 Session 沙盒和部署指引与描述；离线查询使用基础快照及当前模式的工具估算，不把历史沙盒指令当作当前权限，也不承诺与活动 Run 临时片段逐字相同。同一离线状态重复查询应稳定，且不调用模型。
+- 固定头部与工具定义不包含当前模式、目录或任务事实。活动请求、离线查询及手动压缩共用状态格式与投影规则；查询只预览缺失快照，不写入 chat_messages 或 heads。同一离线状态重复查询稳定且不调用模型。状态提示不授予权限，工具执行仍复核后端事实。
 - 不保存占用快照；头部复用独立的 `chat_prompt_snapshots`。校准系数沿用进程内生命周期，重启可能产生估算差异。
 
 ## 代码位置
@@ -28,6 +28,6 @@
 前端契约见 [context-usage-integration.md](../frontend/context-usage-integration.md)。
 
 
-2026-10-19 Diagnose 接入：活动诊断的工具定义与三项轻量简报由 DiagnoseRuntime 共用投影加入运行时、离线占用和手动压缩 Context；任务结束后移除，报告正文不放入任务元数据或历史卡片。 详见 [Diagnose 功能路由](./diagnose.md)。
+诊断状态与内置 Skill 通过独立通道加入估算。结束后旧事件仍在历史内，最新 inactive 快照撤销旧指引；压缩保留最新通道版本。报告全文不放入任务元数据或历史卡片，详见 [runtime-context.md](./runtime-context.md)。
 
-同一投影还包含内置 gori-diagnosis Skill 的独立提示词块，其内容计入当前活动诊断的占用估算；结束后随诊断临时片段移除，不写入基础头部或历史消息。
+状态与 Skill 的文本成本计入当前有效消息；本次保持压缩阈值和工具输出上限，固定工具目录增加的基础占用需和缓存读取一起观测。

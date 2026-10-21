@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { TerminalInteractionService } from "../src/application/services/terminal-interaction-service.ts";
 import {
 	createTerminalInteractionTool,
+	terminalInteractionDefinition,
 	terminalInteractionAction,
 	terminalInteractionParameters,
 	type TerminalInteractionParameters,
@@ -64,12 +65,12 @@ describe("Terminal interaction Tool schema", () => {
 		expect(markDelivered).not.toHaveBeenCalled();
 	});
 
-	it("tells the Agent when Terminal opened without Landlock after a capability fallback", () => {
+	it("keeps the tool definition stable when the Terminal environment changes", () => {
 		const tool = createTerminalInteractionTool({ sessionId: "session-1", terminalSessionId: "terminal-1",
 			agentRunId: "run-1", interactions: {} as TerminalInteractionService,
 			sandbox: { mode: "full_access", backend: "none", enforcement: "none", source: "landlock_unavailable", detectedAt: 10 } });
-		expect(tool.description).toContain("Landlock unavailable");
-		expect(tool.description).toContain("without filesystem confinement");
+		expect(tool.description).toBe(terminalInteractionDefinition.description);
+		expect(tool.parameters).toBe(terminalInteractionDefinition.parameters);
 	});
 
 	it("keeps the canonical empty observation for the Agent and localizes only the browser projection", async () => {

@@ -1,3 +1,4 @@
+import type { RuntimeContextSnapshot } from "../../domain/runtime-context.ts";
 import { ManagementError } from "../../domain/errors.ts";
 import type { RemoteSandboxMode } from "../../domain/remote-sandbox.ts";
 import type { Session } from "../../domain/session.ts";
@@ -30,6 +31,15 @@ export class SessionSandboxPolicy {
 
 	constructor(sessions: Pick<SessionRepository, "findById">) {
 		this.#sessions = sessions;
+	}
+
+	async snapshot(sessionId: string): Promise<RuntimeContextSnapshot> {
+		const session = await this.#sessions.findById(sessionId);
+		if (!session) throw new ManagementError("not_found", `Session not found: ${sessionId}`);
+		const mode = sessionSandboxMode(session), readOnly = session.sandboxReadOnly === true;
+		return { channel: "sandbox", scope: sessionId, active: true,
+			data: { mode, readOnly, writableRoots: [...sessionSandboxRoots(session)].sort() },
+			instructions: sessionSandboxInstructions(mode, undefined, readOnly) + " Writable roots are specified in this snapshot's quoted data; that list replaces earlier root lists." };
 	}
 
 	async mode(sessionId: string): Promise<RemoteSandboxMode> {

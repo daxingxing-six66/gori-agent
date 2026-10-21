@@ -21,7 +21,7 @@
 | `application/services/diagnose-service.ts` | 原子创建/修改/结束、提交后的事实事件；不调度模型 |
 | `application/services/diagnose-chat-coordinator.ts` | 用户入口、结论队列、直接退出与原 Chat 用例衔接；不复制 Agent Loop |
 | `application/services/session-task-mode-policy.ts` | Session 业务模式互斥；在创建事务内复检 |
-| `application/diagnose-runtime.ts` | 冻结 Run 绑定、动态工具和三项简报 |
+| `application/diagnose-runtime.ts` | 冻结 Run 绑定、工具执行入口和三项状态快照 |
 | `application/tools/diagnose-agent-tool.ts` | 工具 Schema、用例转换、已知 4xx 的非终止错误 |
 | `infrastructure/sqlite/sqlite-diagnose-repository.ts` | SQL、读取解析、条件写入和稳定历史消息读取 |
 | `infrastructure/sqlite/sqlite-session-task-mode-facts.ts` | 兼容新旧部署表的活动模式查询，SQL 不进入运行时装配工厂 |
@@ -29,7 +29,7 @@
 
 以上后端路径相对 `packages/ssh-agent/src/`。ChatService 只增加 idle Session 短期预约、任务绑定和 Context 组合；Runtime Factory 在原请求/压缩/恢复回调内组合适配器。结论正文和状态规则不放进这些通用装配类。
 
-三个工具仅在本轮绑定的活动任务中提供，都是 sequential；元数据工具加入明确 allow 分支，不改变普通工具、Session 只读、Guard 或人工审批。
+三个工具的定义全程保留在固定目录中；仅本轮绑定的活动任务可执行，结束后由不可用入口在审批前及执行入口拒绝。都是 sequential；元数据工具加入明确 allow 分支，不改变普通工具、Session 只读、Guard 或人工审批。
 
 - `diagnose_update({title?,node?})`：node.action 为 append/update_current，不接受任务或历史节点 ID；返回当前节点和修订号。
 - `diagnose_inspect({beforeSequence?,limit?})`：默认最近 20 条、最多 50 条，按 sequence 升序，返回向前游标。只读保存记录，不接受自然语言问题或运行命令。64 KiB 预算优先减少整条记录数；单条解释因 JSON 控制字符转义超过预算时使用完整原文文本块，不截断内容。
@@ -37,11 +37,11 @@
 
 标题最多 200 Unicode 字符，方向 500 字符，说明 16 KiB UTF-8，报告 256 KiB UTF-8。收口说明是服务端事实附注，不裁剪原说明。已知参数和状态错误保留 code/message/field、terminate=false；未知 SQLite/内部错误沿用统一故障分类。
 
-简报用 direction/status/explanation 三个 JSON 数据字段，说明预览最多 300 字符。当前实现通过临时 `<diagnose-runtime>` 请求头部片段投影，不向消息数组插入简报，因此工具调用和结果保持原连续组；基础快照不改写，重复投影替换自身片段，不累加。活动请求、离线占用与手动压缩共用适配器；自动压缩前后及超限恢复继续走既有回调。简报不包含完整历史、报告或催促推进要求。
+简报使用 direction/status/explanation 三个 JSON 数据字段，说明预览最多 300 Unicode 字符。DiagnoseRuntime 只提供当前事实，统一上下文服务在内容或任务身份变化时追加 diagnose 通道 system 事件，保存到聊天；固定头部和旧事件不变，完整工具调用/结果组不被拆散。重复同步不写入，A → B → A 保存三个版本；完整历史继续通过 diagnose_inspect 读取。详见 [运行时上下文](./runtime-context.md)。
 
 内置指导 Skill 位于 `packages/ssh-agent/resources/skills/gori-diagnosis/SKILL.md`，当前采用用户提供的 v2 节点输出契约：开场建立问题方向节点，每条关键证据一个节点，同一证据的新进展更新当前节点；说明按“证据／范围／边界”三行组织并控制在 300 字内，方向不超过 40 字，开场说明不超过 150 字；完整结论由 `diagnose_finish` 汇总，并区分已证实、高概率与无法证实。上述要求通过提示词指导模型，不新增后端格式、字数或调用次数门禁，服务端原有节点终态与追加约束仍然生效。
 
-DiagnoseRuntime 初始化时读取该固定资源一次，仅在当前绑定任务仍 active 时，把完整 Skill 放入临时片段中的独立 `<diagnose-skill>` 块，与三项简报分开；跨 Chat Run、占用估算和压缩使用同一投影。重复投影替换整个自身片段，结束后移除 Skill 和简报。包内 resources 随既有打包配置保留，源码与 dist 使用相同相对资源路径；修改 Skill 后需重新加载后端实例。
+DiagnoseRuntime 初始化时读取固定 Skill 资源一次，通过 diagnose-instructions 通道按任务身份及内容追加完整原文，和频繁变化的三项简报分开；节点修订不重复全文，结束追加 active=false 撤销旧指引。压缩单独保留最新状态与有效指引，重启从保存的正文恢复。包内 resources 随既有打包配置保留，源码与 dist 使用相同相对资源路径；修改 Skill 后需重新加载后端实例。
 
 ## SQLite 与幂等
 
@@ -90,7 +90,7 @@ ChatConsole 只装配菜单、Hook 和稳定 `diagnose` Tab。Tab × 隐藏页�
 
 定向回归：后端 diagnose-service.test.ts、diagnose-api.test.ts 覆盖节点门禁、SQL 历史不可改、UTF-8 限额、回执、回滚、跨轮、正常审批保留、报告独立读取、结论排队去重和直接退出；前端 diagnose-task.test.tsx、use-diagnose-races.test.ts 覆盖状态/Markdown、报告入口、实体修订乱序、Session 迟到响应、历史选择、隐藏恢复和结论请求竞争。
 
-上述后端回归同时验证内置 Skill 原文注入、重复投影不累积、普通 Session 无注入，以及跨轮实际 Provider 请求在 active 时携带、结束后移除；持久化基础头部不含 Skill。faux 请求验证接入范围，不证明真实模型的记录质量已经改善。
+上述后端回归同时验证内置 Skill 原文注入、重复同步不累积、普通 Session 无活动指引；结束后旧事件保留作历史并追加 inactive，固定头部不含 Skill。faux 请求验证接入范围，不证明真实模型的记录质量已经改善。
 
 diagnose-completion-history.test.tsx 覆盖三类任务状态回显、双语记录卡、结束工具位置、SSE/持久化结果、迟到卡片、无效/错误/未结束结果、幂等重复结束、混合正文/普通工具和失败报告保留；同时验证 Deploy/Diagnose 业务 ID 相同时仍各显示一条正确记录。原 deployment-completion-history 回归继续覆盖部署和旧记录行为。
 

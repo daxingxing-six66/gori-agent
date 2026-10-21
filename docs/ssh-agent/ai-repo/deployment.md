@@ -50,11 +50,11 @@ Discussion 状态为 discussing/proposed/cancelled；Run 状态为 preparing/run
 
 ## 模型 harness 与权限
 
-`ChatAgentRuntimeFactory` 只在绑定部署模式时装配真实专用定义，结束后从下一请求移除；入口复读绑定和所有权。Schema、阶段/执行预检在普通审批之前运行；副作用前再次检查当前计划、Session、目标和权限。已知 4xx 请求错误作为非终止工具错误交回模型修正，内部错误不统一改成参数错误。
+固定目录始终包含部署专用定义，`ChatAgentRuntimeFactory` 仅在匹配绑定时连接实际实现；结束后保留定义，由不可用入口在审批前和执行时拒绝。Schema、阶段/执行预检在普通审批之前运行；副作用前再次检查当前计划、Session、目标和权限。已知 4xx 请求错误作为非终止工具错误交回模型修正，内部错误不统一改成参数错误。
 
 参数/规则错误返回精确 `code/message/field`，必要时含路径、允许目录及文件系统错误类别 `details`。初次提案与修订共用逐字段校验，指出数组索引、未知/缺失字段、路径格式/范围及数量限制；Profile 文件缺失/权限、构建 cwd、产物普通文件检查、Guard 对应阶段、执行顺序、完成条件和日志查询均保留具体原因。Tool 授权与执行捕获、HTTP 规范化不抹掉字段和详情。已知路径 errno 生成可修正错误，未知 I/O/SQLite 故障继续按内部故障处理；阶段结果保存精确错误文字及原日志。回归 `deployment-validation.test.ts`、Service 与 routes 测试。
 
-每个工具结束和模型请求前刷新可信部署状态，包含选择来源、Profile/模块身份及当前阶段。本轮指引与请求头部动态状态属于 system prompt；完整工具结果组之后的最新状态另以真实 `role:system` 消息投影，不再拼进 ToolResult。并行结果不被系统消息隔开，原用户输入仍为 user，工具输出/日志仍是 toolResult，不提升为系统指令。临时状态不写入聊天或日志，也不无界累加；结束后移除专用工具并在请求头部明确模式关闭。普通 bash/write、SFTP、Terminal submit/控制键和其他工具按原交互模式、Guard、沙箱与审批规则使用，其结果不会推进部署阶段。
+请求前通过 `deploymentRuntimeSnapshot()` 读取完整阶段事实，以 deployment 通道追加已变化的状态；讨论/执行/修复指引在 workflow 通道按 scope/内容追加，不再放动态头部或临时末尾投影。状态位于完整结果组之后，保存原文且下次请求仍保留；退出追加 inactive。review 明确限制执行，覆盖旧执行指引的当前含义；失败并不自动退出。Profile 等引用数据经 JSON 引用和转义，不提升为指令。普通工具继续按原模式、Guard、沙盒与审批规则使用，其结果不会推进阶段。见 [runtime-context.md](./runtime-context.md)。
 
 RESTART/VERIFY 各自冻结 `access`。Session 开启且沙箱完整可用、声明写入在根内时使用 workspace_write；不可用或写入超界的准确命令需要单独人工 Full Access 例外，autoAudit 不批准例外。批准启动时有效期五分钟；实际远端调用绑定执行身份与目标，一次消费。阶段重做或修订后受影响权限重新申请，不能复用已消费 grant。Session 主动关闭沙箱时来源是 session_sandbox_disabled，保留 Guard 与普通审批，不创建例外 grant。受限执行失败不自动提权重放。
 

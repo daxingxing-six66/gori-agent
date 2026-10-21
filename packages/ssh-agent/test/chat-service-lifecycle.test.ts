@@ -97,6 +97,7 @@ describe("ChatService Run lifecycle", () => {
 			finishPlanningAgent: vi.fn(async () => undefined),
 		};
 		let systemPrompt = "";
+		let workflowInstructions = "";
 		chat = createChatService({
 			prompts: new ChatPromptService(new SqliteChatPromptRepository(backend.database), new SqliteWorkspaceRepository(backend.database)),
 			chatRepository: new SqliteChatRepository(backend.database),
@@ -110,9 +111,10 @@ describe("ChatService Run lifecycle", () => {
 			createSftpTool: () => namedTool("sftp_upload"), createSftpDownloadTool: () => namedTool("sftp_download"),
 			preflightRemoteGuard: async () => ({ allowed: true }),
 			runtimeFactory: {
-				create: async ({ run, model, workDir, history, systemPrompt: prompt, deploymentRunId }) => {
+				create: async ({ run, model, workDir, history, systemPrompt: prompt, runtimeInstructions, deploymentRunId }) => {
 					callOrder.push("runtime");
 					systemPrompt = prompt;
+					workflowInstructions = runtimeInstructions?.instructions ?? "";
 					expect(deploymentRunId).toBe("deploy-1");
 					const env = new NodeExecutionEnv({ cwd: workDir });
 					const agent = new Agent({
@@ -150,9 +152,10 @@ describe("ChatService Run lifecycle", () => {
 			expect(await chat.hasActiveRun(sessionId)).toBe(false);
 			expect(repository.findRun(run.id, sessionId)?.status).toBe("completed");
 			expect(callOrder).toEqual(["runtime", "claim", "finish", "dispose", "finish", "finish"]);
-			expect(systemPrompt).toContain("deployment_execute_next");
-			expect(systemPrompt).toContain("concise user-facing summary in your final assistant message");
-			expect(systemPrompt).toContain("make build");
+			expect(workflowInstructions).toContain("deployment_execute_next");
+			expect(workflowInstructions).toContain("concise user-facing summary in your final assistant message");
+			expect(systemPrompt).not.toContain("make build");
+			expect(workflowInstructions).not.toContain("make build");
 			expect(deployments.claimForAgent).toHaveBeenCalledWith(sessionId, "deploy-1", "agent-1");
 			expect(deployments.finishAgent).toHaveBeenCalledWith(sessionId, "deploy-1", "agent-1", "completed");
 
@@ -216,6 +219,7 @@ describe("ChatService Run lifecycle", () => {
 			finishPlanningAgent: vi.fn(async () => { throw new Error("Completed planning must keep its proposal"); }),
 		};
 		const systemPrompts: string[] = [];
+		const workflows: Array<string | undefined> = [];
 		const planningSelections: Array<{ discussionId: string; revision: number } | undefined> = [];
 		let nextId = 0;
 		let invalidateDuringRuntimeSetup = false;
@@ -233,8 +237,9 @@ describe("ChatService Run lifecycle", () => {
 			createSftpTool: () => namedTool("sftp_upload"), createSftpDownloadTool: () => namedTool("sftp_download"),
 			preflightRemoteGuard: async () => ({ allowed: true }),
 			runtimeFactory: {
-				create: async ({ run, model, workDir, history, systemPrompt: prompt, deploymentPlanning, deploymentRunId }) => {
+				create: async ({ run, model, workDir, history, systemPrompt: prompt, runtimeInstructions, deploymentPlanning, deploymentRunId }) => {
 					systemPrompts.push(prompt);
+					workflows.push(runtimeInstructions?.instructions);
 					planningSelections.push(deploymentPlanning);
 					expect(deploymentRunId).toBeUndefined();
 					const env = new NodeExecutionEnv({ cwd: workDir });
@@ -280,7 +285,8 @@ describe("ChatService Run lifecycle", () => {
 				{ discussionId: "discussion-1", revision: 3 },
 			]);
 			expect(systemPrompts).toHaveLength(2);
-			expect(systemPrompts.every((prompt) => prompt.includes("<deployment-mode-on>"))).toBe(true);
+			expect(new Set(systemPrompts).size).toBe(1);
+			expect(workflows.every((prompt) => prompt?.includes("<deployment-mode-on>"))).toBe(true);
 			expect(currentDiscussion?.status).toBe("discussing");
 			currentDiscussion = null;
 			const ordinary = await chat.createRun({
@@ -291,7 +297,8 @@ describe("ChatService Run lifecycle", () => {
 			expect(new SqliteChatRepository(backend.database).findRun(ordinary.id, sessionId)?.status).toBe("completed");
 			expect(bindPlanningRun).toHaveBeenCalledTimes(2);
 			expect(planningSelections[2]).toBeUndefined();
-			expect(systemPrompts[2]).toContain("<deployment-mode-off>");
+			expect(systemPrompts[2]).toBe(systemPrompts[0]);
+			expect(workflows[2]).toBeUndefined();
 			currentDiscussion = discussion(sessionId, 3);
 			invalidateDuringRuntimeSetup = true;
 			await expect(chat.createRun({

@@ -10,6 +10,7 @@ import {
 	type SimpleStreamOptions,
 } from "@earendil-works/pi-ai";
 import { Type } from "typebox";
+import { chatToolDefinitions } from "../src/application/chat-context.ts";
 import { describe, expect, it, vi } from "vitest";
 import { ChatAgentRuntimeFactory, type ChatAgentRuntimeFactoryOptions } from "../src/application/services/chat-agent-runtime-factory.ts";
 import { ChatToolAuthorizationPolicy } from "../src/application/services/chat-tool-authorization-policy.ts";
@@ -147,16 +148,22 @@ describe("ChatAgentRuntimeFactory", () => {
 		const context = createContext({ sandboxPolicy });
 		const input = { run: commandRun, model: context.model, workDir: process.cwd(), history: [], systemPrompt: "immutable snapshot" };
 		const direct = await context.factory.create(input);
-		try { expect(context.getAgentOptions()?.initialState?.systemPrompt).toContain("disabled remote sandboxing for this Session"); }
-		finally { await direct.dispose(); }
+		try {
+			const options = context.getAgentOptions()!;
+			expect(options.initialState?.systemPrompt).toBe("immutable snapshot");
+			const prepared = await options.beforeProviderRequest!({ context: { systemPrompt: "immutable snapshot", messages: [], tools: [] }, model: context.model, requestAttempt: 0 });
+			expect(JSON.stringify(prepared?.context?.messages)).toContain("disabled remote sandboxing for this Session");
+		} finally { await direct.dispose(); }
 		mode = "workspace_write";
 		const confined = await context.factory.create(input);
 		try {
-			expect(context.getAgentOptions()?.initialState?.systemPrompt).toContain("Remote sandboxing is enabled");
-			expect(input.systemPrompt).toBe("immutable snapshot");
+			const prepared = await context.getAgentOptions()!.beforeProviderRequest!({ context: { systemPrompt: "immutable snapshot", messages: [], tools: [] }, model: context.model, requestAttempt: 0 });
+			expect(prepared?.context?.systemPrompt).toBe("immutable snapshot");
+			expect(JSON.stringify(prepared?.context?.messages)).toContain("Remote sandboxing is enabled");
 			expect(sandboxPolicy.mode).toHaveBeenCalledTimes(2);
 		} finally { await confined.dispose(); }
 	});
+
 	it("carries the selected Full Access plan from human approval through Agent into the remote tool", async () => {
 		const target = testSshTarget({ sandboxWritableRoots: ["/srv/app"] });
 		const sandboxApprovals = new RemoteSandboxApprovalStore();
@@ -600,7 +607,7 @@ describe("ChatAgentRuntimeFactory", () => {
 
 		await streamFn(context.model, providerContext, requestOptions);
 
-		expect(streamSimple).toHaveBeenCalledWith(context.model, providerContext, { ...requestOptions, maxRetries: 3 });
+		expect(streamSimple).toHaveBeenCalledWith(context.model, providerContext, { ...requestOptions, maxRetries: 3, sessionId: "session-1" });
 		expect(requestOptions.maxRetries).toBe(10);
 		await runtime.dispose();
 	});
@@ -617,18 +624,7 @@ describe("ChatAgentRuntimeFactory", () => {
 		const options = context.getAgentOptions();
 		expect(options?.initialState?.systemPrompt).toBe("immutable snapshot");
 
-		expect(options?.initialState?.tools?.map((tool) => tool.name)).toEqual([
-			"read",
-			"write",
-			"bash",
-			"remote_server_call",
-			"terminal_interaction",
-			"sftp_upload",
-			"sftp_download",
-			"bubblewrap_inspect",
-			"bubblewrap_install",
-			"ask_user_decision",
-		]);
+		expect(options?.initialState?.tools?.map((tool) => tool.name)).toEqual(chatToolDefinitions().map(tool => tool.name));
 		expect(options).toMatchObject({
 			steeringMode: "one-at-a-time",
 			followUpMode: "one-at-a-time",
@@ -640,9 +636,9 @@ describe("ChatAgentRuntimeFactory", () => {
 			if (parallel) expect(tool.requiresSequentialExecution).toBeTypeOf("function");
 		}
 		const deployTool = options?.initialState?.tools?.find((tool) => tool.name === "deployment_execute_next");
-		expect(deployTool).toBeUndefined();
+		await expect(deployTool!.execute("inactive", { stage: "build" })).rejects.toThrow(/unavailable/);
 		const planningTool = options?.initialState?.tools?.find((tool) => tool.name === "deployment_propose_plan");
-		expect(planningTool).toBeUndefined();
+		await expect(planningTool!.execute("inactive", {})).rejects.toThrow(/unavailable/);
 		expect(context.createRemoteTool).toHaveBeenCalledWith("session-1", expect.any(Function), "run-1");
 		expect(context.createTerminalTool).not.toHaveBeenCalled();
 
@@ -666,7 +662,7 @@ describe("ChatAgentRuntimeFactory", () => {
 			await proposalTool?.execute("call-1", proposal, signal);
 			expect(proposeForDiscussion).toHaveBeenCalledWith("session-1", "discussion-1", 2, "run-1", proposal, signal);
 			const executeTool = context.getAgentOptions()?.initialState?.tools?.find((tool) => tool.name === "deployment_execute_next");
-			expect(executeTool).toBeUndefined();
+			await expect(executeTool!.execute("inactive", { stage: "build" })).rejects.toThrow(/unavailable/);
 		} finally {
 			await runtime.dispose();
 		}
@@ -681,7 +677,7 @@ describe("ChatAgentRuntimeFactory", () => {
 		expect(context.getAgentOptions()).toBeUndefined();
 	});
 
-	it("refreshes deployment facts after diagnostics, rejects invalid JSON before approval and removes tools after explicit finish", async () => {
+	it("refreshes deployment facts after diagnostics, rejects invalid JSON before approval and disables registered tools after explicit finish", async () => {
 		const { deployments, proposed } = deploymentFixture();
 		proposed.discussionId = proposed.id;
 		proposed.status = "running";
@@ -705,38 +701,52 @@ describe("ChatAgentRuntimeFactory", () => {
 		const runtime = await context.factory.create({ run: commandRun, model: context.model, workDir: process.cwd(),
 			systemPrompt: "snapshot", deploymentRunId: proposed.id,
 			history: [{ role: "custom", customType: "deployment", display: true, content: "UI_ONLY", timestamp: 1 }] });
+		let previousRequest: Context | undefined;
+		const assertRequestPrefix = (request: Context) => {
+			if (previousRequest) {
+				expect(request.systemPrompt).toBe(previousRequest.systemPrompt);
+				const definitions = (tools: Context["tools"]) => tools?.map(({ name, description, parameters }) => ({ name, description, parameters }));
+				expect(definitions(request.tools)).toEqual(definitions(previousRequest.tools));
+				expect(request.messages.slice(0, previousRequest.messages.length)).toEqual(previousRequest.messages);
+			}
+			previousRequest = JSON.parse(JSON.stringify(request)) as Context;
+		};
 		context.faux.setResponses([
 			(providerContext) => {
+				assertRequestPrefix(providerContext);
 				expect(providerContext.tools?.some((tool) => tool.name === "deployment_finish")).toBe(true);
 				expect(JSON.stringify(providerContext.messages)).not.toContain("UI_ONLY");
-				expect(providerContext.messages.at(-1)).toMatchObject({ role: "user", content: "Inspect and end" });
-				expect(providerContext.systemPrompt).toContain('"source":"user"');
-				expect(providerContext.systemPrompt).toContain('"module":{"id":"api","name":"API"}');
+				expect(providerContext.messages.find(message => message.role === "user")).toMatchObject({ role: "user", content: "Inspect and end" });
+				expect(JSON.stringify(providerContext.messages)).toContain('source');
+				expect(providerContext.systemPrompt).toBe('snapshot');
 				return fauxAssistantMessage(fauxToolCall("deployment_execute_next", { stage: "restart", command: "unexpected" }, { id: "invalid" }), { stopReason: "toolUse" });
 			},
 			(providerContext) => {
-				expect(providerContext.messages.at(-1)).toMatchObject({ role: "system" });
-				expect(providerContext.messages.at(-2)).toMatchObject({ role: "toolResult", toolCallId: "invalid", isError: true });
+				assertRequestPrefix(providerContext);
+				expect(providerContext.messages.at(-1)).toMatchObject({ role: "toolResult", toolCallId: "invalid", isError: true });
 				expect(beforeToolCall).not.toHaveBeenCalled();
 				expect(deployments.executeStageForAgent).not.toHaveBeenCalled();
 				return fauxAssistantMessage(fauxToolCall("remote_server_call", { command: "uname" }, { id: "diagnostic" }), { stopReason: "toolUse" });
 			},
 			(providerContext) => {
+				assertRequestPrefix(providerContext);
 				expect(JSON.stringify(providerContext.messages.at(-1))).toContain("upload");
-				expect(JSON.stringify(providerContext.messages.at(-1))).toContain("deployment-state");
+				expect(JSON.stringify(providerContext.messages.at(-1))).toContain("runtime-context");
 				expect(providerContext.messages.at(-1)).toMatchObject({ role: "system" });
 				expect(providerContext.messages.at(-2)).toMatchObject({ role: "toolResult", toolCallId: "diagnostic",
 					content: [{ type: "text", text: "Linux" }] });
-				expect(JSON.stringify(providerContext.messages.at(-1))).toContain('"source\\":\\"user');
-				expect(providerContext.systemPrompt?.match(/<deployment-state>/gu)).toHaveLength(1);
+				expect(JSON.stringify(providerContext.messages.at(-1))).toContain('source');
+				expect(providerContext.systemPrompt).toBe("snapshot");
 				return fauxAssistantMessage(fauxToolCall("deployment_finish", { outcome: "failed", reason: "User requested failure" }, { id: "finish" }), { stopReason: "toolUse" });
 			},
 			(providerContext) => {
-				expect(providerContext.tools?.some((tool) => tool.name.startsWith("deployment_"))).toBe(false);
-				expect(providerContext.systemPrompt).toContain('"deploymentMode":false');
+				assertRequestPrefix(providerContext);
+				expect(providerContext.tools?.some((tool) => tool.name.startsWith("deployment_"))).toBe(true);
+				expect(JSON.stringify(providerContext.messages)).toContain('"active":false');
 				return fauxAssistantMessage(fauxToolCall("deployment_execute_next", { stage: "build" }, { id: "late" }), { stopReason: "toolUse" });
 			},
 			(providerContext) => {
+				assertRequestPrefix(providerContext);
 				expect(providerContext.messages.at(-1)).toMatchObject({ role: "toolResult", toolCallId: "late", isError: true });
 				return fauxAssistantMessage("Deployment ended.");
 			},
@@ -746,7 +756,7 @@ describe("ChatAgentRuntimeFactory", () => {
 			expect(context.faux.state.callCount).toBe(5);
 			expect(deployments.executeStageForAgent).not.toHaveBeenCalled();
 			expect(deployments.finishDeployment).toHaveBeenCalledWith("session-1", proposed.id, "failed", "User requested failure", "run-1");
-			expect(JSON.stringify(context.getAgent()?.state.messages)).not.toContain("deployment-state");
+			expect(JSON.stringify(context.getAgent()?.state.messages)).not.toContain("runtime-context");
 			expect(runtime.publicFailure).toBeUndefined();
 		} finally { await runtime.dispose(); }
 	});
@@ -768,18 +778,7 @@ describe("ChatAgentRuntimeFactory", () => {
 		const options = context.getAgentOptions();
 		expect(options?.initialState?.systemPrompt).toBe("immutable snapshot");
 
-		expect(options?.initialState?.tools?.map((tool) => tool.name)).toEqual([
-			"read",
-			"write",
-			"bash",
-			"remote_server_call",
-			"terminal_interaction",
-			"sftp_upload",
-			"sftp_download",
-			"bubblewrap_inspect",
-			"bubblewrap_install",
-			"ask_user_decision",
-		]);
+		expect(options?.initialState?.tools?.map((tool) => tool.name)).toEqual(chatToolDefinitions().map(tool => tool.name));
 		expect(context.createRemoteTool).not.toHaveBeenCalled();
 		expect(context.createTerminalTool).toHaveBeenCalledWith({
 			sessionId: "session-1",

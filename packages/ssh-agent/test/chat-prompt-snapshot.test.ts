@@ -77,7 +77,7 @@ function transition(fixture: Awaited<ReturnType<typeof setup>>, status: string, 
 }
 function modeMessages(fixture: Awaited<ReturnType<typeof setup>>) {
 	return new SqliteChatRepository(fixture.backend.database).listMessages(fixture.sessionId)
-		.map((entry) => entry.message).filter((message) => message.role === "system");
+		.map((entry) => entry.message).filter((message) => message.role === "system").filter(message => "runtimeMode" in message);
 }
 
 describe("session prompt snapshots and terminal mode history", () => {
@@ -96,7 +96,7 @@ describe("session prompt snapshots and terminal mode history", () => {
 			for (const excluded of ["excluded-workspace-name", "/excluded-remote-cwd", "excluded-secret"]) {
 				expect(snapshot.systemPrompt).not.toContain(excluded);
 			}
-			expect(fixture.captured[0]!.messages.map((message) => message.role)).toEqual(["system", "user"]);
+			expect(fixture.captured[0]!.messages.slice(0, 2).map((message) => message.role)).toEqual(["system", "user"]);
 			expect(fixture.captured[0]!.messages[0]).toMatchObject({ content: [{ type: "text", text: "<terminal-model-off>" }] });
 			expect(repository.createOnce({ ...snapshot, systemPrompt: "replacement" })).toEqual(snapshot);
 			expect(() => fixture.backend.database.prepare("UPDATE chat_prompt_snapshots SET system_prompt = ? WHERE session_id = ?")
@@ -106,7 +106,7 @@ describe("session prompt snapshots and terminal mode history", () => {
 			expect(new SqliteChatPromptRepository(fixture.backend.database).find(fixture.sessionId)).toEqual(snapshot);
 			expect(fixture.captured[1]!.systemPrompt).toBe(fixture.captured[0]!.systemPrompt);
 			expect(fixture.captured[1]!.tools).toEqual(fixture.captured[0]!.tools);
-			expect(fixture.captured[1]!.messages.slice(0, 2)).toEqual(fixture.captured[0]!.messages);
+			expect(fixture.captured[1]!.messages.slice(0, fixture.captured[0]!.messages.length)).toEqual(fixture.captured[0]!.messages);
 			expect(modeMessages(fixture)).toHaveLength(1);
 			const prompts = new ChatPromptService(new SqliteChatPromptRepository(fixture.backend.database), {
 				findById: async () => { throw new Error("Must not read changed environment"); },
@@ -147,9 +147,10 @@ describe("session prompt snapshots and terminal mode history", () => {
 			);
 			expect(new SqliteChatPromptRepository(fixture.backend.database).find(fixture.sessionId)?.systemPrompt).toBe(snapshot);
 			await run(fixture, "after-terminal");
-			expect(fixture.captured[0]!.messages.filter((message) => message.role === "system")).toHaveLength(4);
+			expect(fixture.captured[0]!.messages.filter((message) => message.role === "system" && "runtimeMode" in message)).toHaveLength(4);
 			expect(fixture.captured[0]!.systemPrompt).toContain(snapshot);
-			expect(fixture.captured[0]!.systemPrompt).toContain("<deployment-mode-off>");
+			expect(fixture.captured[0]!.systemPrompt).toBe(snapshot);
+			expect(JSON.stringify(fixture.captured[0]!.messages)).toContain('"channel":"deployment"');
 		} finally { await fixture.dispose(); }
 	});
 

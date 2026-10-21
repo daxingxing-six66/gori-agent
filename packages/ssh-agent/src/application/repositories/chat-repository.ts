@@ -79,6 +79,7 @@ export interface ChatRepository {
 	listPendingDecisions(sessionId: string): UserDecision[];
 	resolveDecision(decisionId: string, answers: UserDecisionAnswer[], resolvedAt: number): UserDecision | undefined;
 	cancelPendingDecision(decisionId: string, status: "cancelled" | "interrupted", resolvedAt: number): UserDecision | undefined;
+	latestRuntimeModeMessage?(sessionId: string): ChatMessageProjection | undefined;
 	latestSystemMessage(sessionId: string): ChatMessageProjection | undefined;
 	latestCompaction(sessionId: string): StoredChatCompaction | undefined;
 }

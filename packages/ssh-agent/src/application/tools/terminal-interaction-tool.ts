@@ -101,7 +101,6 @@ export function createTerminalInteractionTool(options: {
 }): AgentTool<typeof terminalInteractionParameters, TerminalInteractionDetails> {
 	return {
 		...terminalInteractionDefinition,
-		description: `${terminalInteractionDefinition.description} Current session: ${sandboxSummary(options.sandbox)}`,
 		executionMode: "sequential",
 		execute: async (toolCallId, params, signal) => {
 			try {

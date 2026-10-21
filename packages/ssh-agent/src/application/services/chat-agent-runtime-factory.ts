@@ -48,8 +48,12 @@ import type { ChatUserDecisionService } from "./chat-user-decision-service.ts";
 import type { BubblewrapInstallationService } from "./bubblewrap-installation-service.ts";
 import { bubblewrapInspectDefinition, bubblewrapInstallDefinition, createBubblewrapInspectionTool,
 	createBubblewrapInstallTool } from "../tools/bubblewrap-installation-tool.ts";
-import { sessionSandboxInstructions, type SessionSandboxPolicy } from "./session-sandbox-policy.ts";
-import { deploymentProviderMessages, deploymentStateInstructions } from "../deployment-runtime-context.ts";
+import { type SessionSandboxPolicy } from "./session-sandbox-policy.ts";
+import { bindChatTools } from "../chat-context.ts";
+import { modelVisibleMessages } from "../chat-ui-history-message.ts";
+import { projectRuntimeSnapshots } from "../../domain/runtime-context.ts";
+import { ChatRuntimeFacts, type TerminalRuntimeFacts } from "./chat-runtime-facts.ts";
+import type { ChatRuntimeContextService } from "./chat-runtime-context-service.ts";
 import { DeploymentError } from "../../domain/deployment.ts";
 import type { DiagnoseRuntime } from "../diagnose-runtime.ts";
 
@@ -58,6 +62,9 @@ type QueueService = Pick<ChatQueueService, "cancelSteeringAfterTurn">;
 type AgentEventHandler = Pick<ChatAgentEventHandler, "handle">;
 
 export interface ChatAgentRuntimeFactoryOptions {
+	runtimeContexts?: ChatRuntimeContextService;
+	runtimeFacts?: ChatRuntimeFacts;
+	terminalFacts?: (sessionId: string) => TerminalRuntimeFacts | null;
 	models: Models;
 	toolCalls: ToolCallCoordinator;
 	queues: QueueService;
@@ -68,7 +75,7 @@ export interface ChatAgentRuntimeFactoryOptions {
 	deployments?: AgentDeploymentService;
 	diagnoses?: DiagnoseRuntime;
 	bubblewrapInstallations?: BubblewrapInstallationService;
-	sandboxPolicy?: Pick<SessionSandboxPolicy, "mode"> & Partial<Pick<SessionSandboxPolicy, "instructions" | "readOnly">>;
+	sandboxPolicy?: Pick<SessionSandboxPolicy, "mode"> & Partial<Pick<SessionSandboxPolicy, "instructions" | "readOnly" | "snapshot">>;
 	createRemoteTool(sessionId: string, abortRun?: () => void, agentRunId?: string): AgentTool;
 	createTerminalTool(input: { sessionId: string; terminalSessionId: string; agentRunId: string }): AgentTool;
 	createSftpTool(input: {
@@ -86,6 +93,8 @@ export interface ChatAgentRuntimeFactoryOptions {
 }
 
 export class ChatAgentRuntimeFactory {
+	readonly #runtimeContexts?: ChatRuntimeContextService;
+	readonly #runtimeFacts: ChatRuntimeFacts;
 	readonly #models: Models;
 	readonly #toolCalls: ToolCallCoordinator;
 	readonly #queues: QueueService;
@@ -105,6 +114,8 @@ export class ChatAgentRuntimeFactory {
 	readonly #createAgent: (options: AgentOptions) => Agent;
 
 	constructor(options: ChatAgentRuntimeFactoryOptions) {
+		this.#runtimeContexts = options.runtimeContexts;
+		this.#runtimeFacts = options.runtimeFacts ?? new ChatRuntimeFacts(options);
 		this.#models = options.models;
 		this.#toolCalls = options.toolCalls;
 		this.#queues = options.queues;
@@ -126,6 +137,7 @@ export class ChatAgentRuntimeFactory {
 
 	async create(input: {
 		systemPrompt: string;
+		runtimeInstructions?: { scope: string; instructions: string; data?: Record<string, unknown> };
 		run: ChatRun;
 		model: Model<Api>;
 		workDir: string;
@@ -154,11 +166,7 @@ export class ChatAgentRuntimeFactory {
 				(tool.name === "sftp_upload" || tool.name === "bubblewrap_install" ||
 					(tool.name.startsWith("deployment_") && tool.name !== "deployment_inspect" && tool.name !== "deployment_finish"))
 				? unavailableTool(tool, "read-only sandbox mode") : tool;
-			const systemPrompt = this.#sandboxPolicy
-				? `${input.systemPrompt}\n\n${this.#sandboxPolicy.instructions
-					? await this.#sandboxPolicy.instructions(input.run.sessionId)
-					: sessionSandboxInstructions(await this.#sandboxPolicy.mode(input.run.sessionId), undefined, readOnly)}`
-				: input.systemPrompt;
+			const systemPrompt = input.systemPrompt;
 			const requireRuntime = (): ChatRunRuntime => {
 				if (!runtime) throw new Error("Chat Runtime is unavailable during Agent callback");
 				return runtime;
@@ -281,22 +289,24 @@ export class ChatAgentRuntimeFactory {
 				: unavailableTool(bubblewrapInstallDefinition);
 			const ordinaryTools = [...localTools, remoteTool, terminalTool, sftpUploadTool, sftpDownloadTool,
 				bubblewrapInspectTool, bubblewrapInstallTool, createAskUserDecisionTool({ run: input.run, decisions: this.#decisions })].map(enforceReadOnly);
-			const synchronizeTaskContext = (context: AgentContext): AgentContext => {
-				const synchronized = { ...context,
-					systemPrompt: `${systemPrompt}\n\n${deploymentStateInstructions(currentMode())}`,
-					tools: configureFileToolConcurrency([...ordinaryTools, ...deploymentTools(),
-						...(this.#diagnoses?.tools(input.run.sessionId, input.diagnoseTaskId, input.run.id) ?? [])], env),
-				};
-				return this.#diagnoses?.project(synchronized, input.run.sessionId, input.diagnoseTaskId) ?? synchronized;
+			const configureTaskTools = () => configureFileToolConcurrency(bindChatTools([...ordinaryTools, ...deploymentTools(),
+				...(this.#diagnoses?.tools(input.run.sessionId, input.diagnoseTaskId, input.run.id) ?? [])]), env);
+			const binding = { run: input.run, diagnoseTaskId: input.diagnoseTaskId, deploymentId, workflow: input.runtimeInstructions };
+			const synchronizeTaskContext = async (context: AgentContext): Promise<AgentContext> => {
+				const synchronized = { ...context, systemPrompt, tools: configureTaskTools() };
+				const readFacts = () => this.#runtimeFacts.read(binding);
+				return this.#runtimeContexts ? this.#runtimeContexts.synchronize(input.run.sessionId, synchronized, readFacts)
+					: { ...synchronized, messages: projectRuntimeSnapshots(synchronized.messages, await readFacts()) };
 			};
 			let requestAttempt = 0;
 			const agent = this.#createAgent({
 				onRunFailure: (error) => requireRuntime().captureFailure(error),
+				sessionId: input.run.sessionId,
 				initialState: {
 					systemPrompt,
 					model: input.model,
 					thinkingLevel: input.run.thinkingLevel,
-					tools: synchronizeTaskContext({ systemPrompt, messages: input.history, tools: [] }).tools,
+					tools: configureTaskTools(),
 					messages: input.history,
 				},
 				streamFn: async (selectedModel, context, options) => {
@@ -322,7 +332,8 @@ export class ChatAgentRuntimeFactory {
 								{
 									...options,
 									maxRetries: DEFAULT_CHAT_PROVIDER_MAX_RETRIES,
-									...(headers === options?.headers ? {} : { sessionId: input.run.sessionId, headers }),
+									sessionId: input.run.sessionId,
+									headers,
 								},
 							),
 						options?.signal,
@@ -334,14 +345,9 @@ export class ChatAgentRuntimeFactory {
 						},
 					);
 				},
-				convertToLlm: (messages) => convertToLlm(deploymentProviderMessages(messages, currentMode())),
-				afterToolCall: async ({ context }) => {
-					const latest = synchronizeTaskContext(context);
-					context.tools = latest.tools;
-					context.systemPrompt = latest.systemPrompt;
-					return undefined;
-				},
-				beforeProviderRequest: ({ context }) => ({ context: synchronizeTaskContext(context) }),
+				convertToLlm: (messages) => convertToLlm(modelVisibleMessages(messages)),
+				afterToolCall: async ({ context }) => { context.tools = configureTaskTools(); return undefined; },
+				beforeProviderRequest: async ({ context }) => ({ context: await synchronizeTaskContext(context) }),
 				...(contextService === undefined
 					? {}
 					: {
@@ -351,7 +357,7 @@ export class ChatAgentRuntimeFactory {
 									const outcome = await contextService.compactContext({
 										sessionId: input.run.sessionId,
 										run: input.run,
-										context: synchronizeTaskContext(contextService.synchronizeRuntimeMode(
+										context: await synchronizeTaskContext(contextService.synchronizeRuntimeMode(
 											input.run.sessionId, context, input.run.serverInteractionMode,
 										)),
 										sessionModel: model,
@@ -360,10 +366,10 @@ export class ChatAgentRuntimeFactory {
 										force: false,
 										signal,
 									});
-										const synchronized = synchronizeTaskContext(contextService.synchronizeRuntimeMode(
+										const synchronized = await synchronizeTaskContext(contextService.synchronizeRuntimeMode(
 										input.run.sessionId, outcome.context, input.run.serverInteractionMode,
 									));
-									contextService.recordProviderRequest(input.run.id, model, synchronized);
+									contextService.recordProviderRequest(input.run.id, model, synchronized, input.run.sessionId, { thinkingLevel: input.run.thinkingLevel });
 									return synchronized === context ? undefined : { context: synchronized };
 								} catch (error) {
 									throw requireRuntime().toAgentError(error);
@@ -375,7 +381,7 @@ export class ChatAgentRuntimeFactory {
 									const outcome = await contextService.compactContext({
 										sessionId: input.run.sessionId,
 										run: input.run,
-										context: synchronizeTaskContext(contextService.synchronizeRuntimeMode(
+										context: await synchronizeTaskContext(contextService.synchronizeRuntimeMode(
 											input.run.sessionId, context, input.run.serverInteractionMode,
 										)),
 										sessionModel: model,
@@ -384,7 +390,7 @@ export class ChatAgentRuntimeFactory {
 										force: true,
 										signal,
 									});
-									return { context: synchronizeTaskContext(contextService.synchronizeRuntimeMode(
+									return { context: await synchronizeTaskContext(contextService.synchronizeRuntimeMode(
 										input.run.sessionId, outcome.context, input.run.serverInteractionMode,
 									)) };
 								} catch (error) {

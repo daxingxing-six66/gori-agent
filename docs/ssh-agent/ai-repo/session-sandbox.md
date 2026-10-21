@@ -22,7 +22,7 @@ Terminal 以稳定的 Session 功能身份接入任务容器；自动关闭/重�
 - Command 审计记录 `mode=full_access/backend=none/enforcement=none/authorizationSource=session_setting`。PTY 记录同一实际权限事实及 `source=session_setting/configuredAt`，启动确认只证明 Shell 准备完成，不宣称沙箱强制约束。
 - 普通远端授权计划保留 Session 设置来源和 SSH 目标；该来源不生成一次性例外 grant。提交及出队时复核当前设置，过期权限计划拒绝派发。显式安装工具仍有独立人工安装审批。
 - Deployment 的远端 `access.reason=session_sandbox_disabled` 表示 Session 授权，无独立例外审批列表或 grant；阶段普通审批仍由 `autoAudit` 决定。认领及各副作用前验证计划来源与当前设置，开关或完整目录列表变化返回 `deployment_sandbox_route_changed`，要求重新规划。SFTP 上传范围不因此扩大。
-- Runtime Factory 每轮通过 `SessionSandboxPolicy.instructions()` 读取当前开关和完整可写目录，追加可信 `<session-sandbox>` 指引，覆盖不可变基础头部中的旧沙箱说明；不改写历史快照。远端工具的静态描述说明两种 Session 策略，Terminal 描述投影实际 PTY 事实。后端执行策略仍是权限来源。
+- 请求前由 `SessionSandboxPolicy.snapshot()` 提供当前开关、只读及排序后的有效可写目录，统一服务按实际变化追加 sandbox 通道事件，明确替代旧策略；不改固定头部或旧消息。Terminal 定义固定，实际 PTY 事实在独立 terminal 通道提供。后端执行策略仍是权限来源。见 [运行时上下文](./runtime-context.md)。
 
 ## 生命周期与自动重开
 

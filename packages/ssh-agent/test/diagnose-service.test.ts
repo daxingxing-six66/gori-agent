@@ -110,12 +110,13 @@ describe("durable diagnosis aggregate", () => {
 		const projected = runtime.project(initial, "s", task.id);
 		expect(projected.systemPrompt).toBe(initial.systemPrompt);
 		const skill = readFileSync(new URL("../resources/skills/gori-diagnosis/SKILL.md", import.meta.url), "utf8").trim();
-		expect(projected.systemPrompt.split("<diagnose-skill>\n")[1]!.split("\n</diagnose-skill>")[0]).toBe(skill);
-		expect(projected.messages).toEqual([]);
+		expect(projected.systemPrompt).toBe("immutable");
+		expect(runtime.snapshots("s", task.id).find(value => value.channel === "diagnose-instructions")!.instructions).toContain(skill);
+		expect(projected.messages).toEqual(initial.messages);
 		expect(runtime.context(createChatContext("ordinary session", []), "other").systemPrompt).toBe("ordinary session");
-		const brief = JSON.parse(projected.systemPrompt.split("<brief-data>")[1]!.split("</brief-data>")[0]!);
+		const brief = runtime.snapshots("s", task.id).find(value => value.channel === "diagnose")!.data;
 		expect(Object.keys(brief)).toEqual(["direction", "status", "explanation"]);
-		expect(Array.from(brief.explanation)).toHaveLength(300);
+		expect(Array.from(String(brief.explanation))).toHaveLength(300);
 		expect(runtime.tools("s", task.id, "run").map((tool) => tool.name)).toEqual(["diagnose_update", "diagnose_inspect", "diagnose_finish"]);
 		await service.cancel("s", task.id);
 		expect(runtime.tools("s", task.id, "run")).toEqual([]);

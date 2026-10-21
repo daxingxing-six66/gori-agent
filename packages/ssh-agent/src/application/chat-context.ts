@@ -1,6 +1,6 @@
-import { type AgentMessage, createBashTool, createReadTool, createWriteTool } from "@earendil-works/pi-agent-core";
+import { type AgentMessage, type AgentTool, createBashTool, createReadTool, createWriteTool } from "@earendil-works/pi-agent-core";
 import type { Tool } from "@earendil-works/pi-ai";
-import { deploymentAwaitsResume, type DeploymentModeView } from "../domain/deployment-session.ts";
+import { type DeploymentModeView } from "../domain/deployment-session.ts";
 import { remoteServerCallDefinition } from "./tools/remote-server-call-tool.ts";
 import { sftpDownloadDefinition } from "./tools/sftp-download-tool.ts";
 import { sftpUploadDefinition } from "./tools/sftp-upload-tool.ts";
@@ -9,41 +9,35 @@ import { askUserDecisionDefinition } from "./tools/ask-user-decision-tool.ts";
 import { deploymentExecuteNextDefinition, deploymentFinishDefinition, deploymentInspectDefinition, deploymentProposePlanDefinition, deploymentProposeRecoveryDefinition } from "./tools/deployment-agent-tool.ts";
 import { bubblewrapInspectDefinition, bubblewrapInstallDefinition } from "./tools/bubblewrap-installation-tool.ts";
 
+import { diagnoseToolDefinitions } from "./tools/diagnose-agent-tool.ts";
+import { unavailableTool } from "./tools/tool-authorization.ts";
+
 export interface ChatContext {
 	systemPrompt: string;
 	messages: AgentMessage[];
 	tools?: Tool[];
 }
 
-/** Builds request metadata without opening an execution environment or binding a terminal. */
-export function createChatContext(systemPrompt: string, messages: AgentMessage[], mode: DeploymentModeView | null = null): ChatContext {
-	const tools = [
-		createReadTool(),
-		createWriteTool(),
-		createBashTool(),
-		remoteServerCallDefinition,
-		bubblewrapInspectDefinition,
-		bubblewrapInstallDefinition,
-		terminalInteractionDefinition,
-		sftpUploadDefinition,
-		sftpDownloadDefinition,
-		askUserDecisionDefinition,
-	];
-	if (mode && !mode.deployment.outcome) {
-		if (!mode.run) tools.push(deploymentProposePlanDefinition);
-		else {
-			tools.push(deploymentInspectDefinition);
-			const awaitingReview = mode.run.status === "preparing" || mode.run.status === "recovering" &&
-				(mode.run.recoveries?.at(-1)?.status === "pending" || deploymentAwaitsResume(mode.run));
-			if (!awaitingReview) tools.push(deploymentExecuteNextDefinition, deploymentProposeRecoveryDefinition);
-		}
-		tools.push(deploymentFinishDefinition);
-	}
-	return {
-		systemPrompt,
-		messages,
-		tools: tools.map(({ name, description, parameters }) => ({ name, description, parameters })),
-	};
+/** One canonical, sorted catalog for execution, estimates and compaction. */
+export function chatToolDefinitions(): Tool[] {
+	return [createReadTool(), createWriteTool(), createBashTool(), remoteServerCallDefinition,
+		bubblewrapInspectDefinition, bubblewrapInstallDefinition, terminalInteractionDefinition,
+		sftpUploadDefinition, sftpDownloadDefinition, askUserDecisionDefinition,
+		deploymentExecuteNextDefinition, deploymentFinishDefinition, deploymentInspectDefinition,
+		deploymentProposePlanDefinition, deploymentProposeRecoveryDefinition, ...diagnoseToolDefinitions]
+		.map(({ name, description, parameters }) => ({ name, description, parameters }))
+		.sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/** Availability never changes provider-visible metadata. */
+export function bindChatTools(implementations: AgentTool[]): AgentTool[] {
+	const byName = new Map(implementations.map(tool => [tool.name, tool]));
+	return chatToolDefinitions().map(definition => ({ ...(byName.get(definition.name) ?? unavailableTool(definition)), ...definition }));
+}
+
+/** Builds metadata without opening an environment or mutating runtime history. */
+export function createChatContext(systemPrompt: string, messages: AgentMessage[], _mode: DeploymentModeView | null = null): ChatContext {
+	return { systemPrompt, messages, tools: chatToolDefinitions() };
 }
 
 export interface ChatEnvironmentSnapshot {
