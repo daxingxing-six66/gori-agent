@@ -69,7 +69,7 @@ Chat 的 `UserDecisionPanel` 在输入框上方向上展开，显示模型提供
 
 `@` 非空文件检索由 `features/chat/runtime/use-local-file-search.ts` 持有防抖、取消和响应身份，`local-files-api.ts` 只发一次后端索引查询；菜单显示最多 80 项，支持包含忽略文件、手动刷新及部分结果提示。规则与性能预算见 [local-file-search.md](./local-file-search.md)。
 
-成功的 `read` / `write` 工具行可点击文件名，Composer 已上传文档卡和用户历史文档卡也可点击，经 ChatConsole 打开独立 `features/file-reader/` 标签页；代码使用 Highlight.js，Markdown 直接阅读预览，自有 Hook/API/局部 CSS 与双语目录。阅读器不依赖 Terminal/Deploy 或其生命周期，通用 TaskContainer 无新增业务分支。文档附件只通过 Session/ID 的 /attachments/:id/text 接口读取，不使用 storagePath。内容读取、去重、取消和边界及测试见 [file-reader.md](./file-reader.md)。
+成功的 `read` / `write` 工具行可在悬浮或键盘聚焦时点击 Eye 图标与“查看”，Composer 已上传文档卡和用户历史文档卡也可点击，经 ChatConsole 打开独立 `features/file-reader/` 标签页；代码使用 Highlight.js，Markdown 直接阅读预览，自有 Hook/API/局部 CSS 与双语目录。阅读器不依赖 Terminal/Deploy 或其生命周期，通用 TaskContainer 无新增业务分支。文档附件只通过 Session/ID 的 /attachments/:id/text 接口读取，不使用 storagePath。内容读取、去重、取消和边界及测试见 [file-reader.md](./file-reader.md)。
 
 已有会话的 Composer 文本草稿按 Session ID 存于页面内存，切换会话或页面组件卸载后重新进入可恢复原文及文件/目录引用；刷新浏览器后重置，不写 `localStorage`、API 或数据库。提交时清空文本并退出历史导航，失败恢复绑定原 Session 与清空后的修订号，后续输入或主动清空不会被迟到失败覆盖，失败只恢复文本而不恢复原导航位置。空输入按 `↑` 进入并冻结本轮历史列表，连续 `↑` 回看更早记录，`↓` 返回较新记录并在越过最新时恢复进入前的空白草稿，最早一条不再向前；不自动发送或恢复附件。导航位置与进入前草稿按 Session 分开保留，编辑后退出导航，普通多行草稿继续使用原光标行为；无有效历史、输入法组合、修饰键及按键重复不触发，候选菜单优先使用方向键。附件继续沿独立上传 Hook 管理，切换会话仍取消上传并释放本地状态。
 
@@ -169,3 +169,5 @@ ChatTimeline 不再接收 deployments/discussion 或部署历史分页回调，�
 
 
 2026-10-19 Diagnose 接入：Diagnose 独立位于 features/diagnose，包含 API/契约、REST+SSE 事实 Hook、用户动作 Hook、视图状态及记录/结论组件。ChatConsole 只装配菜单和稳定 diagnose Tab；useChatRuntime.attachRun 复用后端已创建 Run 的状态恢复与原 SSE。结论在同 Tab 独立阅读页，Tab 关闭只隐藏，历史选择与活动任务分离。 详见 [Diagnose 功能路由](./diagnose.md)。
+
+本地文件预览按类型分流：读写、上传和下载四类成功工具行使用统一的悬浮/键盘查看入口，上传/下载路径来自已确认的结果详情；点击文件名本身只展开工具详情。文本继续使用 `features/file-reader/`，图片、音频、视频使用独立 `features/media-preview/` 标签、元数据与流接口，共用 TaskContainer 展示而不混合处理生命周期。macOS 系统临时目录别名由共享文件访问边界规范后校验；见 [多媒体预览](./media-preview.md)。

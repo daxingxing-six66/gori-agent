@@ -54,6 +54,7 @@
 | 长周期 SSH PTY、Canonical State、打开/清理、输入策略/状态记录、Observation 和只读前端 | [terminal-interaction.md](./features/terminal-interaction.md) | `packages/ssh-agent/src/application/services/terminal-session-service.ts`、`packages/ssh-agent/src/application/services/terminal-interaction-service.ts`、`packages/ssh-agent/src/application/terminal/`、`packages/ssh-agent-web/features/terminal/` |
 | Session 通用任务 Tab、放大/收起展示、标签关闭、页面保留与 Terminal 接入 | [task-container.md](./task-container.md) | `packages/ssh-agent-web/features/task-container/`、`packages/ssh-agent-web/features/chat/components/chat-task-layout.css` |
 | 读写工具/文本附件的文件阅读器、独立标签、语法高亮与 Markdown 预览 | [file-reader.md](./file-reader.md) | `packages/ssh-agent-web/features/file-reader/`、`packages/ssh-agent/src/application/services/read-local-text-file.ts` |
+| 读写/上传/下载卡片的悬浮查看、本地图片/音视频 Tab、Range 流与系统路径别名 | [media-preview.md](./media-preview.md) | `packages/ssh-agent-web/features/media-preview/`、`packages/ssh-agent/src/api/media-preview-routes.ts` |
 | SSH Agent Web 页面、前端功能、客户端状态、API/SSE 和测试位置 | [ssh-agent-web.md](./ssh-agent-web.md) | `packages/ssh-agent-web/app/`、`packages/ssh-agent-web/components/`、`packages/ssh-agent-web/features/` |
 | Web 明亮、暗部、明暗分层实验、ION 离子终端、跟随系统主题及 Terminal 动态配色 | [theme.md](./theme.md) | `packages/ssh-agent-web/features/theme/`、`packages/ssh-agent-web/features/settings/`、`packages/ssh-agent-web/app/globals.css` |
 | Web 中英文界面、Locale 首屏恢复、类型化消息目录和语言切换 | [i18n.md](./i18n.md) | `packages/ssh-agent-web/features/i18n/`、`packages/ssh-agent-web/app/layout.tsx` |

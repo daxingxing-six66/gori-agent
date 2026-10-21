@@ -1,6 +1,7 @@
 import type { BackendMessageKey } from "./en-US.ts";
 
 export const zhCNMessages = {
+	"media_preview.type_unsupported": "此文件类型不能作为图片、音频或视频预览",
 	"chatgpt.busy": "另一个 ChatGPT 连接操作仍在进行中",
 	"chatgpt.sign_in_failed": "ChatGPT 登录失败或已超时，请重新登录。",
 	"chatgpt.permission_required": "请使用符合条件的 Plus 或 Pro 账号，并授权使用 ChatGPT 套餐后重试。",

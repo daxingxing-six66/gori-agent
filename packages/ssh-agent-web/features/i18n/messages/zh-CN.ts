@@ -14,6 +14,7 @@ import { zhCNDeployTaskMessages } from "@/features/i18n/messages/zh-CN/deploy-ta
 import { zhCNFileReaderMessages } from "@/features/i18n/messages/zh-CN/file-reader";
 import { zhCNSessionActivityMessages } from "@/features/i18n/messages/zh-CN/session-activity";
 import { zhCNDiagnoseMessages } from "@/features/i18n/messages/zh-CN/diagnose";
+import { zhCNMediaPreviewMessages } from "@/features/i18n/messages/zh-CN/media-preview";
 
 export const zhCNMessages = {
 	...zhCNCommonMessages,
@@ -32,6 +33,7 @@ export const zhCNMessages = {
 	...zhCNFileReaderMessages,
 	...zhCNSessionActivityMessages,
 	...zhCNDiagnoseMessages,
+	...zhCNMediaPreviewMessages,
 } as const;
 
 export type MessageId = keyof typeof zhCNMessages;

@@ -1,3 +1,5 @@
+import { localPathIdentity } from "@/shared/files/local-path";
+export { localPathIdentity as readerPath } from "@/shared/files/local-path";
 import type { SessionAttachment } from "@/features/session/api/session-attachment-api";
 
 export type ReaderSource =
@@ -11,25 +13,8 @@ export interface ReaderDocument {
 	revision: number;
 }
 
-/** Lexical identity only; the server always validates the actual filesystem path. */
-export function readerPath(path: string, workDir?: string | null): string {
-	const windows = /^[a-z]:[\\/]/i.test(workDir ?? path) || path.startsWith("\\\\");
-	const input = windows ? path.replaceAll("\\", "/") : path;
-	const absolute = input.startsWith("/") || /^[a-z]:\//i.test(input);
-	const base = windows ? workDir?.replaceAll("\\", "/") : workDir;
-	const joined = !absolute && base ? `${base}/${input}` : input;
-	const prefix = joined.startsWith("//") ? "//" : joined.startsWith("/") ? "/" : "";
-	const parts: string[] = [];
-	for (const part of joined.split("/")) {
-		if (!part || part === ".") continue;
-		if (part === ".." && parts.length && parts.at(-1) !== ".." && !parts.at(-1)?.endsWith(":")) parts.pop();
-		else if (part !== ".." || !prefix) parts.push(part);
-	}
-	return prefix + parts.join("/");
-}
-
 export function readerDocument(path: string, workDir?: string | null): ReaderDocument {
-	const normalized = readerPath(path, workDir);
+	const normalized = localPathIdentity(path, workDir);
 	return { id: `reader:local:${normalized}`, source: { kind: "local", path: normalized }, name: normalized.split("/").at(-1) || normalized, revision: 0 };
 }
 

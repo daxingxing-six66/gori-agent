@@ -43,6 +43,8 @@
 
 ## 代码位置
 
+Chat 的成功 SFTP 上传/下载工具行现在提供悬浮或键盘聚焦时出现的 Eye + 查看入口，只读取结果确认的本地 `sourceFilePath` / `localPath`。文本复用阅读器，图片/音视频进入独立预览模块；不额外联系 SSH、不重放传输、不按目录猜文件名，SFTP 生命周期与协议未改变。见 [media-preview.md](./media-preview.md)。
+
 | 关注点 | 代码位置 |
 |---|---|
 | Transfer 领域模型和错误 | `packages/ssh-agent/src/domain/file-transfer.ts` |

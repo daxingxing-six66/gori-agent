@@ -1,6 +1,6 @@
 "use client";
 
-import { BookOpen, Check, ChevronDown, CircleAlert, Clock3, Copy, Download, FilePenLine, LoaderCircle, MessageCircleQuestion, Minimize2, Rocket, SquareTerminal, Upload } from "lucide-react";
+import { BookOpen, Check, ChevronDown, CircleAlert, Clock3, Copy, Download, Eye, FilePenLine, LoaderCircle, MessageCircleQuestion, Minimize2, Rocket, SquareTerminal, Upload } from "lucide-react";
 import { memo, useId, useMemo, useState } from "react";
 import { useIntl, type IntlShape } from "react-intl";
 import { ChatMessageAttachments } from "@/features/chat/components/chat-message-attachments";
@@ -11,6 +11,7 @@ import { ChatComposerMessage } from "@/features/chat/components/chat-reference";
 import { approvalForTool, type ChatTimelineEntry } from "@/features/chat/model/chat-runtime-state";
 import { type ChatToolExecution, type ThinkingContent, type ToolApproval, type ToolCallContent, type ToolUpdate } from "@/features/chat/model/chat";
 import type { SessionAttachment } from "@/features/session/api/session-attachment-api";
+import { toolPreviewFile } from "@/features/chat/model/tool-preview-file";
 
 export const ChatMessageRow = memo(function ChatMessageRow({
 	entry,
@@ -143,9 +144,8 @@ function ToolCard({ call, execution, approval, approvalBusy, targetHost, onResol
 	const approvalActions = approvalActionLabels(intl, call.name, approval?.toolName);
 	const target = toolTarget(intl, call);
 	const compactTarget = call.name === "read" || call.name === "write" ? target.split("/").at(-1) || target : target;
-	const filePath = call.name === "read" || call.name === "write" ? call.arguments.path ?? call.arguments.file_path : undefined;
-	const openFile = typeof filePath === "string" && filePath.trim() && execution?.status === "completed" && !execution.isError && onOpenFile
-		? () => onOpenFile(filePath) : undefined;
+	const filePath = toolPreviewFile(call, execution);
+	const openFile = filePath && onOpenFile ? () => onOpenFile(filePath) : undefined;
 	const argumentsText = toolRequestArguments(call);
 	const Details = presentation.Component;
 	const update = presentation.update(execution);
@@ -160,13 +160,13 @@ function ToolCard({ call, execution, approval, approvalBusy, targetHost, onResol
 	};
 	if (approval?.status !== "pending") return (
 		<details className="chat-tool-line group min-w-0 text-xs">
-			<summary className="flex min-h-7 min-w-0 cursor-pointer list-none items-center gap-1.5 rounded-md px-1 text-secondary transition-colors hover:bg-surface-hover focus-visible:outline-2 focus-visible:outline-accent [&::-webkit-details-marker]:hidden">
+			<summary className="group/tool-row flex min-h-7 min-w-0 cursor-pointer list-none items-center gap-1.5 rounded-md px-1 text-secondary transition-colors hover:bg-surface-hover focus-visible:outline-2 focus-visible:outline-accent [&::-webkit-details-marker]:hidden">
 				<span className="shrink-0"><ToolIcon name={call.name} /></span>
 				<span className={`shrink-0 font-medium ${failed ? "text-danger" : "text-ink"}`}>{toolActionLabel(intl, call.name, state)}</span>
-				{openFile ? <button type="button" className="min-w-0 flex-1 truncate text-left text-secondary underline decoration-dotted underline-offset-4 hover:text-accent focus-visible:outline-2 focus-visible:outline-accent"
-					title={target} aria-label={intl.formatMessage({ id: "fileReader.open" }, { name: target })}
-					onClick={(event) => { event.preventDefault(); event.stopPropagation(); openFile(); }}>{compactTarget}</button>
-					: <span className={`min-w-0 flex-1 truncate text-secondary ${call.name === "bash" || call.name === "remote_server_call" || call.name === "terminal_interaction" ? "font-mono" : ""}`} title={target}>{compactTarget}</span>}
+				<span className={`min-w-0 flex-1 truncate text-secondary ${call.name === "bash" || call.name === "remote_server_call" || call.name === "terminal_interaction" ? "font-mono" : ""}`} title={target}>{compactTarget}</span>
+				{openFile ? <button type="button" className="pointer-events-none inline-flex shrink-0 items-center gap-1 rounded px-1.5 py-1 text-accent opacity-0 transition-opacity group-hover/tool-row:pointer-events-auto group-hover/tool-row:opacity-100 group-focus-within/tool-row:pointer-events-auto group-focus-within/tool-row:opacity-100 hover:bg-surface-hover focus-visible:outline-2 focus-visible:outline-accent"
+					aria-label={intl.formatMessage({ id: "mediaPreview.open" }, { name: filePath })} title={filePath}
+					onClick={(event) => { event.preventDefault(); event.stopPropagation(); openFile(); }}><Eye size={12} aria-hidden="true" />{intl.formatMessage({ id: "mediaPreview.view" })}</button> : null}
 				{state === "running" && toolActionKind(call.name) !== null ? <LoaderCircle size={13} className="shrink-0 animate-spin text-accent" aria-hidden="true" /> : null}
 				{toolActionKind(call.name) === null || state === "waiting" ? <ToolStatus state={state} /> : null}
 				<ChevronDown size={14} className="shrink-0 transition-transform group-open:rotate-180" aria-hidden="true" />

@@ -1,4 +1,5 @@
 export const enUSMessages = {
+	"media_preview.type_unsupported": "This file type cannot be previewed as an image, audio, or video",
 	"chatgpt.busy": "Another ChatGPT connection operation is still running",
 	"chatgpt.sign_in_failed": "ChatGPT sign-in failed or expired. Try signing in again.",
 	"chatgpt.permission_required": "Authorize ChatGPT plan usage with an eligible Plus or Pro account, then try again.",

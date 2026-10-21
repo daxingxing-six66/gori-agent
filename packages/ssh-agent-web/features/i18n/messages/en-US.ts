@@ -15,6 +15,7 @@ import { enUSDeployTaskMessages } from "@/features/i18n/messages/en-US/deploy-ta
 import { enUSFileReaderMessages } from "@/features/i18n/messages/en-US/file-reader";
 import { enUSSessionActivityMessages } from "@/features/i18n/messages/en-US/session-activity";
 import { enUSDiagnoseMessages } from "@/features/i18n/messages/en-US/diagnose";
+import { enUSMediaPreviewMessages } from "@/features/i18n/messages/en-US/media-preview";
 
 export const enUSMessages = {
 	...enUSCommonMessages,
@@ -33,4 +34,5 @@ export const enUSMessages = {
 	...enUSFileReaderMessages,
 	...enUSSessionActivityMessages,
 	...enUSDiagnoseMessages,
+	...enUSMediaPreviewMessages,
 } satisfies Record<MessageId, string>;

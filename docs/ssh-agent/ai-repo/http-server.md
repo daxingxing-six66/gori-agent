@@ -57,6 +57,8 @@ Workspace POST/PATCH 通过 `sandboxWritableRoots` 设置独立可写目录默�
 
 ## 代码位置
 
+独立 `media-preview-routes.ts` 提供 `GET /api/sessions/:id/media-preview?path=...` 元数据及 `/content` 的 GET/HEAD/单段 Range 流式响应；默认 Backend 注入 MediaPreviewService。共享 HTTP handler 只装配路由和 Locale/错误出口，媒体访问不走文本 JSON、Attachment 或 SFTP 内容接口。详见 [media-preview.md](./media-preview.md)。
+
 | 关注点 | 代码位置 |
 |---|---|
 | API 响应结构 | [contracts.ts](../../../packages/ssh-agent/src/api/contracts.ts) |

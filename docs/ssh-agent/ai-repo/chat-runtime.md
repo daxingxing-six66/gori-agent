@@ -19,7 +19,7 @@ Runtime Factory 将 Run ID 绑定到远端 Tool。Full Access grant 绑定完整
 
 - `@` 非空文件检索使用独立 Hook 与后端有界候选索引，不逐目录发 HTTP，也不创建 Chat Run。取消、缓存、全局排序及不完整提示见 [local-file-search.md](./local-file-search.md)。
 
-- 成功的 `read` / `write` 工具行可点击文件名，经展示回调在右侧打开独立阅读器，读取当前磁盘文件而非截断的工具输出。阅读器自有标签与读取状态，不创建 Chat Run、消息或审批，不依赖 Terminal/Deploy 生命周期；完整入口与边界见 [file-reader.md](./file-reader.md)。
+- 成功的 `read` / `write` 工具行可在悬浮或键盘聚焦时点击 Eye 图标与“查看”，经展示回调在右侧打开独立阅读器，读取当前磁盘文件而非截断的工具输出。阅读器自有标签与读取状态，不创建 Chat Run、消息或审批，不依赖 Terminal/Deploy 生命周期；完整入口与边界见 [file-reader.md](./file-reader.md)。
 
 - `ask_user_decision` 在普通模式与 Terminal Mode 共用同一工具定义和独立的 `ChatUserDecisionService`。服务持有无超时等待，SQLite 保存题目、回答及终态；Run 取消和服务关闭中止等待。回答只表达用户选择，不授予命令权限，Guard 和原有审批规则继续生效。前端通过 Run SSE 和待决 REST 接口恢复；完整代码入口见 [user-decision.md](./user-decision.md)。
 
@@ -79,6 +79,8 @@ Runtime Factory 将 Run ID 绑定到远端 Tool。Full Access grant 绑定完整
 
 ## 代码位置
 
+提问工具 `ask_user_decision` 通过同一详情注册表使用独立 `chat-user-decision-details.tsx`：按题展示问题与选择/自由输入/跳过答案，复用现有 Markdown 和主题语义色，不直接显示正常回答 JSON。实时结果 content 和历史文本块共用解析，只有题数与问题文本匹配才配对；错误与未知结果保留诊断。该组件只做展示，不订阅事件、不修改待决面板或消息数据；回归见 `tests/chat-user-decision-details.test.tsx`，完整边界见 [user-decision.md](./user-decision.md)。
+
 | 关注点 | 代码位置 |
 |---|---|
 | Chat 类型和错误 | `packages/ssh-agent/src/domain/chat.ts` |
@@ -122,3 +124,5 @@ Runtime Factory 将 Run ID 绑定到远端 Tool。Full Access grant 绑定完整
 
 
 2026-10-19 Diagnose 接入：`/diagnose` 使用独立 DiagnoseService/Coordinator/Runtime，跨 Chat Run 保存任务，三个元数据工具免审批，普通命令与只读策略保持。ChatService 只预约 idle Session、冻结任务绑定及组合 Context；结束按钮通过原 Run/follow_up 请求结论，直接退出才强制取消绑定 Run。前端 attachRun 复用原 Chat 恢复与 SSE。 详见 [Diagnose 功能路由](./diagnose.md)。
+
+本地文件预览按类型分流：读写、上传和下载四类成功工具行使用统一的悬浮/键盘查看入口，上传/下载路径来自已确认的结果详情；点击文件名本身只展开工具详情。文本继续使用 `features/file-reader/`，图片、音频、视频使用独立 `features/media-preview/` 标签、元数据与流接口，共用 TaskContainer 展示而不混合处理生命周期。macOS 系统临时目录别名由共享文件访问边界规范后校验；见 [多媒体预览](./media-preview.md)。

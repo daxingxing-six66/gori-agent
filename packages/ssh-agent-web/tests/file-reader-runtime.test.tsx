@@ -168,12 +168,25 @@ function expand(node: ReactNode): ReactElement<ComponentProps<"button">>[] {
 }
 
 describe("file tool reader entry", () => {
+	it.each(["sftp_upload", "sftp_download"])("opens the local %s result from the compact card without toggling details", (name) => {
+		const onOpenFile = vi.fn();
+		const controls = expand(<ChatMessageRow entry={{ key: "message", final: true, message: { role: "assistant", provider: "test", model: "test", stopReason: "toolUse", timestamp: 1,
+			content: [{ type: "toolCall", id: "call", name, arguments: { sourceFilePath: "relative.mp4", remoteFilePath: "/remote/movie.mp4", targetPath: "/tmp" } }] } }}
+			tools={{ call: { toolCallId: "call", toolName: name, status: "completed", details: { status: "completed", sourceFilePath: "/work/movie.mp4", localPath: "/tmp/movie.mp4" } } }}
+			approvals={{}} approvalMutationId={null} onOpenFile={onOpenFile} onResolveApproval={vi.fn()} />);
+		const button = controls.find((button) => button.props["aria-label"] === "mediaPreview.open");
+		expect(button).toBeDefined();
+		const event = { preventDefault: vi.fn(), stopPropagation: vi.fn() };
+		button!.props.onClick?.(event as unknown as Parameters<NonNullable<ComponentProps<"button">["onClick"]>>[0]);
+		expect(onOpenFile).toHaveBeenCalledExactlyOnceWith(name === "sftp_upload" ? "/work/movie.mp4" : "/tmp/movie.mp4");
+		expect(event.preventDefault).toHaveBeenCalledOnce(); expect(event.stopPropagation).toHaveBeenCalledOnce();
+	});
 	it.each(["read", "write"])("opens the %s file through its callback without toggling details", (name) => {
 		const onOpenFile = vi.fn();
 		const view = <ChatMessageRow entry={{ key: "message", final: true, message: { role: "assistant", provider: "test", model: "test", stopReason: "toolUse", timestamp: 1,
 			content: [{ type: "toolCall", id: "call", name, arguments: { path: "docs/a.md" } }] } }}
 			tools={{ call: { toolCallId: "call", toolName: name, status: "completed" } }} approvals={{}} approvalMutationId={null} onOpenFile={onOpenFile} onResolveApproval={vi.fn()} />;
-		const control = expand(view).find((button) => button.props["aria-label"] === "fileReader.open")!;
+		const control = expand(view).find((button) => button.props["aria-label"] === "mediaPreview.open")!;
 		expect(control).toBeDefined();
 		const event = { preventDefault: vi.fn(), stopPropagation: vi.fn() };
 		control.props.onClick?.(event as unknown as Parameters<NonNullable<ComponentProps<"button">["onClick"]>>[0]);
@@ -185,7 +198,7 @@ describe("file tool reader entry", () => {
 		const controls = expand(<ChatMessageRow entry={{ key: "message", final: true, message: { role: "assistant", provider: "test", model: "test", stopReason: "toolUse", timestamp: 1,
 			content: [{ type: "toolCall", id: "call", name: "write", arguments: { path: "a.md" } }] } }}
 			tools={{ call: { toolCallId: "call", toolName: "write", status } }} approvals={{}} approvalMutationId={null} onOpenFile={vi.fn()} onResolveApproval={vi.fn()} />);
-		expect(controls.some((button) => button.props["aria-label"] === "fileReader.open")).toBe(false);
+		expect(controls.some((button) => button.props["aria-label"] === "mediaPreview.open")).toBe(false);
 	});
 });
 

@@ -8,6 +8,8 @@ Deployment REST 的领域错误通过 `deployment.error` 按请求 Locale 返回
 
 ## 当前边界
 
+- 本地多媒体预览的未知类型通过独立 `media_preview.type_unsupported` 描述符返回 415；路径、Session 和文件系统错误复用既有稳定 code。媒体字节流不进入本地化 JSON 投影。
+
 - Session 主动关闭沙盒时，远端普通审批用 `approval.remote_session_unconfined` 描述准确命令与 SSH 账号权限，不显示一次性例外请求；`session_configuration_in_progress` 在统一错误出口映射为双语 409。Guard 与普通审批仍生效，见 [session-sandbox.md](./session-sandbox.md)。
 
 - 文件传输等待队列满使用稳定 code `transfer_queue_full` 和词典 Key `sftp.transfer_queue_full`；公开异常保留 429，上传/下载 Tool 结果也携带该描述符供浏览器本地化。

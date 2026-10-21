@@ -40,6 +40,7 @@ import { DefaultLlmModelCatalog, type LlmModelCatalog } from "../application/ser
 import { LlmModelRefreshScheduler } from "../application/services/llm-model-refresh-scheduler.ts";
 import { DefaultLlmProviderService } from "../application/services/llm-provider-service.ts";
 import { DefaultLocalFileSystemService } from "../application/services/local-file-system-service.ts";
+import { MediaPreviewService } from "../application/services/media-preview-service.ts";
 import { RemoteMetricsService } from "../application/services/remote-metrics-service.ts";
 import { SessionLifecycleCoordinator } from "../application/services/session-lifecycle-coordinator.ts";
 import { SessionTitleService } from "../application/services/session-title-service.ts";
@@ -462,6 +463,7 @@ export function createSqliteManagementBackend(options: CreateSqliteManagementBac
 				diagnoses,
 				diagnoseChat,
 				localFiles,
+				mediaPreview: new MediaPreviewService({ sessions, localCwd }),
 				terminals: terminalSessions,
 				attachments,
 			}),

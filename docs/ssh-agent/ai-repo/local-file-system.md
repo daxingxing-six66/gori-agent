@@ -20,6 +20,8 @@
 
 ## HTTP 契约
 
+本地媒体使用独立的 `/api/sessions/:id/media-preview` 元数据与 `/content` 流式接口，不进入 UTF-8 内容解码。两类预览仅共用普通文件打开边界；macOS 系统 `/tmp`、`/var`、`/etc` 别名先规范到 `/private/...` 再校验，普通符号链接和工作目录越界仍拒绝。目录浏览规则未改变。完整边界见 [media-preview.md](./media-preview.md)。
+
 ```http
 GET /api/sessions/:sessionId/local-files
 GET /api/sessions/:sessionId/local-files?path=/absolute/session/work/dir/uploads

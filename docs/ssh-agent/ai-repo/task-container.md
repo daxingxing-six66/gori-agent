@@ -1,6 +1,6 @@
 # Session 任务 Tab 容器
 
-适用于已有 Session 的通用任务容器、标签选择、关闭请求和会话布局。当前接入 Terminal、Deploy、Diagnose 与独立文件阅读器；不提供 Monitor、多个 Terminal 实例或通用工作流执行引擎。
+适用于已有 Session 的通用任务容器、标签选择、关闭请求和会话布局。当前接入 Terminal、Deploy、Diagnose、独立文本阅读器与多媒体预览；不提供 Monitor、多个 Terminal 实例或通用工作流执行引擎。
 
 ## 职责与契约
 
@@ -21,6 +21,8 @@
 - Terminal 模块由 `use-terminal-task.ts` 提供页面存在、阶段、关闭限制与动作；`terminal-task.tsx` 组合连接过程、失败和只读终端内容。其生命周期和权威恢复详见 [Terminal 功能文档](./features/terminal-interaction.md)。
 
 ## 放大、收起与恢复
+
+多媒体预览使用独立 `features/media-preview/` Hook/Page，以 `media:` 路径身份接入相同 TaskTab。容器不区分文本、音频、视频或图片；媒体模块根据装配层传入的可见性暂停隐藏音视频，文本阅读器不承接播放生命周期。见 [media-preview.md](./media-preview.md)。
 
 - `use-task-container-display.ts` 只管理当前挂载 scope 的展示模式，与任务业务状态独立。切换 Session 时立即回到 docked，最后一个任务移除后复位；不写数据库或浏览器偏好。Composer 定位已收起任务时恢复 docked，定位放大中的任务保留 fullscreen。
 - fullscreen 将同一个 `.session-task-area` 在 Session 主体内绝对定位，`grid-area: auto` 避免右侧零宽网格限制其覆盖范围。右侧 Tab 连同当前任务向左覆盖页首、聊天和输入区，左侧服务器导航保持原位置与交互；不用原生 Fullscreen API，也不将内容移入 portal。

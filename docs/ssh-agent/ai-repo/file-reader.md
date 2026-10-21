@@ -4,7 +4,7 @@
 
 ## 入口与隔离
 
-- 已成功完成且 `isError` 不为 true 的 `read` / `write` 工具行，将文件名显示为阅读器入口；兼容参数 `path` 与旧的 `file_path`。等待、运行、失败及待审批状态不提供此入口。点击文件名只调用 `onOpenFile(path)`，阻止原生 summary 展开；其他区域仍可展开完整参数与工具输出。
+- 已成功完成且 `isError` 不为 true 的 `read` / `write` 工具行，悬浮或键盘聚焦该行时显示 Eye 图标与“查看”；兼容参数 `path` 与旧的 `file_path`。等待、运行、失败及待审批状态不提供此入口。只有点击查看调用 `onOpenFile(path)` 并阻止 summary 展开；文件名和其他区域仍展开完整参数与工具输出。成功的 SFTP 上传/下载使用相同回调，分别指向结果确认的本地源文件/实际下载文件。媒体由独立模块处理，见 [media-preview.md](./media-preview.md)。
 - `ChatTimeline` / `ChatMessageRow` 仅转交回调，`ChatConsole` 装配 `features/file-reader/` 与通用 `TaskTab`。阅读器不导入 Terminal、Deploy 或 TaskContainer，不复用其 API、状态、SSE、关闭流程或样式。通用容器无需新增文件类型分支。
 - Composer 已上传的文档卡与用户历史消息中的文档卡共用 `onOpenAttachment`，经 ChatConsole 打开同一阅读器。`ReaderDocument.source` 明确区分 local 路径与 attachment ID；附件标签按 Session/附件 ID 去重，同名不同附件保持独立。入口拒绝跨 Session 元数据，读取接口再次校验真实归属。
 - `use-file-reader-tabs.ts` 按 Session 与工作目录隔离标签。相对路径以已配置的工作目录组成词法身份，折叠 `.` / `..`；同路径重复打开定位原标签并重新读取，不新增标签。不同目录同名文件保持独立身份。关闭仅移除该阅读器；卸载中止读取，过期响应不回写。
@@ -12,7 +12,7 @@
 
 ## 内容与展示
 
-- 内容来自单独的本地文件接口，读取点击时的磁盘文件，不使用可能含 offset/limit 或截断提示的 Tool Result，也不将 write 成功提示当作文件内容。不保存工具调用时的文件历史版本；文件后续变化可再次点击文件名或使用重新读取按钮更新。
+- 内容来自单独的本地文件接口，读取点击时的磁盘文件，不使用可能含 offset/limit 或截断提示的 Tool Result，也不将 write 成功提示当作文件内容。不保存工具调用时的文件历史版本；文件后续变化可再次点击查看或使用重新读取按钮更新。
 - 文档附件使用独立的附件 ID 读取接口，继续共用页面、Markdown、代码高亮、刷新和错误展示。内容请求按 Session、源类型、路径/ID 隔离；源改变时立即隐藏旧内容，取消旧请求并丢弃迟到响应。附件响应的 `path` 为文件名，不作为宿主机路径使用。
 - `file-language.ts` 使用精确版本 Highlight.js 的 common 语言集合，并显式补充 Dockerfile、Gradle 与 properties；按扩展名或特殊文件名识别 SQL、YAML、JavaScript/JSX、TypeScript/TSX、Java、JSON、Python、Shell、Go、Rust、C/C++ 等。未知类型以转义纯文本显示。超过 200,000 字符的代码跳过高亮并显示提示，仍提供完整文本。
 - `.md/.markdown/.mdown/.mdx` 默认直接渲染 Markdown 阅读预览，不提供源码切换；MDX 按 Markdown 处理，不执行 JSX。使用现有 ReactMarkdown + remark-gfm 支持标题、列表、表格、引用及代码块，高亮 fenced code。原始 HTML 跳过，危险 URL 不生成链接；外部 HTTP/HTTPS/mailto 链接安全打开，外部 HTTP/HTTPS 图片惰加载；相对链接及本地图片目前仅显示标签/替代文字。
@@ -27,7 +27,7 @@ GET /api/sessions/:sessionId/local-files/content?path={encodedPath}
 成功返回 `200 { path, name, content, size, modifiedAt }`，其中 path 为绝对路径、size 为实际读取字节数、modifiedAt 为文件句柄 stat 的修改时间；使用 `Cache-Control: no-store`。只读取 SSH Agent 后端本机文件，不使用 SSH/SFTP。
 
 - 有效根为当前 `session.workDir ?? localCwd`。接口接受根内绝对路径或相对该根的路径；现有目录列表接口仍只接受绝对路径。拒绝空白、NUL、词法越界、符号链接及非普通文件。
-- 读取 helper 以 realpath 检查路径，打开句柄后复核普通文件及设备/inode；支持的系统使用 NOFOLLOW/NONBLOCK 防止末端符号链接或 FIFO 替换。最多读取 1 MiB + 1 字节，超过 1 MiB 返回 413，不返回伪装成完整文件的截断片段。
+- 读取 helper 共用独立 `open-local-preview-file.ts` 的文件系统校验，以 realpath 检查路径，打开句柄后复核普通文件及设备/inode；支持的系统使用 NOFOLLOW/NONBLOCK 防止末端符号链接或 FIFO 替换。macOS 先规范系统 `/tmp`、`/var`、`/etc` 别名，避免误判 `/private/...`，仍拒绝用户创建的链接和越界。文本解码与上限保持独立：最多读取 1 MiB + 1 字节，超过 1 MiB 返回 413，不返回伪装成完整文件的截断片段。
 - 仅支持 UTF-8，空文件合法；非法编码及二进制控制字节返回 415。缺失文件、权限及其他文件系统错误沿用 LocalFileSystemError 和统一安全本地化出口；不透传底层异常。
 - 工作目录外文件、符号链接、非文本或超限文件在阅读器中显示错误，不扩大现有 Session 文件浏览边界。此接口不会修改原 Agent 工具的执行或审批规则。
 

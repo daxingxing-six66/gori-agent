@@ -45,6 +45,8 @@ import { handleStatisticsRoute } from "./statistics-routes.ts";
 import type { StatisticsService } from "../application/statistics/statistics-service.ts";
 import type { ChatGptService } from "../application/services/chatgpt-service.ts";
 import { handleChatGptRoute } from "./chatgpt-routes.ts";
+import type { MediaPreviewService } from "../application/services/media-preview-service.ts";
+import { handleMediaPreviewRoute } from "./media-preview-routes.ts";
 
 export type SshAgentHttpHandler = (request: Request) => Promise<Response>;
 
@@ -58,6 +60,7 @@ export function createSshAgentHttpHandler(options: {
 	diagnoses?: DiagnoseService;
 	diagnoseChat?: DiagnoseChatCoordinator;
 	localFiles: LocalFileSystemService;
+	mediaPreview?: MediaPreviewService;
 	terminals: TerminalSessionService;
 	attachments: AttachmentService;
 	connectionTests: ConnectionTestService;
@@ -93,6 +96,7 @@ async function route(
 		diagnoses?: DiagnoseService;
 		diagnoseChat?: DiagnoseChatCoordinator;
 		localFiles: LocalFileSystemService;
+		mediaPreview?: MediaPreviewService;
 		terminals: TerminalSessionService;
 		attachments: AttachmentService;
 		connectionTests: ConnectionTestService;
@@ -110,6 +114,10 @@ async function route(
 		.filter((segment) => segment.length > 0)
 		.map((segment) => decodeURIComponent(segment));
 	if (segments[0] !== "api") return notFound();
+	if (options.mediaPreview) {
+		const response = await handleMediaPreviewRoute(options.mediaPreview, request, url, segments);
+		if (response) return response;
+	}
 	if (options.chatgpt) {
 		const response = await handleChatGptRoute(options.chatgpt, request, segments);
 		if (response !== null) return response;

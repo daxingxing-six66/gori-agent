@@ -5,6 +5,7 @@ import { toolResultText } from "@/features/chat/model/chat-runtime-state";
 import { RemoteCommandDetails } from "./chat-remote-command-details";
 import { TerminalInteractionDetails } from "./chat-terminal-interaction-details";
 import { DownloadToolDetails, UploadToolDetails, transferProgress } from "./chat-transfer-details";
+import { UserDecisionDetails } from "./chat-user-decision-details";
 
 export interface ToolDetailsProps {
 	call: ToolCallContent;
@@ -36,11 +37,12 @@ const generic: ToolDetailsPresentation = {
 	Component: GenericToolDetails, className: "", headerClassName: "", update: (execution) => execution?.latestUpdate,
 	result: (execution) => toolResultText(execution?.result ?? (execution?.latestUpdate?.type === "text" ? execution.latestUpdate.detail.content : undefined)),
 };
-const command = { ...generic, className: "chat-command-card", headerClassName: "chat-command-header", result: (execution?: ChatToolExecution) =>
-	isRecord(execution?.result) && Array.isArray(execution.result.content) ? toolResultText(execution.result.content) : generic.result(execution),
-};
+const contentResult = (execution?: ChatToolExecution) =>
+	isRecord(execution?.result) && Array.isArray(execution.result.content) ? toolResultText(execution.result.content) : generic.result(execution);
+const command = { ...generic, className: "chat-command-card", headerClassName: "chat-command-header", result: contentResult };
 const transfer = { ...generic, update: (execution?: ChatToolExecution) => transferProgress(execution, isRecord(execution?.details) ? execution.details : undefined) };
 const presentations: Record<string, ToolDetailsPresentation> = {
+	ask_user_decision: { ...generic, Component: UserDecisionDetails, result: contentResult },
 	remote_server_call: { ...command, Component: RemoteCommandDetails },
 	terminal_interaction: { ...command, Component: TerminalInteractionDetails },
 	sftp_download: { ...transfer, Component: DownloadToolDetails, progressLabel: "chat.tool.download.progress" },

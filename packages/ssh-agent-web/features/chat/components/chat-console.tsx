@@ -41,6 +41,9 @@ import { useDeployment } from "@/features/deploy/runtime/use-deployment";
 import { useDeploymentReview } from "@/features/deploy/runtime/use-deployment-review";
 import { FileReaderPage } from "@/features/file-reader/components/file-reader-page";
 import { useFileReaderTabs } from "@/features/file-reader/runtime/use-file-reader-tabs";
+import { MediaPreviewPage } from "@/features/media-preview/components/media-preview-page";
+import { mediaKind } from "@/features/media-preview/model/media-file";
+import { useMediaPreviewTabs } from "@/features/media-preview/runtime/use-media-preview-tabs";
 import { useDiagnose } from "@/features/diagnose/runtime/use-diagnose";
 import { diagnoseCommand } from "@/features/diagnose/model/diagnose-command";
 import { DiagnoseTaskPage } from "@/features/diagnose/components/diagnose-task-page";
@@ -80,11 +83,13 @@ export function ChatConsole({ sessionId }: { sessionId: string }) {
 	const terminalTask = useTerminalTask({ sessionId, mode: terminalMode, runActive: active,
 		submitting: runtime.submitting, sandboxPending: sandbox.pending });
 	const fileReader = useFileReaderTabs(sessionId, item?.session.workDir);
-	const taskDisplay = useTaskContainerDisplay(sessionId, terminalTask.present || deployment.open || diagnose.open || fileReader.documents.length > 0);
+	const mediaPreview = useMediaPreviewTabs(sessionId, item?.session.workDir);
+	const hasFilePreviews = fileReader.documents.length > 0 || mediaPreview.documents.length > 0;
+	const taskDisplay = useTaskContainerDisplay(sessionId, terminalTask.present || deployment.open || diagnose.open || hasFilePreviews);
 	const openFile = useCallback((path: string) => {
-		setActiveTaskTabId(fileReader.open(path));
+		setActiveTaskTabId(mediaKind(path) ? mediaPreview.open(path) : fileReader.open(path));
 		taskDisplay.reveal();
-	}, [fileReader.open, taskDisplay.reveal]);
+	}, [fileReader.open, mediaPreview.open, taskDisplay.reveal]);
 	const openAttachment = useCallback((attachment: SessionAttachment) => {
 		const tabId = fileReader.openAttachment(attachment);
 		if (tabId === null) return;
@@ -399,6 +404,10 @@ export function ChatConsole({ sessionId }: { sessionId: string }) {
 	for (const document of fileReader.documents) taskTabs.push({ id: document.id, title: document.name,
 		close: { label: intl.formatMessage({ id: "fileReader.close" }, { name: document.name }), onRequestClose: () => fileReader.close(document.id) },
 		content: <FileReaderPage key={`${sessionId}:${document.id}`} sessionId={sessionId} document={document} /> });
+	for (const document of mediaPreview.documents) taskTabs.push({ id: document.id, title: document.name,
+		close: { label: intl.formatMessage({ id: "mediaPreview.close" }, { name: document.name }), onRequestClose: () => mediaPreview.close(document.id) },
+		content: <MediaPreviewPage key={`${sessionId}:${document.id}`} sessionId={sessionId} document={document}
+			active={activeTaskTabId === document.id && taskDisplay.mode !== "collapsed"} /> });
 	if (diagnose.open && diagnose.selectedTaskId) taskTabs.push({ id: "diagnose", title: "Diagnose",
 		close: { label: intl.formatMessage({ id: "diagnose.close" }), onRequestClose: diagnose.hide },
 		content: <DiagnoseTaskPage key={`${sessionId}:${diagnose.selectedTaskId}`} sessionId={sessionId} taskId={diagnose.selectedTaskId}
@@ -416,7 +425,7 @@ export function ChatConsole({ sessionId }: { sessionId: string }) {
 			<WorkspaceSidebar activeWorkspaceId={item.workspace.id} activeSessionId={item.session.id}
 				onSessionUpdated={async (updatedId) => { if (updatedId === sessionId) await terminalMode.refresh(); }} />
 			<main
-				className={`session-console page-main page-main-chat ${taskTabs.length > 0 ? "session-console-tasks-present" : ""} ${(terminalTask.expanded || deployment.open || diagnose.open || fileReader.documents.length > 0) && taskDisplay.mode === "docked" ? "session-console-tasks-active" : ""}`}
+				className={`session-console page-main page-main-chat ${taskTabs.length > 0 ? "session-console-tasks-present" : ""} ${(terminalTask.expanded || deployment.open || diagnose.open || hasFilePreviews) && taskDisplay.mode === "docked" ? "session-console-tasks-active" : ""}`}
 				data-task-display={taskDisplay.mode}
 				data-task-container-scope
 				style={{ "--task-panel-width": TASK_CONTAINER_DEFAULTS.sidePanelWidth,
