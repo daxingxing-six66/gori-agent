@@ -1,6 +1,6 @@
 # Session 页首服务器指标
 
-适用于已有 Session 页首的 CPU、内存和网络收发速率。数据是远端服务器整体指标，按 Workspace 共享，不表示单个会话或进程的资源占用。
+适用于已有 Session 标题后的服务器与会话信息卡片，汇总 CPU、内存、网络、本地工作目录和沙盒可写目录。指标是远端服务器整体数据，按 Workspace 共享，不表示单个会话或进程的资源占用。
 
 ## 数据与生命周期
 
@@ -15,8 +15,10 @@
 - `features/server-metrics/` 独立持有数据投影、事件适配器、共享内存 store、React hook 和展示。只消费 Workspace `monitoring`，不消费 Chat Run/Terminal/Deployment 事件，不依赖 SFTP 页面状态；事件地址使用与普通 API 隔离的事件 origin，见 [transport-channels.md](./transport-channels.md)。
 - store 按 Workspace + Locale 共享监控订阅，底层再通过 shared/events/workspace-events.ts 与标题/Deploy/Diagnose/SFTP 复用 Workspace 连接。最后指标消费者离开即移除 monitoring 订阅，其他功能继续接收事件；缓存保留 30 秒后淘汰。跨同工作区会话可立即显示已有快照。更换工作区或语言使用独立资源，关闭订阅的迟到回调与较旧/其他工作区快照不能覆盖当前数据。
 - 首次等待显示占位符；断线、monitor.error 和超过 10 秒未更新时分别表示重连、失败或等待更新，并保留最后成功数据。监控恢复后清除错误；首次网络基准显示采样中，不伪造零速率。
-- `SessionServerMetrics` 在 `ChatConsole` 的页首接入，`ChatPageHeader` 只接受可选 ReactNode 插槽，不持有采集/订阅逻辑。`ServerMetricsStrip` 展示三个图标组：CPU 百分比、内存百分比、网络发送 ↑ / 接收 ↓，速率按 B/s、KiB/s、MiB/s、GiB/s 转换。
-- 悬停与无障碍文案说明服务器视角、网卡、更新时间和数据状态。桌面保持紧凑单行，窄屏页首换行以保留全部指标。Overview 仍展示原三个资源卡，不增加网络卡。
+- `ChatConsole` 将 `SessionInfoPopover` 放入 `ChatPageHeader.sessionInfo`，最终通过通用 `PageHeader.titleTrailing` 插槽紧邻标题展示单个信息图标，右侧恢复原有沙盒图标与短文案，位于 Run 状态之前。页首只组合展示，不持有采集/订阅逻辑。`SessionServerMetrics` 作为卡片资源区域传入，卡片隐藏时仍挂载，不随悬浮重复创建监控订阅。
+- 卡片支持悬浮、键盘聚焦和点击打开；移出后延迟关闭，点击可保持打开，方向键下移入卡片，Escape、失焦或点击外部关闭。通过 body portal 固定定位，宽度最大 380px，按视口留白约束，长目录换行且内容可滚动。页首保持单行，长标题截断，窄屏不展开整行指标。
+- `ServerMetricsStrip` 在卡片展示 CPU 百分比、内存百分比及已用/总量、网络发送 ↑ / 接收 ↓；容量与速率按 B、KiB、MiB、GiB 转换。不展示网卡说明、实时状态和更新时间两行描述，采样状态保留在无障碍名称中，缺失值使用占位符，采集错误仍显示。Overview 仍展示原三个资源卡，不增加网络卡。
+- 本地目录优先取 Session `workDir`；历史 null 值由 `useSessionWorkDir` 在首次打开时通过现有本地文件接口的 `rootPath` 解析后端默认目录，不猜测 Workspace 默认值。成功结果缓存，请求关闭或切换会话时取消；失败显示不可用并在下次打开重试。沙盒范围来自 Hook 已确认的最新设置：普通开启列出 Session 目录，只读列出 `/tmp` 并说明 `/dev/null` 例外，关闭时明确目录限制未启用，不将保留的配置冒充有效范围。
 
 ## 入口与移除
 
@@ -28,10 +30,11 @@
 | 缓存订阅接入点和 SSE 公共字段 | `packages/ssh-agent/src/application/workspace-event-hub.ts` |
 | 前端投影、订阅和共享缓存 | `packages/ssh-agent-web/features/server-metrics/model/server-metrics.ts`、`runtime/server-metrics-stream.ts`、`runtime/server-metrics-store.ts`、`runtime/use-server-metrics.ts` |
 | 页首展示和局部样式 | `packages/ssh-agent-web/features/server-metrics/components/session-server-metrics.tsx`、`server-metrics-strip.tsx`、`server-metrics.css` |
+| 信息卡片、定位与本地目录解析 | `packages/ssh-agent-web/features/session/components/session-info-popover.tsx`、`session-info-popover.css`、`runtime/use-session-work-dir.ts` |
 | 组合接入 | `packages/ssh-agent-web/features/chat/components/chat-console.tsx`、`chat-page-header.tsx` |
-| 独立中英文目录 | `packages/ssh-agent-web/features/i18n/messages/zh-CN/server-metrics.ts`、`en-US/server-metrics.ts` |
-| 回归 | `packages/ssh-agent/test/remote-network-sampler.test.ts`、`remote-metrics-subscriptions.test.ts`、`packages/ssh-agent-web/tests/server-metrics-store.test.ts`、`server-metrics-strip.test.tsx` |
+| 中英文目录 | 资源文案使用 `packages/ssh-agent-web/features/i18n/messages/zh-CN/server-metrics.ts`、`en-US/server-metrics.ts`，卡片和目录状态使用对应 `session.ts` |
+| 回归 | `packages/ssh-agent/test/remote-network-sampler.test.ts`、`remote-metrics-subscriptions.test.ts`、`packages/ssh-agent-web/tests/server-metrics-store.test.ts`、`server-metrics-strip.test.tsx`、`session-work-dir.test.ts` |
 
-仅移除 Session 展示时，删除 ChatConsole 的组件导入与页首插槽内容即可停止该功能的订阅，再移除 `features/server-metrics/` 及其独立双语目录/聚合入口；ChatPageHeader 的可选插槽也可删除。完全移除网络采集时，再移除 Sampler、network 字段及 RemoteMetricsService 的少量接入；缓存快照接口可以独立保留供原 Overview 使用。不涉及 migration 或历史数据清理。
+仅移除资源指标时，删除信息卡片的 `SessionServerMetrics` 槽内容即可停止该功能的订阅，再移除 `features/server-metrics/` 及其独立双语目录/聚合入口；会话目录和沙盒信息可继续保留。完全移除卡片时再移除 ChatConsole 的 `sessionInfo`、Popover 和目录解析 Hook。完全移除网络采集时，再移除 Sampler、network 字段及 RemoteMetricsService 的少量接入；缓存快照接口可以独立保留供原 Overview 使用。不涉及 migration 或历史数据清理。
 
 定向测试使用模拟 Broker、EventSource 端口和时钟。真实 Linux/SSH 采样未由这些测试证明，需在已授权目标上另行验收。

@@ -6,7 +6,7 @@
 
 - 配置属于 Session；同一 Workspace 的其他 Session 不受影响。新 Session 默认开启，SQLite v27 为已有 Session 增加 `sandbox_enabled=1`，保留其他字段和 revision。创建与更新 API 只接受布尔值，更新仍要求 `expectedRevision`。
 - Composer 菜单仅保留“沙盒模式”/“sandbox”开关入口。小字介绍远端进程的文件写入限制；右侧呼吸灯分别用主题成功色、中性色和警告色表示开启、关闭、切换中，状态同时提供无障碍标签与悬停说明。原有主题的开启色为绿色，ION 实验主题使用蓝色；颜色不改变沙盒配置。选择入口直接切换，不创建 Chat 消息、Agent Run 或 Tool Call，不要求先配置模型。只读模式统一在编辑会话中设置，不提供 Composer 入口。
-- Chat 页首在运行状态左侧常驻只读沙盒标识，以盾牌/划线盾牌和本地化短文案表示开启/只读/关闭；复用 Hook 的已确认 Session 设置，不提前展示尚未提交的切换结果。标识没有按钮、点击动作或配置入口。可写目录编辑统一放在侧边栏每个 Session 的铅笔编辑弹窗中；列表可跨目录选择、移除，也可显式复制最新 Workspace 默认值。
+- Chat 标题后的单个信息图标支持悬浮、聚焦或点击打开只读信息卡片；页首右侧、运行状态之前的 `SessionSandboxBadge` 常驻显示原有盾牌/划线盾牌与开启/只读/关闭短文案，卡片仅展示有效可写范围。复用 Hook 已确认的最新 Session 设置和目录，不提前展示尚未提交的切换结果；只读固定展示 `/tmp` 及 `/dev/null` 例外，关闭时说明目录限制未启用。卡片不提供配置操作，可写目录编辑统一放在侧边栏每个 Session 的铅笔编辑弹窗中；列表可跨目录选择、移除，也可显式复制最新 Workspace 默认值。详见 [session-server-metrics.md](./session-server-metrics.md)。
 - `/sandbox` 切换当前设置；兼容直接输入 `/sandbox on`、`/sandbox off`、`/sandbox status`。带附件或未知参数（包括已移除的 `read-only`）返回本地错误并保留草稿，不把命令发给模型。`on` 恢复所选目录可写，`off` 关闭沙盒并退出只读；原 `/sandbox` 仍反转开关。
 - 前端 Hook 先 GET 权威 Session，再以最新 revision PATCH；切换操作根据 GET 的最新值反转，避免过期 UI 快照导致反向操作。请求互斥，导航到其他 Session 后取消读取请求、忽略晚到结果；Terminal 刷新也复核取消信号。PATCH 失败后重新读取实际设置和 Terminal，覆盖“设置已提交但 PTY 重开失败”的情形。
 
@@ -58,7 +58,7 @@ Session Service 在读取/保存开关或目录配置前获取 `sandbox_update` 
 | 部署计划来源与阶段审批 | `packages/ssh-agent/src/application/services/deployment-service.ts`、`application/tools/deployment-agent-tool.ts`、`infrastructure/sqlite/sqlite-deployment-repository.ts` |
 | Hook、解析与菜单集成 | `packages/ssh-agent-web/features/session/runtime/use-session-sandbox.ts`、`model/session-sandbox-command.ts`、`features/chat/components/chat-console.tsx`、`chat-token-editor.tsx` |
 | 只读选择器、说明浮层与目录禁用蒙层 | `packages/ssh-agent-web/features/session/components/session-dialog.tsx`、`session-edit-dialog.tsx`、`features/workspace/components/sandbox-writable-roots-field.tsx`、`sandbox-writable-roots.css` |
-| 页首沙盒标识、切换进度与错误提示 | `packages/ssh-agent-web/features/chat/components/chat-page-header.tsx` 只组合状态展示；`features/session/components/session-sandbox-badge.tsx`、`session-sandbox-status.tsx` 保留标识和切换提示 |
+| 页首信息卡片、沙盒标识、切换进度与错误提示 | `packages/ssh-agent-web/features/chat/components/chat-page-header.tsx` 只组合展示插槽；`features/session/components/session-info-popover.tsx` 展示范围，`session-sandbox-badge.tsx` 由 ChatPageHeader 放在右侧运行状态之前，`session-sandbox-status.tsx` 保留切换提示 |
 | 双语标题和说明 | `packages/ssh-agent-web/features/i18n/messages/zh-CN/session.ts`、`en-US/session.ts` |
 | 集中回归 | `packages/ssh-agent/test/session-sandbox.test.ts`、`chat-tool-authorization-policy.test.ts`、`chat-agent-runtime-factory.test.ts`、`deployment-service.test.ts`、`packages/ssh-agent-web/tests/use-session-sandbox.test.ts`、`session-sandbox-command.test.tsx` |
 

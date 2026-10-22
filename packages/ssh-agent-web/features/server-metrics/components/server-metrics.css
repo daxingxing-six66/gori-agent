@@ -1,37 +1,10 @@
-.server-metrics-strip {
-	display: inline-flex;
-	align-items: center;
-	gap: 14px;
-	color: var(--text-secondary);
-	font-size: 11px;
-	font-variant-numeric: tabular-nums;
-	white-space: nowrap;
-}
-.server-metric { display: inline-flex; align-items: center; gap: 5px; }
-.server-metric svg { flex-shrink: 0; color: var(--text-muted); }
-.server-metric-network { gap: 7px; }
-.server-metrics-strip[data-state="sampling"],
-.server-metrics-strip[data-state="stale"],
-.server-metrics-strip[data-state="reconnecting"] { color: var(--text-muted); }
-.server-metrics-strip[data-state="unavailable"] { color: var(--warning); }
-.page-header-compact:has(.server-metrics-strip) .page-header-identity { flex: 1; }
-
-@media (max-width: 760px) {
-	.page-main-chat .page-header-compact:has(.server-metrics-strip) {
-		height: auto;
-		flex-wrap: wrap;
-		row-gap: 7px;
-	}
-	.page-header-compact:has(.server-metrics-strip) .page-header-identity { flex-basis: 100%; }
-	.page-header-compact:has(.server-metrics-strip) .page-header-actions {
-		min-width: 0;
-		flex-wrap: wrap;
-		justify-content: flex-start;
-		margin-left: 0;
-	}
-	.server-metrics-strip { gap: 10px; }
-}
-@media (max-width: 480px) {
-	.server-metrics-strip { flex-wrap: wrap; gap: 5px 8px; font-size: 10px; }
-	.server-metric { gap: 4px; }
-}
+.server-metrics-details { font-size: 12px; font-variant-numeric: tabular-nums; }
+.server-metrics-details dl { display: grid; gap: 12px; }
+.server-metrics-details dl > div { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.server-metrics-details dt { display: flex; align-items: center; gap: 7px; color: var(--text-secondary); line-height: 18px; }
+.server-metrics-details dt svg { color: var(--text-muted); }
+.server-metrics-details dd { text-align: right; line-height: 18px; }
+.server-metrics-capacity { display: block; color: var(--text-muted); font-size: 10px; }
+.server-metrics-rates { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 3px 10px; }
+.server-metrics-rates span { white-space: nowrap; }
+.server-metrics-detail-error { margin: 9px 0 0; color: var(--warning); font-size: 10px; line-height: 16px; }

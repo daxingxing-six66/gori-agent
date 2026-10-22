@@ -104,6 +104,6 @@ export function useSessionSandbox(options: {
 		status: { label: statusLabel, tone: pending ? "pending" : enabled ? "active" : "inactive" },
 		disabled: disabled || pending || !session,
 	}];
-	return { enabled, readOnly, pending, disabled, statusLabel, tools, error, notice, execute,
+	return { enabled, readOnly, writableRoots: latest?.sandboxWritableRoots ?? [], pending, disabled, statusLabel, tools, error, notice, execute,
 		clearNotice: () => { setError(null); setNotice(null); } };
 }

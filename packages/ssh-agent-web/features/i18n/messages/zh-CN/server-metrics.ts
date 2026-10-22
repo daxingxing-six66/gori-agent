@@ -1,4 +1,6 @@
 export const zhCNServerMetricsMessages = {
+	"serverMetrics.memoryLabel": "内存",
+	"serverMetrics.networkLabel": "网络",
 	"serverMetrics.label": "远端服务器整体资源",
 	"serverMetrics.cpu": "CPU {value}",
 	"serverMetrics.memory": "内存 {value}",

@@ -17,10 +17,10 @@ interface ChatPageHeaderProps extends ChatStatusProps {
 	title: string;
 	sandboxEnabled: boolean;
 	sandboxReadOnly?: boolean;
-	serverMetrics?: ReactNode;
+	sessionInfo?: ReactNode;
 }
 
-export function ChatPageHeader({ title, sandboxEnabled, sandboxReadOnly, serverMetrics, active, runStatus, connection, queueCount }: ChatPageHeaderProps) {
+export function ChatPageHeader({ title, sandboxEnabled, sandboxReadOnly, sessionInfo, active, runStatus, connection, queueCount }: ChatPageHeaderProps) {
 	return (
 		<div className="ion-chat-header">
 			<div className="ion-only ion-region-label ion-region-agent" aria-hidden="true"><span>02 /</span><span>AGENT CORE</span></div>
@@ -28,8 +28,8 @@ export function ChatPageHeader({ title, sandboxEnabled, sandboxReadOnly, serverM
 				title={title}
 				compact
 				leading={<Cpu size={18} className="ion-only ion-header-symbol" aria-hidden="true" />}
+				titleTrailing={sessionInfo}
 				actions={<>
-					{serverMetrics}
 					<SessionSandboxBadge enabled={sandboxEnabled} readOnly={sandboxReadOnly} />
 					<ChatStatus active={active} runStatus={runStatus} connection={connection} queueCount={queueCount} />
 				</>}

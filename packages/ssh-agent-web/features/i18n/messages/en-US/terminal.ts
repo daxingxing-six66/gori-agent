@@ -1,4 +1,5 @@
 export const enUSTerminalMessages = {
+	"terminal.tool.name": "Terminal Mode",
 	"terminal.tool.close.description": "Close the current persistent Terminal session",
 	"terminal.tool.open.description": "Create a persistent SSH PTY for the Agent",
 	"terminal.tool.reveal.description": "Show the existing Terminal tab",

@@ -6,17 +6,18 @@ interface PageHeaderProps {
 	subtitle?: string;
 	compact?: boolean;
 	leading?: ReactNode;
+	titleTrailing?: ReactNode;
 	meta?: ReactNode;
 	actions?: ReactNode;
 }
 
 /** Persistent context above the page's navigation or content. */
-export function PageHeader({ title, subtitle, compact = false, leading, meta, actions }: PageHeaderProps) {
+export function PageHeader({ title, subtitle, compact = false, leading, titleTrailing, meta, actions }: PageHeaderProps) {
 	return (
 		<header className={`page-header${compact ? " page-header-compact" : ""}`}>
 			{leading}
-			<div className="page-header-identity">
-				<h1 title={title}>{title}</h1>
+			<div className={`page-header-identity${titleTrailing ? " page-header-identity-with-trailing" : ""}`}>
+				<div className="page-header-title-line"><h1 title={title}>{title}</h1>{titleTrailing}</div>
 				{subtitle ? <p title={subtitle}>{subtitle}</p> : null}
 			</div>
 			{meta ? <div className="page-header-meta">{meta}</div> : null}

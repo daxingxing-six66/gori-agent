@@ -1,4 +1,6 @@
 export const enUSServerMetricsMessages = {
+	"serverMetrics.memoryLabel": "Memory",
+	"serverMetrics.networkLabel": "Network",
 	"serverMetrics.label": "Remote server resources",
 	"serverMetrics.cpu": "CPU {value}",
 	"serverMetrics.memory": "Memory {value}",

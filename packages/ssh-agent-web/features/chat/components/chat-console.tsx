@@ -21,6 +21,7 @@ import { thinkingLevelForModel } from "@/features/llm-provider/model/llm-provide
 import { sessionApi } from "@/features/session/api/session-api";
 import { ChatPageHeader } from "@/features/chat/components/chat-page-header";
 import { SessionServerMetrics } from "@/features/server-metrics/components/session-server-metrics";
+import { SessionInfoPopover } from "@/features/session/components/session-info-popover";
 import { SessionSandboxStatus } from "@/features/session/components/session-sandbox-status";
 import { isSessionSandboxCommand } from "@/features/session/model/session-sandbox-command";
 import { useSessionSandbox } from "@/features/session/runtime/use-session-sandbox";
@@ -126,7 +127,7 @@ export function ChatConsole({ sessionId }: { sessionId: string }) {
 		{
 			id: "terminal",
 			icon: "terminal",
-			name: "Terminal Mode",
+			name: intl.formatMessage({ id: "terminal.tool.name" }),
 			description: intl.formatMessage({ id: terminalTask.present ? "terminal.tool.reveal.description" : "terminal.tool.open.description" }),
 			keywords: ["terminal", "terminal mode", "终端", "pty"],
 			status: terminalStatus,
@@ -435,7 +436,9 @@ export function ChatConsole({ sessionId }: { sessionId: string }) {
 			>
 				<div className="session-console-header min-w-0">
 					<ChatPageHeader title={item.session.displayName} sandboxEnabled={sandbox.enabled} sandboxReadOnly={sandbox.readOnly} active={active} runStatus={runtime.state.run?.status} connection={runtime.state.connection} queueCount={pendingQueue.length}
-						serverMetrics={<SessionServerMetrics workspaceId={item.workspace.id} />} />
+						sessionInfo={<SessionInfoPopover key={sessionId} sessionId={sessionId} workDir={item.session.workDir}
+							sandboxEnabled={sandbox.enabled} sandboxReadOnly={sandbox.readOnly} writableRoots={sandbox.writableRoots}
+							metrics={<SessionServerMetrics workspaceId={item.workspace.id} />} />} />
 					<SessionSandboxStatus pending={sandbox.pending} label={sandbox.statusLabel} error={sandbox.error} notice={sandbox.notice} onDismiss={sandbox.clearNotice} />
 					{terminalMode.error && !terminalTask.present ? <p role="alert" className="px-4 py-2 text-xs text-danger">{terminalMode.error}</p> : null}
 					<TerminalSandboxNotice sandbox={terminalTask.active ? terminalMode.status?.terminal?.sandbox : null} />

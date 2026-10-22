@@ -1,4 +1,11 @@
 export const enUSSessionMessages = {
+	"session.info.label": "Server and session information",
+	"session.info.resources": "Server resources",
+	"session.info.writableRoots": "Sandbox writable directories",
+	"session.info.noWritableRoots": "No writable directories configured",
+	"session.info.sandboxOff": "Sandboxing is disabled; writable directories are unrestricted.",
+	"session.info.readOnlyPaths": "Read-only mode permits writes only to /tmp, with /dev/null retained.",
+	"session.info.workDirUnavailable": "Local working directory is unavailable",
 	"session.sandbox.settings": "Configure sandbox writable directories",
 	"session.sandbox.on": "Sandbox enabled",
 	"session.sandbox.off": "Sandbox disabled",

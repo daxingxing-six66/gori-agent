@@ -63,3 +63,5 @@ GET /api/local-files?path=/var/log
 | 前端回归测试 | [chat-composer-menu.test.ts](../../../packages/ssh-agent-web/tests/chat-composer-menu.test.ts)、[chat-composer.test.ts](../../../packages/ssh-agent-web/tests/chat-composer.test.ts)、[session-directory-picker.test.tsx](../../../packages/ssh-agent-web/tests/session-directory-picker.test.tsx) |
 
 修改路径边界时必须同时覆盖词法逃逸、真实路径逃逸、符号链接、缺失路径、非目录路径和 Session 默认工作目录。
+
+Session 标题后的只读信息卡片也复用 `localFilesApi.listSession()` 的 `rootPath`：显式 `workDir` 直接展示，历史 null 值在打开卡片时解析实际后端默认目录，不能用 Workspace 当前默认值替代。`use-session-work-dir.ts` 负责取消迟到请求、成功缓存及失败后重新打开重试；不新增后端接口或改变本地文件访问范围。回归见 `tests/session-work-dir.test.ts`。

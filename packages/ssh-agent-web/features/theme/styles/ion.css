@@ -353,7 +353,7 @@
 @media (max-width: 760px) {
 	:root[data-theme="ion"] .ion-region-label { min-height: 22px; padding-inline: 12px; font-size: 8px; line-height: 22px; letter-spacing: .08em; }
 	:root[data-theme="ion"] .page-main-chat .page-header { padding-left: 48px; }
-	:root[data-theme="ion"] .page-header-compact:has(.server-metrics-strip) .ion-header-symbol { display: none; }
+	:root[data-theme="ion"] .page-header-compact:has(.session-info-trigger) .ion-header-symbol { display: none; }
 	:root[data-theme="ion"] .app-layout:has(.page-main-chat) .mobile-sidebar-trigger { top: 30px; border-color: #725396; border-radius: 2px; }
 	:root[data-theme="ion"] .session-task-area[data-display="fullscreen"] .ion-region-observer { padding-left: 48px; }
 	:root[data-theme="ion"] .chat-assistant-message:not(.chat-tool-only) { padding-left: 18px; }

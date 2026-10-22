@@ -20,6 +20,9 @@
 	background: var(--surface);
 }
 .page-header-identity { min-width: 0; }
+.page-header-identity-with-trailing { flex: 1; }
+.page-header-title-line { display: flex; min-width: 0; align-items: center; gap: 8px; }
+.page-header-title-line h1 { min-width: 0; }
 .page-header-identity h1 { overflow: hidden; font-size: 15px; font-weight: 600; line-height: 20px; text-overflow: ellipsis; white-space: nowrap; }
 .page-header-identity p { overflow: hidden; margin-top: 2px; color: var(--text-muted); font-size: 12px; line-height: 16px; text-overflow: ellipsis; white-space: nowrap; }
 .page-header [role="status"] { border-radius: var(--radius-tag); font-size: 12px; }

@@ -14,32 +14,18 @@ export function ServerMetricsStrip({ state }: { state: ServerMetricsState }) {
 	const upload = formatRate(network?.transmitBytesPerSecond);
 	const download = formatRate(network?.receiveBytesPerSecond);
 	const status = intl.formatMessage({ id: `serverMetrics.status.${state.status}` });
-	const updated = metrics ? intl.formatMessage({ id: "serverMetrics.updated" }, {
-		time: intl.formatTime(metrics.sampledAt, { hour: "2-digit", minute: "2-digit", second: "2-digit" }),
-	}) : "";
-	const detail = [status, updated, state.error].filter(Boolean).join(" · ");
-	const cpuLabel = intl.formatMessage({ id: "serverMetrics.cpu" }, { value: cpu });
-	const memoryLabel = intl.formatMessage({ id: "serverMetrics.memory" }, { value: memory });
 	const uploadLabel = intl.formatMessage({ id: "serverMetrics.upload" }, { value: upload });
 	const downloadLabel = intl.formatMessage({ id: "serverMetrics.download" }, { value: download });
-	const networkDetail = network ? intl.formatMessage({ id: "serverMetrics.interface" }, { name: network.interfaceName }) :
-		intl.formatMessage({ id: "serverMetrics.networkUnavailable" });
-	const ratePending = network && (network.transmitBytesPerSecond === null || network.receiveBytesPerSecond === null);
-
-	return <div className="server-metrics-strip" data-state={state.status} role="group"
-		aria-label={intl.formatMessage({ id: "serverMetrics.label" })} title={detail}>
-		<span className="server-metric" aria-label={cpuLabel} title={`${cpuLabel} · ${detail}`}>
-			<Cpu size={13} aria-hidden="true" /><span>{cpu}</span>
-		</span>
-		<span className="server-metric" aria-label={memoryLabel} title={`${memoryLabel} · ${detail}`}>
-			<MemoryStick size={13} aria-hidden="true" /><span>{memory}</span>
-		</span>
-		<span className="server-metric server-metric-network" aria-label={`${uploadLabel} · ${downloadLabel}`}
-			title={[networkDetail, ratePending ? intl.formatMessage({ id: "serverMetrics.status.sampling" }) : "", detail].filter(Boolean).join(" · ")}>
-			<Network size={13} aria-hidden="true" />
-			<span aria-label={uploadLabel}><span aria-hidden="true">↑ </span>{upload}</span>
-			<span aria-label={downloadLabel}><span aria-hidden="true">↓ </span>{download}</span>
-		</span>
+	return <div className="server-metrics-details" data-state={state.status} role="group"
+		aria-label={`${intl.formatMessage({ id: "serverMetrics.label" })} · ${status}`}>
+		<dl>
+			<div><dt><Cpu size={14} aria-hidden="true" />CPU</dt><dd>{cpu}</dd></div>
+			<div><dt><MemoryStick size={14} aria-hidden="true" />{intl.formatMessage({ id: "serverMetrics.memoryLabel" })}</dt>
+				<dd>{memory}{metrics ? <span className="server-metrics-capacity">{formatBytes(metrics.memory.usedBytes)} / {formatBytes(metrics.memory.totalBytes)}</span> : null}</dd></div>
+			<div><dt><Network size={14} aria-hidden="true" />{intl.formatMessage({ id: "serverMetrics.networkLabel" })}</dt>
+				<dd className="server-metrics-rates"><span aria-label={uploadLabel}>↑ {upload}</span><span aria-label={downloadLabel}>↓ {download}</span></dd></div>
+		</dl>
+		{state.error ? <p className="server-metrics-detail-error" role="alert">{state.error}</p> : null}
 	</div>;
 }
 
@@ -49,7 +35,11 @@ function formatPercent(value?: number): string {
 
 function formatRate(value?: number | null): string {
 	if (value === undefined || value === null) return "—";
-	const units = ["B/s", "KiB/s", "MiB/s", "GiB/s"];
+	return `${formatBytes(value)}/s`;
+}
+
+function formatBytes(value: number): string {
+	const units = ["B", "KiB", "MiB", "GiB"];
 	let unit = 0;
 	while (value >= 1024 && unit < units.length - 1) {
 		value /= 1024;

@@ -15,7 +15,7 @@
 
 - ION 是独立可选的终端与 AI 视觉实验，样式集中在 `features/theme/styles/ion.css` 并由 globals 导入。服务器导航使用近黑暖底与琥珀 `#F2B56B`，Agent 会话使用紫黑 `#13101D` 与紫罗兰 `#BE9BFF`，运行观察使用蓝黑 Terminal `#080E18` 与冰蓝 `#79BAFF`。成功状态和 ANSI green/brightGreen 槽均使用蓝色，ANSI cyan 使用冰蓝，不引入绿色或青绿色。统计页局部语义变量、旧 Tailwind 明亮/绿色工具类与焦点样式均覆盖为 ION 配色。
 - ION 专属 `ion-only` 装饰包含终端品牌符号、ION 标记与三个区域编号条；原有主题隐藏这些元素。区域条不承担运行状态或数据。服务器区保留树状导航并以命令提示符强调当前会话，Agent 区使用点阵底纹、方形 AI 标记、推理轴线与紫色顶边 Composer，运行区保留独立任务容器与真实 Terminal 内容。新会话用 CPU/电路图形替代绿色品牌位图；不影响浏览器静态 favicon。
-- ION 普通组件 3px、Composer 4px、标签 2px 圆角，顶栏及输入使用系统等宽字体，正文仍为 14px 可读字体。Composer 顶部为 2px 紫色边线并保留轻微紫色阴影；不改变输入增长、操作分组、草稿与审批行为。窄屏在显示服务器指标时隐藏装饰 CPU 前缀以避免增加标题行。新增的静态区域条高 26px，760px 以下为 22px；任务区窄屏为它额外预留 26px，收起时隐藏区域条。既有任务的放大、关闭、挂载和 Terminal 尺寸同步仍由原机制负责。
+- ION 普通组件 3px、Composer 4px、标签 2px 圆角，顶栏及输入使用系统等宽字体，正文仍为 14px 可读字体。Composer 顶部为 2px 紫色边线并保留轻微紫色阴影；不改变输入增长、操作分组、草稿与审批行为。窄屏在显示会话信息图标时隐藏装饰 CPU 前缀以避免增加标题行。新增的静态区域条高 26px，760px 以下为 22px；任务区窄屏为它额外预留 26px，收起时隐藏区域条。既有任务的放大、关闭、挂载和 Terminal 尺寸同步仍由原机制负责。
 
 桌面侧栏展开宽度为 256px，收起宽度为 44px，展开与设置按钮在收起栏内居中。侧栏宽度过渡改变 Terminal 的实际容器尺寸，仍由既有 `ResizeObserver` 和 `FitAddon.proposeDimensions()` 测量行列数；拥有 resize 权限的 attachment 在防抖后通过原接口提交，仅在行列数变化时请求，并以服务端 `terminal.resized` 事件更新 xterm。
 
@@ -38,7 +38,7 @@ Composer 的发送/停止主操作按钮共用 32px 尺寸，原有三套配色�
 | xterm palette 与运行时更新 | `packages/ssh-agent-web/features/terminal/model/terminal-theme.ts`、`packages/ssh-agent-web/features/terminal/components/terminal-panel.tsx` |
 | 状态与 Terminal 配色测试 | `packages/ssh-agent-web/tests/theme-state.test.tsx`、`packages/ssh-agent-web/tests/terminal-theme.test.ts` |
 
-多目录字段及远端多选器使用 `features/workspace/components/sandbox-writable-roots.css` 的局部样式与主题变量，目录列表保持紧凑行高、小图标及文字操作，选中路径以可移除标签呈现；窄屏操作区换行，列表文本截断并保留完整 title。Session 编辑弹窗复用同一字段及 `ManagementDialog` 的主题、滚动和操作区，不另建明暗配色；页首沙盒标识保留只读标签样式。
+多目录字段及远端多选器使用 `features/workspace/components/sandbox-writable-roots.css` 的局部样式与主题变量，目录列表保持紧凑行高、小图标及文字操作，选中路径以可移除标签呈现；窄屏操作区换行，列表文本截断并保留完整 title。Session 编辑弹窗复用同一字段及 `ManagementDialog` 的主题、滚动和操作区，不另建明暗配色；页首右侧、运行状态之前的沙盒标识保留原有只读标签样式；卡片通过 portal 使用根主题语义变量和圆角 Token。
 
 统计页面采用独立的分析视图风格，样式在 `features/statistics/components/statistics.css`：仅在统计 main 内覆盖语义变量为中性灰/深色表面，Sidebar 和其他页面不受影响。深色 KPI、面板标题带、较强边框和多色数据序列区分指标、分析和明细区域；四种主题仍使用统一偏好入口。图表浮层使用统计局部固定定位，不进入全局主题或业务状态。详见 [statistics.md](./statistics.md)。
 

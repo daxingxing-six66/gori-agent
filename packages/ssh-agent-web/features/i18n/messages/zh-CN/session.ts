@@ -1,4 +1,11 @@
 export const zhCNSessionMessages = {
+	"session.info.label": "服务器与会话信息",
+	"session.info.resources": "服务器资源",
+	"session.info.writableRoots": "沙盒可写目录",
+	"session.info.noWritableRoots": "未配置可写目录",
+	"session.info.sandboxOff": "沙盒已关闭，当前不限制可写目录。",
+	"session.info.readOnlyPaths": "只读模式仅允许写入 /tmp，并保留 /dev/null。",
+	"session.info.workDirUnavailable": "无法读取本地工作目录",
 	"session.sandbox.settings": "设置沙盒可写目录",
 	"session.sandbox.on": "沙盒已开启",
 	"session.sandbox.off": "沙盒已关闭",

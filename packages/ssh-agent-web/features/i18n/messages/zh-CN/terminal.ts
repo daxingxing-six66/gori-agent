@@ -1,4 +1,5 @@
 export const zhCNTerminalMessages = {
+	"terminal.tool.name": "终端模式",
 	"terminal.tool.close.description": "选择后关闭当前持久化终端会话",
 	"terminal.tool.open.description": "创建持久化 SSH PTY 供 Agent 使用",
 	"terminal.tool.reveal.description": "定位到当前 Terminal 标签页",

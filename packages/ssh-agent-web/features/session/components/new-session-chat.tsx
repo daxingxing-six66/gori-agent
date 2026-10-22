@@ -71,7 +71,7 @@ export function NewSessionChat({ workspaceId }: { workspaceId: string }) {
 	}, {
 		id: "terminal",
 		icon: "terminal",
-		name: "Terminal Mode",
+		name: intl.formatMessage({ id: "terminal.tool.name" }),
 		description: intl.formatMessage({ id: "session.tool.terminal.description" }),
 		keywords: ["terminal", "terminal mode", "终端", "pty"],
 		status: { label: intl.formatMessage({ id: "session.tool.notStarted" }), tone: "inactive" },
