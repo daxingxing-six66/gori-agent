@@ -29,18 +29,41 @@ const task: DiagnoseTask = { id: "task", sessionId: "s", workspaceId: "w", reque
 const node: DiagnoseNode = { taskId: task.id, sequence: 1, direction: "Logs", status: "diagnosing", explanation: "one", revision: 1, createdAt: 2, updatedAt: 2 };
 let sessionId = "s";
 const attachRun = vi.fn();
+const onHistoryResync = vi.fn<() => Promise<void>>();
 let value: ReturnType<typeof useDiagnose>;
 function render() { value = driver.render(() => useDiagnose({ sessionId, workspaceId: "w", model: null, thinkingLevel: "off", serverInteractionMode: "command", attachRun,
-	onHistoryMessage: vi.fn(), onHistoryResync: async () => {} })); return value; }
+	onHistoryMessage: vi.fn(), onHistoryResync })); return value; }
 async function settle() { for (let count = 0; count < 5; count++) { for (let tick = 0; tick < 10; tick++) await Promise.resolve(); render(); } }
 beforeEach(async () => {
 	vi.resetAllMocks(); vi.stubGlobal("EventSource", FakeEventSource); sessionId = "s"; driver = new HookDriver();
+	onHistoryResync.mockResolvedValue(undefined);
 	vi.mocked(diagnoseApi.active).mockResolvedValue(task); vi.mocked(diagnoseApi.get).mockResolvedValue(task); vi.mocked(diagnoseApi.nodes).mockResolvedValue({ nodes: [], nextBeforeSequence: null });
 	render(); await settle();
 });
 afterEach(() => { driver.unmount(); vi.unstubAllGlobals(); });
 
 describe("diagnosis scope and event races", () => {
+	it("reconciles the history card after a start response without a Run, even when its SSE was missed", async () => {
+		driver.unmount(); vi.mocked(diagnoseApi.active).mockResolvedValue(null); driver = new HookDriver(); render(); await settle();
+		vi.mocked(diagnoseApi.start).mockResolvedValue({ task });
+		expect(await value.show()).toBe(true); render();
+		expect(onHistoryResync).toHaveBeenCalledOnce(); expect(attachRun).not.toHaveBeenCalled();
+		expect(value.selectedTaskId).toBe(task.id);
+	});
+	it("recovers the persisted card when task creation succeeded but the initial Chat request failed", async () => {
+		driver.unmount(); vi.mocked(diagnoseApi.active).mockResolvedValue(null); driver = new HookDriver(); render(); await settle();
+		vi.mocked(diagnoseApi.start).mockRejectedValue(new Error("Model unavailable")); vi.mocked(diagnoseApi.active).mockResolvedValue(task);
+		expect(await value.show()).toBe(false); render();
+		expect(onHistoryResync).toHaveBeenCalledOnce(); expect(value.activeTask?.id).toBe(task.id);
+		expect(value.error).toContain("Model unavailable");
+	});
+	it("does not refresh the new Session after a delayed start response or failure", async () => {
+		driver.unmount(); vi.mocked(diagnoseApi.active).mockResolvedValue(null); driver = new HookDriver(); render(); await settle();
+		const pending = deferred<DiagnoseChatResult>(); vi.mocked(diagnoseApi.start).mockReturnValueOnce(pending.promise);
+		const starting = value.show(); sessionId = "other"; render(); await settle();
+		pending.reject(new Error("Old request failed")); expect(await starting).toBe(false); await settle();
+		expect(onHistoryResync).not.toHaveBeenCalled(); expect(value.open).toBe(false); expect(value.error).toBeNull();
+	});
 	it("hides and reveals the active identity without creating or ending it", async () => {
 		expect(value.open).toBe(true); value.hide(); render(); expect(value.open).toBe(false);
 		expect(await value.show()).toBe(true); render(); expect(value.selectedTaskId).toBe(task.id);

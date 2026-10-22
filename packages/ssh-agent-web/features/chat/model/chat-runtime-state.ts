@@ -19,11 +19,15 @@ export interface ChatTimelineEntry {
 	key: string;
 	runId?: string;
 	sequence?: number;
+	/** Last persisted sequence observed when this live entry was added. Never a server sequence. */
+	afterSequence?: number;
 	message: AgentMessage;
 	attachments?: SessionAttachment[];
 	optimisticRequestId?: string;
 	final: boolean;
 }
+
+type PersistedTimelineEntry = ChatTimelineEntry & { sequence: number };
 
 export interface ChatRuntimeState {
 	connection: ChatConnectionState;
@@ -90,6 +94,7 @@ export function chatRuntimeReducer(state: ChatRuntimeState, action: ChatRuntimeA
 			...state,
 			timeline: [...state.timeline, {
 				key: `optimistic:${action.requestId}`,
+				afterSequence: state.maxSequence,
 				message: { role: "user", content: action.message, timestamp: action.timestamp },
 				...(action.attachments.length === 0 ? {} : { attachments: action.attachments }),
 				optimisticRequestId: action.requestId,
@@ -176,7 +181,7 @@ function reduceEvent(state: ChatRuntimeState, event: ChatStreamEvent): ChatRunti
 		return {
 			...state,
 			activeAssistantKey: key,
-			timeline: upsertTimeline(state.timeline, { key, runId: state.run?.id, message, final: false }),
+			timeline: upsertTimeline(state.timeline, { key, runId: state.run?.id, message, final: false }, state.maxSequence),
 		};
 	}
 	if (event.type === "tool_execution_start") {
@@ -283,15 +288,16 @@ function reduceMessage(state: ChatRuntimeState, message: AgentMessage, final: bo
 			const optimisticEntry = next[optimisticIndex]!;
 			next[optimisticIndex] = {
 				key: messageKey(message),
+				afterSequence: optimisticEntry.afterSequence,
 				runId: state.run?.id,
 				message,
 				...(optimisticEntry.attachments === undefined ? {} : { attachments: optimisticEntry.attachments }),
 				final,
 			};
 			timeline = dedupeTimeline(next);
-		} else timeline = upsertTimeline(timeline, { key: messageKey(message), runId: state.run?.id, message, final });
+		} else timeline = upsertTimeline(timeline, { key: messageKey(message), runId: state.run?.id, message, final }, state.maxSequence);
 	} else {
-		timeline = upsertTimeline(timeline, { key: messageKey(message), runId: state.run?.id, message, final });
+		timeline = upsertTimeline(timeline, { key: messageKey(message), runId: state.run?.id, message, final }, state.maxSequence);
 	}
 	return {
 		...state,
@@ -327,10 +333,10 @@ function toTimelineEntry(message: ChatMessage): ChatTimelineEntry {
 	};
 }
 
-function upsertTimeline(timeline: ChatTimelineEntry[], entry: ChatTimelineEntry): ChatTimelineEntry[] {
+function upsertTimeline(timeline: ChatTimelineEntry[], entry: ChatTimelineEntry, afterSequence: number): ChatTimelineEntry[] {
 	const fingerprint = messageFingerprint(entry.message);
 	const index = timeline.findIndex((candidate) => candidate.key === entry.key || messageFingerprint(candidate.message) === fingerprint);
-	if (index < 0) return [...timeline, entry];
+	if (index < 0) return [...timeline, { ...entry, afterSequence }];
 	const next = [...timeline];
 	next[index] = { ...timeline[index], ...entry };
 	return next;
@@ -345,11 +351,25 @@ function dedupeTimeline(timeline: ChatTimelineEntry[]): ChatTimelineEntry[] {
 		if (current && isNewerEntry(current, entry)) continue;
 		if (!current || entry.sequence !== undefined || (entry.final && !current.final)) byFingerprint.set(key, entry);
 	}
-	return [...byFingerprint.values()].sort(compareTimelineEntries);
+	const entries = [...byFingerprint.values()];
+	const persisted = entries.filter((entry): entry is PersistedTimelineEntry => entry.sequence !== undefined).sort(compareTimelineEntries);
+	const ordered: ChatTimelineEntry[] = [];
+	let cursor = 0;
+	// Sequence orders committed facts. Live entries retain stream order and are inserted
+	// by time after their observed anchor, without comparing a sequence to a timestamp.
+	for (const entry of entries.filter((entry) => entry.sequence === undefined)) {
+		while (cursor < persisted.length) {
+			const next = persisted[cursor]!;
+			if (next.sequence > (entry.afterSequence ?? 0) && next.message.timestamp >= entry.message.timestamp) break;
+			ordered.push(next); cursor++;
+		}
+		ordered.push(entry);
+	}
+	return [...ordered, ...persisted.slice(cursor)];
 }
 
-function compareTimelineEntries(left: ChatTimelineEntry, right: ChatTimelineEntry): number {
-	return (left.sequence ?? left.message.timestamp) - (right.sequence ?? right.message.timestamp)
+function compareTimelineEntries(left: PersistedTimelineEntry, right: PersistedTimelineEntry): number {
+	return left.sequence - right.sequence
 		|| (left.historyOrder ?? 0) - (right.historyOrder ?? 0)
 		|| (left.historyOrder ? left.message.timestamp - right.message.timestamp || (left.key === right.key ? 0 : left.key < right.key ? -1 : 1) : 0);
 }

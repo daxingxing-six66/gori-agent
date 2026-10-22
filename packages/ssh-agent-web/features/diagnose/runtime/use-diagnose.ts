@@ -38,7 +38,13 @@ export function useDiagnose(options: { sessionId: string; workspaceId?: string; 
 		inFlight.current.add(key); setBusy(true); setError(null); tasks.setError(null);
 		const requestId = retryRequests.current.get(key) ?? crypto.randomUUID(); retryRequests.current.set(key, requestId);
 		try { await operation(requestId); if (scope.current !== identity) return false; retryRequests.current.delete(key); return true; }
-		catch (failure) { if (scope.current === identity) { setError(failure); await tasks.refresh(); } return false; }
+		catch (failure) {
+			if (scope.current === identity) {
+				setError(failure);
+				await Promise.allSettled([tasks.refresh(), options.onHistoryResync()]);
+			}
+			return false;
+		}
 		finally { if (scope.current === identity) { inFlight.current.delete(key); setBusy(inFlight.current.size > 0); } }
 	};
 	const show = async (problem = "", attachments: SessionAttachment[] = []): Promise<boolean> => {
@@ -52,6 +58,7 @@ export function useDiagnose(options: { sessionId: string; workspaceId?: string; 
 			tasks.acceptTask(result.task);
 			if (selectionIntent.current === intent) { selectTask(result.task.id); setOpen(true); }
 			if (result.run) await options.attachRun(result.run);
+			else await options.onHistoryResync();
 			await tasks.load(result.task.id);
 		});
 		if (!success && scope.current === identity && selectionIntent.current === intent) {

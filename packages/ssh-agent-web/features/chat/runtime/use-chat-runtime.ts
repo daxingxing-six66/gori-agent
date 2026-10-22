@@ -75,6 +75,9 @@ export function useChatRuntime(sessionId: string) {
 		const page = options.afterSequence === undefined
 			? await chatApi.listMessages(sessionId, { limit: 100 })
 			: { messages: await listMessagePages(sessionId, options.afterSequence), nextBeforeSequence: null };
+		if (historySession.current !== sessionId) return;
+		dispatch({ type: options.merge ? "mergePersisted" : "hydrate", messages: page.messages });
+		if (options.afterSequence === undefined && !options.merge) setNextBeforeSequence(page.nextBeforeSequence);
 		const [approvals, decisions, queue] = await Promise.allSettled([
 			chatApi.listApprovals(sessionId),
 			chatApi.listPendingDecisions(sessionId),
@@ -82,12 +85,11 @@ export function useChatRuntime(sessionId: string) {
 		]);
 		if (historySession.current !== sessionId) return;
 		dispatch({
-			type: options.merge ? "mergePersisted" : "hydrate",
-			messages: page.messages,
+			type: "mergePersisted",
+			messages: [],
 			...(approvals.status === "fulfilled" ? { approvals: approvals.value.approvals } : {}),
 			...(decisions.status === "fulfilled" ? { decisions: decisions.value.decisions } : {}),
 		});
-		if (options.afterSequence === undefined) setNextBeforeSequence(page.nextBeforeSequence);
 		dispatch({ type: "setRun", run: activeRun.run });
 		if (queue.status === "fulfilled") dispatch({ type: "hydrateQueue", items: queue.value.items, replace: true });
 		if (approvals.status === "rejected") throw approvals.reason;
@@ -185,7 +187,9 @@ export function useChatRuntime(sessionId: string) {
 	const attachRun = useCallback(async (run: ChatRun) => {
 		if (run.sessionId !== sessionId || historySession.current !== sessionId) return;
 		dispatch({ type: "setRun", run });
-		await synchronize({ afterSequence: stateRef.current.maxSequence, merge: true });
+		// A task card SSE may be newer than still-live Chat messages. Recover the tail,
+		// including the card and initial intent, instead of skipping everything before it.
+		await synchronize({ merge: true });
 	}, [sessionId, synchronize]);
 
 	const submit = useCallback(async ({ message, attachments, model, thinkingLevel, behavior, serverInteractionMode, workflow, deploymentRunId, deploymentDiscussionId }: SubmitInput): Promise<ChatRun | null> => {

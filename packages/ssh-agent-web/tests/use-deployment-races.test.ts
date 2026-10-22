@@ -203,6 +203,94 @@ describe("deployment task selection and durable mode", () => {
   expect(hooks.value).toMatchObject({ open: true, pickerOpen: false, selectedDiscussion: { id: discussion.id } });
  });
 
+ it("closes the picker as soon as creation succeeds while mode confirmation is pending", async () => {
+  await hooks.value.show(); hooks.render();
+  const pending = deferred<DeploymentTask | null>(); api.mode.mockReturnValueOnce(pending.promise);
+  const creating = hooks.value.beginDiscussion(discussion.profileFile, discussion.module.id);
+  await renderSettled();
+  expect(hooks.value).toMatchObject({ open: true, pickerOpen: false, busy: true, selectedDiscussion: { id: discussion.id } });
+  pending.resolve(activeTask()); expect(await creating).toEqual(discussion);
+ });
+
+ it("keeps the picker closed and continues planning when a start event supersedes mode confirmation", async () => {
+  vi.stubGlobal("EventSource", FakeEventSource); workspaceIdForProbe = "workspace";
+  hooks = new HookDriver(); hooks.render(); await renderSettled();
+  await hooks.value.show(); hooks.render();
+  const pending = deferred<DeploymentTask | null>(); api.mode.mockReturnValueOnce(pending.promise);
+  const creating = hooks.value.beginDiscussion(discussion.profileFile, discussion.module.id);
+  await renderSettled();
+  api.mode.mockResolvedValue(activeTask());
+  FakeEventSource.current?.emit("deployment.started", activeTask()); await renderSettled();
+  pending.resolve(activeTask());
+  expect(await creating).toEqual(discussion); await renderSettled();
+  expect(hooks.value).toMatchObject({ pickerOpen: false, open: true, busy: false, activeTask: { deployment: { id: discussion.id } } });
+ });
+
+ it("waits for the replacement mode query when the older creation lookup finishes first", async () => {
+  vi.stubGlobal("EventSource", FakeEventSource); workspaceIdForProbe = "workspace";
+  hooks = new HookDriver(); hooks.render(); await renderSettled();
+  await hooks.value.show(); hooks.render();
+  const pending = deferred<DeploymentTask | null>(); const replacement = deferred<DeploymentTask | null>();
+  api.mode.mockReturnValueOnce(pending.promise).mockReturnValueOnce(replacement.promise);
+  const creating = hooks.value.beginDiscussion(discussion.profileFile, discussion.module.id);
+  await renderSettled(); FakeEventSource.current?.emit("deployment.started", activeTask());
+  pending.resolve(activeTask()); await renderSettled();
+  expect(hooks.value).toMatchObject({ pickerOpen: false, busy: true });
+  replacement.resolve(activeTask()); expect(await creating).toEqual(discussion);
+ });
+
+ it("does not plan if the deployment finishes after its replacement lookup but before the old response", async () => {
+  vi.stubGlobal("EventSource", FakeEventSource); workspaceIdForProbe = "workspace";
+  hooks = new HookDriver(); hooks.render(); await renderSettled();
+  await hooks.value.show(); hooks.render();
+  const pending = deferred<DeploymentTask | null>(); api.mode.mockReturnValueOnce(pending.promise);
+  const creating = hooks.value.beginDiscussion(discussion.profileFile, discussion.module.id);
+  await renderSettled(); api.mode.mockResolvedValue(activeTask());
+  FakeEventSource.current?.emit("deployment.started", activeTask()); await renderSettled();
+  FakeEventSource.current?.emit("deployment.finished", { ...activeTask(), phase: "finished",
+   deployment: { ...activeTask().deployment, outcome: "cancelled", finishedAt: 10 } });
+  pending.resolve(activeTask()); expect(await creating).toBeNull(); await renderSettled();
+  expect(hooks.value).toMatchObject({ pickerOpen: false, activeTask: null });
+ });
+
+ it("does not plan for an old deployment when the replacement lookup finds another active task", async () => {
+  vi.stubGlobal("EventSource", FakeEventSource); workspaceIdForProbe = "workspace";
+  hooks = new HookDriver(); hooks.render(); await renderSettled();
+  await hooks.value.show(); hooks.render();
+  const pending = deferred<DeploymentTask | null>(); api.mode.mockReturnValueOnce(pending.promise);
+  const creating = hooks.value.beginDiscussion(discussion.profileFile, discussion.module.id);
+  await renderSettled(); const other = activeTask({ ...discussion, id: "other" }); api.mode.mockResolvedValue(other);
+  FakeEventSource.current?.emit("deployment.started", other); await renderSettled();
+  pending.resolve(activeTask()); expect(await creating).toBeNull(); hooks.render();
+  expect(hooks.value).toMatchObject({ pickerOpen: false, activeTask: { deployment: { id: "other" } } });
+ });
+
+ it("shows a mode confirmation failure in the created task after dismissing the picker", async () => {
+  await hooks.value.show(); hooks.render(); api.mode.mockRejectedValueOnce(new Error("Mode unavailable"));
+  expect(await hooks.value.beginDiscussion(discussion.profileFile, discussion.module.id)).toBeNull(); hooks.render();
+  expect(hooks.value).toMatchObject({ pickerOpen: false, open: true, busy: false, error: "Mode unavailable", selectedDiscussion: { id: discussion.id } });
+ });
+
+ it("dismisses the picker when another client activates deployment and keeps it closed after exit", async () => {
+  vi.stubGlobal("EventSource", FakeEventSource); workspaceIdForProbe = "workspace";
+  hooks = new HookDriver(); hooks.render(); await renderSettled();
+  await hooks.value.show(); hooks.render(); expect(hooks.value.pickerOpen).toBe(true);
+  api.mode.mockResolvedValue(activeTask()); FakeEventSource.current?.emit("deployment.started", activeTask());
+  await renderSettled(); expect(hooks.value.pickerOpen).toBe(false);
+  FakeEventSource.current?.emit("deployment.finished", { ...activeTask(), phase: "finished",
+   deployment: { ...activeTask().deployment, outcome: "cancelled", finishedAt: 10 } });
+  await renderSettled(); expect(hooks.value).toMatchObject({ pickerOpen: false, activeTask: null });
+ });
+
+ it("keeps creation failures in the picker for retry", async () => {
+  await hooks.value.show(); hooks.render(); api.beginDiscussion.mockRejectedValueOnce(new Error("Creation unavailable"));
+  expect(await hooks.value.beginDiscussion(discussion.profileFile, discussion.module.id)).toBeNull(); hooks.render();
+  expect(hooks.value).toMatchObject({ pickerOpen: true, busy: false, open: false, error: "Creation unavailable" });
+  api.mode.mockResolvedValue(activeTask());
+  expect(await hooks.value.beginDiscussion(discussion.profileFile, discussion.module.id)).toEqual(discussion); hooks.render();
+  expect(hooks.value).toMatchObject({ pickerOpen: false, open: true, error: null });
+ });
+
  it("keeps mode lookup errors in the picker and allows a clean retry", async () => {
   api.mode.mockRejectedValueOnce(new Error("Mode unavailable")); await hooks.value.show(); hooks.render();
   expect(hooks.value).toMatchObject({ pickerOpen: true, pickerLoading: false, open: false, error: "Mode unavailable" });

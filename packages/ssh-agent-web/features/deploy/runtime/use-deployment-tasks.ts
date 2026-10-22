@@ -12,6 +12,7 @@ export function useDeploymentTasks(sessionId: string) {
 	currentScope.current = scope;
 	const [state, setState] = useState<{ scope: typeof scope; activeId: string | null; tasks: Record<string, DeploymentTask> }>({ scope, activeId: null, tasks: {} });
 	const requestVersion = useRef(0);
+	const latestRequest = useRef<{ version: number; result: Promise<DeploymentTask | null | undefined> } | null>(null);
 	const [failure, setFailure] = useState<{ scope: typeof scope; message: string | null }>({ scope, message: null });
 	const [readyScope, setReadyScope] = useState<typeof scope | null>(null);
 	const accept = useCallback((task: DeploymentTask, active = false) => {
@@ -24,20 +25,29 @@ export function useDeploymentTasks(sessionId: string) {
 				activeId: task.deployment.outcome && current.activeId === task.deployment.id ? null : active ? task.deployment.id : current.activeId };
 		});
 	}, [scope, sessionId]);
-	const refresh = useCallback(async () => {
+	const refresh = useCallback((): Promise<DeploymentTask | null | undefined> => {
 		const version = ++requestVersion.current;
-		let task: DeploymentTask | null;
-		try { task = await deploymentApi.mode(sessionId); }
-		catch (error) {
-			if (currentScope.current === scope && version === requestVersion.current) setFailure({ scope, message: error instanceof Error ? error.message : String(error) });
-			throw error;
-		}
-		if (currentScope.current !== scope || version !== requestVersion.current) return undefined;
-		setReadyScope(scope);
-		setFailure({ scope, message: null });
-		if (task) accept(task, true);
-		else setState((prior) => prior.scope === scope ? { ...prior, activeId: null } : { scope, activeId: null, tasks: {} });
-		return task;
+		// SSE can replace this lookup. Its callers still need the newest mode confirmation.
+		const supersedingResult = () => currentScope.current === scope && latestRequest.current
+			&& latestRequest.current.version === requestVersion.current && latestRequest.current.version > version
+			? latestRequest.current.result : undefined;
+		const result = (async () => {
+			let task: DeploymentTask | null;
+			try { task = await deploymentApi.mode(sessionId); }
+			catch (error) {
+				if (currentScope.current !== scope || version !== requestVersion.current) return supersedingResult();
+				setFailure({ scope, message: error instanceof Error ? error.message : String(error) });
+				throw error;
+			}
+			if (currentScope.current !== scope || version !== requestVersion.current) return supersedingResult();
+			setReadyScope(scope);
+			setFailure({ scope, message: null });
+			if (task) accept(task, true);
+			else setState((prior) => prior.scope === scope ? { ...prior, activeId: null } : { scope, activeId: null, tasks: {} });
+			return task;
+		})();
+		latestRequest.current = { version, result };
+		return result;
 	}, [accept, scope, sessionId]);
 	const receive = useCallback((value: unknown) => {
 		if (!isDeploymentTask(value) || value.deployment.sessionId !== sessionId) return;

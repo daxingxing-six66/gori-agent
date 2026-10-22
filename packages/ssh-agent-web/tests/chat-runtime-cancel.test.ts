@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { ChatRun } from "../features/chat/model/chat";
+import type { ChatMessage, ChatRun } from "../features/chat/model/chat";
+import { deferred } from "./helpers/hook-driver";
 import { chatRuntimeReducer, initialChatRuntimeState, type ChatRuntimeAction, type ChatRuntimeState } from "../features/chat/model/chat-runtime-state";
 
 let projected: ChatRuntimeState;
@@ -37,6 +38,32 @@ beforeEach(() => {
 });
 
 describe("stop response synchronization", () => {
+	it("recovers the diagnosis card and prompt even if a card event already advanced maxSequence, without waiting for pending controls", async () => {
+		const timestamp = 1_800_000_000_000;
+		const earlier: ChatMessage = { id: "earlier", sequence: 41, runId: "old-run", createdAt: timestamp,
+			message: { role: "assistant", content: [{ type: "text", text: "Earlier reply" }], provider: "provider", model: "model", stopReason: "stop", timestamp } };
+		const card: ChatMessage = { id: "diagnose:task", sequence: 42, createdAt: timestamp + 10,
+			message: { role: "custom", customType: "diagnose", content: "Diagnosis", display: true, timestamp: timestamp + 10, details: { taskId: "task" } } };
+		const prompt: ChatMessage = { id: "prompt", sequence: 43, runId: run.id, createdAt: timestamp + 20,
+			message: { role: "user", content: "Start diagnosis", timestamp: timestamp + 20 } };
+		projected = chatRuntimeReducer(initialChatRuntimeState, { type: "event", event: { type: "message_end", data: { type: "message_end", message: earlier.message } } });
+		projected = chatRuntimeReducer(projected, { type: "mergePersisted", messages: [card] });
+		vi.mocked(chatApi.listMessages).mockImplementation(async (_sessionId, query) => ({
+			messages: [earlier, card, prompt].filter((message) => message.sequence > (query?.afterSequence ?? 0)), nextBeforeSequence: null, nextSequence: null,
+		}));
+		const approvals = deferred<Awaited<ReturnType<typeof chatApi.listApprovals>>>();
+		const decisions = deferred<Awaited<ReturnType<typeof chatApi.listPendingDecisions>>>();
+		const queue = deferred<Awaited<ReturnType<typeof chatApi.listQueue>>>();
+		vi.mocked(chatApi.listApprovals).mockReturnValue(approvals.promise);
+		vi.mocked(chatApi.listPendingDecisions).mockReturnValue(decisions.promise);
+		vi.mocked(chatApi.listQueue).mockReturnValue(queue.promise);
+		const attaching = useChatRuntime("session").attachRun(run);
+		for (let tick = 0; tick < 20; tick++) await Promise.resolve();
+		expect(chatApi.listMessages).toHaveBeenCalledWith("session", { limit: 100 });
+		expect(projected.timeline.map((entry) => entry.sequence)).toEqual([41, 42, 43]);
+		approvals.resolve({ approvals: [] }); decisions.resolve({ decisions: [] }); queue.resolve({ items: [] }); await attaching;
+		expect(projected.timeline).toHaveLength(3);
+	});
 	it("submits once before React rerenders and attaches ordinary Chat without a competing history hydration", async () => {
 		projected = initialChatRuntimeState;
 		let complete!: (run: ChatRun) => void;

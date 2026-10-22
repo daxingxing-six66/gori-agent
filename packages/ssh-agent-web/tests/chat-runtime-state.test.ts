@@ -11,7 +11,7 @@ import {
 	initialChatRuntimeState,
 } from "../features/chat/model/chat-runtime-state.ts";
 import { chatScrollBehavior, isNearChatHistoryTop } from "../features/chat/model/chat-scroll.ts";
-import type { AssistantMessage, ChatRun, CompactionSummaryMessage, ToolApproval, UserMessage } from "../features/chat/model/chat.ts";
+import type { AssistantMessage, ChatMessage, ChatRun, CompactionSummaryMessage, ToolApproval, UserMessage } from "../features/chat/model/chat.ts";
 import { isUserDecision, type UserDecision } from "../features/chat/model/user-decision.ts";
 import type { SessionAttachment } from "../features/session/api/session-attachment-api.ts";
 import { ChatEventStream, parseChatStreamEvent } from "../features/chat/runtime/chat-event-stream.ts";
@@ -395,6 +395,64 @@ describe("Chat runtime state", () => {
 		expect(state.timeline).toHaveLength(1);
 		expect(state.timeline[0]?.sequence).toBe(1);
 		expect(state.maxSequence).toBe(1);
+	});
+
+	it("keeps a newly persisted diagnosis card and prompt after earlier live messages", () => {
+		const timestamp = 1_800_000_000_000;
+		const earlier = assistant([{ type: "text", text: "Earlier reply" }], timestamp + 10);
+		const card: ChatMessage = { id: "diagnose:task", sequence: 122, createdAt: timestamp + 20,
+			message: { role: "custom", customType: "diagnose", content: "Diagnosis", display: true, timestamp: timestamp + 20,
+				details: { taskId: "task", title: "Diagnosis", status: "active", revision: 1 } } };
+		const prompt: ChatMessage = { id: "prompt", sequence: 123, runId: "diagnosis-run", createdAt: timestamp + 30,
+			message: { role: "user", content: "Start diagnosis", timestamp: timestamp + 30 } };
+		let state = chatRuntimeReducer(initialChatRuntimeState, { type: "hydrate", messages: [
+			{ id: "old", sequence: 120, createdAt: timestamp, message: { role: "user", content: "Earlier question", timestamp } },
+		] });
+		state = chatRuntimeReducer(state, { type: "event", event: { type: "message_end", data: { type: "message_end", message: earlier } } });
+		state = chatRuntimeReducer(state, { type: "mergePersisted", messages: [card, prompt] });
+		expect(state.timeline.map((entry) => entry.message)).toEqual([expect.objectContaining({ content: "Earlier question" }), earlier, card.message, prompt.message]);
+		const order = state.timeline.map((entry) => entry.message);
+		state = chatRuntimeReducer(state, { type: "mergePersisted", messages: [{ id: "reply", sequence: 121, createdAt: timestamp + 10, message: earlier }, card, prompt] });
+		expect(state.timeline.map((entry) => entry.message)).toEqual(order);
+	});
+
+	it("places a late diagnosis card between earlier replies and the new Run's live prompt", () => {
+		const earlier = assistant([{ type: "text", text: "Earlier reply" }], 1_800_000_000_010);
+		const prompt: UserMessage = { role: "user", content: "Start diagnosis", timestamp: 1_800_000_000_030 };
+		const response = assistant([{ type: "text", text: "Which problem?" }], 1_800_000_000_040);
+		let state = initialChatRuntimeState;
+		for (const message of [earlier, prompt, response]) state = chatRuntimeReducer(state, { type: "event", event: { type: "message_end", data: { type: "message_end", message } } });
+		const card: ChatMessage = { id: "diagnose:task", sequence: 122, createdAt: 1_800_000_000_020,
+			message: { role: "custom", customType: "diagnose", content: "Diagnosis", display: true, timestamp: 1_800_000_000_020, details: { taskId: "task" } } };
+		state = chatRuntimeReducer(state, { type: "mergePersisted", messages: [card] });
+		expect(state.timeline.map((entry) => entry.message)).toEqual([earlier, card.message, prompt, response]);
+	});
+
+	it("preserves observed live order at equal timestamps and keeps updates at their original anchor", () => {
+		const timestamp = 1_800_000_000_000;
+		const earlier = assistant([{ type: "text", text: "Earlier reply" }], timestamp);
+		const card: ChatMessage = { id: "diagnose:task", sequence: 122, createdAt: timestamp,
+			message: { role: "custom", customType: "diagnose", content: "Diagnosis", display: true, timestamp, details: { taskId: "task" } } };
+		let state = chatRuntimeReducer(initialChatRuntimeState, { type: "event", event: { type: "message_start", data: { type: "message_start", message: earlier } } });
+		state = chatRuntimeReducer(state, { type: "mergePersisted", messages: [card] });
+		const updated = { ...earlier, content: [{ type: "text" as const, text: "Earlier reply updated" }] };
+		state = chatRuntimeReducer(state, { type: "event", event: { type: "message_update", data: { assistantMessageEvent: { type: "text_delta", contentIndex: 0, delta: " updated", partial: updated } } } });
+		const prompt: UserMessage = { role: "user", content: "Start diagnosis", timestamp };
+		state = chatRuntimeReducer(state, { type: "event", event: { type: "message_end", data: { type: "message_end", message: prompt } } });
+		state = chatRuntimeReducer(state, { type: "mergePersisted", messages: [card] });
+		expect(state.timeline.map((entry) => entry.message)).toEqual([updated, card.message, prompt]);
+	});
+
+	it("orders persisted messages by sequence and keeps later live content after its known anchor despite clock rollback", () => {
+		const first: ChatMessage = { id: "first", sequence: 120, createdAt: 1_800_000_000_100,
+			message: { role: "user", content: "First", timestamp: 1_800_000_000_100 } };
+		const second: ChatMessage = { id: "second", sequence: 121, createdAt: 1_800_000_000_000,
+			message: { role: "user", content: "Second", timestamp: 1_800_000_000_000 } };
+		let state = chatRuntimeReducer(initialChatRuntimeState, { type: "hydrate", messages: [second, first] });
+		const live = assistant([{ type: "text", text: "Latest" }], 1_799_999_999_900);
+		state = chatRuntimeReducer(state, { type: "event", event: { type: "message_end", data: { type: "message_end", message: live } } });
+		state = chatRuntimeReducer(state, { type: "mergePersisted", messages: [first] });
+		expect(state.timeline.map((entry) => entry.message)).toEqual([first.message, second.message, live]);
 	});
 
 	it("hydrates and renders a persisted compaction summary as a timeline node", () => {

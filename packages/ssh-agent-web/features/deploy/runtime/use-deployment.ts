@@ -109,6 +109,10 @@ export function useDeployment(sessionId: string, workspaceId: string | undefined
 	const legacyDiscussion = catalog.discovery?.activeDiscussion;
 	const legacyRun = catalog.discovery?.latest;
 	useEffect(() => {
+		if (activeId) setPicker((current) => current.scope === scope && !current.open && !current.loading
+			? current : { scope, open: false, loading: false });
+	}, [activeId, scope]);
+	useEffect(() => {
 		if (!tasks.ready || intent.current.userSelected) return;
 		const id = activeId ?? legacyDiscussion?.id ?? (legacyRun && ["preparing", "running", "recovering"].includes(legacyRun.status) ? legacyRun.id : null);
 		if (!id) return;
@@ -183,11 +187,13 @@ export function useDeployment(sessionId: string, workspaceId: string | undefined
 		intent.current.userSelected = true;
 		return mutate(async () => {
 			const discussion = await deploymentApi.beginDiscussion(sessionId, file, moduleId);
-			const active = await refreshMode();
 			acceptDiscussion(discussion);
+			if (isCurrentIntent(revision)) {
+				setPicker({ scope, open: false, loading: false });
+				setSelection(() => ({ open: true, id: discussion.id, loading: false }));
+			}
+			const active = await refreshMode();
 			if (!isCurrentIntent(revision) || active?.deployment.id !== discussion.id) return null;
-			setPicker({ scope, open: false, loading: false });
-			setSelection(() => ({ open: true, id: discussion.id, loading: false }));
 			return discussion;
 		});
 	};

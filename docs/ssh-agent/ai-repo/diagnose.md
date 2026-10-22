@@ -80,6 +80,8 @@ Workspace SSE 新增 `diagnoses` topic：diagnose.task.updated、diagnose.node.u
 
 ChatConsole 只装配菜单、Hook 和稳定 `diagnose` Tab。Tab × 隐藏页面；通用 TaskContainer 没有业务分支。useChatRuntime.attachRun 为后端创建的 Run 复用原状态恢复及 Run SSE。普通发送直接附着 Run，依靠原 SSE 完成气泡，不额外并发拉取历史；REST 补读与临时气泡按 requestId 绑定的 runId 合并，保留旧轮次的同文消息。发送用同步 ref 阻止同一 render 的重复请求。
 
+开启诊断后，attachRun 合并统一聊天历史接口的最近 100 个序号组，包含正式诊断入口和已保存的首条 user 意图；独立卡片 SSE 已推进 maxSequence 时也不会跳过之前仍显示为实时条目的聊天。消息读取完成就提交时间线，不等待审批、决策或队列恢复。返回只有 task、没有 Run 时，以及任务已提交但首次 Chat 请求失败的恢复路径，也通过同一历史接口补读，保留实际错误，不构造虚假的卡片或用户消息。会话切换拒绝旧请求触发恢复。实时与已落库条目按 [Chat Runtime](./chat-runtime.md) 的序号锚点规则合并，避免序号与毫秒时间戳混排；已有更早分页位置保留。
+
 单列记录按时间排列，当前展开、旧记录默认收起，可以独立展开；追加不强制折叠已展开记录。状态用有底色的蓝/绿/暖黄标签，结束状态中性灰，保留文字并使用主题表面及语义色。只在跟随底部时自动滚动，回看时显示“有新记录”；分页保持锚点，隐藏页面不使用零尺寸测量覆盖阅读位置。
 
 记录页底部“复制记录”将该任务全部节点按 sequence 升序复制成缩进的 JSON 数组，每项只含 direction/status/explanation，保留说明原文，空任务输出 []。`api/read-diagnose-records.ts` 独立补齐所有分页并检查完整性，不改变页面缓存、展开或滚动状态；任一页失败不输出半份数据。`components/diagnose-copy-records.tsx` 负责剪贴板和复制中/成功/失败反馈，同步锁避免重复点击，离开该任务时取消在途读取。任务活动、已结束或已退出均可复制；结论页不显示此记录按钮。
@@ -89,6 +91,8 @@ ChatConsole 只装配菜单、Hook 和稳定 `diagnose` Tab。Tab × 隐藏页�
 ## 验证与共享入口复核
 
 定向回归：后端 diagnose-service.test.ts、diagnose-api.test.ts 覆盖节点门禁、SQL 历史不可改、UTF-8 限额、回执、回滚、跨轮、正常审批保留、报告独立读取、结论排队去重和直接退出；前端 diagnose-task.test.tsx、use-diagnose-races.test.ts 覆盖状态/Markdown、报告入口、实体修订乱序、Session 迟到响应、历史选择、隐藏恢复和结论请求竞争。
+
+2026-10-22 开启诊断的实时回显回归还覆盖卡片事件先到、消息先于待决控件恢复、首条 Chat 请求失败及无 Run 响应的历史恢复；chat-runtime-state.test.ts 使用真实量级时间戳验证新卡片/意图不越过更早实时消息、卡片迟到、同毫秒事件、流式更新、时钟回拨及 REST 补齐后的稳定顺序。仅验证合成消息与模拟 API/SSE，未构建、重启或执行真实诊断。
 
 上述后端回归同时验证内置 Skill 原文注入、重复同步不累积、普通 Session 无活动指引；结束后旧事件保留作历史并追加 inactive，固定头部不含 Skill。faux 请求验证接入范围，不证明真实模型的记录质量已经改善。
 

@@ -165,6 +165,8 @@ Deploy 模块选择由 ChatConsole 装配到 Composer 的通用 `aboveInputPanel
 
 ChatTimeline 不再接收 deployments/discussion 或部署历史分页回调，消息和部署入口都来自同一次 Chat 历史响应；加载完成前不渲染独立到达的卡片。前端 reducer 用 sequence/historyOrder 稳定合并锚点及附属旧卡片，重复页或先到的旧页不打乱同组顺序。原部署结束工具的精确展示替换和右侧日志查询保留。
 
+实时条目在首次出现时记录已观察到的序号锚点，合并历史时保留实时接收顺序并按消息时间放在原锚点之后；落库条目只按服务端 sequence/historyOrder 排列，不把序号和毫秒时间戳混比。后端业务入口通过 attachRun 合并最近 100 个序号组，覆盖诊断卡片及首条意图，不因较新的卡片 SSE 跳过尚未补齐身份的旧实时消息，也不重置已加载的更早历史游标。消息先回显，审批/决策/队列随后恢复；普通 Chat 发送仍只附着原 SSE。回归见 chat-runtime-state.test.ts、chat-runtime-cancel.test.ts、use-diagnose-races.test.ts；完整边界见 [Diagnose](./diagnose.md) 与 [Chat Runtime](./chat-runtime.md)。
+
 右侧 Deploy 待确认计划使用 deployment-plan-overview.tsx 的竖向时间轴：保留阶段图标，32px 节点间距，默认收起，展开通过连接线延伸为独立内容卡片。deployment-plan.css 管理局部样式；开始按钮在分隔线上方，32px 高、中性高对比色与轻微阴影。use-deployment-execution.ts 处理确认意图、重复点击和迟到响应，后端确认开始后才由独立 DeploymentPipeline 显示准备及四个执行节点；计划不会提前显示执行成功，进入执行页面后移除底部计划折叠入口；开始前审阅和必要修订确认保留。执行节点与计划复用 deployment-stage-icon.tsx 的 Hammer/Upload/RotateCw/ShieldCheck，图标位于横向连接线上；阶段结果以颜色、小状态标记及无障碍名称表达，点击继续切换日志。prepare 使用 ClipboardList 清单图标作为第一个可见节点，详情复用 DeploymentPlanOverview 展示本次计划，不提供重复执行按钮。查看准备时隐藏执行日志区域，原日志页面保持挂载，切回执行节点继续查看日志；浏览计划不改变真实执行阶段。普通工具和 Full Access 审批仍在中间，历史计划不获得当前部署的操作回调。任务页不展示结算 reason 的长篇总结，模型结论保留在中间会话。DeploymentBuildSteps 独立提供右对齐的步骤上一/下一命令浏览，引用块背景及左边线强化命令，浏览不改变真实执行状态；DeploymentLogs 将同阶段各次执行按原文连续追加到一个视口，通过日志标题整块折叠，不再创建执行分组卡片；错误定位和跟随输出会展开日志。
 
 
