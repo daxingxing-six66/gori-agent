@@ -25,6 +25,8 @@ export function useDeployment(sessionId: string, workspaceId: string | undefined
 	const live = useRef<typeof scope | null>(scope);
 	live.current = scope;
 	const tasks = useDeploymentTasks(sessionId);
+	const activeTaskRef = useRef(tasks.active);
+	activeTaskRef.current = tasks.active;
 	const catalog = useDeploymentCatalog(sessionId);
 	const { refresh: refreshMode, receive: receiveTask, updateRun: updateTaskRun, get: getTask, accept: acceptTask } = tasks;
 	const { refresh: refreshCatalog, upsert: upsertRun } = catalog;
@@ -111,7 +113,7 @@ export function useDeployment(sessionId: string, workspaceId: string | undefined
 	useEffect(() => {
 		if (activeId) setPicker((current) => current.scope === scope && !current.open && !current.loading
 			? current : { scope, open: false, loading: false });
-	}, [activeId, scope]);
+	}, [activeId, picker.open, picker.loading, scope]);
 	useEffect(() => {
 		if (!tasks.ready || intent.current.userSelected) return;
 		const id = activeId ?? legacyDiscussion?.id ?? (legacyRun && ["preparing", "running", "recovering"].includes(legacyRun.status) ? legacyRun.id : null);
@@ -135,10 +137,11 @@ export function useDeployment(sessionId: string, workspaceId: string | undefined
 		return revision;
 	};
 	const show = async (): Promise<"task" | "picker" | undefined> => {
+		if (live.current !== scope || mutationLock.current) return;
 		intent.current.userSelected = true;
 		const revision = ++intent.current.revision;
 		setError(null);
-		setPicker({ scope, open: !tasks.active, loading: true });
+		setPicker({ scope, open: !activeTaskRef.current, loading: true });
 		try {
 			const task = await refreshMode();
 			if (!isCurrentIntent(revision) || task === undefined) return;
@@ -146,14 +149,17 @@ export function useDeployment(sessionId: string, workspaceId: string | undefined
 				setPicker({ scope, open: false, loading: false });
 				setSelection(() => ({ open: true, id: task.deployment.id, loading: false }));
 				if (task.run) acceptRun(task.run);
-				else await loadDiscussion(task.deployment.id);
-				return isCurrentIntent(revision) ? "task" : undefined;
+				else void loadDiscussion(task.deployment.id).catch((error) => { if (isCurrentIntent(revision)) setError(message(error)); });
+				return "task";
 			}
 			setPicker({ scope, open: true, loading: true });
 			await refreshCatalog();
 			return isCurrentIntent(revision) ? "picker" : undefined;
 		} catch (error) {
-			if (isCurrentIntent(revision)) { setError(message(error)); setPicker({ scope, open: true, loading: false }); }
+			if (isCurrentIntent(revision)) {
+				setError(message(error));
+				setPicker({ scope, open: !activeTaskRef.current, loading: false });
+			}
 		}
 		finally { if (isCurrentIntent(revision)) setPicker((current) => ({ ...current, loading: false })); }
 	};
@@ -182,11 +188,39 @@ export function useDeployment(sessionId: string, workspaceId: string | undefined
 		}
 	};
 	const beginDiscussion = (file: string, moduleId: string): Promise<DeploymentDiscussion | null> => {
-		if (mutationLock.current) return Promise.resolve(null);
+		if (live.current !== scope || mutationLock.current) return Promise.resolve(null);
+		const existing = activeTaskRef.current;
+		if (existing) {
+			const revision = select(existing.deployment.id, false);
+			if (existing.run) acceptRun(existing.run);
+			else void loadDiscussion(existing.deployment.id).catch((error) => { if (isCurrentIntent(revision)) setError(message(error)); });
+			return Promise.resolve(null);
+		}
 		const revision = ++intent.current.revision;
 		intent.current.userSelected = true;
+		// Selecting a module dismisses the launcher before any network round trip.
+		setPicker({ scope, open: false, loading: false });
 		return mutate(async () => {
-			const discussion = await deploymentApi.beginDiscussion(sessionId, file, moduleId);
+			let discussion: DeploymentDiscussion;
+			try { discussion = await deploymentApi.beginDiscussion(sessionId, file, moduleId); }
+			catch (error) {
+				// Another tab, or a response lost after commit, may already have entered mode.
+				if (error instanceof ApiError && error.code === "deployment_session_busy") {
+					const active = await refreshMode().catch((failure) => {
+						if (isCurrentIntent(revision) && !activeTaskRef.current) setPicker({ scope, open: true, loading: false });
+						throw failure;
+					});
+					if (!isCurrentIntent(revision)) return null;
+					if (active) {
+						setSelection(() => ({ open: true, id: active.deployment.id, loading: false }));
+						if (active.run) acceptRun(active.run);
+						else await loadDiscussion(active.deployment.id);
+						return null; // Locating an existing task must not start another planning Run.
+					}
+				}
+				if (isCurrentIntent(revision) && !activeTaskRef.current) setPicker({ scope, open: true, loading: false });
+				throw error;
+			}
 			acceptDiscussion(discussion);
 			if (isCurrentIntent(revision)) {
 				setPicker({ scope, open: false, loading: false });
@@ -201,12 +235,13 @@ export function useDeployment(sessionId: string, workspaceId: string | undefined
 	const run = newestDeploymentRun(selectedTask?.run, catalog.runs.find((run) => run.id === selection.id || run.discussionId === selection.id));
 	const selectedDiscussion = selection.id ? discussions.scope === scope ? discussions.values[selection.id] ?? null : null : null;
 	const activeRun = tasks.active?.run ?? null;
+	const busy = mutation.scope === scope && mutation.pending;
 	const act = (operation: (id: string) => Promise<DeploymentRun>) => activeRun ? mutate(async () => {
 		const result = await operation(activeRun.id); acceptRun(result); return result;
 	}) : Promise.resolve(null);
 	return {
-		open: selection.open, loading: selection.loading, pickerOpen: picker.scope === scope && picker.open,
-		pickerLoading: picker.scope === scope && picker.loading, closePicker, busy: mutation.scope === scope && mutation.pending,
+		open: selection.open, loading: selection.loading, pickerOpen: picker.scope === scope && picker.open && !tasks.active && !busy,
+		pickerLoading: picker.scope === scope && picker.loading, closePicker, busy,
 		discovery: catalog.discovery, run, selectedTask, selectedDiscussion, activeTask: tasks.active, logs,
 		error: (failure.scope === scope ? failure.message : null) ?? tasks.error ?? catalog.error,
 		show, openHistory, refresh, setError, beginDiscussion,

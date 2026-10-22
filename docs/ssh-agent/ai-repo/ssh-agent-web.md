@@ -161,7 +161,7 @@ Chat 错误展示复用 `features/chat/components/chat-failure-details.tsx`，�
 
 阶段失败不再触发“让模型分析修复”卡片。`model/deployment-review.ts` 的 `deploymentReviewState()` 集中计算真实审阅需求；`use-deployment-review.ts` 在最近有效审批到期时用单次 timeout 刷新共享快照，ChatConsole 的右侧计划审阅和中间权限审批使用同一份结果，不每秒轮询聊天。DeploymentReview 仅呈现快照，无需决定时返回空；权限按钮由独立 DeploymentFullAccessReview 呈现。任务契约/校验保留在 deployment-task.ts，不混入审阅规则。计划确认、待审修订、确认后继续及必要的逐命令权限决定保留，移除额外启动恢复 Run 的按钮与回调。
 
-Deploy 模块选择由 ChatConsole 装配到 Composer 的通用 `aboveInputPanel` 插槽，Composer 不认识部署业务；TaskPage 已移除 Profile 和选择回调。非模态面板沿用聊天输入框底色，有序列表的每项为约 36px 高的独立圆角卡片，细边框和轻微底部阴影区分边界，前置单选圆点并自动编号，仅显示模块名称，去掉图标、配置来源和绿色高光；保留内部滚动、键盘导航和外部关闭，Esc/关闭按钮恢复输入焦点；浏览/关闭不创建部署或发送模型请求。模式/目录错误在面板内展示并可重试。回归见 `deployment-task-interactions.test.tsx` 与 `use-deployment-races.test.ts`。
+Deploy 模块选择由 ChatConsole 装配到 Composer 的通用 `aboveInputPanel` 插槽，Composer 不认识部署业务；插槽用独立 keyed Fragment 隔离调用者的 key，避免模块选择器与 Session 编辑器重名导致卸载后残留。TaskPage 已移除 Profile 和选择回调。非模态面板沿用聊天输入框底色，有序列表的每项为约 36px 高的独立圆角卡片，细边框和轻微底部阴影区分边界，前置单选圆点并自动编号，仅显示模块名称，去掉图标、配置来源和绿色高光；保留内部滚动、键盘导航和外部关闭，Esc/关闭按钮恢复输入焦点；浏览/关闭不创建部署或发送模型请求。模式/目录错误在面板内展示并可重试。回归见 `chat-composer-draft.test.tsx`、`deployment-task-interactions.test.tsx` 与 `use-deployment-races.test.ts`。
 
 ChatTimeline 不再接收 deployments/discussion 或部署历史分页回调，消息和部署入口都来自同一次 Chat 历史响应；加载完成前不渲染独立到达的卡片。前端 reducer 用 sequence/historyOrder 稳定合并锚点及附属旧卡片，重复页或先到的旧页不打乱同组顺序。原部署结束工具的精确展示替换和右侧日志查询保留。
 

@@ -1,7 +1,7 @@
 "use client";
 
 import { CornerDownLeft, LoaderCircle, Paperclip, Send, ShieldCheck, Square, X } from "lucide-react";
-import { forwardRef, type ReactNode, useEffect, useImperativeHandle, useRef } from "react";
+import { Fragment, forwardRef, type ReactNode, useEffect, useImperativeHandle, useRef } from "react";
 import { useIntl } from "react-intl";
 import { ToggleSwitch } from "@/components/toggle-switch";
 import { ChatComposerNotices } from "@/features/chat/components/chat-composer-notices";
@@ -156,7 +156,8 @@ export const ChatComposerPanel = forwardRef<ChatComposerPanelHandle, {
 					onClearManualCompactionResult={onClearManualCompactionResult}
 				/>
 				<div className="chat-composer-shell border border-[var(--line)] bg-[var(--surface-strong)] px-3 pb-3 pt-2.5 transition">
-					{aboveInputPanel}
+					{/* Keep caller-provided keys separate from the Session-keyed editor. */}
+					<Fragment key="above-input-panel">{aboveInputPanel}</Fragment>
 					{decisionPanel}
 					{modelSelectionError ? <div className="mb-1 flex w-full items-center justify-between gap-3 rounded-lg bg-[var(--warning-soft)] px-3 py-2 text-[11px] leading-5 text-[var(--warning)]"><span>{modelSelectionError}</span>{modelSelectionRetryable ? <button type="button" className="shrink-0 font-semibold underline underline-offset-2" onClick={onRetryModelSelection}>{intl.formatMessage({ id: "chat.model.reload" })}</button> : null}</div> : null}
 					{queue.length > 0 ? <QueuePreview items={queue} active={active} mutationId={queueMutationId} onCancel={onCancelQueued} onPromote={onPromoteQueued} /> : null}

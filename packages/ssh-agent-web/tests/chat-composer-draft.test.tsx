@@ -234,6 +234,7 @@ const renderPanel = (ChatComposerPanel as unknown as {
 	render(props: PanelProps, ref: Ref<ChatComposerPanelHandle>): ReactNode;
 }).render;
 const handle: { current: ChatComposerPanelHandle | null } = { current: null };
+let panelTree: ReactNode;
 function panel(sessionId: string, overrides: Partial<PanelProps> = {}) {
 	const props: PanelProps = {
 		sessionId, recentUserTexts: [referencedMessage], contextUsage: null, active: true,
@@ -244,7 +245,8 @@ function panel(sessionId: string, overrides: Partial<PanelProps> = {}) {
 		runtimeError: null, onClearRuntimeError: vi.fn(), manualCompactionResult: null, compacting: false, onClearManualCompactionResult: vi.fn(),
 		queue: [], queueMutationId: null, onCancelQueued: vi.fn(), onPromoteQueued: vi.fn(), ...overrides,
 	};
-	const editor = findEditor(driver.render(() => renderPanel(props, handle)));
+	panelTree = driver.render(() => renderPanel(props, handle));
+	const editor = findEditor(panelTree);
 	if (!editor) throw new Error("Composer must render the token editor");
 	return editor;
 }
@@ -259,6 +261,26 @@ function findEditor(node: ReactNode): ReactElement<EditorProps> | undefined {
 }
 
 describe("composer draft wiring", () => {
+	it("isolates a Session-keyed deployment picker from the Session-keyed editor", () => {
+		panel(sessionA).props.onChange("保留草稿");
+		panel(sessionA, { aboveInputPanel: <div key={sessionA}>Deployment picker</div> });
+		const duplicateKeys: string[] = [];
+		const inspect = (node: ReactNode) => {
+			const keys = new Set<string>();
+			Children.forEach(node, (child) => {
+				if (!isValidElement<{ children?: ReactNode }>(child)) return;
+				if (child.key !== null) {
+					if (keys.has(child.key)) duplicateKeys.push(child.key);
+					keys.add(child.key);
+				}
+				inspect(child.props.children);
+			});
+		};
+		inspect(panelTree);
+		expect(duplicateKeys).toEqual([]);
+		expect(panel(sessionA).props.value).toBe("保留草稿");
+	});
+
 	it("uses cached Session text for the editor and accepts imperative message restoration", () => {
 		panel(sessionA).props.onChange(referencedMessage);
 		expect(panel(sessionB).props.value).toBe("");

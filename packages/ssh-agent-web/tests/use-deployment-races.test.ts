@@ -111,8 +111,9 @@ class HookDriver {
 
 function deferred<T>() {
 	let resolve!: (value: T) => void;
-	const promise = new Promise<T>((complete) => { resolve = complete; });
-	return { promise, resolve };
+	let reject!: (reason: unknown) => void;
+	const promise = new Promise<T>((complete, fail) => { resolve = complete; reject = fail; });
+	return { promise, resolve, reject };
 }
 
 async function settle() {
@@ -201,6 +202,65 @@ describe("deployment task selection and durable mode", () => {
   await hooks.value.show(); hooks.render(); api.mode.mockResolvedValue(activeTask());
   expect(await hooks.value.beginDiscussion(discussion.profileFile, discussion.module.id)).toEqual(discussion); hooks.render();
   expect(hooks.value).toMatchObject({ open: true, pickerOpen: false, selectedDiscussion: { id: discussion.id } });
+ });
+
+ it("dismisses module selection immediately while creation is still pending", async () => {
+  await hooks.value.show(); hooks.render();
+  const pending = deferred<DeploymentDiscussion>(); api.beginDiscussion.mockReturnValueOnce(pending.promise);
+  const creating = hooks.value.beginDiscussion(discussion.profileFile, discussion.module.id); hooks.render();
+  expect(hooks.value).toMatchObject({ pickerOpen: false, busy: true });
+  api.mode.mockResolvedValue(activeTask()); pending.resolve(discussion); expect(await creating).toEqual(discussion);
+ });
+
+ it("does not reopen module selection when details of an active deployment fail to load", async () => {
+  api.mode.mockResolvedValue(activeTask()); hooks = new HookDriver(); hooks.render(); await renderSettled();
+  api.getDiscussion.mockRejectedValueOnce(new Error("Discussion unavailable"));
+  expect(await hooks.value.show()).toBe("task"); await renderSettled();
+  expect(hooks.value).toMatchObject({ pickerOpen: false, open: true, error: "Discussion unavailable" });
+ });
+
+ it("ignores a delayed catalog failure after another client has activated deployment", async () => {
+  vi.stubGlobal("EventSource", FakeEventSource); workspaceIdForProbe = "workspace";
+  hooks = new HookDriver(); hooks.render(); await renderSettled();
+  const catalog = deferred<DeploymentDiscovery>(); api.discover.mockReturnValueOnce(catalog.promise);
+  const opening = hooks.value.show(); await renderSettled();
+  api.mode.mockResolvedValue(activeTask()); FakeEventSource.current?.emit("deployment.started", activeTask()); await renderSettled();
+  catalog.reject(new Error("Old catalog unavailable")); await opening; await renderSettled();
+  expect(hooks.value).toMatchObject({ pickerOpen: false, activeTask: { deployment: { id: discussion.id } } });
+ });
+
+ it("recovers the active task on a creation conflict without starting another planning request", async () => {
+  await hooks.value.show(); hooks.render();
+  api.beginDiscussion.mockRejectedValueOnce(new ApiError(409, "deployment_session_busy", "Exit the current deployment before starting another"));
+  api.mode.mockResolvedValue(activeTask());
+  expect(await hooks.value.beginDiscussion(discussion.profileFile, discussion.module.id)).toBeNull(); await renderSettled();
+  expect(hooks.value).toMatchObject({ pickerOpen: false, open: true, error: null, selectedTask: { deployment: { id: discussion.id } } });
+  expect(api.beginDiscussion).toHaveBeenCalledTimes(1);
+ });
+
+ it("rejects a stale module action when the current deployment is already known", async () => {
+  const choose = hooks.value.beginDiscussion;
+  api.mode.mockResolvedValue(activeTask()); await hooks.value.refresh(); await renderSettled();
+  expect(await choose(discussion.profileFile, discussion.module.id)).toBeNull(); await renderSettled();
+  expect(api.beginDiscussion).not.toHaveBeenCalled(); expect(hooks.value.pickerOpen).toBe(false);
+ });
+
+ it("does not let a repeated open invalidate planning while creation is pending", async () => {
+  await hooks.value.show(); hooks.render();
+  const pending = deferred<DeploymentDiscussion>(); api.beginDiscussion.mockReturnValueOnce(pending.promise);
+  const creating = hooks.value.beginDiscussion(discussion.profileFile, discussion.module.id); hooks.render();
+  expect(await hooks.value.show()).toBeUndefined();
+  api.mode.mockResolvedValue(activeTask()); pending.resolve(discussion);
+  expect(await creating).toEqual(discussion); await renderSettled();
+  expect(hooks.value).toMatchObject({ pickerOpen: false, selectedTask: { deployment: { id: discussion.id } } });
+ });
+
+ it("keeps conflict recovery failures visible and retryable when mode cannot be confirmed", async () => {
+  await hooks.value.show(); hooks.render();
+  api.beginDiscussion.mockRejectedValueOnce(new ApiError(409, "deployment_session_busy", "Busy"));
+  api.mode.mockRejectedValueOnce(new Error("Mode unavailable"));
+  expect(await hooks.value.beginDiscussion(discussion.profileFile, discussion.module.id)).toBeNull(); await renderSettled();
+  expect(hooks.value).toMatchObject({ pickerOpen: true, busy: false, error: "Mode unavailable" });
  });
 
  it("closes the picker as soon as creation succeeds while mode confirmation is pending", async () => {
