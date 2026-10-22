@@ -1,4 +1,4 @@
-export const statisticsTabs = ["overview", "models", "runs", "workspaces"] as const;
+export const statisticsTabs = ["overview", "models", "calls", "runs", "workspaces"] as const;
 export type StatisticsTab = typeof statisticsTabs[number];
 export type StatisticsRange = "today" | "7d" | "30d" | "all" | "custom";
 export interface StatisticsLocation {
@@ -7,6 +7,7 @@ export interface StatisticsLocation {
 	start: string;
 	end: string;
 	workspaceId: string;
+	providerId: string;
 	model: string;
 	timeZone: string;
 	year: number;
@@ -55,12 +56,21 @@ export function parseStatisticsLocation(params: URLSearchParams, browserTimeZone
 	const year = Number(params.get("year") ?? currentYear);
 	const rawModel = params.get("model") ?? "";
 	let model = "";
-	try { const pair: unknown = JSON.parse(rawModel); if (Array.isArray(pair) && pair.length === 2 && pair.every((part) => typeof part === "string" && part.length > 0 && part.length <= 512)) model = JSON.stringify(pair); } catch { /* All models. */ }
+	let providerId = params.get("providerId") ?? "";
+	if (!providerId.trim() || providerId.length > 512) providerId = "";
+	try {
+		const pair: unknown = JSON.parse(rawModel);
+		if (Array.isArray(pair) && pair.length === 2 && pair.every((part) => typeof part === "string" && part.trim().length > 0 && part.length <= 512)) {
+			// Existing shared links encoded the provider only inside the model pair.
+			if (!params.has("providerId")) providerId = pair[0] as string;
+			if (pair[0] === providerId) model = JSON.stringify(pair);
+		}
+	} catch { /* All models within the selected provider. */ }
 	return {
 		tab: select(params.get("tab"), statisticsTabs, "overview"),
 		range: select(params.get("range"), ["today", "7d", "30d", "all", "custom"] as const, "30d"),
 		start: params.get("start") ?? shiftDay(today, -29), end: params.get("end") ?? today,
-		workspaceId: params.get("workspaceId") ?? "", model, timeZone,
+		workspaceId: params.get("workspaceId") ?? "", providerId, model, timeZone,
 		year: Number.isInteger(year) && year >= 1970 && year <= 2100 ? year : currentYear,
 		status: select(params.get("status"), ["", "pending", "running", "completed", "failed", "cancelled"], ""),
 		cursor: params.get("cursor") ?? "", modelSort: select(params.get("modelSort"), ["cost", "tokens", "calls"], "cost"),
@@ -77,9 +87,10 @@ export function statisticsParams(location: StatisticsLocation, now: number): URL
 	const params = new URLSearchParams({ from: String(location.range === "all" ? 0 : midnight(start, location.timeZone)),
 		to: String(midnight(shiftDay(end, 1), location.timeZone)), timeZone: location.timeZone, year: String(location.year) });
 	if (location.workspaceId) params.set("workspaceId", location.workspaceId);
-	if (location.model) {
+	if (location.providerId) params.set("providerId", location.providerId);
+	if (location.model && location.providerId) {
 		const [providerId, modelId] = JSON.parse(location.model) as [string, string];
-		params.set("providerId", providerId); params.set("modelId", modelId);
+		if (providerId === location.providerId) params.set("modelId", modelId);
 	}
 	return params;
 }

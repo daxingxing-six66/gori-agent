@@ -141,7 +141,18 @@ function combineUsage(first: Usage, second: Usage): Usage {
 			cacheWrite: first.cost.cacheWrite + second.cost.cacheWrite,
 			total: first.cost.total + second.cost.total,
 		},
+		requests: [...(first.requests ?? [requestUsage(first)]), ...(second.requests ?? [requestUsage(second)])],
 	};
+}
+
+/** Preserve each response separately; an aggregate is not a single API call. */
+function requestUsage(usage: Usage): Omit<Usage, "requests"> {
+	const { requests: _requests, ...request } = usage;
+	return request;
+}
+
+function usageWithRequest(usage: Usage): Usage {
+	return { ...usage, requests: [requestUsage(usage)] };
 }
 
 /** Compaction thresholds and retention settings. */
@@ -591,7 +602,7 @@ export async function generateSummaryWithUsage(
 
 	const textContent = contentText(response.content);
 
-	return ok({ text: textContent, usage: response.usage });
+	return ok({ text: textContent, usage: usageWithRequest(response.usage) });
 }
 
 /** Prepared inputs for a compaction run. */
@@ -849,6 +860,6 @@ async function generateTurnPrefixSummary(
 
 	return ok({
 		text: contentText(response.content),
-		usage: response.usage,
+		usage: usageWithRequest(response.usage),
 	});
 }

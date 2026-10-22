@@ -1,5 +1,5 @@
 import { apiRequest } from "@/shared/api/client";
-import type { StatisticsModelResult, StatisticsOptions, StatisticsOverview, StatisticsRecordsResult,
+import type { StatisticsCallsResult, StatisticsModelResult, StatisticsOptions, StatisticsOverview, StatisticsRecordsResult,
 	StatisticsRunsResult, StatisticsWorkspaceResult } from "../model/statistics";
 
 export interface StatisticsResponses {
@@ -8,6 +8,7 @@ export interface StatisticsResponses {
 	models: StatisticsModelResult;
 	runs: StatisticsRunsResult;
 	"run-records": StatisticsRecordsResult;
+	"call-records": StatisticsCallsResult;
 	workspaces: StatisticsWorkspaceResult;
 }
 
@@ -44,6 +45,19 @@ function run(value: unknown): boolean {
 		&& usage(value.usage) && (value.failure === null || (object(value.failure) && string(value.failure.code) && string(value.failure.message)));
 }
 
+function call(value: unknown): boolean {
+	if (!object(value) || !["id", "sessionId", "sessionName", "workspaceId", "workspaceName", "providerId", "modelId"].every((key) => string(value[key]))
+		|| !number(value.createdAt) || !(value.runId === null || string(value.runId)) || !string(value.kind) || !["assistant", "compact", "compact_summary"].includes(value.kind) || !object(value.cache)) return false;
+	const cache = value.cache;
+	if (value.kind === "compact_summary" && cache.status !== "unreported") return false;
+	if (cache.status === "unreported" || cache.status === "invalid")
+		return cache.inputTokens === null && cache.cachedTokens === null && cache.hitRate === null;
+	if (cache.status !== "reported" || !number(cache.inputTokens) || !Number.isSafeInteger(cache.inputTokens)
+		|| !number(cache.cachedTokens) || !Number.isSafeInteger(cache.cachedTokens) || cache.cachedTokens > cache.inputTokens) return false;
+	return cache.inputTokens === 0 ? cache.hitRate === null
+		: number(cache.hitRate) && cache.hitRate === cache.cachedTokens / cache.inputTokens;
+}
+
 export function isStatisticsResponse(endpoint: keyof StatisticsResponses, value: unknown): boolean {
 	if (!object(value)) return false;
 	if (endpoint === "options") return nullableNumber(value.earliestAt)
@@ -57,6 +71,7 @@ export function isStatisticsResponse(endpoint: keyof StatisticsResponses, value:
 		case "models": return list(value.rows, (row) => object(row) && string(row.providerId) && string(row.modelId) && usage(row.usage));
 		case "runs": return summary(value.summary);
 		case "run-records": return list(value.rows, run) && (value.nextCursor === null || string(value.nextCursor));
+		case "call-records": return list(value.rows, call) && (value.nextCursor === null || string(value.nextCursor));
 		case "workspaces": return list(value.rows, (row) => object(row) && string(row.workspaceId) && string(row.name) && string(row.hostname)
 			&& number(row.runs) && number(row.activeDays) && usage(row.usage));
 	}

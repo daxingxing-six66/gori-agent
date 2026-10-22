@@ -75,4 +75,27 @@ describe("statistics query isolation", () => {
 		url = new URL("http://localhost/statistics?tab=models&range=30d"); popstate?.();
 		expect(render().location).toMatchObject({ tab: "models", range: "30d", workspaceId: "" });
 	});
+
+	it("clears the model and page on provider changes and restores legacy provider/model links", () => {
+		let url = new URL("http://localhost/statistics?cursor=old");
+		url.searchParams.set("model", JSON.stringify(["one", "shared-model"]));
+		let popstate: (() => void) | undefined;
+		vi.stubGlobal("window", {
+			location: { get href() { return url.href; }, get search() { return url.search; } },
+			history: { pushState: (_state: unknown, _title: string, next: string) => { url = new URL(next, url); } },
+			addEventListener: (_name: string, handler: () => void) => { popstate = handler; }, removeEventListener: vi.fn(),
+		});
+		const render = () => driver.render(useStatisticsLocation);
+		render();
+		expect(render().location).toMatchObject({ providerId: "one", model: JSON.stringify(["one", "shared-model"]), cursor: "old" });
+		render().update({ providerId: "two", model: "" });
+		expect(url.searchParams.get("model")).toBeNull();
+		expect(url.searchParams.get("cursor")).toBeNull();
+		expect(render().location).toMatchObject({ providerId: "two", model: "" });
+		url = new URL("http://localhost/statistics?providerId=one");
+		url.searchParams.set("model", JSON.stringify(["one", "shared-model"])); popstate?.();
+		expect(render().location).toMatchObject({ providerId: "one", model: JSON.stringify(["one", "shared-model"]) });
+		render().update({ providerId: "", model: "" });
+		expect(render().location).toMatchObject({ providerId: "", model: "" });
+	});
 });

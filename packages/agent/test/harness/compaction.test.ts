@@ -622,6 +622,8 @@ describe("harness compaction", () => {
 		const { model } = createFauxModel(false);
 		const historyUsage = createMockUsage(1, 2, 3, 4);
 		const turnPrefixUsage = createMockUsage(5, 6, 7, 8);
+		historyUsage.cacheReadDetails = { inputTokens: 8, cachedTokens: 3 };
+		turnPrefixUsage.cacheReadDetails = { inputTokens: 20, cachedTokens: 7 };
 		const usageModels = createModelsWithSimpleResponses([
 			{ ...fauxAssistantMessage("history summary"), usage: historyUsage },
 			{ ...fauxAssistantMessage("turn prefix summary"), usage: turnPrefixUsage },
@@ -638,7 +640,29 @@ describe("harness compaction", () => {
 
 		const result = getOrThrow(await compact(preparation, usageModels, model));
 
-		expect(result.usage).toEqual(createMockUsage(6, 8, 10, 12));
+		expect(result.usage).toEqual({ ...createMockUsage(6, 8, 10, 12), requests: [historyUsage, turnPrefixUsage] });
+		expect(result.usage?.requests?.map((request) => request.cacheReadDetails)).toEqual([
+			{ inputTokens: 8, cachedTokens: 3 }, { inputTokens: 20, cachedTokens: 7 },
+		]);
+		expect(result.usage).not.toHaveProperty("cacheReadDetails");
+	});
+
+	it.each([false, true])("preserves the single real request for compaction without inventing cache data (prefix: %s)", async (prefix) => {
+		const messages: AgentMessage[] = [createUserMessage("Summarize this.")];
+		const { model } = createFauxModel(false);
+		const reported = createMockUsage(10, 2);
+		const usageModels = createModelsWithSimpleResponses([{ ...fauxAssistantMessage("summary"), usage: reported }]);
+		const preparation: CompactionPreparation = {
+			messagesToSummarize: prefix ? [] : messages, turnPrefixMessages: prefix ? messages : [],
+			isSplitTurn: prefix, tokensBefore: 100, retainedTail: messages,
+			fileOps: { read: new Set(), written: new Set(), edited: new Set() },
+			settings: { enabled: true, reserveTokens: 2000, keepRecentTokens: 20 },
+		};
+		const result = getOrThrow(await compact(preparation, usageModels, model));
+		expect(result.usage).toEqual({ ...reported, requests: [reported] });
+		expect(result.usage?.requests?.[0]).not.toHaveProperty("cacheReadDetails");
+		expect(result.usage?.requests?.[0]).not.toHaveProperty("requests");
+		expect(reported).not.toHaveProperty("requests");
 	});
 
 	it("passes reasoning through turn-prefix summaries when enabled", async () => {

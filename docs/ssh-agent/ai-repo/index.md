@@ -27,7 +27,7 @@
 | Session 沙盒开关与只读模式、Composer 命令、执行绕过与 Terminal 自动重开 | [session-sandbox.md](./session-sandbox.md) | `packages/ssh-agent/src/application/services/session-sandbox-policy.ts`、`session-service.ts`、`packages/ssh-agent-web/features/session/runtime/use-session-sandbox.ts` |
 | 沙箱能力查询/强制刷新、连接代际缓存、准备诊断和共同文件规则 | [remote-sandbox.md](./remote-sandbox.md) | `packages/ssh-agent/src/application/services/remote-sandbox-provider.ts`、`packages/ssh-agent/src/infrastructure/sandbox/remote-sandbox-coordinator.ts`、`packages/ssh-agent/src/infrastructure/sandbox/sandbox-capability-cache.ts`、`packages/ssh-agent/src/infrastructure/sandbox/sandbox-command-runner.ts` |
 | SQLite schema、migration、Repository、Credential 加密和运行时装配 | [sqlite-persistence.md](./sqlite-persistence.md) | `packages/ssh-agent/src/infrastructure/sqlite/` |
-| 全局使用统计、Token/费用趋势、年度活动、模型/运行/工作区列表 | [statistics.md](./statistics.md) | `packages/ssh-agent/src/application/statistics/`、`packages/ssh-agent-web/features/statistics/` |
+| 全局使用统计、逐次模型调用缓存率、Token/费用趋势、年度活动、模型/运行/工作区列表 | [statistics.md](./statistics.md) | `packages/ssh-agent/src/application/statistics/`、`packages/ssh-agent-web/features/statistics/` |
 | Command/Terminal 沙箱事实解码、旧 Full Access/null 记录和状态约束 | [sqlite-persistence.md](./sqlite-persistence.md) | `packages/ssh-agent/src/infrastructure/sqlite/stored-command-sandbox.ts`、`packages/ssh-agent/src/infrastructure/sqlite/stored-terminal-sandbox.ts` |
 | HTTP 路由、请求校验、CORS、环境变量、进程启动和关闭 | [http-server.md](./http-server.md) | `packages/ssh-agent/src/api/`、`packages/ssh-agent/src/server/` |
 | 本地日志、按日与大小滚动、异常栈 | [logging.md](./logging.md) | `packages/ssh-agent/src/server/file-logger.ts` |

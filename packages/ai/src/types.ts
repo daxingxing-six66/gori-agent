@@ -384,6 +384,12 @@ export interface Usage {
 	output: number;
 	cacheRead: number;
 	cacheWrite: number;
+	/** Present only when the API explicitly reported valid input and cache-hit counts.
+	 * inputTokens includes cache hits; neither value is inferred from normalized usage. */
+	cacheReadDetails?: { inputTokens: number; cachedTokens: number };
+	/** Original response usage records retained by an aggregate such as compaction.
+	 * This list is assembled locally, not a native provider usage field. */
+	requests?: Omit<Usage, "requests">[];
 	/** Subset of `cacheWrite` written with 1h retention. Only Anthropic reports this split. */
 	cacheWrite1h?: number;
 	/**

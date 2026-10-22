@@ -153,9 +153,11 @@ export class ChatContextService {
 		this.#pendingEstimates.delete(runId);
 		if (!pending) return;
 		const actual = message.usage.input + message.usage.cacheRead + message.usage.cacheWrite;
+		const cache = message.usage.cacheReadDetails;
 		this.#log({ type: "cache.usage", requestId: pending.requestId, input: actual, cached: message.usage.cacheRead,
 			cacheWrite: message.usage.cacheWrite, uncached: message.usage.input, output: message.usage.output,
-			stopReason: message.stopReason, cacheRate: actual > 0 ? message.usage.cacheRead / actual : null });
+			stopReason: message.stopReason, cacheReported: !!cache,
+			cacheRate: cache && cache.inputTokens > 0 ? cache.cachedTokens / cache.inputTokens : null });
 		if (message.stopReason === "error" || message.stopReason === "aborted") return;
 		if (pending.raw <= 0 || actual <= 0) return;
 		const previous = this.#calibration.get(pending.modelKey) ?? 1;

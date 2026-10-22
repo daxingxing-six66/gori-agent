@@ -1,4 +1,6 @@
 import { DatabaseSync } from "node:sqlite";
+import { stream as streamResponses } from "../../ai/src/api/openai-responses.ts";
+import type { Model } from "../../ai/src/types.ts";
 import { afterEach, describe, expect, it } from "vitest";
 import { handleStatisticsRoute, parseStatisticsFilter } from "../src/api/statistics-routes.ts";
 import { StatisticsService } from "../src/application/statistics/statistics-service.ts";
@@ -53,6 +55,84 @@ function usage(totalCost = 0.25) {
 }
 
 describe("independent statistics queries", () => {
+	it.each([90, 0, undefined])("uses the actual Responses adapter's persisted usage for the call API (cached: %s)", async (cached) => {
+		const f = fixture();
+		const model: Model<"openai-responses"> = { id: "shared-model", name: "test", provider: "one", api: "openai-responses", baseUrl: "https://test.invalid/v1",
+			reasoning: false, input: ["text"], cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, contextWindow: 1000, maxTokens: 100 };
+		const result = await streamResponses(model, { messages: [{ role: "user", content: "test", timestamp: 1 }] }, {
+			apiKey: "test", fetch: async () => new Response(`data: ${JSON.stringify({ type: "response.completed", response: { id: "r", status: "completed", output: [],
+				usage: { input_tokens: 100, output_tokens: 500, input_tokens_details: cached === undefined ? {} : { cached_tokens: cached } } } })}\n\n`, { headers: { "content-type": "text/event-stream" } }),
+		}).result();
+		f.message("api", { usage: result.usage });
+		const url = new URL(`http://test/api/statistics/call-records?from=${filter.from}&to=${filter.to}`);
+		const response = handleStatisticsRoute(f.service, new Request(url), url, ["api", "statistics", "call-records"])!;
+		const body = await response.json() as { rows: { cache: unknown }[] };
+		expect(body.rows[0].cache).toEqual(cached === undefined
+			? { status: "unreported", inputTokens: null, cachedTokens: null, hitRate: null }
+			: { status: "reported", inputTokens: 100, cachedTokens: cached, hitRate: cached / 100 });
+	});
+	it("shows each saved response using explicit provider cache counts without inferring legacy zeros", () => {
+		const f = fixture();
+		f.run("run");
+		for (const [id, details] of [
+			["hit", { inputTokens: 1000, cachedTokens: 900 }],
+			["miss", { inputTokens: 500, cachedTokens: 0 }],
+			["empty", { inputTokens: 0, cachedTokens: 0 }],
+			["missing", undefined],
+			["partial", { inputTokens: 1000 }],
+			["invalid", { inputTokens: 10, cachedTokens: 11 }],
+			["string", JSON.stringify({ inputTokens: 1000, cachedTokens: 900 })],
+			["fractional", { inputTokens: 1.5, cachedTokens: 1 }],
+		] as const) f.message(id, { runId: "run", usage: { ...usage(), cacheReadDetails: details } });
+		// Multiple responses in a Run stay separate; a compaction's retained history is never expanded.
+		f.message("compact", { type: "compact", usage: { ...usage(), requests: [{ cacheReadDetails: { inputTokens: 200, cachedTokens: 100 } }] }, nested: [{ usage: { cacheReadDetails: { inputTokens: 1000, cachedTokens: 999 } } }] });
+		f.message("tool", { type: "tool", usage: { ...usage(), cacheReadDetails: { inputTokens: 1, cachedTokens: 1 } } });
+		const result = f.service.calls(filter, { limit: 100 });
+		expect(result.rows).toHaveLength(9);
+		const cache = (id: string) => result.rows.find(row => row.id === id)!.cache;
+		expect(cache("hit")).toEqual({ status: "reported", inputTokens: 1000, cachedTokens: 900, hitRate: .9 });
+		expect(cache("miss")).toEqual({ status: "reported", inputTokens: 500, cachedTokens: 0, hitRate: 0 });
+		expect(cache("empty")).toEqual({ status: "reported", inputTokens: 0, cachedTokens: 0, hitRate: null });
+		expect(cache("missing")).toEqual({ status: "unreported", inputTokens: null, cachedTokens: null, hitRate: null });
+		for (const id of ["partial", "invalid", "string", "fractional"]) expect(cache(id)).toEqual({ status: "invalid", inputTokens: null, cachedTokens: null, hitRate: null });
+		expect(result.rows.find(row => row.id === "compact:request:0")).toMatchObject({ kind: "compact", runId: null, cache: { hitRate: .5 } });
+		expect(JSON.stringify(result)).not.toContain("SECRET BODY");
+	});
+
+	it("expands compaction API responses individually and never presents a legacy aggregate as a call rate", () => {
+		const f = fixture();
+		f.message("summary", { type: "compact", usage: { ...usage(), requests: [
+			{ cacheReadDetails: { inputTokens: 1000, cachedTokens: 900 } },
+			{ cacheReadDetails: { inputTokens: 100, cachedTokens: 0 } },
+		] } });
+		f.message("legacy", { type: "compact", usage: { ...usage(), cacheReadDetails: { inputTokens: 1000, cachedTokens: 900 } } });
+		const first = f.service.calls(filter, { limit: 1 });
+		expect(first.rows[0]).toMatchObject({ id: "summary:request:1", kind: "compact", cache: { hitRate: 0 } });
+		const [createdAt, id] = JSON.parse(Buffer.from(first.nextCursor!, "base64url").toString()) as [number, string];
+		const rest = f.service.calls(filter, { limit: 25, before: { createdAt, id } });
+		expect(rest.rows[0]).toMatchObject({ id: "summary:request:0", cache: { hitRate: .9 } });
+		expect(rest.rows[1]).toMatchObject({ id: "legacy", kind: "compact_summary", cache: { status: "unreported", hitRate: null } });
+		expect(f.service.overview(filter, 2026).usage.calls).toBe(2);
+	});
+
+	it("filters and paginates individual calls by their response time/model and never writes", () => {
+		const f = fixture();
+		f.run("old", "completed", "a", filter.from - 1_000);
+		for (const id of ["a", "b", "c"]) f.message(id, { runId: "old", provider: "two", usage: { cacheReadDetails: { inputTokens: 10, cachedTokens: 2 } } });
+		f.message("outside", { timestamp: filter.to, provider: "two" });
+		f.message("workspace-b", { workspace: "b", provider: "two" });
+		f.message("other-model", { provider: "two", model: "other" });
+		f.message("other-provider", { provider: "one" });
+		const selected = { ...filter, workspaceId: "a", providerId: "two", modelId: "shared-model" };
+		const changes = f.database.prepare("SELECT total_changes() AS n").get()!.n;
+		const first = f.service.calls(selected, { limit: 2 });
+		expect(first.rows.map(row => row.id)).toEqual(["c", "b"]);
+		const [createdAt, id] = JSON.parse(Buffer.from(first.nextCursor!, "base64url").toString()) as [number, string];
+		const last = f.service.calls(selected, { limit: 2, before: { createdAt, id } });
+		expect(last.rows.map(row => row.id)).toEqual(["a"]);
+		expect(last.nextCursor).toBeNull();
+		expect(f.database.prepare("SELECT total_changes() AS n").get()!.n).toBe(changes);
+	});
 	it("counts top-level responses and manual compaction without duplicating retained history or runs", () => {
 		const f = fixture();
 		f.run("run-a"); f.run("run-b", "failed", "b", now - 60_000, "two");
@@ -148,9 +228,9 @@ describe("independent statistics queries", () => {
 		expect(f.service.options().workspaces).toHaveLength(2);
 	});
 
-	it("serves the six read-only endpoints and validates unsafe parameters", async () => {
+	it("serves the read-only endpoints and validates unsafe parameters", async () => {
 		const f = fixture();
-		for (const endpoint of ["options", "overview", "models", "runs", "run-records", "workspaces"]) {
+		for (const endpoint of ["options", "overview", "models", "runs", "run-records", "call-records", "workspaces"]) {
 			const url = new URL(`http://test/api/statistics/${endpoint}?from=${filter.from}&to=${filter.to}&year=2026`);
 			const response = handleStatisticsRoute(f.service, new Request(url), url, url.pathname.split("/").filter(Boolean))!;
 			expect(response.status).toBe(200);

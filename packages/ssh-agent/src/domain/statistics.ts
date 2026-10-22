@@ -103,10 +103,52 @@ export interface StatisticsRecordsResult extends StatisticsMeta {
 	rows: StatisticsRunRow[];
 	nextCursor: string | null;
 }
+export interface StatisticsCallCache {
+	status: "reported" | "unreported" | "invalid";
+	/** Provider-reported total input, including cached input; never an estimate. */
+	inputTokens: number | null;
+	cachedTokens: number | null;
+	hitRate: number | null;
+}
+export interface StatisticsCallRow {
+	id: string;
+	createdAt: number;
+	sessionId: string;
+	sessionName: string;
+	workspaceId: string;
+	workspaceName: string;
+	runId: string | null;
+	providerId: string;
+	modelId: string;
+	kind: "assistant" | "compact" | "compact_summary";
+	cache: StatisticsCallCache;
+}
+export interface StatisticsCallsResult extends StatisticsMeta {
+	rows: StatisticsCallRow[];
+	nextCursor: string | null;
+}
+export interface StatisticsCallPage {
+	limit: number;
+	before?: { createdAt: number; id: string };
+}
 export interface StatisticsRunPage {
 	limit: number;
 	status?: StatisticsRunStatus;
 	before?: { createdAt: number; id: string };
+}
+
+/** Legacy normalized token fields cannot prove whether an API reported a zero. */
+export function statisticsCallCache(details: unknown): StatisticsCallCache {
+	const unavailable = (status: "unreported" | "invalid"): StatisticsCallCache =>
+		({ status, inputTokens: null, cachedTokens: null, hitRate: null });
+	if (details === undefined || details === null) return unavailable("unreported");
+	if (typeof details !== "object" || Array.isArray(details)) return unavailable("invalid");
+	const value = details as Record<string, unknown>;
+	const { inputTokens, cachedTokens } = value;
+	if (typeof inputTokens !== "number" || typeof cachedTokens !== "number" ||
+		!Number.isSafeInteger(inputTokens) || !Number.isSafeInteger(cachedTokens) ||
+		inputTokens < 0 || cachedTokens < 0 || cachedTokens > inputTokens) return unavailable("invalid");
+	return { status: "reported", inputTokens, cachedTokens, hitRate: inputTokens === 0 ? null : cachedTokens / inputTokens };
 }
 
 export function emptyStatisticsUsage(): StatisticsUsage {

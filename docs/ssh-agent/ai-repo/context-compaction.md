@@ -69,3 +69,6 @@
 诊断状态通过统一持久化追加机制加入运行时；原阈值/超限恢复回调保持。UI 历史过滤位于 chat-ui-history-message.ts，只过滤 deployment/diagnose 两种 custom 消息，其他 custom 类型保持原有行为。详见 [Diagnose 功能路由](./diagnose.md)。
 
 内置 gori-diagnosis Skill 以独立通道状态消息参与估算，压缩保留最新有效指引原文；结束追加 inactive，而不是下一次请求删除旧片段。
+
+
+2026-10-21 逐次缓存统计：摘要的聚合 Usage 保留 `requests` 原始 API 响应用量列表，单摘要一条、history 与 turnPrefix 双摘要两条；顶层计数/费用仍按原规则相加，聚合顶层不制造单次 cacheReadDetails。状态及摘要正文不放入该列表。统计展开明细显示每次请求，旧压缩记录不能从合计数字还原单次调用。见 [statistics.md](./statistics.md)。

@@ -103,6 +103,28 @@ export interface StatisticsRecordsResult extends StatisticsMeta {
 	rows: StatisticsRunRow[];
 	nextCursor: string | null;
 }
+export interface StatisticsCallRow {
+	id: string;
+	createdAt: number;
+	sessionId: string;
+	sessionName: string;
+	workspaceId: string;
+	workspaceName: string;
+	runId: string | null;
+	providerId: string;
+	modelId: string;
+	kind: "assistant" | "compact" | "compact_summary";
+	cache: {
+		status: "reported" | "unreported" | "invalid";
+		inputTokens: number | null;
+		cachedTokens: number | null;
+		hitRate: number | null;
+	};
+}
+export interface StatisticsCallsResult extends StatisticsMeta {
+	rows: StatisticsCallRow[];
+	nextCursor: string | null;
+}
 export interface StatisticsRunPage {
 	limit: number;
 	status?: StatisticsRunStatus;

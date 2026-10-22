@@ -19,6 +19,7 @@ import { headersToRecord } from "../utils/headers.ts";
 import { parseStreamingJson } from "../utils/json-parse.ts";
 import { getPiUserAgent } from "../utils/pi-user-agent.ts";
 import { sanitizeSurrogates } from "../utils/sanitize-unicode.ts";
+import { reportedCacheReadDetails } from "../utils/reported-cache-usage.ts";
 import { getJsonSchemaToolParameters, resolveJsonSchemaStrictSampling } from "./constrained-sampling.ts";
 import { buildBaseOptions } from "./simple-options.ts";
 import { transformMessages } from "./transform-messages.ts";
@@ -534,7 +535,7 @@ function shouldUsePromptCaching(options?: MistralOptions): options is MistralOpt
 	return options?.cacheRetention !== "none" && !!options?.sessionId;
 }
 
-function getMistralCachedPromptTokens(usage: unknown, promptTokens: number): number {
+function getMistralRawCachedPromptTokens(usage: unknown): unknown {
 	const rawUsage = usage as {
 		promptTokensDetails?: { cachedTokens?: unknown } | null;
 		prompt_tokens_details?: { cached_tokens?: unknown } | null;
@@ -543,14 +544,18 @@ function getMistralCachedPromptTokens(usage: unknown, promptTokens: number): num
 		numCachedTokens?: unknown;
 		num_cached_tokens?: unknown;
 	};
-	const rawCachedTokens =
+	return (
 		rawUsage.promptTokensDetails?.cachedTokens ??
 		rawUsage.prompt_tokens_details?.cached_tokens ??
 		rawUsage.promptTokenDetails?.cachedTokens ??
 		rawUsage.prompt_token_details?.cached_tokens ??
 		rawUsage.numCachedTokens ??
-		rawUsage.num_cached_tokens ??
-		0;
+		rawUsage.num_cached_tokens
+	);
+}
+
+function getMistralCachedPromptTokens(usage: unknown, promptTokens: number): number {
+	const rawCachedTokens = getMistralRawCachedPromptTokens(usage);
 	const cachedTokens = typeof rawCachedTokens === "number" && Number.isFinite(rawCachedTokens) ? rawCachedTokens : 0;
 	return Math.min(promptTokens, Math.max(0, cachedTokens));
 }
@@ -601,6 +606,9 @@ async function consumeChatStream(
 			output.usage.output = chunk.usage.completion_tokens || 0;
 			output.usage.cacheRead = cachedPromptTokens;
 			output.usage.cacheWrite = 0;
+			const cacheReadDetails = reportedCacheReadDetails(chunk.usage.prompt_tokens, getMistralRawCachedPromptTokens(chunk.usage));
+			if (cacheReadDetails) output.usage.cacheReadDetails = cacheReadDetails;
+			else delete output.usage.cacheReadDetails;
 			output.usage.totalTokens =
 				chunk.usage.total_tokens ||
 				output.usage.input + output.usage.output + output.usage.cacheRead + output.usage.cacheWrite;

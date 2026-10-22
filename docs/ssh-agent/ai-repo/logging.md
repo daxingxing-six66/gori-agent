@@ -27,3 +27,5 @@
 ## 上下文缓存观测
 
 `ChatContextService` 发出 `cache.prefix`（头部/工具/设置 SHA-256、消息数、首个变化组件）与 `cache.usage`（真实输入、缓存读取/写入、未缓存输入、输出、命中比例），以 requestId 关联。不记录提示词、参数或摘要正文。指纹属于应用 Context 层，不能当作最终 HTTP 字节或供应商命中证明；进程内保留最近 256 个 Session，重启从 initial 开始。Session ID 始终透传主模型调用以接通已有缓存键。细节和限制见 [runtime-context.md](./runtime-context.md)。
+
+`cacheRate` 仅由 API 明确返回的 `Usage.cacheReadDetails` 计算，缺失或总输入为 0 时是 null；`cacheReported` 区分是否保存了可信计数。原有归一化 Token 字段仍用于用量与校准，不据此推断缓存率。统计的“模型调用”页签直接读取 SQLite 明细，详见 [statistics.md](./statistics.md)。

@@ -40,7 +40,7 @@
 
 ## 观测与验证
 
-`cache.prefix` 记录应用层 Context 的头部、工具、设置摘要与首次变化组件，`cache.usage` 通过 requestId 关联真实 uncached/cacheRead/cacheWrite/output，并计算 `cacheRead / (input + cacheRead + cacheWrite)`。不记录提示词、参数或摘要正文；缓存指纹在进程内按最近 256 个 Session 有界保存，重启后的第一条为 initial。它不是最终 HTTP payload 的逐字指纹，附件水合、适配器转换及供应商缓存行为需分别分析。主模型调用始终透传 Session ID，接通已有供应商缓存键，不能据此保证缓存收益。
+`cache.prefix` 记录应用层 Context 的头部、工具、设置摘要与首次变化组件，`cache.usage` 通过 requestId 关联真实 uncached/cacheRead/cacheWrite/output，缓存比例只读取 API 明确返回并保存的 `cacheReadDetails.cachedTokens / cacheReadDetails.inputTokens`；缺失或零输入时为 null，cacheReported 表明是否有可信计数，不能从旧标准化零值推断。不记录提示词、参数或摘要正文；缓存指纹在进程内按最近 256 个 Session 有界保存，重启后的第一条为 initial。它不是最终 HTTP payload 的逐字指纹，附件水合、适配器转换及供应商缓存行为需分别分析。主模型调用始终透传 Session ID，接通已有供应商缓存键，不能据此保证缓存收益。
 
 `test/runtime-context.test.ts` 使用临时 SQLite、假模型数据和真实订阅序列化函数验证多通道旧输入的完整前缀、固定目录、A/B/A、结束/新作用域、重复同步、并发、写入回滚、重开恢复、引用转义及预览无写入。`chat-context-service.test.ts` 覆盖三类压缩期间新状态提交及 typed Terminal 查询。运行时、诊断、部署、只读与工具授权回归继续验证副作用前拒绝。
 

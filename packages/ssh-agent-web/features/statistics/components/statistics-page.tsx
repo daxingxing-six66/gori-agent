@@ -11,11 +11,13 @@ import { useStatistics, useStatisticsLocation } from "../runtime/use-statistics"
 import { StatisticsOverviewTab } from "./statistics-overview";
 import { StatisticsModelsTab } from "./statistics-models";
 import { StatisticsRunsTab } from "./statistics-runs";
+import { StatisticsCallsTab } from "./statistics-calls";
 import { StatisticsWorkspacesTab } from "./statistics-workspaces";
+import { StatisticsModelFilters } from "./statistics-model-filters";
 import { StatisticsError, StatisticsLoading } from "./statistics-shared";
 import "./statistics.css";
 
-const icons = { overview: BarChart3, models: Layers3, runs: Clock3, workspaces: Server };
+const icons = { overview: BarChart3, models: Layers3, calls: Activity, runs: Clock3, workspaces: Server };
 
 export function StatisticsPage() {
 	const intl = useIntl();
@@ -49,7 +51,7 @@ function StatisticsContent({ location, update }: { location: StatisticsLocation;
 				const Icon = icons[tab];
 				return <button type="button" role="tab" key={tab} id={`stats-tab-${tab}`} aria-controls={`stats-panel-${tab}`} aria-selected={location.tab === tab} tabIndex={location.tab === tab ? 0 : -1} className="page-tab"
 					ref={(element) => { tabButtons.current[index] = element; }} onClick={() => switchTab(tab)} onKeyDown={(event) => {
-						const next = event.key === "ArrowRight" ? (index + 1) % 4 : event.key === "ArrowLeft" ? (index + 3) % 4 : event.key === "Home" ? 0 : event.key === "End" ? 3 : null;
+						const next = event.key === "ArrowRight" ? (index + 1) % statisticsTabs.length : event.key === "ArrowLeft" ? (index + statisticsTabs.length - 1) % statisticsTabs.length : event.key === "Home" ? 0 : event.key === "End" ? statisticsTabs.length - 1 : null;
 						if (next !== null) { event.preventDefault(); switchTab(statisticsTabs[next]); tabButtons.current[next]?.focus(); }
 					}}><Icon size={14} aria-hidden="true" />{intl.formatMessage({ id: `statistics.tab.${tab}` })}</button>;
 			})}
@@ -67,11 +69,7 @@ function StatisticsContent({ location, update }: { location: StatisticsLocation;
 					...(location.workspaceId && !options.data?.workspaces.some((row) => row.id === location.workspaceId) ? [{ value: location.workspaceId, label: location.workspaceId }] : []),
 					...(options.data?.workspaces.map((row) => ({ value: row.id, label: row.name })) ?? []),
 				]} /></div>
-				<div className="stats-filter stats-model-filter"><span>{intl.formatMessage({ id: "statistics.model" })}</span><CustomSelect compact ariaLabel={intl.formatMessage({ id: "statistics.model" })} value={location.model} onChange={(model) => update({ model })} options={[
-					{ value: "", label: intl.formatMessage({ id: "statistics.allModels" }) },
-					...(location.model && !options.data?.models.some((row) => JSON.stringify([row.providerId, row.modelId]) === location.model) ? [{ value: location.model, label: (JSON.parse(location.model) as string[]).join(" / ") }] : []),
-					...(options.data?.models.map((row) => ({ value: JSON.stringify([row.providerId, row.modelId]), label: `${row.modelId} · ${row.providerId}` })) ?? []),
-				]} /></div>
+				<StatisticsModelFilters location={location} models={options.data?.models ?? []} update={update} />
 				<span className="stats-timezone">{intl.formatMessage({ id: "statistics.timeZone" }, { zone: location.timeZone })}</span>
 			</div>
 			{Boolean(options.error) && <StatisticsError compact retry={retry} />}
@@ -79,6 +77,7 @@ function StatisticsContent({ location, update }: { location: StatisticsLocation;
 				{query === null ? <p className="stats-error" role="alert">{intl.formatMessage({ id: "statistics.invalidDates" })}</p>
 					: location.tab === "overview" ? <StatisticsOverviewTab {...shared} years={years} timeZone={location.timeZone} onYear={(year) => update({ year })} />
 					: location.tab === "models" ? <StatisticsModelsTab {...shared} location={location} update={update} />
+					: location.tab === "calls" ? <StatisticsCallsTab {...shared} location={location} update={update} />
 					: location.tab === "runs" ? <StatisticsRunsTab {...shared} location={location} update={update} />
 					: <StatisticsWorkspacesTab {...shared} location={location} update={update} />}
 			</div>

@@ -17,6 +17,7 @@ export function handleStatisticsRoute(service: StatisticsService, request: Reque
 		case "models": return json(service.models(filter, sort as StatisticsSort, ascending));
 		case "runs": return json(service.runs(filter));
 		case "run-records": return json(service.records(filter, parsePage(url)));
+		case "call-records": return json(service.calls(filter, parsePage(url)));
 		case "workspaces": return json(service.workspaces(filter, sort as StatisticsSort, ascending));
 		default: return null;
 	}

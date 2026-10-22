@@ -1,7 +1,7 @@
 import type { DatabaseSync, SQLInputValue, SQLOutputValue } from "node:sqlite";
 import type { StatisticsQuery, StatisticsUsageGroup, StatisticsRunGroup } from "../../application/statistics/statistics-query.ts";
 import { statisticsDay } from "../../application/statistics/statistics-time.ts";
-import { emptyStatisticsUsage, type StatisticsFilter, type StatisticsModelRow, type StatisticsOptions,
+import { emptyStatisticsUsage, statisticsCallCache, type StatisticsCallPage, type StatisticsCallRow, type StatisticsFilter, type StatisticsModelRow, type StatisticsOptions,
 	type StatisticsRunPage, type StatisticsRunRow, type StatisticsRunStatus, type StatisticsRunSummary,
 	type StatisticsUsage } from "../../domain/statistics.ts";
 
@@ -139,6 +139,45 @@ export class SqliteStatisticsQuery implements StatisticsQuery {
 				failure: typeof row.failure_code === "string" && typeof row.failure_message === "string"
 					? { code: row.failure_code, message: row.failure_message } : null,
 				usage: byRun.get(String(row.id)) ?? emptyStatisticsUsage() };
+		});
+	}
+
+	callRecords(filter: StatisticsFilter, page: StatisticsCallPage): StatisticsCallRow[] {
+		const where: Sql = { text: "m.message_type IN ('assistant', 'compact') AND m.created_at >= ? AND m.created_at < ?", values: [filter.from, filter.to] };
+		for (const [key, column] of [["workspaceId", "s.workspace_id"], ["providerId", messageProvider], ["modelId", messageModel]] as const) {
+			if (filter[key] !== undefined) { where.text += ` AND ${column} = ?`; where.values.push(filter[key]); }
+		}
+		// Bound the source scan, but apply the full cursor after expanding compaction requests.
+		if (page.before) { where.text += " AND m.created_at <= ?"; where.values.push(page.before.createdAt); }
+		const cursor = page.before ? "WHERE (created_at, id) < (?, ?)" : "";
+		const values = [...where.values, ...(page.before ? [page.before.createdAt, page.before.id] : []), page.limit + 1];
+		return this.database.prepare(`WITH source AS (
+			SELECT m.id, m.created_at, m.run_id, m.session_id, m.message_type,
+				s.display_name AS session_name, s.workspace_id, w.display_name AS workspace_name,
+				${messageProvider} AS providerId, ${messageModel} AS modelId,
+				CASE WHEN json_valid(m.usage_json) THEN m.usage_json ELSE '{}' END AS u
+			FROM chat_messages m JOIN sessions s ON s.id = m.session_id JOIN workspaces w ON w.id = s.workspace_id
+			WHERE ${where.text}
+		), prepared AS (
+			SELECT *, message_type='compact' AND json_type(u, '$.requests')='array' AND json_array_length(u, '$.requests')>0 AS has_requests FROM source
+		), expanded AS (
+			SELECT CASE WHEN has_requests THEN source.id || ':request:' || request.key ELSE source.id END AS id,
+				created_at, run_id, session_id, session_name, workspace_id, workspace_name, providerId, modelId,
+				CASE WHEN message_type='assistant' THEN 'assistant' WHEN has_requests THEN 'compact' ELSE 'compact_summary' END AS kind,
+				CASE WHEN message_type='assistant' THEN u WHEN has_requests AND request.type='object' THEN request.value ELSE '{}' END AS reported_usage
+			FROM prepared source, json_each(CASE WHEN has_requests THEN json_extract(u,'$.requests') ELSE '[null]' END) request
+		)
+		SELECT *, json_extract(reported_usage,'$.cacheReadDetails') AS cache_details,
+			json_type(reported_usage,'$.cacheReadDetails') AS cache_type
+		FROM expanded ${cursor} ORDER BY created_at DESC, id DESC LIMIT ?`).all(...values).map(row => {
+			let details: unknown = row.cache_type === null || row.cache_type === "null" ? null : false;
+			if (row.cache_type === "object" && typeof row.cache_details === "string") {
+				try { details = JSON.parse(row.cache_details); } catch { /* Invalid provider metadata stays unavailable. */ }
+			}
+			return { id: String(row.id), createdAt: Number(row.created_at), runId: row.run_id === null ? null : String(row.run_id),
+				sessionId: String(row.session_id), sessionName: String(row.session_name), workspaceId: String(row.workspace_id), workspaceName: String(row.workspace_name),
+				providerId: String(row.providerId), modelId: String(row.modelId), kind: row.kind as StatisticsCallRow["kind"],
+				cache: statisticsCallCache(details) };
 		});
 	}
 

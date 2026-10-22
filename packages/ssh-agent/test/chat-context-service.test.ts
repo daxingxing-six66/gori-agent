@@ -132,11 +132,15 @@ describe("ChatContextService", () => {
 		service.recordProviderRequest("run-1", model, { ...context, systemPrompt: "changed" }, "session-1");
 		expect(log.mock.calls.map(([entry]) => entry.firstChanged)).toEqual(["initial", "unchanged", "append", "systemPrompt"]);
 		const response = fauxAssistantMessage("partial", { stopReason: "error" });
-		response.usage = { ...response.usage, input: 10, cacheRead: 90, cacheWrite: 0, output: 5 };
+		response.usage = { ...response.usage, input: 10, cacheRead: 90, cacheWrite: 0, output: 5, cacheReadDetails: { inputTokens: 100, cachedTokens: 90 } };
 		service.recordProviderResponse("run-1", response);
 		expect(log.mock.calls.at(-1)?.[0]).toMatchObject({ type: "cache.usage", requestId: log.mock.calls[3]![0].requestId,
 			input: 100, cached: 90, uncached: 10, output: 5, cacheRate: 0.9, stopReason: "error" });
 		expect(JSON.stringify(log.mock.calls)).not.toMatch(/private-header|private-message|partial/);
+		service.recordProviderRequest("run-1", model, context, "session-1");
+		delete response.usage.cacheReadDetails;
+		service.recordProviderResponse("run-1", response);
+		expect(log.mock.calls.at(-1)?.[0]).toMatchObject({ type: "cache.usage", cacheReported: false, cacheRate: null });
 	});
 
 	it.each(["manual", "threshold", "overflow"] as const)("retains newly committed facts and guidance during %s compaction", async (reason) => {

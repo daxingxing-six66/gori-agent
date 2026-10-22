@@ -1,5 +1,5 @@
 import { addStatisticsUsage, emptyStatisticsUsage, type StatisticsDay, type StatisticsFilter,
-	type StatisticsMeta, type StatisticsModelResult, type StatisticsOptions, type StatisticsOverview,
+	type StatisticsCallPage, type StatisticsCallsResult, type StatisticsMeta, type StatisticsModelResult, type StatisticsOptions, type StatisticsOverview,
 	type StatisticsRecordsResult, type StatisticsRunPage, type StatisticsRunsResult,
 	type StatisticsWorkspaceResult } from "../../domain/statistics.ts";
 import type { StatisticsQuery, StatisticsUsageGroup, StatisticsRunGroup } from "./statistics-query.ts";
@@ -57,6 +57,15 @@ export class StatisticsService {
 
 	records(filter: StatisticsFilter, page: StatisticsRunPage): StatisticsRecordsResult {
 		const rows = this.query.runRecords(filter, page);
+		const more = rows.length > page.limit;
+		if (more) rows.pop();
+		const last = rows.at(-1);
+		const nextCursor = more && last ? Buffer.from(JSON.stringify([last.createdAt, last.id])).toString("base64url") : null;
+		return { ...this.meta(filter), rows, nextCursor };
+	}
+
+	calls(filter: StatisticsFilter, page: StatisticsCallPage): StatisticsCallsResult {
+		const rows = this.query.callRecords(filter, page);
 		const more = rows.length > page.limit;
 		if (more) rows.pop();
 		const last = rows.at(-1);

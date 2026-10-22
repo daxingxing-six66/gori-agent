@@ -1,5 +1,5 @@
 import type {
-	StatisticsFilter, StatisticsModelRow, StatisticsOptions, StatisticsRunPage,
+	StatisticsCallPage, StatisticsCallRow, StatisticsFilter, StatisticsModelRow, StatisticsOptions, StatisticsRunPage,
 	StatisticsRunRow, StatisticsRunSummary, StatisticsUsage,
 } from "../../domain/statistics.ts";
 
@@ -25,4 +25,5 @@ export interface StatisticsQuery {
 	activeWorkspaceDays(filter: StatisticsFilter): { workspaceId: string; date: string }[];
 	activeDates(filter: StatisticsFilter): string[];
 	runRecords(filter: StatisticsFilter, page: StatisticsRunPage): StatisticsRunRow[];
+	callRecords(filter: StatisticsFilter, page: StatisticsCallPage): StatisticsCallRow[];
 }
