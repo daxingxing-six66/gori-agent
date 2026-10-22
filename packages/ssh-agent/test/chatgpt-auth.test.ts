@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -58,7 +59,17 @@ describe("ChatGPT subscription authorization", () => {
 		expect(url.searchParams.get("code_challenge_method")).toBe("S256");
 		expect(url.searchParams.get("scope")).toContain("chatgpt.tokens.use.direct");
 		expect(url.searchParams.get("redirect_uri")).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/auth\/callback$/);
-		expect((await callback(attempt.authorizationUrl)).status).toBe(200);
+		const confirmation = await callback(attempt.authorizationUrl);
+		expect(confirmation.status).toBe(200);
+		expect(confirmation.headers.get("content-type")).toBe("text/html; charset=utf-8");
+		expect(confirmation.headers.get("cache-control")).toBe("no-store");
+		expect(confirmation.headers.get("referrer-policy")).toBe("no-referrer");
+		const page = await confirmation.text();
+		expect(page).toContain("ChatGPT 授权已完成");
+		expect(page).toContain("请返回 Gori 查看连接结果。");
+		expect(page).not.toMatch(/dummy-access|dummy-refresh|test-code|gori@example.test|<script|https?:\/\//);
+		const style = page.match(/<style>([\s\S]+?)<\/style>/)![1]!;
+		expect(confirmation.headers.get("content-security-policy")).toBe(`default-src 'none'; style-src 'sha256-${createHash("sha256").update(style).digest("base64")}'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'`);
 		await waitFor(backend, attempt.id);
 		const exchange = fixture.calls.find((call) => call.body.get("grant_type") === "authorization_code")!;
 		expect(exchange.body.get("client_id")).toBe("oaiapp_test");
@@ -80,7 +91,9 @@ describe("ChatGPT subscription authorization", () => {
 	it("rejects forged state before code exchange and does not publish credentials", async () => {
 		const { backend, fixture } = setup();
 		const attempt = await begin(backend, fixture);
-		expect((await callback(attempt.authorizationUrl, { state: "forged" })).status).toBe(400);
+		const failure = await callback(attempt.authorizationUrl, { state: "forged" });
+		expect(failure.status).toBe(400);
+		expect(failure.headers.get("content-type")).toBe("text/plain; charset=utf-8");
 		expect(await waitFor(backend, attempt.id, "failed")).toMatchObject({ errorCode: "chatgpt_sign_in_failed" });
 		expect(fixture.calls).toHaveLength(0);
 		expect((await (await request(backend, "")).json()).connected).toBe(false);

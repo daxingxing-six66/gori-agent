@@ -9,6 +9,7 @@
 - 初次发送 `client_id=dynamic_agent_client`、`agent_name_hint=Gori` 和稳定 host ID。回调 issued client ID 在换 token 前保存；重试和重新登录复用它，显式使用其他账号开始新注册。
 - 安装 host/client/subject 映射保存在数据库目录旁的 `chatgpt-registration.json`，原子替换、Unix 权限 `0600`，没有 token。完整凭据复用 LLM Credential 加密表，不增加 migration。断开保留注册映射。
 - 仅在 `127.0.0.1` 随机空闲端口监听 `/auth/callback`，授权与交换使用相同 URI。每次生成独立 state、nonce、PKCE verifier，校验 Host、路径、state 和 client ID，回调只消费一次。浏览器需与后端在同一台电脑；当前未实现远程 VM 凭据转移。
+- 成功回调使用独立的静态 HTML 状态卡片，沿用 Gori 浅色与绿色视觉，提供中英文授权确认和返回 Gori 查看连接结果的提示，窄屏自适应；不将收到授权等同于后续凭据写入或模型发现均成功。页面不包含账号、token 或回调参数，不请求外部资源、不运行脚本、不自动跳转或关闭；内联样式通过 CSP SHA-256 精确允许，继续 no-store/no-referrer。失败仍返回原有纯文本安全诊断与 400 状态。
 - ID token 校验 RS256/JWKS 签名、issuer、audience、有效期、iat/nbf、nonce 和原注册 subject。仅取得 `chatgpt.tokens.use.direct` 与 `resource.invoke` 后保存可用连接。token 不返回浏览器、不进入 URL、日志或前端存储，授权 URL 不含 id_token_hint。
 - 整次授权默认 10 分钟；首次换 token 与身份网络请求各 30 秒；pi-ai 自动刷新与会话撤销各 15 秒；模型发现 20 秒。底层连接可更早失败。回调页、状态 API 和日志仅展示白名单阶段、原因、HTTP 状态和传输错误码，不把所有失败合并为超时，不公开上游响应正文。
 - 刷新复用 pi-ai 的串行 CredentialStore.modify 并保存 rotating refresh token。断开在同一互斥边界先撤销会话再删除本地凭据；撤销失败保留连接供重试。通用 Credential DELETE 拒绝该 Provider。活动 ChatGPT Run 阻止换账号或断开，授权返回后写入前再复检。
@@ -54,6 +55,7 @@ CLI 在创建 Backend 前通过 `server/environment-proxy.ts` 安装 undici 环�
 | 契约与安全诊断 | `packages/ssh-agent/src/domain/chatgpt.ts` |
 | 授权端口与连接用例 | `packages/ssh-agent/src/application/chatgpt-authorization.ts`、`application/services/chatgpt-service.ts` |
 | OAuth/JWT、回调、注册存储 | `packages/ssh-agent/src/infrastructure/chatgpt/chatgpt-oauth.ts`、`chatgpt-login.ts`、`chatgpt-registration-store.ts` |
+| 静态授权成功页面及响应头 | 同目录 `chatgpt-callback-page.ts`，仅由回调监听器的成功分支使用 |
 | Provider/模型/请求适配 | 同目录 `chatgpt-provider.ts`、`chatgpt-responses.ts` |
 | 路由与装配 | `packages/ssh-agent/src/api/chatgpt-routes.ts`、`runtime/create-sqlite-management-backend.ts` |
 | Node 出站代理与回归 | `packages/ssh-agent/src/server/environment-proxy.ts`、`server/main.ts`、`test/environment-proxy.test.ts` |

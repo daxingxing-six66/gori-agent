@@ -4,6 +4,7 @@ import { CHATGPT_ISSUER, CHATGPT_RESOURCE, ChatGptAuthError, type ChatGptCredent
 import type { ChatGptOAuthClient } from "./chatgpt-oauth.ts";
 import type { ChatGptRegistrationStore } from "./chatgpt-registration-store.ts";
 import type { ChatGptLogin } from "../../application/chatgpt-authorization.ts";
+import { chatGptCallbackSuccess } from "./chatgpt-callback-page.ts";
 
 /** The listener is local to the Gori runtime, never a public HTTP callback. */
 export async function startChatGptLogin(options: {
@@ -53,7 +54,7 @@ export async function startChatGptLogin(options: {
 				controller.signal.throwIfAborted();
 				options.registrations.save(clientId, credential.subject);
 				resolveResult!(credential);
-				response.writeHead(200, callbackHeaders).end("ChatGPT authorization received. Return to Gori to check the connection. / 请返回 Gori 查看连接结果。");
+				response.writeHead(200, chatGptCallbackSuccess.headers).end(chatGptCallbackSuccess.body);
 			} catch (error) {
 				rejectResult!(error);
 				const failure = error instanceof ChatGptAuthError ? error.failure : { stage: "callback", reason: "invalid_response" };
