@@ -92,10 +92,21 @@ npm start
 
 ```sh
 npm ci --ignore-scripts
+npm run dev
+```
+
+打开 <http://127.0.0.1:3000>。根 `dev` 命令同时启动前后端：前端支持热更新，后端直接加载 TypeScript 源码，修改 `packages/ssh-agent`、`packages/agent`、`packages/ai`、`packages/telemetry` 的 `src/` 后自动重启，无需先构建基础包。按 Ctrl+C 同时停止前后端和监听进程。后端重启会重建运行时连接，不保留进程内的任务状态。
+
+开发端口也通过 `SSH_AGENT_WEB_PORT`、`SSH_AGENT_PORT`、`SSH_AGENT_EVENTS_PORT` 设置，启动器自动同步前端地址与后端 CORS；例如 macOS / Linux 下运行 `SSH_AGENT_WEB_PORT=4310 SSH_AGENT_PORT=4311 SSH_AGENT_EVENTS_PORT=4312 npm run dev`。开发模式不读取或更新生产构建的 `.build-config.json`，无需执行 `npm run build`。数据目录仍使用 `~/.gori-agent`，可通过 `SSH_AGENT_DATA_DIR` 指定其他目录；环境变量需要在启动前导出，根启动器不自动加载 `.env`。
+
+检查、生产构建和定向测试入口：
+
+```sh
 npm run check
 npm run build
 npm run test:backend
 npm run test:web
+node --test scripts/start.test.mjs
 ```
 
 模型目录 JSON 随源码提供，`npm run check:model-data` 检查结构和摘要。普通安装不需要重新请求模型目录服务。

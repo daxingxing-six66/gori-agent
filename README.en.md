@@ -46,6 +46,17 @@ Attachments and logs are stored in `attachments/` and `logs/` beneath the data d
 
 The npm workspace contains the web frontend, SSH backend, and pi's agent, AI, and telemetry packages. See [CONTRIBUTING.md](CONTRIBUTING.md) for installation, checks, and test guidance.
 
+```sh
+npm ci --ignore-scripts
+npm run dev
+```
+
+Open <http://127.0.0.1:3000>. This starts both servers with frontend HMR and backend source watching. Changes under `src/` in `packages/ssh-agent`, `packages/agent`, `packages/ai`, and `packages/telemetry` automatically restart the backend. Source aliases load these workspaces directly, so no initial build or manual rebuild is needed. Backend restarts recreate runtime connections and do not preserve in-memory task state. Press Ctrl+C to stop both servers and the watcher.
+
+Set `SSH_AGENT_WEB_PORT`, `SSH_AGENT_PORT`, and `SSH_AGENT_EVENTS_PORT` before starting to use different ports; browser endpoints and backend CORS are configured together. Development neither reads nor updates the production `.build-config.json`. Data still defaults to `~/.gori-agent`; use `SSH_AGENT_DATA_DIR` for a separate directory. Export environment variables before starting; the root launcher does not load `.env` automatically.
+
+Run `node --test scripts/start.test.mjs` for isolated launcher tests covering source updates, error recovery, port conflicts, and process cleanup.
+
 ## License and attribution
 
 [MIT](LICENSE). Includes pi source by Mario Zechner and contributors. Original copyright notices are retained; see [NOTICE.md](NOTICE.md).

@@ -14,7 +14,9 @@ HTTP 和 SSE 连接后端，终端通过 snapshot/SSE 展示 AI 交互，不提�
 
 ## 开发
 
-在独立仓库安装依赖后，运行 `npm run dev --workspace=@pi/ssh-agent-web`。同时运行后端。
+在仓库根目录安装依赖后，推荐运行 `npm run dev`，统一启动前后端。前端支持热更新，后端及 agent、ai、telemetry 基础包的源码修改会自动重启后端，无需先构建。按 Ctrl+C 同时停止全部开发进程。
+
+也可单独运行 `npm run dev --workspace=@pi/ssh-agent-web`，此时需要自行启动后端并保持端口配置一致。
 
 开发模式普通请求默认使用 `http://127.0.0.1:3001`，独立生产构建未配置 API 时使用同源路径；事件在两种模式下均默认使用 `http://127.0.0.1:3002`。根构建脚本为本机发行方式显式设置 `NEXT_PUBLIC_SSH_AGENT_API_BASE_URL` 与 `NEXT_PUBLIC_SSH_AGENT_EVENTS_BASE_URL`，分别匹配后端 API/事件端口。
 

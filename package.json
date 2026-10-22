@@ -16,6 +16,7 @@
     "packages/ssh-agent-web"
   ],
   "scripts": {
+    "dev": "node scripts/start.mjs --dev",
     "start": "node scripts/start.mjs",
     "check": "npm run check:ai-repo && npm run check:sandbox && npm run check:model-data && tsgo --noEmit && tsc --noEmit -p packages/ssh-agent-web/tsconfig.json",
     "check:model-data": "node packages/ai/scripts/check-model-data.ts",

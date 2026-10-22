@@ -25,7 +25,8 @@
 ## 构建和部署
 
 - 前端分别使用 `NEXT_PUBLIC_SSH_AGENT_API_BASE_URL` 与 `NEXT_PUBLIC_SSH_AGENT_EVENTS_BASE_URL`。事件地址缺省为 `http://127.0.0.1:3002`，生产模式也不退回 REST 同源路径。
-- 根构建记录两个端口到 `.build-config.json` 并注入浏览器地址。启动验证网页/API/事件三个端口互异、环境与构建一致、端口可用，并等待两个后端健康检查再启动 Web；旧构建缺少事件端口时明确要求重新构建。
+- 根构建记录两个端口到 `.build-config.json` 并注入浏览器地址。生产启动验证网页/API/事件三个端口互异、环境与构建一致、端口可用，并等待两个后端健康检查再启动 Web；旧构建缺少事件端口时明确要求重新构建。
+- 根 `npm run dev` 直接从环境读取三个端口，校验互异及可用后同步前端 API/事件地址和后端 CORS，同样等待双健康检查再启动 `vinext dev`；不依赖或更新生产构建记录。后端源码监听、基础包直接加载及进程清理见 [local-distribution.md](./local-distribution.md)。
 - 独立启动开发服务时，默认端口直接可用；变更后端端口时同步设置两种 `NEXT_PUBLIC_*` 地址。反向代理部署必须给 REST 与事件不同 origin（例如不同端口）；仅按路径转发到同一个 HTTP/1.1 origin 会再次共享连接额度。跨域推送沿用后端 CORS 配置。
 - 该隔离保证长连接不占 REST 额度。Workspace 复用让同页 Chat + Terminal + 全局活动 + Workspace 使用 4 条长连接，避免加入 Diagnose 后各功能独立常驻导致超过 HTTP/1.1 的 6 条连接额度、Terminal 等待 ready 或 Chat 事件排队。事件 origin 仍受浏览器上限约束；不同浏览器标签页之间不共享本页连接池。
 
