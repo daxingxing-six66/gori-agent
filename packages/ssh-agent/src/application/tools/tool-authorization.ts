@@ -44,7 +44,7 @@ export function authorizationFailure(error: unknown): Extract<PreparedToolAuthor
 		return { kind: "block", block: true, reason: JSON.stringify(error), terminate: false };
 	if (
 		(error instanceof SshAgentError && error.failure.code === "invalid_request") ||
-		(error instanceof TerminalError && (error.code === "terminal_input_invalid" || error.code === "terminal_input_too_large"))
+		(error instanceof TerminalError && (error.code === "terminal_input_invalid" || error.code === "terminal_input_too_large" || error.code === "terminal_observe_required"))
 	) {
 		return { kind: "block", block: true, reason: error.message, terminate: false };
 	}

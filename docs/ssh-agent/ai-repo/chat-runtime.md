@@ -127,3 +127,5 @@ Runtime Factory 将 Run ID 绑定到远端 Tool。Full Access grant 绑定完整
 2026-10-19 Diagnose 接入：`/diagnose` 使用独立 DiagnoseService/Coordinator/Runtime，跨 Chat Run 保存任务，三个元数据工具免审批，普通命令与只读策略保持。ChatService 只预约 idle Session、冻结任务绑定及组合 Context；结束按钮通过原 Run/follow_up 请求结论，直接退出才强制取消绑定 Run。前端 attachRun 复用原 Chat 恢复与 SSE。 详见 [Diagnose 功能路由](./diagnose.md)。
 
 本地文件预览按类型分流：读写、上传和下载四类成功工具行使用统一的悬浮/键盘查看入口，上传/下载路径来自已确认的结果详情；点击文件名本身只展开工具详情。文本继续使用 `features/file-reader/`，图片、音频、视频使用独立 `features/media-preview/` 标签、元数据与流接口，共用 TaskContainer 展示而不混合处理生命周期。macOS 系统临时目录别名由共享文件访问边界规范后校验；见 [多媒体预览](./media-preview.md)。
+
+2026-10-22 Terminal 人机协作：普通消息创建 Run 前经可选 startRun 边界冻结并排空本页 Terminal 输入；后端 Run 绑定与人工写入在同一 Actor 队列仲裁。人工活动在首次模型请求前同步，失败阻止执行。见 [功能路由](./features/terminal-human-interaction.md)。

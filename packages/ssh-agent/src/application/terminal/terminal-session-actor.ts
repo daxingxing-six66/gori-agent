@@ -1,4 +1,5 @@
 import type { Clock, IdGenerator, TerminalAttachmentId } from "../../domain/ids.ts";
+import type { TerminalInputControl, TerminalHumanInputRequest } from "../../domain/terminal-human.ts";
 import type { TerminalCloseReason, TerminalGeometry, TerminalSandboxFacts, TerminalSession } from "../../domain/terminal.ts";
 import { TerminalError } from "../../domain/terminal.ts";
 import type { TerminalRepository } from "../repositories/terminal-repository.ts";
@@ -6,6 +7,8 @@ import type { SessionUseLease } from "../services/session-lifecycle-coordinator.
 import type { TerminalChannelExit, TerminalChannelHandle } from "../ssh-channel-broker.ts";
 import { TerminalCanonicalState, type TerminalSnapshot } from "./terminal-canonical-state.ts";
 import { TERMINAL_DEFAULTS } from "./terminal-defaults.ts";
+import { TerminalInputArbiter } from "./terminal-input-control.ts";
+import { TerminalHumanActivityRecorder } from "./terminal-human-activity.ts";
 import {
 	TerminalReplayGapError,
 	type TerminalReplayResult,
@@ -28,6 +31,7 @@ interface TerminalAttachment {
 export interface TerminalAttachmentBootstrap {
 	readonly attachmentId: TerminalAttachmentId;
 	readonly snapshot: TerminalSnapshot;
+	readonly inputControl: TerminalInputControl;
 }
 
 export interface TerminalResizeOwnership {
@@ -68,6 +72,9 @@ export class TerminalSessionActor {
 	#finalCapture: TerminalCanonicalCapture | null = null;
 	#runBindings = new Set<string>();
 	#inFlightInteractions = 0;
+	readonly #input = new TerminalInputArbiter();
+	readonly #human: TerminalHumanActivityRecorder;
+	#humanCheckpointTimer: ReturnType<typeof setTimeout> | undefined;
 
 	constructor(options: {
 		session: TerminalSession;
@@ -85,6 +92,7 @@ export class TerminalSessionActor {
 		this.#onDisposed = options.onDisposed;
 		this.#canonical = new TerminalCanonicalState(options.session.geometry);
 		this.#ring = new TerminalReplayRing();
+		this.#human = new TerminalHumanActivityRecorder(options.repository, options.clock, options.ids);
 	}
 
 	get id(): string {
@@ -97,6 +105,57 @@ export class TerminalSessionActor {
 
 	get view(): TerminalSession {
 		return this.#session;
+	}
+
+	get inputControl(): TerminalInputControl { return this.#input.view; }
+	get hasPendingHumanActivity(): boolean { return this.#human.active; }
+
+	finishHumanHandoff(runId: string): Promise<void> {
+		return this.#enqueue(async () => {
+			this.#requireActive(); this.#input.requireAgent(runId);
+			this.#human.checkpoint(this.#capture(), "handoff");
+		});
+	}
+
+	requireAgentControl(runId: string, writing = false): void { this.#input.requireAgent(runId, writing); }
+
+	markHumanActivityObserved(runId: string): Promise<void> {
+		return this.#enqueue(async () => { this.#input.observed(runId); this.#human.observed(); });
+	}
+
+	controlInput(attachmentId: string, claim: boolean): Promise<TerminalInputControl> {
+		return this.#enqueue(async () => {
+			this.#requireActive();
+			const attachment = this.#requireAttachment(attachmentId);
+			if (claim && attachment.state !== "live")
+				throw new TerminalError("terminal_attachment_not_live", "Terminal attachment is not live", { status: 409 });
+			const previous = this.#input.view;
+			if (claim) this.#input.claim(attachmentId); else this.#input.release(attachmentId);
+			this.#publishInputControl(previous);
+			return this.#input.view;
+		});
+	}
+
+	writeHumanInput(attachmentId: string, request: TerminalHumanInputRequest): Promise<{ acceptedSequence: number }> {
+		return this.#enqueue(async () => {
+			this.#requireActive();
+			if (this.#requireAttachment(attachmentId).state !== "live")
+				throw new TerminalError("terminal_attachment_not_live", "Terminal attachment is not live", { status: 409 });
+			if (!this.#input.accept(this.id, attachmentId, request)) return { acceptedSequence: request.inputSequence };
+			try {
+				this.#human.begin(this.sessionId, this.id, request.bytes.byteLength, this.#capture());
+				await this.#writeHumanBytes(request.bytes);
+				this.#human.written(this.#capture());
+				this.#refreshConsumerActivity();
+				return { acceptedSequence: request.inputSequence };
+			} catch {
+				const previous = this.#input.view;
+				this.#input.release(attachmentId);
+				try { this.#human.written(this.#capture(), true); this.#publishInputControl(previous); }
+				catch (error) { this.#handleRuntimeFailure(error); }
+				throw new TerminalError("terminal_input_uncertain", "Terminal input could not be confirmed. It will not be replayed; inspect the terminal before continuing.", { status: 409 });
+			}
+		});
 	}
 
 	acceptSshData(bytes: Uint8Array): void {
@@ -125,6 +184,8 @@ export class TerminalSessionActor {
 				bytes: output,
 			};
 			this.#publish(event);
+			if (this.#human.active) this.#human.track(this.#capture());
+			this.#scheduleHumanCheckpoint();
 		}).catch((error: unknown) => this.#handleRuntimeFailure(error));
 		this.#pendingOutput = batch;
 	}
@@ -190,7 +251,7 @@ export class TerminalSessionActor {
 					retryable: true,
 				});
 			}
-			const bootstrap = { attachmentId, snapshot: this.#canonical.snapshot(this.#session.eventSequence) };
+			const bootstrap = { attachmentId, snapshot: this.#canonical.snapshot(this.#session.eventSequence), inputControl: this.#input.view };
 			const bootstrapTimer = setTimeout(
 				() => void this.detach(attachmentId),
 				TERMINAL_DEFAULTS.lifecycle.bootstrapTimeoutMs,
@@ -311,6 +372,9 @@ export class TerminalSessionActor {
 			if (attachment.bootstrapTimer !== undefined) clearTimeout(attachment.bootstrapTimer);
 			if (attachment.reconnectTimer !== undefined) clearTimeout(attachment.reconnectTimer);
 			this.#attachments.delete(attachmentId);
+			const previousControl = this.#input.view;
+			this.#input.release(attachmentId);
+			this.#publishInputControl(previousControl);
 			if (this.#ownerAttachmentId === attachmentId) this.#changeOwner(null);
 			this.#refreshConsumerActivity();
 		});
@@ -385,6 +449,17 @@ export class TerminalSessionActor {
 	bindRun(runId: string): Promise<void> {
 		return this.#enqueue(async () => {
 			this.#requireActive();
+			const previous = this.#input.view;
+			this.#input.bind(runId, this.#human.needsObservation);
+			try {
+				this.#human.checkpoint(this.#capture());
+				this.#publishInputControl(previous);
+			} catch (error) {
+				const bound = this.#input.view;
+				this.#input.unbind(runId);
+				this.#publishInputControl(bound);
+				throw error;
+			}
 			this.#runBindings.add(runId);
 			this.#refreshConsumerActivity();
 		});
@@ -393,13 +468,17 @@ export class TerminalSessionActor {
 	unbindRun(runId: string): Promise<void> {
 		return this.#enqueue(async () => {
 			this.#runBindings.delete(runId);
+			const previous = this.#input.view;
+			this.#input.unbind(runId);
+			this.#publishInputControl(previous);
 			this.#refreshConsumerActivity();
 		});
 	}
 
-	write(data: Uint8Array): Promise<number> {
+	write(data: Uint8Array, runId: string): Promise<number> {
 		return this.#enqueue(async () => {
 			this.#requireActive();
+			this.#input.requireAgent(runId, true);
 			this.#inFlightInteractions += 1;
 			this.#refreshConsumerActivity();
 			try {
@@ -578,6 +657,7 @@ export class TerminalSessionActor {
 			updatedAt: now,
 		};
 		try {
+			this.#human.checkpoint(this.#capture(), status === "lost" ? "lost" : "closed");
 			this.#persist(next, previous);
 			this.#session = next;
 			this.#publish({
@@ -697,6 +777,7 @@ export class TerminalSessionActor {
 	#dispose(): void {
 		if (this.#disposed) return;
 		this.#disposed = true;
+		if (this.#humanCheckpointTimer !== undefined) clearTimeout(this.#humanCheckpointTimer);
 		this.#finalCapture = {
 			sequence: this.#session.eventSequence,
 			geometry: this.#canonical.geometry,
@@ -731,6 +812,9 @@ export class TerminalSessionActor {
 		const attachment = this.#attachments.get(attachmentId);
 		if (!attachment || this.#disposed) return;
 		attachment.state = "disconnected";
+		const previousControl = this.#input.view;
+		this.#input.release(attachmentId);
+		this.#publishInputControl(previousControl);
 		if (this.#ownerAttachmentId === attachmentId) this.#changeOwner(null);
 		if (attachment.reconnectTimer !== undefined) clearTimeout(attachment.reconnectTimer);
 		attachment.reconnectTimer = setTimeout(
@@ -739,6 +823,47 @@ export class TerminalSessionActor {
 		);
 		attachment.reconnectTimer.unref();
 		this.#refreshConsumerActivity();
+	}
+
+	#capture(): TerminalCanonicalCapture {
+		return { sequence: this.#session.eventSequence, geometry: this.#canonical.geometry,
+			screenText: this.#canonical.currentScreenText(), allText: this.#canonical.allText() };
+	}
+
+	async #writeHumanBytes(bytes: Uint8Array): Promise<void> {
+		const channel = this.#requireChannel();
+		let timer: ReturnType<typeof setTimeout> | undefined;
+		try {
+			await Promise.race([channel.write(bytes), new Promise<never>((_resolve, reject) => {
+				timer = setTimeout(() => {
+					try { channel.dispose(); } catch (error) { reject(error); return; }
+					reject(new Error("Terminal input write timed out"));
+				}, TERMINAL_DEFAULTS.input.writeTimeoutMs);
+				timer.unref();
+			})]);
+		} finally { if (timer !== undefined) clearTimeout(timer); }
+	}
+
+	#publishInputControl(previous: TerminalInputControl): void {
+		if (previous === this.#input.view || this.#disposed) return;
+		const control = this.#input.view;
+		const before = this.#session;
+		const sequence = before.eventSequence + 1;
+		const next = { ...before, eventSequence: sequence, revision: before.revision + 1, updatedAt: this.#clock.now() };
+		this.#persist(next, before);
+		this.#session = next;
+		this.#publish({ type: "terminal.control_changed", sequence, emittedAt: this.#clock.now(), data: { ...control } });
+	}
+
+	#scheduleHumanCheckpoint(): void {
+		if (!this.#human.active || this.#humanCheckpointTimer !== undefined) return;
+		this.#humanCheckpointTimer = setTimeout(() => {
+			this.#humanCheckpointTimer = undefined;
+			void this.#enqueue(async () => {
+				if (!this.#disposed) this.#human.checkpoint(this.#capture());
+			}).catch((error: unknown) => this.#handleRuntimeFailure(error));
+		}, 250);
+		this.#humanCheckpointTimer.unref();
 	}
 }
 

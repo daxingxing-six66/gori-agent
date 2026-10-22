@@ -16,6 +16,8 @@ import {
 	parseTerminalFocus,
 	parseTerminalReady,
 	parseTerminalResize,
+	parseTerminalControl,
+	parseTerminalHumanInput,
 } from "./terminal-request-validation.ts";
 
 export async function handleTerminalRoute(
@@ -62,6 +64,12 @@ export async function handleTerminalRoute(
 	}
 	if (segments.length >= 6 && segments[4] === "attachments") {
 		const attachmentId = segments[5];
+		if (segments.length === 7 && segments[6] === "control" && request.method === "POST") {
+			return json(await service.controlInput(sessionId, attachmentId, parseTerminalControl(await readJson(request)).claim));
+		}
+		if (segments.length === 7 && segments[6] === "input" && request.method === "POST") {
+			return json(await service.writeHumanInput(sessionId, attachmentId, parseTerminalHumanInput(await readJson(request))));
+		}
 		if (segments.length === 6 && request.method === "DELETE") {
 			await service.detach(sessionId, attachmentId);
 			return empty();

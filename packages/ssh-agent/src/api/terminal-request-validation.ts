@@ -1,6 +1,29 @@
 import { ManagementError } from "../domain/errors.ts";
+import { Buffer } from "node:buffer";
+import { TERMINAL_DEFAULTS } from "../application/terminal/terminal-defaults.ts";
+import type { TerminalHumanInputRequest } from "../domain/terminal-human.ts";
 
 type JsonObject = Record<string, unknown>;
+
+export function parseTerminalControl(value: unknown): { claim: boolean } {
+	const body = object(value);
+	exactKeys(body, ["action"]);
+	if (body.action !== "claim" && body.action !== "release") invalid("action must be claim or release", "action");
+	return { claim: body.action === "claim" };
+}
+
+export function parseTerminalHumanInput(value: unknown): TerminalHumanInputRequest {
+	const body = object(value);
+	exactKeys(body, ["terminalSessionId", "controlEpoch", "inputSequence", "bytesBase64"]);
+	const encoded = string(body, "bytesBase64");
+	if (encoded.length > Math.ceil(TERMINAL_DEFAULTS.input.maxBytes / 3) * 4 ||
+		! /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(encoded))
+		invalid("bytesBase64 must be bounded base64", "bytesBase64");
+	const bytes = Buffer.from(encoded, "base64");
+	if (bytes.length === 0 || bytes.length > TERMINAL_DEFAULTS.input.maxBytes) invalid("input batch is empty or too large", "bytesBase64");
+	return { terminalSessionId: string(body, "terminalSessionId"), controlEpoch: positiveInteger(body, "controlEpoch"),
+		inputSequence: positiveInteger(body, "inputSequence"), bytes };
+}
 
 export function parseOpenTerminal(value: unknown): {
 	readonly requestId: string;

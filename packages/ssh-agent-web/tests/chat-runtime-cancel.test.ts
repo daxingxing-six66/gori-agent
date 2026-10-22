@@ -38,6 +38,18 @@ beforeEach(() => {
 });
 
 describe("stop response synchronization", () => {
+	it("waits for the injected Terminal handoff and removes optimistic history on failure", async () => {
+		projected = initialChatRuntimeState;
+		const handoff = deferred<void>();
+		const runtime = useChatRuntime("session", async start => { await handoff.promise; return start(); });
+		const submitted = runtime.submit({ message: "继续", attachments: [], model: { id: "model", providerId: "provider" },
+			thinkingLevel: "off", behavior: "follow_up", serverInteractionMode: "terminal" });
+		const rejected = expect(submitted).rejects.toThrow("uncertain input");
+		expect(chatApi.createRun).not.toHaveBeenCalled();
+		handoff.reject(new Error("uncertain input")); await rejected;
+		expect(chatApi.createRun).not.toHaveBeenCalled();
+		expect(projected.timeline).toHaveLength(0);
+	});
 	it("recovers the diagnosis card and prompt even if a card event already advanced maxSequence, without waiting for pending controls", async () => {
 		const timestamp = 1_800_000_000_000;
 		const earlier: ChatMessage = { id: "earlier", sequence: 41, runId: "old-run", createdAt: timestamp,

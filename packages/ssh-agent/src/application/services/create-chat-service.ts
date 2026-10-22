@@ -37,6 +37,7 @@ export interface CreateChatServiceOptions {
 	chatRepository: ChatRepository;
 	runtimeContexts?: RuntimeContextRepository;
 	terminalFacts?: ChatAgentRuntimeFactoryOptions["terminalFacts"];
+	terminalHumanFacts?: ChatAgentRuntimeFactoryOptions["terminalHumanFacts"];
 	chatAttachments: ChatAttachmentService;
 	sessions: SessionRepository;
 	models: Models;
@@ -73,7 +74,7 @@ export function createChatService(options: CreateChatServiceOptions): ChatServic
 	};
 	const runtimeContexts = options.runtimeContexts ? new ChatRuntimeContextService(options.runtimeContexts) : undefined;
 	const sandboxPolicy = new SessionSandboxPolicy(options.sessions);
-	const runtimeFacts = new ChatRuntimeFacts({ sandboxPolicy, diagnoses: options.diagnoses, deployments: options.deployments, terminalFacts: options.terminalFacts });
+	const runtimeFacts = new ChatRuntimeFacts({ sandboxPolicy, diagnoses: options.diagnoses, deployments: options.deployments, terminalFacts: options.terminalFacts, terminalHumanFacts: options.terminalHumanFacts });
 	const events = new ChatRunEventHub();
 	const activity = new SessionActivityService(events);
 	const approvals = new ChatApprovalService({

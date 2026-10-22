@@ -48,3 +48,5 @@ Deployment REST 的领域错误通过 `deployment.error` 按请求 Locale 返回
 
 
 2026-10-19 Diagnose 接入：DiagnoseError 在唯一 failure-policy 入口保留 code/status/field；已知 4xx 使用 diagnose.error 的中英文场景前缀和原始规则原因，内部错误仍通用化。诊断记录、问题标题和报告为动态内容，不翻译；diagnoses SSE 复用既有 Locale 投影。 详见 [Diagnose 功能路由](./diagnose.md)。
+
+2026-10-22 Terminal 人机协作：Terminal 输入失权、乱序、写入不确定与人工操作后需先观察使用稳定错误 code 的中英文映射；原始按键不进入审计、日志或模型上下文。见 [功能路由](./features/terminal-human-interaction.md)。

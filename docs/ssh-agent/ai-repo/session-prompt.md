@@ -64,3 +64,5 @@ v17 升级兼容早期带 `initial_mode` 必填列的 v16 数据库，保留已�
 2026-10-21 诊断简报改为 diagnose 通道状态序列，保留 direction/status/explanation 与最多 300 字符预览；不再使用临时头部。业务当前节点仍可按原规则更新，已经提供给模型的简报保持原文。详见 [Diagnose 功能路由](./diagnose.md)。
 
 诊断 Skill 在 diagnose-instructions 通道按任务身份及内容追加一次，节点变化不重复全文；结束追加 inactive，旧事件作为历史保留。压缩独立保留有效指引，不靠摘要转述。
+
+2026-10-22 Terminal 人机协作：Terminal 人工活动通过独立 terminal-human 通道追加，不改旧头部或固定工具定义；可见记录放 quoted-data，首次终端写入前强制 observe，原 on/off 模式权威不变。见 [功能路由](./features/terminal-human-interaction.md)。

@@ -18,7 +18,7 @@
 - `/deploy` 无活动部署时只展开 Agent 输入框上方的模块选择，不新增任务 Tab；选择后或已有活动部署时才展示任务。选择器属于 Deploy 功能，Composer 只提供展示插槽，通用容器不承接选择器。
 - `chat-task-layout.css` 负责容器在会话页的位置，Terminal 内容不再拥有 Session 网格区域。1100px 及以下位于页首和聊天之间，基础高度为标签栏加 250px 内容区，ION 主题额外为区域编号预留高度；1101px 起为全高右栏，占内容宽度 45%。退出期间右栏和聊天宽度同步过渡。
 - 容器宽度和过渡时长从 `model/task-container-defaults.ts` 读取。最终页面数和业务模块的退出投影决定容器存在与展开状态。
-- Terminal 模块由 `use-terminal-task.ts` 提供页面存在、阶段、关闭限制与动作；`terminal-task.tsx` 组合连接过程、失败和只读终端内容。其生命周期和权威恢复详见 [Terminal 功能文档](./features/terminal-interaction.md)。
+- Terminal 模块由 `use-terminal-task.ts` 提供页面存在、阶段、关闭限制与动作；`terminal-task.tsx` 组合连接过程、失败和终端内容。其生命周期和权威恢复详见 [Terminal 功能文档](./features/terminal-interaction.md)。
 
 ## 放大、收起与恢复
 
@@ -47,3 +47,5 @@
 
 
 Diagnose 以固定功能 ID diagnose 接入；关闭仅隐藏，节点展开、双视图和滚动由自身 use-diagnose-view 保存。通用容器没有诊断生命周期或结论分支，详情见 [diagnose.md](./diagnose.md)。
+
+2026-10-22 人机协作由 Terminal 功能模块持有输入权、输入队列及状态行，会话装配层注入聊天前交接；通用容器继续不管理业务控制权。见 [人机协作](./features/terminal-human-interaction.md)。

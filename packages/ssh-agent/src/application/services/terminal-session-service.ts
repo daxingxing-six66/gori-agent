@@ -1,4 +1,5 @@
 import type { Clock, IdGenerator, SessionId } from "../../domain/ids.ts";
+import type { TerminalInputControl, TerminalHumanInputRequest, TerminalHumanActivity } from "../../domain/terminal-human.ts";
 import { SshAgentError } from "../../domain/ssh-failure.ts";
 import type {
 	TerminalCloseReason,
@@ -21,6 +22,7 @@ import type {
 	TerminalResizeOwnership,
 } from "../terminal/terminal-session-actor.ts";
 import { TerminalSessionActor } from "../terminal/terminal-session-actor.ts";
+import { settleHumanActivity } from "../terminal/terminal-human-activity.ts";
 import type { SessionLifecycleCoordinator, SessionUseLease } from "./session-lifecycle-coordinator.ts";
 import type { SshTargetResolver } from "./ssh-target-resolver.ts";
 import type { RemoteSandboxProvider } from "./remote-sandbox-provider.ts";
@@ -42,6 +44,7 @@ export interface CloseTerminalInput {
 }
 
 export interface TerminalStatusView {
+	readonly inputControl: TerminalInputControl;
 	readonly terminal: TerminalSession | null;
 	readonly effectiveServerInteractionMode: "command" | "terminal";
 	readonly transitionInProgress: boolean;
@@ -105,6 +108,7 @@ export class TerminalSessionService {
 		}
 		const terminal = this.get(sessionId);
 		return {
+			inputControl: this.getActor(sessionId)?.inputControl ?? { mode: "idle", attachmentId: null, agentRunId: null, epoch: 0 },
 			terminal,
 			effectiveServerInteractionMode: effectiveServerInteractionMode(terminal?.status ?? null),
 			transitionInProgress: terminal?.status === "opening" || terminal?.status === "closing",
@@ -316,6 +320,18 @@ export class TerminalSessionService {
 		await this.#withActor(sessionId, (actor) => actor.markAttachmentReady(attachmentId, replayedThroughSequence));
 	}
 
+	async controlInput(sessionId: SessionId, attachmentId: string, claim: boolean): Promise<TerminalInputControl> {
+		if (claim) await this.#requireNoActiveChatRun(sessionId);
+		return this.#withActor(sessionId, (actor) => actor.controlInput(attachmentId, claim));
+	}
+
+	async writeHumanInput(sessionId: SessionId, attachmentId: string, input: TerminalHumanInputRequest): Promise<{ acceptedSequence: number }> {
+		await this.#requireNoActiveChatRun(sessionId);
+		return this.#withActor(sessionId, (actor) => actor.writeHumanInput(attachmentId, input));
+	}
+
+	latestHumanActivity(sessionId: SessionId): TerminalHumanActivity | null { return this.#terminals.latestHumanActivity(sessionId); }
+
 	async focus(sessionId: SessionId, attachmentId: string, focused: boolean): Promise<TerminalResizeOwnership> {
 		return this.#withActor(sessionId, (actor) =>
 			focused ? actor.claimResizeOwnership(attachmentId) : actor.releaseResizeOwnership(attachmentId),
@@ -373,6 +389,12 @@ export class TerminalSessionService {
 			});
 		}
 		await actor.bindRun(runId);
+		try {
+			if (actor.hasPendingHumanActivity) {
+				await settleHumanActivity(actor);
+				await actor.finishHumanHandoff(runId);
+			}
+		} catch (error) { await actor.unbindRun(runId); throw error; }
 		return actor.id;
 	}
 

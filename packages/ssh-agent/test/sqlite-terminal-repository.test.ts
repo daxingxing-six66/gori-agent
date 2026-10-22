@@ -91,6 +91,25 @@ const terminalInteraction = (overrides: Partial<TerminalInteraction> = {}): Term
 });
 
 describe("SqliteTerminalRepository", () => {
+	it("upgrades a complete v36 database without changing Terminal history and keeps human activity separate", () => {
+		const database = createDatabase();
+		try {
+			const repository = new SqliteTerminalRepository(database);
+			const original = terminalSession({ status: "closed" }); repository.insertSession(original);
+			database.exec("DROP TABLE terminal_human_activities; DELETE FROM ssh_agent_schema_migrations WHERE version=37");
+			applyMigrations(database); applyMigrations(database);
+			expect(repository.findSession(original.id)).toEqual(original);
+			expect(repository.latestHumanActivity("session-1")).toBeNull();
+			repository.saveHumanActivity({ id: "human", sessionId: "session-1", terminalSessionId: original.id,
+				startSequence: 1, endSequence: 2, inputCount: 1, inputBytes: 8, writeStatus: "written",
+				transcript: "visible", screenText: "$ visible", truncated: false, startedAt: 1, updatedAt: 2, finishedAt: 2, endReason: "closed" });
+			expect(repository.latestHumanActivity("session-1")?.transcript).toBe("visible");
+			expect(database.prepare("SELECT count(*) AS n FROM terminal_interactions").get()?.n).toBe(0);
+			expect(database.prepare("PRAGMA foreign_key_check").all()).toEqual([]);
+			database.exec("DELETE FROM sessions WHERE id='session-1'");
+			expect(repository.latestHumanActivity("session-1")).toBeNull();
+		} finally { database.close(); }
+	});
 	it.each([
 		{ mode: "full_access", backend: "none", enforcement: "none", approvedAt: 10, extra: true },
 		{ mode: "full_access", backend: "none", enforcement: "none", source: "landlock_unavailable", detectedAt: 10, approvedAt: 10 },
@@ -320,7 +339,10 @@ describe("SqliteTerminalRepository", () => {
 			database.exec("CREATE TABLE ssh_agent_schema_migrations(version INTEGER PRIMARY KEY, applied_at INTEGER NOT NULL) STRICT");
 			const recorded = database.prepare("INSERT INTO ssh_agent_schema_migrations VALUES (?, 1)");
 			// Exercise v20 in isolation; later deployment migrations require full historical tables.
-			for (let version = 1; version <= 28; version++) if (version !== 20) recorded.run(version);
+			const current = createDatabase();
+			const versions = current.prepare("SELECT version FROM ssh_agent_schema_migrations").all();
+			current.close();
+			for (const { version } of versions) if (version !== 20) recorded.run(Number(version));
 			database.exec("CREATE TABLE terminal_sessions (id TEXT PRIMARY KEY, status TEXT NOT NULL) STRICT");
 			database.exec("CREATE TABLE workspaces (id TEXT PRIMARY KEY, remote_default_cwd TEXT NOT NULL DEFAULT '/', remote_sandbox_root TEXT) STRICT");
 			database.exec("INSERT INTO terminal_sessions VALUES ('legacy', 'closed')");

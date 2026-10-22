@@ -69,7 +69,7 @@
 - 修改沙盒配置导致旧终端关闭并自动重开时，保留同一个 Tab，在页内反映重开状态；实际连接身份按后端新实例更新。
 - 页面刷新、离开会话时的浏览器 attachment 清理，与用户点击 `×` 请求关闭 Terminal 是不同操作，不能混用。
 - 后端状态与现有重连/终态策略仍是事实来源。恢复页面不代表恢复已丢失的 Shell；后端重启后不得伪造旧终端仍存活或自动重放输入。
-- 保留只读 xterm、snapshot/SSE 恢复、Observation Lens、主题更新和后端权威 geometry/resize ownership。容器负责布局，不自行修改 PTY 网格或接管运行协议。
+- 保留 xterm、snapshot/SSE 恢复、Observation Lens、主题更新和后端权威 geometry/resize ownership。容器负责布局，不自行修改 PTY 网格或接管运行协议。
 
 ## 5. UI 约束
 
@@ -111,3 +111,7 @@
 - 展示切换保留同一任务页、输出订阅、内容和草稿；切换 Session 或最后一个任务移除后复位为默认停靠模式。放大时仅让被覆盖的对话控件退出键盘和无障碍导航，不禁用服务器导航。
 - Terminal 用实际可见视口测量 resize，收起和隐藏页面不提交零尺寸或最小尺寸替代值。隐藏时释放 resize ownership；恢复时重新申请并测量，普通展示切换不重建连接。
 - resize 请求防抖并串行发送，过渡中只取最新测量；服务端 `terminal.resized` 确认后再更新浏览器 xterm。失去 ownership 的旧响应、卸载后的回调不得覆盖当前状态；后端继续校验 ownership epoch 和 geometry 边界。
+
+## 9. 2026-10-22 人机协作实验补充
+
+用户确认扩展原只读边界：Agent 空闲时用户点击终端可完整交互，发送聊天即交回，Agent 运行及等待审批期间不可接管。人工沿用原 PTY 沙盒、免逐键审批，可见记录与当前画面在首次模型请求前同步，隐藏输入不持久化。前台进程保持，Agent 写入前先观察；输入状态行和协调逻辑归 Terminal，容器职责、布局和 resize 协议保持。实现与验证边界见 [人机协作](../ai-repo/features/terminal-human-interaction.md)。

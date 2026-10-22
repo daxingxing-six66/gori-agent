@@ -31,7 +31,7 @@ interface SubmitInput {
 	deploymentDiscussionId?: string;
 }
 
-export function useChatRuntime(sessionId: string) {
+export function useChatRuntime(sessionId: string, startRun?: (start: () => Promise<ChatRun>) => Promise<ChatRun>) {
 	const localizedErrorMessage = useLocalizedErrorMessage();
 	const { locale } = useLocale();
 	const contextUsageStore = useMemo(() => new ChatContextUsageStore((signal) => chatApi.getContextUsage(sessionId, signal)), [sessionId]);
@@ -214,7 +214,7 @@ export function useChatRuntime(sessionId: string) {
 			} else {
 				if (!model) throw new Error("A model is required to create a Chat Run");
 				dispatch({ type: "optimisticUser", requestId, message: normalized, attachments, timestamp: Date.now() });
-				const run = await chatApi.createRun(sessionId, {
+				const createRun = () => chatApi.createRun(sessionId, {
 					requestId,
 					providerId: model.providerId,
 					modelId: model.id,
@@ -226,6 +226,7 @@ export function useChatRuntime(sessionId: string) {
 					...(deploymentRunId === undefined ? {} : { deploymentRunId }),
 					...(deploymentDiscussionId === undefined ? {} : { deploymentDiscussionId }),
 				});
+				const run = await (startRun ? startRun(createRun) : createRun());
 				if (historySession.current !== sessionId) return null;
 				dispatch({ type: "setRun", run });
 				return run;
@@ -242,7 +243,7 @@ export function useChatRuntime(sessionId: string) {
 				setSubmitting(false);
 			}
 		}
-	}, [sessionId]);
+	}, [sessionId, startRun]);
 
 	const cancel = useCallback(async (): Promise<void> => {
 		const currentRun = stateRef.current.run;

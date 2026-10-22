@@ -3,6 +3,7 @@ import type { SupportedLocale } from "@/features/i18n/model/locale";
 import { eventUrlWithLocale } from "@/shared/events/client";
 
 const EVENT_TYPES = [
+	"terminal.control_changed",
 	"terminal.stream.ready",
 	"terminal.status",
 	"terminal.output",

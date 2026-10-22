@@ -67,4 +67,11 @@ export const zhCNTerminalMessages = {
 	"terminal.timeline.closed": "Terminal 已关闭",
 	"terminal.timeline.lost": "Terminal 连接已丢失",
 	"terminal.timeline.failed": "Terminal 打开失败",
+	"terminal.input.ready": "可输入 · 点击终端操作",
+	"terminal.input.handoff": "交接中",
+	"terminal.input.agent": "Agent 操作中 · 输入已锁定",
+	"terminal.input.other": "其他页面操作中",
+	"terminal.input.unavailable": "输入不可用",
+	"terminal.input.failure": "终端输入已停止，未确认的输入不会自动重放。请重新同步并检查终端现场后继续。",
+	"terminal.panel.interactive": "可交互远程 Terminal",
 } as const;

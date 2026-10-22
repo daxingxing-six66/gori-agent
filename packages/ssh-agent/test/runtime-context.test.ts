@@ -69,7 +69,7 @@ describe("append-only runtime context", () => {
 		expect(first.instructions).not.toContain("</quoted-data>");
 		expect(first.data.projectRoot).toBe("</quoted-data>");
 	});
-	it.each(["diagnose", "deployment", "sandbox", "terminal", "workflow"] as const)("preserves the actual subscription input prefix when %s changes", async channel => {
+	it.each(["diagnose", "deployment", "sandbox", "terminal", "terminal-human", "workflow"] as const)("preserves the actual subscription input prefix when %s changes", async channel => {
 		const { service, repository } = fixture();
 		let value = "A";
 		const read = async () => [state("protocol", "v1"), state(channel, value)];

@@ -49,6 +49,7 @@ export class TerminalInteractionPolicy {
 				retryable: true,
 			});
 		}
+		actor.requireAgentControl(request.agentRunId, request.action.type !== "observe");
 		return actor;
 	}
 

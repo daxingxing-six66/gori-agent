@@ -1,4 +1,5 @@
 import type { SessionId, TerminalObservationId, TerminalSessionId } from "../../domain/ids.ts";
+import type { TerminalHumanActivity } from "../../domain/terminal-human.ts";
 import type {
 	TerminalInput,
 	TerminalInputStatus,
@@ -11,6 +12,8 @@ import type {
 } from "../../domain/terminal.ts";
 
 export interface TerminalRepository {
+	saveHumanActivity(activity: TerminalHumanActivity): void;
+	latestHumanActivity(sessionId: SessionId): TerminalHumanActivity | null;
 	recoverInterrupted(now: number): void;
 	findSession(id: TerminalSessionId): TerminalSession | undefined;
 	findCurrentSession(sessionId: SessionId): TerminalSession | undefined;

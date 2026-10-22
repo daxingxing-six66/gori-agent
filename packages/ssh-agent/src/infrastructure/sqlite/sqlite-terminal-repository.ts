@@ -1,4 +1,5 @@
 import type { DatabaseSync } from "node:sqlite";
+import type { TerminalHumanActivity } from "../../domain/terminal-human.ts";
 import type { TerminalRepository } from "../../application/repositories/terminal-repository.ts";
 import type { SessionId, TerminalObservationId, TerminalSessionId } from "../../domain/ids.ts";
 import type {
@@ -32,6 +33,9 @@ export class SqliteTerminalRepository implements TerminalRepository {
 	}
 
 	recoverInterrupted(now: number): void {
+		this.#database.prepare(`UPDATE terminal_human_activities SET finished_at = ?, end_reason = 'lost',
+			truncated = 1, write_status = CASE WHEN write_status = 'writing' THEN 'uncertain' ELSE write_status END
+			WHERE finished_at IS NULL`).run(now);
 		this.#database
 			.prepare(`UPDATE terminal_interactions
 				SET status = CASE WHEN status = 'writing' THEN 'write_uncertain' ELSE 'cancelled' END,
@@ -52,6 +56,32 @@ export class SqliteTerminalRepository implements TerminalRepository {
 
 	findSession(id: TerminalSessionId): TerminalSession | undefined {
 		return optionalSession(this.#database.prepare("SELECT * FROM terminal_sessions WHERE id = ?").get(id));
+	}
+
+	saveHumanActivity(activity: TerminalHumanActivity): void {
+		this.#database.prepare(`INSERT INTO terminal_human_activities
+			(id, session_id, terminal_session_id, start_sequence, end_sequence, input_count, input_bytes, write_status,
+			 transcript, screen_text, truncated, started_at, updated_at, finished_at, end_reason)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			ON CONFLICT(id) DO UPDATE SET end_sequence=excluded.end_sequence, input_count=excluded.input_count,
+			input_bytes=excluded.input_bytes, write_status=excluded.write_status, transcript=excluded.transcript,
+			screen_text=excluded.screen_text, truncated=excluded.truncated, updated_at=excluded.updated_at,
+			finished_at=excluded.finished_at, end_reason=excluded.end_reason`).run(activity.id, activity.sessionId,
+			activity.terminalSessionId, activity.startSequence, activity.endSequence, activity.inputCount,
+			activity.inputBytes, activity.writeStatus, activity.transcript, activity.screenText,
+			Number(activity.truncated), activity.startedAt, activity.updatedAt, activity.finishedAt, activity.endReason);
+	}
+
+	latestHumanActivity(sessionId: SessionId): TerminalHumanActivity | null {
+		const row = this.#database.prepare(`SELECT * FROM terminal_human_activities WHERE session_id = ?
+			ORDER BY rowid DESC LIMIT 1`).get(sessionId);
+		if (!row) return null;
+		return { id: String(row.id), sessionId: String(row.session_id), terminalSessionId: String(row.terminal_session_id),
+			startSequence: Number(row.start_sequence), endSequence: Number(row.end_sequence), inputCount: Number(row.input_count),
+			inputBytes: Number(row.input_bytes), writeStatus: row.write_status as TerminalHumanActivity["writeStatus"],
+			transcript: String(row.transcript), screenText: String(row.screen_text), truncated: row.truncated === 1,
+			startedAt: Number(row.started_at), updatedAt: Number(row.updated_at), finishedAt: row.finished_at === null ? null : Number(row.finished_at),
+			endReason: row.end_reason as TerminalHumanActivity["endReason"] };
 	}
 
 	findCurrentSession(sessionId: SessionId): TerminalSession | undefined {

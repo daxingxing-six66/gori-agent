@@ -44,3 +44,5 @@
 | 调度调用和阻断测试 | [command-operation-service.ts](../../../packages/ssh-agent/src/application/services/command-operation-service.ts)、[command-operation-service.test.ts](../../../packages/ssh-agent/test/command-operation-service.test.ts) |
 
 Guard 配置 Service 只维护配置；执行匹配必须留在独立策略组件中，不能塞回配置 Service 或 HTTP handler。
+
+2026-10-22 Terminal 人机协作：实验分支人工逐键输入不经过 Guard/审批，实际权限沿用已建立 PTY 的沙盒；Agent submit 的两次 Guard、审批和执行边界保持。见 [功能路由](./features/terminal-human-interaction.md)。

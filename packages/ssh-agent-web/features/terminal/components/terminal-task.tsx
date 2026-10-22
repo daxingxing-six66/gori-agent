@@ -29,6 +29,7 @@ export function TerminalTask({ sessionId, mode, task, canRequestInstallation, on
 				canRetry={task.operationDisabledReason === undefined} canRequestInstallation={canRequestInstallation}
 				onRetry={task.retry} onDismiss={task.dismiss} onRequestInstallation={onRequestInstallation} />
 			: task.active && mode.status ? <TerminalPanel sessionId={sessionId} status={mode.status}
+				inputBusy={task.inputBusy}
 				onTerminalStateChange={mode.refresh} onPhaseChange={task.onPanelPhaseChange} /> : null}
 	</div>;
 }

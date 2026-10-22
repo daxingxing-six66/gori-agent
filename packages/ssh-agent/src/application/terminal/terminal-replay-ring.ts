@@ -34,6 +34,7 @@ export type TerminalSequencedEvent =
 	| {
 			readonly sequence: number;
 			readonly type:
+				| "terminal.control_changed"
 				| "terminal.input"
 				| "terminal.observation.captured"
 				| "terminal.observation.delivered"

@@ -2,7 +2,11 @@
 
 只读 Session 仍以受限模式打开 PTY，但实际 `sandboxRoots` 固定为 `/tmp`；保留 `/dev/null`、账号可读范围与既有非文件操作边界。切换只读会自动重开原 Terminal Tab，准备失败不会降级，失败卡片不提供只读模式内的安装入口。见 [session-sandbox.md](../session-sandbox.md)。
 
-适用于与业务 Session 绑定的长周期 SSH PTY、Canonical Terminal State、浏览器只读投影、Agent Terminal Tool 和审计时间线。
+适用于与业务 Session 绑定的长周期 SSH PTY、Canonical Terminal State、浏览器投影、Agent Terminal Tool 和审计时间线。
+
+人工输入沿用当前 PTY 沙盒，免逐键 Guard/审批；Agent 的 Guard/审批保持。交接先冻结人工输入并保存可见记录，下一轮首次请求同步现场，Agent 写入前强制 observe。实现及验证边界见 [人机协作](./terminal-human-interaction.md)。
+
+终端视口下方通过独立 `terminal-input-status.tsx` 展示人工/Agent 输入状态，以不同图标、原有双语文字、柔和底色和细边框区分五种状态；提示不覆盖终端输出，控制逻辑和通用容器职责不变。
 
 ## 当前边界
 
@@ -24,7 +28,7 @@
 - Terminal open 由 Terminal Session Service 分阶段处理幂等请求、前置检查、资源创建与后台启动；在最后一次异步校验之后同步检查服务关闭及 live Terminal 状态，避免并发打开或关闭服务期间创建新运行实例。Actor 构造完成后接管 Session lease 和容量 reservation，初始化失败按资源所有者清理。`TerminalChannelOpener` 负责目标解析 → 当前 Session 策略 → 受限准备或直接 Shell 包装 → PTY 打开，以及覆盖全流程的 deadline、取消和迟到 Channel 的释放，不修改会话状态；Actor 负责激活或失败落库。目标解析、沙箱准备或 PTY 请求超时会持久化为 `failed/terminal_open_timeout` 并释放资源；超时/取消后不再进入后续准备或派发，忽略取消而迟到的 Channel 会被销毁。
 - 浏览器 attach/SSE 失败会刷新权威状态；可重试错误按 UI 静态间隔重新 bootstrap，明确标记 `retryable: false` 的错误（如 `terminal_session_not_found`）停止自动重试并保留手动重试入口。仅 Terminal Session 身份或状态变化会重新挂载 attachment，普通状态刷新不会重复挂载；后端重启后不会继续展示旧 actor。关闭时如果仅剩持久化的 live Terminal Session 而运行实例缺失，后端将其收敛为 `lost` 并写入时间线，避免前端重新挂载失效的 Terminal。
 - 活动 Shell 正常退出记录为 `closed/shell_exited`；通道断线或关闭异常记录为 `lost/connection_lost`。显式关闭即使底层 `channel.close()` 抛错也收敛到终态并释放 Channel、Session lease 与容量；终态 SQLite 写入失败时也销毁 Channel 并释放运行资源，不让失去状态所有者的 Shell 继续运行。
-- 浏览器只读，不可向 PTY 输入。后端 Headless xterm 是唯一 Canonical Terminal State；前端 xterm 先恢复同 geometry 的 ANSI snapshot，再按 sequence 应用事件。当前聚焦页面成为 resize owner，浏览器容器变化经后端校验并写入 PTY 后再广播，前端不独立修改逻辑网格。
+- 实验分支允许 Agent 空闲时人工输入；输入仲裁、交接和上下文记录见 [人机协作](./terminal-human-interaction.md)。后端 Headless xterm 是唯一 Canonical Terminal State；前端 xterm 先恢复同 geometry 的 ANSI snapshot，再按 sequence 应用事件。当前聚焦页面成为 resize owner，浏览器容器变化经后端校验并写入 PTY 后再广播，前端不独立修改逻辑网格。
 - Actor 将队列中相邻的 SSH 输出合并为最多 64 KiB 的批次，再写入 Canonical State 并发布一个 output sequence，避免 Arthas 等命令行重绘的细碎输出逐片等待 xterm 定时器。输入、snapshot/capture、resize 与生命周期操作会封住前一个批次，后来的输出不会跨越这些边界。ANSI 和 UTF-8 bytes 保持原顺序；超过批次限制的单个 SSH chunk 仍独立处理。
 - 浏览器 `terminal-event-queue.ts` 逐条检查 sequence，合并相邻 output 到最多 64 KiB 的 xterm write；每批解析完成后记录末尾 checkpoint，输入、resize、Observation 与 stream.ready 仍依次处理，ready 只确认实际解析完成的 replay sequence。待处理（含正在写入）的队列上限为 4096 个事件及 512 KiB 输出；解析或 ready 等待超过 10 秒、序列 gap 或积压超限时丢弃旧显示队列，沿用面板错误恢复重新获取 snapshot，不重放 PTY 输入。attachment 清理同步取消队列和定时器，迟到写入不再更新 marker 或页面状态。回归见 `tests/terminal-event-queue.test.ts` 和 `test/terminal-session-actor.test.ts`；只覆盖本地事件与 Canonical State，不代表真实 SSH/Arthas 验证。
 - 前端 xterm 保持完整的明亮/暗部/明暗分层/ION 离子终端 ANSI palette、主题更新和 Observation 行为。Session 顶栏由通用任务容器的 44px 标签栏承接，只显示 Terminal 名称、附着/同步/Live 阶段与关闭按钮。`TerminalPanel` 只呈现视口，通过稳定回调上报附着阶段，不持有重复顶栏；重新同步入口保留在视口错误提示中。主题切换只更新 `Terminal.options.theme`，普通状态刷新和标签选择不重建 attachment/SSE、不清空 scrollback。隐藏内容不提交零尺寸 PTY resize，geometry 仍由后端权威同步。
@@ -66,7 +70,7 @@
 | Terminal 公开消息本地化 | `packages/ssh-agent/src/i18n/message.ts`、`packages/ssh-agent/src/i18n/projection.ts`、`packages/ssh-agent/src/i18n/public-error.ts` |
 | Composer 工具入口、Terminal 状态描述、即时切换与触发器测试 | `packages/ssh-agent-web/features/chat/components/chat-console.tsx`、`packages/ssh-agent-web/features/chat/components/chat-composer-panel.tsx`、`packages/ssh-agent-web/features/chat/components/chat-token-editor.tsx`、`packages/ssh-agent-web/features/chat/model/chat-composer-menu.ts`、`packages/ssh-agent-web/features/session/components/new-session-chat.tsx`、`packages/ssh-agent-web/tests/chat-composer-menu.test.ts` |
 | 异步打开失败提示和安装入口 | `packages/ssh-agent-web/features/terminal/components/terminal-open-failure.tsx`、`packages/ssh-agent-web/tests/terminal-open-failure.test.tsx` |
-| 只读 xterm、动态主题、沙箱状态提示、连接状态、Observation Lens、响应式分栏、owner resize 和时间线 | `packages/ssh-agent-web/features/terminal/`、`packages/ssh-agent-web/app/globals.css` |
+| 可交互 xterm、动态主题、沙箱状态提示、连接状态、Observation Lens、响应式分栏、owner resize 和时间线 | `packages/ssh-agent-web/features/terminal/`、`packages/ssh-agent-web/app/globals.css` |
 | 浏览器 attachment 自动重试判定 | `packages/ssh-agent-web/features/terminal/model/terminal-retry.ts`、`packages/ssh-agent-web/features/terminal/components/terminal-panel.tsx`、`packages/ssh-agent-web/shared/api/client.ts` |
 | 镜像输出批处理、事件顺序、积压/超时恢复与回归 | `packages/ssh-agent-web/features/terminal/runtime/terminal-event-queue.ts`、`packages/ssh-agent-web/tests/terminal-event-queue.test.ts` |
 | 视口可见性、ownership、串行 resize 与回归 | `packages/ssh-agent-web/features/terminal/runtime/terminal-viewport-sync.ts`、`packages/ssh-agent-web/tests/terminal-viewport-sync.test.ts` |

@@ -107,6 +107,8 @@ export class TerminalInteractionService {
 			toolCallId: result.interaction.toolCallId,
 		});
 		const actor = this.#terminals.getActor(result.interaction.sessionId);
+		if (actor?.id === result.interaction.terminalSessionId && result.interaction.action.type === "observe")
+			await actor.markHumanActivityObserved(result.interaction.agentRunId);
 		const cursor = actor && this.#observationCursors.get(actor);
 		if (cursor?.pending?.observationId === result.observation.id) {
 			cursor.delivered = cursor.pending.capture;
@@ -171,7 +173,7 @@ export class TerminalInteractionService {
 		const sequence = await record.beginWrite(actor, input);
 		this.#policy.requireNotCancelled(signal);
 		try {
-			await actor.write(input.encodedBytes);
+			await actor.write(input.encodedBytes, request.agentRunId);
 			record.markWritten(input, sequence);
 		} catch (error) {
 			record.markWriteUncertain(sequence);

@@ -27,3 +27,44 @@
 .terminal-task-error button { flex-shrink: 0; }
 
 .terminal-task-resync { display: inline-flex; align-items: center; gap: 4px; margin-left: 10px; }
+
+.terminal-input-status {
+	--terminal-input-tone: var(--terminal-muted);
+	display: flex;
+	align-items: center;
+	flex: 0 0 auto;
+	padding: 5px 10px;
+	border-top: 1px solid var(--terminal-line);
+	color: var(--terminal-muted);
+	font-size: 11px;
+	line-height: 16px;
+}
+
+.terminal-input-status-badge {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	padding: 3px 8px 3px 4px;
+	border: 1px solid color-mix(in srgb, var(--terminal-input-tone) 24%, var(--terminal-line));
+	border-radius: var(--radius-tag);
+	background: color-mix(in srgb, var(--terminal-input-tone) 6%, var(--terminal-bg));
+	font-weight: 500;
+}
+
+.terminal-input-status-icon {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 20px;
+	height: 20px;
+	flex-shrink: 0;
+	border-radius: var(--radius-tag);
+	background: color-mix(in srgb, var(--terminal-input-tone) 12%, transparent);
+	color: var(--terminal-input-tone);
+}
+
+.terminal-input-status[data-phase="ready"],
+.terminal-input-status[data-phase="handoff"] {
+	--terminal-input-tone: var(--terminal-accent);
+	color: var(--terminal-ink);
+}

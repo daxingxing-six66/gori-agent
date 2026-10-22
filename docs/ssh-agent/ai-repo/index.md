@@ -52,7 +52,8 @@
 | `/diagnose` 跨轮诊断、当前节点、轻量简报、结论阅读及历史恢复 | [diagnose.md](./diagnose.md) | `packages/ssh-agent/src/application/services/diagnose-service.ts`、`diagnose-chat-coordinator.ts`、`packages/ssh-agent-web/features/diagnose/` |
 | Provider 请求前检查、上下文超限恢复、摘要消息、压缩 Setting 和手动压缩 | [context-compaction.md](./context-compaction.md) | `packages/ssh-agent/src/application/services/chat-context-service.ts`、`packages/agent/src/agent-loop.ts` |
 | Session 上下文占用查询、Turn/压缩完成快照与 SSE | [context-usage.md](./context-usage.md) | `packages/ssh-agent/src/application/chat-context.ts`、`packages/ssh-agent/src/application/services/chat-context-service.ts` |
-| 长周期 SSH PTY、Canonical State、打开/清理、输入策略/状态记录、Observation 和只读前端 | [terminal-interaction.md](./features/terminal-interaction.md) | `packages/ssh-agent/src/application/services/terminal-session-service.ts`、`packages/ssh-agent/src/application/services/terminal-interaction-service.ts`、`packages/ssh-agent/src/application/terminal/`、`packages/ssh-agent-web/features/terminal/` |
+| 长周期 SSH PTY、Canonical State、打开/清理、输入策略/状态记录、Observation 和浏览器投影 | [terminal-interaction.md](./features/terminal-interaction.md) | `packages/ssh-agent/src/application/services/terminal-session-service.ts`、`packages/ssh-agent/src/application/services/terminal-interaction-service.ts`、`packages/ssh-agent/src/application/terminal/`、`packages/ssh-agent-web/features/terminal/` |
+| Terminal 空闲人工输入、控制权互斥、聊天前交接、可见记录与模型上下文同步 | [terminal-human-interaction.md](./features/terminal-human-interaction.md) | `packages/ssh-agent/src/application/terminal/terminal-input-control.ts`、`terminal-human-activity.ts`、`packages/ssh-agent-web/features/terminal/runtime/terminal-human-input.ts` |
 | Session 通用任务 Tab、放大/收起展示、标签关闭、页面保留与 Terminal 接入 | [task-container.md](./task-container.md) | `packages/ssh-agent-web/features/task-container/`、`packages/ssh-agent-web/features/chat/components/chat-task-layout.css` |
 | 读写工具/文本附件的文件阅读器、独立标签、语法高亮与 Markdown 预览 | [file-reader.md](./file-reader.md) | `packages/ssh-agent-web/features/file-reader/`、`packages/ssh-agent/src/application/services/read-local-text-file.ts` |
 | 读写/上传/下载卡片的悬浮查看、本地图片/音视频 Tab、Range 流与系统路径别名 | [media-preview.md](./media-preview.md) | `packages/ssh-agent-web/features/media-preview/`、`packages/ssh-agent/src/api/media-preview-routes.ts` |
@@ -77,11 +78,11 @@ Workspace/Credential 前端契约见 [workspace-credential-integration.md](../fr
 
 已经实现：Workspace 管理、Credential/Host Trust、Guard、LLM Provider、SSH exec Connection Pool、命令 Operation、Session 附件上传、受控图片回显和文本预览、图片多模态与文档 read 提示，以及 Workspace 级 SFTP 文件管理、六状态 Transfer、流式上传下载、Workspace SSE 和 Linux 实时监控。
 
-已经实现的 Terminal Interaction MVP：用户手动开启独立模式，后端维持长周期 PTY 和 Canonical State，Agent 使用专用 Tool，浏览器通过 snapshot + SSE 只读投影并同步 owner resize，Interaction/Input/Observation/Timeline 持久化到 SQLite。
+已经实现的 Terminal Interaction MVP：用户手动开启独立模式，后端维持长周期 PTY 和 Canonical State，Agent 使用专用 Tool，浏览器通过 snapshot + SSE 投影并同步 owner resize，Interaction/Input/Observation/Timeline 持久化到 SQLite。
 
 已经接入的 `/deploy` 主链路：服务选择时创建稳定身份、正式历史消息和 Session 部署模式；Plan 提案由模型在中间会话发起，计划审阅在右侧 Deploy Tab；确认启动后展示准备及四个执行阶段的横向图标节点，准备详情可查看计划，其余节点展示执行事实与日志，普通工具和 Full Access 审批保留在中间。模式跨 Chat Run，正式工具串行推进，同阶段/上游重做保留输出并使下游事实失效；用户或模型通过明确结束用例退出。普通工具保持原模式与授权规则；全部 18 个定义固定，部署执行入口按绑定装配，状态变化追加消息。已完成定向回归及授权的独立 Java 项目真实发布验收，包括失败修复、三类结束、Terminal 多 Tab、日志与窄屏/明暗主题；实测平台与沙箱边界见 [deployment.md](./deployment.md) 和设计文档第 16–17 节。
 
-尚未实现：附件删除、任意二进制附件的通用下载和 LLM 输入、PDF/Office 文档解析、图片生成、断点续传、Transfer 历史自动清理、主机密钥重新信任/预置信任/SSH CA、Chat 多 Lane/Fork 和跨进程 delta 重放。Terminal MVP 不允许用户输入、不自动开启模式，使用 REST + SSE 而不引入 WebSocket。
+尚未实现：附件删除、任意二进制附件的通用下载和 LLM 输入、PDF/Office 文档解析、图片生成、断点续传、Transfer 历史自动清理、主机密钥重新信任/预置信任/SSH CA、Chat 多 Lane/Fork 和跨进程 delta 重放。Terminal 不自动开启模式，使用 REST + SSE 而不引入 WebSocket；实验分支支持 Agent 空闲时人工输入，交接与同步边界见人机协作路由。
 
 ## 文档防腐机制
 

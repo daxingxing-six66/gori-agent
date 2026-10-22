@@ -81,7 +81,7 @@ export function useTerminalTask({ sessionId, mode, runActive, submitting, sandbo
 		: transition !== null || (active && panelPhase !== "live") ? "warning" as const
 		: active ? "positive" as const : "neutral" as const;
 
-	return { active, present, expanded, transition, failure: visibleFailure, label, tone,
+	return { active, present, expanded, transition, failure: visibleFailure, label, tone, inputBusy: runActive || submitting || sandboxPending,
 		operationDisabledReason, menuDisabledReason: present ? undefined : operationDisabledReason,
 		reveal, retry, dismiss, requestClose, onPanelPhaseChange };
 }

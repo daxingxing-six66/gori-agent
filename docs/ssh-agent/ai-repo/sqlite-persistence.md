@@ -27,7 +27,7 @@ Bubblewrap 事实沿用现有 JSON 列，无 schema migration：保存 `backend=
 - `workspace_host_trusts.workspace_id` 同时是主键和级联外键；Workspace 创建时没有记录，首次 Tool 调用通过 `INSERT ... ON CONFLICT DO NOTHING` 固定唯一算法、SHA-256 指纹和后端时间。Credential 切换不修改该表。
 - Workspace、首个 Credential、Secret 和 Guard 通过应用事务端口与 SQLite transaction runner 原子写入；同一数据库实例上的事务会排队执行。同步事务闭包执行完即提交，不额外跨一个微任务持有连接；事务确需跨异步等待时，runner 通过 AsyncLocalStorage 标识所有者，并在共享 SQLite 连接的 `prepare`、已编译语句执行及 `exec` 边界拒绝其他请求读写，避免无关的部署记录被卷入后续回滚。非事务请求遇到该短暂占用会收到明确错误；此处尚未为所有同步 Repository 操作增加自动重试队列。
 - 文件数据库、WAL 和 SHM 权限收紧为 `0600`。
-- Connection、Channel、SFTP 内部阶段、监控快照、Chat delta、Terminal raw output/snapshot/replay 和文件内容不持久化。Terminal metadata、规范化 input/实际 bytes、Observation 和 Timeline 持久化；重启把遗留 live Terminal 收敛为 `lost`，写入中 Interaction 收敛为 `write_uncertain`，不会重放输入。
+- Connection、Channel、SFTP 内部阶段、监控快照、Chat delta、Terminal raw output/snapshot/replay 和文件内容不持久化。Terminal metadata、Agent 规范化 input/实际 bytes、Observation 和 Timeline 持久化；重启把遗留 live Terminal 收敛为 `lost`，写入中 Interaction 收敛为 `write_uncertain`，不会重放输入。
 - Deployment 的 `session_sandbox_disabled` 原因表示 Session 直接授权，不要求沙箱例外审批；JSON 解析与前端投影都区分该来源。Deployment Snapshot 的 SQLite 读取边界校验 `remoteAccess`、绑定的 Agent Run 和历史、阶段顺序、阶段尝试、修订版本和提案链，以及逐阶段审批与当前命令的一致性；旧记录缺少 `remoteAccess` 时沿用原受限模式，不追认 Full Access。`deployment_runs` 按 Session、固定的 `createdAt` 和 ID 稳定分页；同一 Workspace 的运行中部署通过原子条件更新互斥。`recovering` 的提案与确认通过 `updated_at` 比较更新防竞争，重启后可继续审阅已保存提案；未执行远端阶段的旧 Full Access 批准重置为待批。后端启动时将尚未执行的 preparing 计划取消，把 running 部署标记 failed 并提示检查远端副作用，待决审批标记 rejected；一次性 Full Access grant 只存内存，不随快照恢复。SQLite backend 启动装配显式执行 Chat、Terminal 与 Deployment interrupted recovery；业务 Service constructor 不隐式修改持久化状态。
 - `deployment_discussions` 与 `deployment_discussion_runs` 独立于 Deployment Run 保存讨论身份、修订号、状态、Profile/目标绑定和每轮 Chat Run 关联。Repository 在 SQLite 读取边界校验行与 JSON 快照的一致性；同一 Session 至多一个 `discussing` 记录。讨论取消或替换通过 revision 条件更新，提案与 Deployment Run 插入在同一事务提交。重启后仍可在新的 Chat Run 中继续有效讨论，旧活动 Chat Run 按 Chat 恢复规则结束。
 - Session 最近模型选择直接查询最新 `chat_runs` 记录，不复制到 `sessions` 表，也不需要新增 migration。
@@ -67,7 +67,7 @@ Bubblewrap 事实沿用现有 JSON 列，无 schema migration：保存 `backend=
 
 升级回归：`packages/ssh-agent/test/chat-prompt-migration.test.ts` 使用冻结的两种 v16 SQL fixture 验证带数据升级、空快照升级、原文保留、模式消息修补、不可变约束、级联删除、回滚重试及幂等性。
 
-`context-compaction-api.test.ts` 从冻结的 `test/fixtures/schema-v11.sql` 创建带合法 Workspace/Session 与消息的旧库，在外键开启时验证升级到当前 v36、消息原文和顺序保留、类型/Usage 回填及重复迁移幂等性。不要从最新 schema 反向删表模拟旧版，以免遗留后续版本的触发器与外键。`llm-provider-api.test.ts` 的重开测试验证当前 schema 下凭据可解密、迁移记录及执行时间不被重写，不冒充 v3 升级测试。
+`context-compaction-api.test.ts` 从冻结的 `test/fixtures/schema-v11.sql` 创建带合法 Workspace/Session 与消息的旧库，在外键开启时验证升级到当前 schema、消息原文和顺序保留、类型/Usage 回填及重复迁移幂等性。不要从最新 schema 反向删表模拟旧版，以免遗留后续版本的触发器与外键。`llm-provider-api.test.ts` 的重开测试验证当前 schema 下凭据可解密、迁移记录及执行时间不被重写，不冒充 v3 升级测试。
 
 v28 为 Workspace 与 Session 追加 nullable `sandbox_writable_roots_json` 数组列。旧 Workspace 的非根远端 cwd 原样回填为单元素列表，`/` 回填为空列表；已有 Session 复制所属 Workspace 的范围。migration 不改 revision、头部、历史命令或 Terminal 事实。nullable 仅兼容旧 Repository 调用；`stored-sandbox-writable-roots.ts` 将 null 解释为缺省，显式空列表表示未配置，不回退到 cwd，非空列表完整校验路径和数量。服务创建时总是保存独立列表。
 
@@ -89,3 +89,5 @@ UI 历史单独使用 `sqlite-chat-history-query.ts`，复用 SqliteChatReposito
 
 
 v36 仅新增 `chat_runtime_context_heads`，按 Session/channel 保存最新事件 ID、递增版本及内容摘要，外键随 Session/消息删除。真实状态事件保存为 chat_messages 的 system 行；读取业务事实、比较、插入事件与推进 head 同事务，失败整体回滚。迁移不改旧聊天、工具结果或头部；旧会话在下次请求前追加协议及当前状态。实现见 `sqlite-runtime-context-repository.ts`，验证见 `runtime-context.test.ts`，语义见 [runtime-context.md](./runtime-context.md)。
+
+v37 新增 terminal_human_activities，独立保存人工输入数量、时间、写入结果和有界可见记录/屏幕，不保存人工按键或隐藏密码。旧 Terminal/Interaction 行保持，Session/Terminal 删除级联；重启将未结束人工记录标为 lost/truncated，写入中改 uncertain，绝不重放。见 [人机协作](./features/terminal-human-interaction.md)。

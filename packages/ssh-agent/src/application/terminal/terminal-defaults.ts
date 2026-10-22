@@ -21,6 +21,7 @@ export const TERMINAL_DEFAULTS = {
 	},
 	input: {
 		maxBytes: 32 * 1024,
+		writeTimeoutMs: 10_000,
 	},
 	observation: {
 		promptSettleMs: 150,

@@ -56,6 +56,7 @@ import { ChatRuntimeFacts, type TerminalRuntimeFacts } from "./chat-runtime-fact
 import type { ChatRuntimeContextService } from "./chat-runtime-context-service.ts";
 import { DeploymentError } from "../../domain/deployment.ts";
 import type { DiagnoseRuntime } from "../diagnose-runtime.ts";
+import type { TerminalHumanActivity } from "../../domain/terminal-human.ts";
 
 type ToolCallCoordinator = Pick<ChatToolCallCoordinator, "beforeToolCall" | "requestSftpOverwriteApproval">;
 type QueueService = Pick<ChatQueueService, "cancelSteeringAfterTurn">;
@@ -65,6 +66,7 @@ export interface ChatAgentRuntimeFactoryOptions {
 	runtimeContexts?: ChatRuntimeContextService;
 	runtimeFacts?: ChatRuntimeFacts;
 	terminalFacts?: (sessionId: string) => TerminalRuntimeFacts | null;
+	terminalHumanFacts?: (sessionId: string) => TerminalHumanActivity | null;
 	models: Models;
 	toolCalls: ToolCallCoordinator;
 	queues: QueueService;

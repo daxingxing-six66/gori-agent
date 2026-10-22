@@ -332,6 +332,7 @@ export function createSqliteManagementBackend(options: CreateSqliteManagementBac
 				const terminal = terminalSessions.getActor(sessionId)?.view;
 				return terminal ? { terminalSessionId: terminal.id, sandbox: terminal.sandbox } : null;
 			},
+			terminalHumanFacts: (sessionId) => terminalSessions.latestHumanActivity(sessionId),
 			sandboxApprovals,
 			assessRemoteSandbox: async (sessionId, declaredWritePaths, signal) => {
 				const target = await targets.resolve(sessionId);

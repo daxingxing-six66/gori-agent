@@ -11,7 +11,7 @@ import { UserDecisionPanel } from "@/features/chat/components/user-decision-pane
 import { activeChatRun } from "@/features/chat/model/chat-runtime-state";
 import { waitingForChatResponse } from "@/features/chat/model/chat-activity";
 import { chatScrollBehavior, isNearChatHistoryTop } from "@/features/chat/model/chat-scroll";
-import type { ToolApproval } from "@/features/chat/model/chat";
+import type { ChatRun, ToolApproval } from "@/features/chat/model/chat";
 import type { SessionAttachment } from "@/features/session/api/session-attachment-api";
 import { useChatModelSelection } from "@/features/chat/runtime/use-chat-model-selection";
 import { useChatRuntime } from "@/features/chat/runtime/use-chat-runtime";
@@ -29,6 +29,7 @@ import { TerminalSandboxNotice } from "@/features/terminal/components/terminal-s
 import { TerminalTask } from "@/features/terminal/components/terminal-task";
 import { useTerminalMode } from "@/features/terminal/runtime/use-terminal-mode";
 import { useTerminalTask } from "@/features/terminal/runtime/use-terminal-task";
+import { withTerminalSubmission } from "@/features/terminal/runtime/terminal-submission-gate";
 import { TaskContainer, type TaskTab } from "@/features/task-container/components/task-container";
 import { TASK_CONTAINER_DEFAULTS } from "@/features/task-container/model/task-container-defaults";
 import { useTaskContainerDisplay } from "@/features/task-container/runtime/use-task-container-display";
@@ -54,7 +55,9 @@ export function ChatConsole({ sessionId }: { sessionId: string }) {
 	const intl = useIntl();
 	const { tree, loading: treeLoading, refresh } = useWorkspaceTree();
 	const item = tree?.workspaces.flatMap(({ workspace, sessions }) => sessions.map((session) => ({ session, workspace }))).find(({ session }) => session.id === sessionId);
-	const runtime = useChatRuntime(sessionId);
+	const startRun = useCallback((start: () => Promise<ChatRun>) =>
+		withTerminalSubmission(sessionId, start), [sessionId]);
+	const runtime = useChatRuntime(sessionId, startRun);
 	const terminalMode = useTerminalMode(sessionId);
 	const deployment = useDeployment(sessionId, item?.workspace.id, { onHistoryMessage: runtime.receiveHistoryMessage, onHistoryResync: runtime.refreshHistory });
 	const modelSelection = useChatModelSelection(sessionId, runtime.loading, runtime.state.run);

@@ -87,3 +87,5 @@ Workspace POST/PATCH 通过 `sandboxWritableRoots` 设置独立可写目录默�
 ## Node 出站网络代理
 
 CLI 在 Backend 创建前通过 `server/environment-proxy.ts` 安装环境 HTTP/HTTPS 代理，原生 fetch 和使用它的 SDK 共用；HTTP_PROXY/HTTPS_PROXY/NO_PROXY 的小写变量优先，始终绕过 localhost、127.0.0.1、[::1]，显式 NO_PROXY=* 继续全直连。代理 URL 只接受 HTTP/HTTPS，错误与启动日志不公开 URL 或密码；未配置时不替换 dispatcher。SIGINT/SIGTERM 在后端收尾后恢复原 dispatcher 并关闭连接；库调用不自动修改宿主全局网络。先在启动终端导出变量再重启后端，`.env` 不自动加载。回归见 `test/environment-proxy.test.ts`，ChatGPT 网络阶段见 [chatgpt-provider.md](./chatgpt-provider.md)。
+
+2026-10-22 Terminal 人机协作：Terminal attachment 新增 POST control/input：申请或释放输入权，以及携带 Terminal 身份、代次、批次序号的 Base64 字节输入；控制状态通过原 SSE 发布，输入仍走 REST origin。见 [功能路由](./features/terminal-human-interaction.md)。

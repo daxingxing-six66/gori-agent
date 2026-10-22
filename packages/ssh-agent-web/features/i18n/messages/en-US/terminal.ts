@@ -67,4 +67,11 @@ export const enUSTerminalMessages = {
 	"terminal.timeline.closed": "Terminal closed",
 	"terminal.timeline.lost": "Terminal connection lost",
 	"terminal.timeline.failed": "Terminal failed to open",
+	"terminal.input.ready": "Input ready · click the terminal",
+	"terminal.input.handoff": "Handing control to Agent",
+	"terminal.input.agent": "Agent operating · input locked",
+	"terminal.input.other": "Another page is operating",
+	"terminal.input.unavailable": "Input unavailable",
+	"terminal.input.failure": "Terminal input was stopped. Unconfirmed input will not be replayed. Resynchronize and inspect the terminal before continuing.",
+	"terminal.panel.interactive": "Interactive remote Terminal",
 } as const;

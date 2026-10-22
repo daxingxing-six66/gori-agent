@@ -50,6 +50,7 @@ describe("Terminal response validation", () => {
 		}).terminal).toEqual(terminal);
 		expect(requireTerminalAttachment({
 			attachmentId: "attachment-1",
+			inputControl: { mode: "idle", attachmentId: null, agentRunId: null, epoch: 0 },
 			terminalSessionId: "terminal-1",
 			status: "bootstrapping",
 			snapshot: {

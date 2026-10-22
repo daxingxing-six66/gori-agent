@@ -133,6 +133,7 @@ async function setup(guards: CommandGuardEvaluator) {
 	const terminal = await terminals.open({ sessionId: "session-1", requestId: "open-1" });
 	await new Promise<void>((resolve) => setImmediate(resolve));
 	database.prepare("UPDATE chat_runs SET terminal_session_id = ? WHERE id = 'run-1'").run(terminal.id);
+	await terminals.bindRun("session-1", "run-1", "terminal");
 	return {
 		database,
 		repository,

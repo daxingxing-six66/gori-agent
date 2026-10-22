@@ -32,6 +32,7 @@ export interface TerminalSessionView {
 }
 
 export interface TerminalStatusResponse {
+	inputControl?: TerminalInputControl;
 	terminal: TerminalSessionView | null;
 	effectiveServerInteractionMode: ServerInteractionMode;
 	transitionInProgress: boolean;
@@ -47,6 +48,7 @@ export interface TerminalSnapshotV1 extends TerminalGeometry {
 }
 
 export interface TerminalAttachmentBootstrap {
+	inputControl: TerminalInputControl;
 	attachmentId: string;
 	terminalSessionId: string;
 	status: "bootstrapping";
@@ -58,6 +60,22 @@ export interface TerminalAttachmentBootstrap {
 export interface TerminalOwnership {
 	owner: boolean;
 	ownershipEpoch: number | null;
+}
+
+export interface TerminalInputControl {
+	mode: "idle" | "human" | "agent";
+	attachmentId: string | null;
+	agentRunId: string | null;
+	epoch: number;
+}
+
+export function requireTerminalInputControl(value: unknown): TerminalInputControl {
+	if (!isRecord(value) || !isNonNegativeSafeInteger(value.epoch) ||
+		!(value.mode === "idle" && value.attachmentId === null && value.agentRunId === null ||
+			value.mode === "human" && typeof value.attachmentId === "string" && value.agentRunId === null ||
+			value.mode === "agent" && value.attachmentId === null && typeof value.agentRunId === "string"))
+		throw new Error("Invalid Terminal input control");
+	return { mode: value.mode, attachmentId: value.attachmentId, agentRunId: value.agentRunId, epoch: value.epoch } as TerminalInputControl;
 }
 
 export interface TerminalTimelineEvent {
@@ -101,6 +119,7 @@ export function requireTerminalStatus(value: unknown): TerminalStatusResponse {
 	if (value.terminal !== null && !isTerminalSession(value.terminal)) throw new Error("Invalid TerminalSession response");
 	return {
 		terminal: value.terminal,
+		...(value.inputControl === undefined ? {} : { inputControl: requireTerminalInputControl(value.inputControl) }),
 		effectiveServerInteractionMode: value.effectiveServerInteractionMode,
 		transitionInProgress: value.transitionInProgress,
 		capabilities: value.capabilities,
@@ -126,6 +145,7 @@ export function requireTerminalAttachment(value: unknown): TerminalAttachmentBoo
 	}
 	return {
 		attachmentId: value.attachmentId,
+		inputControl: requireTerminalInputControl(value.inputControl),
 		terminalSessionId: value.terminalSessionId,
 		status: value.status,
 		snapshot: value.snapshot,

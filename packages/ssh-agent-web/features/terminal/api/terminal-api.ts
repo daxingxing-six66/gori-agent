@@ -5,12 +5,24 @@ import {
 	requireTerminalSession,
 	requireTerminalStatus,
 	requireTerminalTimeline,
+	requireTerminalInputControl,
 } from "@/features/terminal/model/terminal";
 import { apiRequest } from "@/shared/api/client";
 
 const root = (sessionId: string) => `/api/sessions/${encodeURIComponent(sessionId)}/terminal`;
 
 export const terminalApi = {
+	control: async (sessionId: string, attachmentId: string, claim: boolean) => requireTerminalInputControl(
+		await apiRequest<unknown>(`${root(sessionId)}/attachments/${encodeURIComponent(attachmentId)}/control`, {
+			method: "POST", body: { action: claim ? "claim" : "release" }, signal: AbortSignal.timeout(10_000),
+		})),
+	input: (sessionId: string, attachmentId: string, terminalSessionId: string, controlEpoch: number, inputSequence: number, bytes: Uint8Array) => {
+		let binary = "";
+		for (const byte of bytes) binary += String.fromCharCode(byte);
+		return apiRequest<{ acceptedSequence: number }>(`${root(sessionId)}/attachments/${encodeURIComponent(attachmentId)}/input`, {
+			method: "POST", body: { terminalSessionId, controlEpoch, inputSequence, bytesBase64: btoa(binary) }, signal: AbortSignal.timeout(10_000),
+		});
+	},
 	getStatus: async (sessionId: string, signal?: AbortSignal) =>
 		requireTerminalStatus(await apiRequest<unknown>(root(sessionId), { signal })),
 	open: async (sessionId: string, requestId: string) =>

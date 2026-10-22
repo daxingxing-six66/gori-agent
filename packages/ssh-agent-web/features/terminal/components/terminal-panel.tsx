@@ -9,10 +9,12 @@ import { useLocalizedErrorMessage } from "@/features/i18n/components/use-localiz
 import { useLocale } from "@/features/i18n/components/locale-context";
 import { useTheme } from "@/features/theme/components/theme-context";
 import { terminalApi } from "@/features/terminal/api/terminal-api";
+import { TerminalInputStatus } from "@/features/terminal/components/terminal-input-status";
 import { TerminalObservationMask } from "@/features/terminal/components/terminal-observation-mask";
 import { TERMINAL_UI_DEFAULTS } from "@/features/terminal/model/terminal-ui-defaults";
 import { shouldRetryTerminalConnection } from "@/features/terminal/model/terminal-retry";
 import type { TerminalSseEnvelope, TerminalStatusResponse } from "@/features/terminal/model/terminal";
+import { requireTerminalInputControl } from "@/features/terminal/model/terminal";
 import { applyTerminalTheme, terminalTheme } from "@/features/terminal/model/terminal-theme";
 import {
 	isObservationMaskStateEvent,
@@ -33,17 +35,21 @@ import {
 import { TerminalObservationRangeTracker } from "@/features/terminal/runtime/terminal-observation-range-tracker";
 import { decodeTerminalBytes, TerminalEventQueue } from "@/features/terminal/runtime/terminal-event-queue";
 import { TerminalViewportSync } from "@/features/terminal/runtime/terminal-viewport-sync";
+import { TerminalHumanInput, type HumanInputPhase } from "@/features/terminal/runtime/terminal-human-input";
+import { registerTerminalSubmission } from "@/features/terminal/runtime/terminal-submission-gate";
 
 export type TerminalPanelPhase = "attaching" | "replaying" | "live";
 
 export function TerminalPanel({
 	sessionId,
 	status,
+	inputBusy = false,
 	onTerminalStateChange,
 	onPhaseChange,
 }: {
 	sessionId: string;
 	status: TerminalStatusResponse;
+	inputBusy?: boolean;
 	onTerminalStateChange(): void;
 	onPhaseChange(phase: TerminalPanelPhase): void;
 }) {
@@ -52,6 +58,11 @@ export function TerminalPanel({
 	const { locale } = useLocale();
 	const containerRef = useRef<HTMLDivElement>(null);
 	const terminalRef = useRef<Terminal | null>(null);
+	const inputRef = useRef<TerminalHumanInput | null>(null);
+	const busyRef = useRef(inputBusy);
+	busyRef.current = inputBusy;
+	const [inputPhase, setInputPhase] = useState<HumanInputPhase>("unavailable");
+	const [inputError, setInputError] = useState<string | null>(null);
 	const { resolvedTheme } = useTheme();
 	const resolvedThemeRef = useRef(resolvedTheme);
 	const [retry, setRetry] = useState(0);
@@ -66,6 +77,7 @@ export function TerminalPanel({
 	const { minRows, maxRows, minCols, maxCols } = status.capabilities;
 
 	useEffect(() => { onPhaseChange(phase); }, [onPhaseChange, phase]);
+	useEffect(() => { inputRef.current?.setBusy(inputBusy); }, [inputBusy]);
 
 	useEffect(() => {
 		resolvedThemeRef.current = resolvedTheme;
@@ -82,6 +94,8 @@ export function TerminalPanel({
 		let terminal: Terminal | undefined;
 		let attachmentId: string | undefined;
 		let viewportSync: TerminalViewportSync | undefined;
+		let humanInput: TerminalHumanInput | undefined;
+		let unregisterSubmission: (() => void) | undefined;
 		let retryTimer: ReturnType<typeof setTimeout> | undefined;
 		let observationFinishDelayTimer: ReturnType<typeof setTimeout> | undefined;
 		let observationFinishedTimer: ReturnType<typeof setTimeout> | undefined;
@@ -95,6 +109,8 @@ export function TerminalPanel({
 		setPhase("attaching");
 		setOwner(false);
 		setError(null);
+		setInputError(null);
+		setInputPhase("unavailable");
 		setObservationMask(null);
 		setObservationRange(null);
 		setObservationCapturedAt(null);
@@ -197,6 +213,9 @@ export function TerminalPanel({
 		const fail = (value: unknown): void => {
 			if (disposed || failureHandled) return;
 			failureHandled = true;
+			if (terminal) terminal.options.disableStdin = true;
+			setInputPhase("unavailable");
+			humanInput?.close();
 			stream?.close();
 			eventQueue?.close();
 			viewportSync?.dispose();
@@ -209,7 +228,10 @@ export function TerminalPanel({
 				}, TERMINAL_UI_DEFAULTS.reconnectRetryMs);
 			}
 		};
-		const updateViewport = (): void => viewportSync?.refresh();
+		const updateInputFocus = (): void => humanInput?.setFocused(
+			container.clientWidth > 0 && container.clientHeight > 0 && document.visibilityState === "visible" &&
+			document.hasFocus() && container.contains(document.activeElement));
+		const updateViewport = (): void => { viewportSync?.refresh(); updateInputFocus(); };
 
 		void terminalApi.attach(sessionId, crypto.randomUUID(), attachController.signal).then(async (bootstrap) => {
 			if (disposed) {
@@ -234,6 +256,25 @@ export function TerminalPanel({
 			terminal.open(container);
 			const attachedTerminal = terminal;
 			const attachedId = attachmentId;
+			humanInput = new TerminalHumanInput({ attachmentId: attachedId, control: bootstrap.inputControl,
+				claim: (claim) => terminalApi.control(sessionId, attachedId, claim),
+				write: (epoch, sequence, bytes) => terminalApi.input(sessionId, attachedId, bootstrap.terminalSessionId, epoch, sequence, bytes),
+				onState: (next, enabled) => {
+					if (disposed || failureHandled) return;
+					setInputPhase(next);
+					attachedTerminal.options.disableStdin = !enabled;
+					attachedTerminal.options.cursorBlink = enabled;
+				},
+				onError: (value) => { if (!disposed) setInputError(localizedErrorMessage(value)); },
+			});
+			inputRef.current = humanInput;
+			humanInput.setBusy(busyRef.current);
+			const attachedInput = humanInput;
+			unregisterSubmission = registerTerminalSubmission(sessionId, attachedInput);
+			observationViewportSubscriptions.push(
+				terminal.onData((data) => attachedInput.enqueue(new TextEncoder().encode(data))),
+				terminal.onBinary((data) => attachedInput.enqueue(Uint8Array.from(data, (character) => character.charCodeAt(0)))),
+			);
 			viewportSync = new TerminalViewportSync({
 				viewport: container, bounds: { minRows, maxRows, minCols, maxCols },
 				measure: () => fitAddon.proposeDimensions(),
@@ -286,10 +327,14 @@ export function TerminalPanel({
 						setError(null);
 						setPhase("live");
 						viewportSync?.ready();
+						humanInput?.ready();
+						updateInputFocus();
 						return;
 					}
 					if (envelope.sequence === null) return;
-					if (envelope.type === "terminal.input") {
+					if (envelope.type === "terminal.control_changed") {
+						humanInput?.updateControl(requireTerminalInputControl(envelope.data));
+					} else if (envelope.type === "terminal.input") {
 						const interactionId = stringData(envelope.data, "interactionId");
 						if (interactionId !== null) observationRangeTracker?.recordInput(interactionId);
 					} else if (envelope.type === "terminal.observation.captured") {
@@ -331,6 +376,15 @@ export function TerminalPanel({
 			});
 			stream.subscribe((envelope) => {
 				if (disposed || failureHandled) return;
+				if (envelope.type === "terminal.status" && envelope.data.newStatus !== "active") {
+					humanInput?.close();
+					if (terminal) terminal.options.disableStdin = true;
+					setInputPhase("unavailable");
+				}
+				if (envelope.type === "terminal.control_changed") {
+					try { humanInput?.updateControl(requireTerminalInputControl(envelope.data)); }
+					catch (value) { fail(value); return; }
+				}
 				if (isObservationMaskStateEvent(envelope)) observationStateEventCount += 1;
 				if (envelope.type === "terminal.resync_required") {
 					applyObservationMaskEvent(envelope);
@@ -343,12 +397,18 @@ export function TerminalPanel({
 
 		const resizeObserver = new ResizeObserver(updateViewport);
 		resizeObserver.observe(container);
+		container.addEventListener("focusin", updateInputFocus);
+		container.addEventListener("pointerdown", updateInputFocus);
+		container.addEventListener("focusout", updateInputFocus);
 		window.addEventListener("focus", updateViewport);
 		window.addEventListener("blur", updateViewport);
 		document.addEventListener("visibilitychange", updateViewport);
 		window.addEventListener("pageshow", updateViewport);
 		return () => {
 			disposed = true;
+			humanInput?.close();
+			unregisterSubmission?.();
+			if (inputRef.current === humanInput) inputRef.current = null;
 			attachController.abort();
 			viewportSync?.dispose();
 			if (retryTimer !== undefined) clearTimeout(retryTimer);
@@ -357,6 +417,9 @@ export function TerminalPanel({
 			for (const subscription of observationViewportSubscriptions) subscription.dispose();
 			observationRangeTracker?.dispose();
 			resizeObserver.disconnect();
+			container.removeEventListener("focusin", updateInputFocus);
+			container.removeEventListener("pointerdown", updateInputFocus);
+			container.removeEventListener("focusout", updateInputFocus);
 			window.removeEventListener("focus", updateViewport);
 			window.removeEventListener("blur", updateViewport);
 			document.removeEventListener("visibilitychange", updateViewport);
@@ -372,17 +435,18 @@ export function TerminalPanel({
 	return (
 		<section data-resize-owner={owner} className="terminal-task-viewport">
 			<div className="terminal-viewport relative min-h-0 p-2">
-				<div ref={containerRef} className="h-full w-full overflow-hidden" aria-label={intl.formatMessage({ id: "terminal.panel.readonly" })} />
+				<div ref={containerRef} className="h-full w-full overflow-hidden" aria-label={intl.formatMessage({ id: "terminal.panel.interactive" })} />
 				<TerminalObservationMask
 					state={observationMask}
 					range={observationRange}
 					capturedAt={observationCapturedAt}
 				/>
 				{phase !== "live" && !error ? <div className="pointer-events-none absolute inset-0 z-10 grid place-items-center bg-[color-mix(in_srgb,var(--terminal-bg)_70%,transparent)] text-[9px] text-[var(--terminal-muted)]"><span className="flex items-center gap-2"><LoaderCircle size={12} className="animate-spin" />{intl.formatMessage({ id: "terminal.panel.restoring" })}</span></div> : null}
-				{error ? <div className="absolute inset-x-3 bottom-3 z-20 rounded-lg border border-[var(--danger-line)] bg-[var(--danger-soft)] px-3 py-2 text-xs text-[var(--danger)]">{error}
+				{error || inputError ? <div role="alert" className="absolute inset-x-3 bottom-3 z-20 rounded-lg border border-[var(--danger-line)] bg-[var(--danger-soft)] px-3 py-2 text-xs text-[var(--danger)]">{inputError ? intl.formatMessage({ id: "terminal.input.failure" }) : error}
 					<button type="button" className="terminal-task-resync" onClick={() => setRetry((value) => value + 1)}><RefreshCw size={12} />{intl.formatMessage({ id: "terminal.panel.resync" })}</button>
 				</div> : null}
 			</div>
+			<TerminalInputStatus phase={inputPhase} />
 		</section>
 	);
 }

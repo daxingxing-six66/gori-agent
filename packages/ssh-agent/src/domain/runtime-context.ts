@@ -1,7 +1,7 @@
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import type { SystemMessage } from "@earendil-works/pi-ai";
 
-export type RuntimeContextChannel = "protocol" | "sandbox" | "terminal" | "diagnose" | "diagnose-instructions" | "deployment" | "workflow";
+export type RuntimeContextChannel = "protocol" | "sandbox" | "terminal" | "terminal-human" | "diagnose" | "diagnose-instructions" | "deployment" | "workflow";
 
 export interface RuntimeContextSnapshot {
 	channel: RuntimeContextChannel;
@@ -38,7 +38,7 @@ export function isRuntimeContextMessage(message: AgentMessage): message is Runti
 	const value = message.runtimeContext;
 	return "version" in value && value.version === 1 && "revision" in value && typeof value.revision === "number" &&
 		Number.isInteger(value.revision) && value.revision > 0 && "channel" in value && typeof value.channel === "string" &&
-		["protocol", "sandbox", "terminal", "diagnose", "diagnose-instructions", "deployment", "workflow"].includes(value.channel) &&
+		["protocol", "sandbox", "terminal", "terminal-human", "diagnose", "diagnose-instructions", "deployment", "workflow"].includes(value.channel) &&
 		"scope" in value && typeof value.scope === "string" && "active" in value && typeof value.active === "boolean" &&
 		"data" in value && !!value.data && typeof value.data === "object" && !Array.isArray(value.data) &&
 		(!("instructions" in value) || value.instructions === undefined || typeof value.instructions === "string");
