@@ -18,7 +18,7 @@
 - 固定调用公开 `https://api.openai.com/v1/responses`。末端白名单过滤参数，强制 store=false/stream=true，发送完整 input，移除 max_output_tokens、temperature、previous_response_id 等字段。复用真实 SSE 解析器，流失败或缺少终态不能当作成功。
 - 仅在此 Provider 的请求副本中把 system 转为同位置 developer；不改历史、头部或其他 Provider 的角色。函数/custom 工具放入 gori namespace，历史调用携带相同 namespace。工具仍由 Gori 按原 Guard、审批、沙盒规则执行，不启用 hosted MCP/tool_search 等托管工具。
 - Provider 声明支持 `strict` 参数，使普通函数工具明确发送 `strict: false`，避免 Responses 在省略该字段时尝试将 schema 规范化为严格模式。该能力声明不默认启用严格采样；`terminal_interaction` 的 `input`、`key` 仍为可选字段，按 action 执行的互斥校验保持有效。规则依据：[官方函数工具 strict 模式说明](https://developers.openai.com/api/docs/guides/function-calling#strict-mode)。
-- 套餐额度耗尽/不可用错误显示本地化用量管理提示。设置页分为“账号与密钥”和“自定义服务”两个页签：前者显示 ChatGPT 连接和内置 API Key，后者的服务行直接提供该服务密钥管理，避免重复显示。ChatGPT 使用紧凑独立卡片，不进入 API Key 表单；已连接时常显账号、套餐状态和管理用量，重新登录、刷新模型、换账号及断开收进更多操作，断开仍二次确认。可重新打开授权标签和取消等待；授权/写入/异步表单导航时禁止切页签，避免卸载取消在途授权。后端重启产生的 404 结束旧等待，授权成功但模型发现失败单独提示刷新。
+- 套餐额度耗尽/不可用错误显示本地化用量管理提示。设置页分为“账号与密钥”和“自定义服务”两个页签：前者显示 ChatGPT 连接和内置 API Key，后者的服务行直接提供该服务密钥管理，避免重复显示。ChatGPT 使用紧凑独立卡片，不进入 API Key 表单；已连接时常显账号、套餐状态、查看模型、刷新模型和管理用量，重新登录、换账号及断开收进更多操作，断开仍二次确认。查看和刷新进入共用模型详情页，读取仅 GET，显式刷新使用统一 Provider 模型 POST；详情不显示 token，失败保留当前账号最后成功目录。可重新打开授权标签和取消等待；授权/写入/异步表单导航时禁止切页签，避免卸载取消在途授权。后端重启产生的 404 结束旧等待，授权成功但模型发现失败单独提示刷新。
 
 ## 模型能力与思考强度
 
@@ -45,7 +45,8 @@ CLI 在创建 Backend 前通过 `server/environment-proxy.ts` 安装 undici 环�
 | `POST /api/llm/chatgpt/sign-in` | JSON `{ newAccount?: boolean }`，返回 id、pending、授权 URL |
 | `GET /api/llm/chatgpt/sign-in/:id` | pending/connected/cancelled/failed，安全 errorCode/failure |
 | `DELETE /api/llm/chatgpt/sign-in/:id` | 取消本次授权并释放监听 |
-| `POST /api/llm/chatgpt/models` | 重取当前账号模型 |
+| `POST /api/llm/chatgpt/models` | 重取当前账号模型，保留旧客户端兼容 |
+| `POST /api/llm/providers/openai-chatgpt/models` | 共用设置入口重取当前账号模型，返回有效目录 |
 | `DELETE /api/llm/chatgpt` | 撤销并断开连接 |
 
 ## 源码与验证
@@ -59,7 +60,7 @@ CLI 在创建 Backend 前通过 `server/environment-proxy.ts` 安装 undici 环�
 | Provider/模型/请求适配 | 同目录 `chatgpt-provider.ts`、`chatgpt-responses.ts` |
 | 路由与装配 | `packages/ssh-agent/src/api/chatgpt-routes.ts`、`runtime/create-sqlite-management-backend.ts` |
 | Node 出站代理与回归 | `packages/ssh-agent/src/server/environment-proxy.ts`、`server/main.ts`、`test/environment-proxy.test.ts` |
-| 前端 | `packages/ssh-agent-web/features/llm-provider/api/chatgpt-api.ts`、`components/chatgpt-connection.tsx`；设置与列表分工由 `components/llm-provider-settings.tsx`、`provider-list.tsx`、`provider-settings.css` 承担 |
+| 前端 | `packages/ssh-agent-web/features/llm-provider/api/chatgpt-api.ts`、`components/chatgpt-connection.tsx`；设置与列表分工由 `components/llm-provider-settings.tsx`、`provider-list.tsx`、`provider-settings.css` 承担；共用 `provider-models-panel.tsx` 和 `api/llm-provider-api.ts` 提供目录查看/刷新，回归见 `tests/provider-models.test.tsx` |
 | 测试 | `packages/ssh-agent/test/chatgpt-auth.test.ts`、`chatgpt-oauth.test.ts`、`chatgpt-responses.test.ts`、`chatgpt-test-fixture.ts` |
 
 定向测试使用本机临时端口、临时 SQLite、合成 RSA 签名、模拟 OAuth/model 响应，以及真实 Responses SSE 解析器，覆盖授权、诊断、并发刷新、撤销、重启、账号隔离和工具往返。Responses 回归逐个覆盖上述四个模型的上下文窗口、输出元数据、输入类型、所有可选档位、off 到 none 的请求映射、完整基线优先和未知前缀保守兜底；使用真实 Terminal 工具定义检查基线/动态发现模型的最终 namespace 请求均包含 `strict: false`，并保留可选 `input`、`key`。尚未完成真实账号的完整推理验收，模拟测试不证明真实订阅可用性。

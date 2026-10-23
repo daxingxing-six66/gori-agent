@@ -382,6 +382,9 @@ async function route(
 		if (segments[4] === "models" && request.method === "GET") {
 			return json(await api.listLlmProviderModels(providerId));
 		}
+		if (segments[4] === "models" && request.method === "POST") {
+			return json(await api.refreshLlmProviderModels(providerId, request.signal));
+		}
 		if (segments[4] === "credential") {
 			if (request.method === "GET") return json(await api.getLlmProviderCredential(providerId));
 			if (request.method === "PUT") {

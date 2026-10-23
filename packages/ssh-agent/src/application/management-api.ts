@@ -87,6 +87,10 @@ export class SshAgentManagementApi {
 		return this.llmProviders.listModels(providerId);
 	}
 
+	refreshLlmProviderModels(providerId: string, signal?: AbortSignal): Promise<LlmProviderModels> {
+		return this.llmProviders.refreshModels(providerId, signal);
+	}
+
 	async listLlmProviderCredentials(): Promise<LlmProviderCredentialsResponse> {
 		return { credentials: await this.llmProviders.listCredentials() };
 	}

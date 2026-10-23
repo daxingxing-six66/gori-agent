@@ -12,6 +12,8 @@ export interface LlmModelCatalog {
 	getModel(providerId: string, modelId: string): Model<Api> | undefined;
 	refresh(providerId: string, signal?: AbortSignal): Promise<void>;
 	removeModel(providerId: string, modelId: string): boolean;
+	/** Custom-provider persistence already clears its stored snapshot; discard the corresponding memory copy. */
+	invalidateSnapshot(providerId: string): void;
 }
 
 export interface DefaultLlmModelCatalogOptions {
@@ -33,6 +35,7 @@ export class DefaultLlmModelCatalog implements LlmModelCatalog {
 	private readonly snapshots = new Map<string, LlmModelCatalogSnapshot>();
 	private readonly accountScopedProviders: ReadonlySet<string>;
 	private readonly removedAccountModels = new Map<string, Set<string>>();
+	private readonly refreshes = new Map<string, Promise<void>>();
 
 	constructor(options: DefaultLlmModelCatalogOptions) {
 		this.models = options.models;
@@ -54,11 +57,28 @@ export class DefaultLlmModelCatalog implements LlmModelCatalog {
 		return this.getModels(providerId).find((model) => model.id === modelId);
 	}
 
-	async refresh(providerId: string, signal?: AbortSignal): Promise<void> {
-		if (!this.models.getProvider(providerId)) throw new Error(`Unknown LLM provider: ${providerId}`);
+	invalidateSnapshot(providerId: string): void {
+		this.snapshots.delete(providerId);
+	}
+
+	refresh(providerId: string, signal?: AbortSignal): Promise<void> {
+		const refreshSignal = AbortSignal.any([AbortSignal.timeout(20_000), ...(signal ? [signal] : [])]);
+		const previous = this.refreshes.get(providerId) ?? Promise.resolve();
+		const pending = previous.then(() => this.refreshNow(providerId, refreshSignal));
+		const tail = pending.catch(() => undefined);
+		this.refreshes.set(providerId, tail);
+		void tail.then(() => { if (this.refreshes.get(providerId) === tail) this.refreshes.delete(providerId); });
+		return waitForRefresh(pending, refreshSignal);
+	}
+
+	private async refreshNow(providerId: string, signal: AbortSignal): Promise<void> {
+		signal.throwIfAborted();
+		const provider = this.models.getProvider(providerId);
+		if (!provider) throw new Error(`Unknown LLM provider: ${providerId}`);
 		if (this.accountScopedProviders.has(providerId)) {
+			if (!await this.models.checkAuth(providerId, { signal })) throw new Error("Account provider is not configured");
 			const result = await this.models.refresh({ providers: [providerId], force: true, signal });
-			if (result.aborted) throw new Error("Model discovery cancelled");
+			if (result.aborted || this.models.getProvider(providerId) !== provider) throw new Error("Model discovery cancelled");
 			const error = result.errors.get(providerId);
 			if (error) throw error;
 			this.removedAccountModels.delete(providerId);
@@ -74,8 +94,10 @@ export class DefaultLlmModelCatalog implements LlmModelCatalog {
 			...(signal === undefined ? {} : { signal }),
 		});
 		if (response.status === 304) {
+			signal.throwIfAborted();
 			if (!stored) throw new Error(`Model catalog returned 304 without a stored snapshot: ${providerId}`);
-			this.publish({ ...stored, checkedAt: this.clock.now() });
+			// A Run may have removed an unsupported model while this request was in flight.
+			this.publish({ ...(this.snapshots.get(providerId) ?? stored), checkedAt: this.clock.now() });
 			return;
 		}
 		if (!response.ok) throw new Error(`Model catalog request failed for ${providerId}: ${response.status}`);
@@ -86,6 +108,7 @@ export class DefaultLlmModelCatalog implements LlmModelCatalog {
 			checkedAt: this.clock.now(),
 			...(etag === null ? {} : { etag }),
 		};
+		signal.throwIfAborted();
 		this.publish(snapshot);
 	}
 
@@ -113,6 +136,15 @@ export class DefaultLlmModelCatalog implements LlmModelCatalog {
 		this.repository.put(snapshot);
 		this.snapshots.set(snapshot.providerId, snapshot);
 	}
+}
+
+function waitForRefresh(pending: Promise<void>, signal: AbortSignal): Promise<void> {
+	return new Promise((resolve, reject) => {
+		const abort = () => reject(signal.reason);
+		signal.addEventListener("abort", abort, { once: true });
+		void pending.then(resolve, reject).finally(() => signal.removeEventListener("abort", abort));
+		if (signal.aborted) abort();
+	});
 }
 
 function parseCatalog(providerId: string, value: unknown): Model<Api>[] {

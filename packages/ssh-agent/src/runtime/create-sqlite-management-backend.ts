@@ -106,6 +106,7 @@ export interface CreateSqliteManagementBackendOptions {
 	attachmentBaseDir?: string;
 	llmCatalogBaseUrl?: string;
 	llmCatalogFetch?: typeof fetch;
+	customLlmModelFetch?: typeof fetch;
 	llmCatalogRefreshIntervalMs?: number;
 	chatgpt?: { fetch?: typeof fetch; registrationPath?: string; loginTimeoutMs?: number };
 }
@@ -275,6 +276,7 @@ export function createSqliteManagementBackend(options: CreateSqliteManagementBac
 			credentials: llmCredentials,
 			transactions,
 			hasActiveRun: (providerId) => chatRepository.hasActiveProvider(providerId),
+			...(options.customLlmModelFetch === undefined ? {} : { fetch: options.customLlmModelFetch }),
 		});
 		customLlmProviders.restore();
 		const llmModelCatalog = new DefaultLlmModelCatalog({

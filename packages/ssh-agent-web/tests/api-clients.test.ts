@@ -472,6 +472,17 @@ describe("management API clients", () => {
 		});
 	});
 
+	it("manually refreshes a Provider model catalog with an encoded identity and cancellation signal", async () => {
+		const models = { providerId: "provider / 1", models: [] };
+		const fetchMock = mockResponse(models);
+		const controller = new AbortController();
+		await expect(llmProviderApi.refreshModels("provider / 1", controller.signal)).resolves.toEqual(models);
+		expect(fetchMock).toHaveBeenCalledExactlyOnceWith(
+			"/api/llm/providers/provider%20%2F%201/models",
+			expect.objectContaining({ method: "POST", signal: controller.signal, cache: "no-store", body: undefined }),
+		);
+	});
+
 	it("creates and replaces Provider Credentials with the shared apiKey field", async () => {
 		let fetchMock = mockResponse({ providerId: "openai", type: "api_key", revision: 1 });
 		await llmProviderApi.configureCredential("openai", "first-secret");

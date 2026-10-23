@@ -8,6 +8,8 @@ Deployment REST 的领域错误通过 `deployment.error` 按请求 Locale 返回
 
 ## 当前边界
 
+- 模型目录手动发现失败使用 `llm_model_refresh_failed`（502）和 `management.llm_model_refresh_failed` 双语描述符；上游正文、模型接口认证头和原始异常不进入响应。认证未就绪使用已有 `chat.provider_not_configured`，版本冲突和活动 Run 保留各自稳定错误，不合并为网络失败。
+
 - 本地多媒体预览的未知类型通过独立 `media_preview.type_unsupported` 描述符返回 415；路径、Session 和文件系统错误复用既有稳定 code。媒体字节流不进入本地化 JSON 投影。
 
 - Session 主动关闭沙盒时，远端普通审批用 `approval.remote_session_unconfined` 描述准确命令与 SSH 账号权限，不显示一次性例外请求；`session_configuration_in_progress` 在统一错误出口映射为双语 409。Guard 与普通审批仍生效，见 [session-sandbox.md](./session-sandbox.md)。

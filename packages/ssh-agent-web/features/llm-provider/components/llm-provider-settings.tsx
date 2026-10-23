@@ -9,6 +9,7 @@ import { llmProviderApi } from "@/features/llm-provider/api/llm-provider-api";
 import { CustomProviderEditor } from "@/features/llm-provider/components/custom-provider-editor";
 import { ProviderList, type ProviderListTab } from "@/features/llm-provider/components/provider-list";
 import { ChatGptConnection } from "@/features/llm-provider/components/chatgpt-connection";
+import { ProviderModelsPanel } from "@/features/llm-provider/components/provider-models-panel";
 import { useLlmProviders } from "@/features/llm-provider/components/llm-provider-context";
 import {
 	type CustomLlmProvider,
@@ -20,7 +21,7 @@ import { SettingsSectionPanel } from "@/features/settings/components/settings-se
 import { ApiError } from "@/shared/errors/api-error";
 import "./provider-settings.css";
 
-type LlmProviderSettingsView = "list" | "credential-create" | "credential-edit" | "custom-create" | "custom-edit";
+type LlmProviderSettingsView = "list" | "models" | "credential-create" | "credential-edit" | "custom-create" | "custom-edit";
 
 const apiKeyInputClass =
 	"h-10 w-full rounded-lg border border-[var(--line)] bg-white px-3 font-mono text-[11px] text-zinc-800 outline-none transition focus:border-[#7aa48e] focus:ring-2 focus:ring-[#397b5c]/10";
@@ -54,6 +55,7 @@ export function LlmProviderSettings({
 	const [view, setView] = useState<LlmProviderSettingsView>("list");
 	const [listTab, setListTab] = useState<ProviderListTab>("connections");
 	const [selectedProviderId, setSelectedProviderId] = useState("");
+	const [initialModelRefresh, setInitialModelRefresh] = useState(false);
 	const [selectedCustomProvider, setSelectedCustomProvider] = useState<CustomLlmProvider | null>(null);
 	const [customProviders, setCustomProviders] = useState<readonly CustomLlmProvider[] | null>(null);
 	const [customLoading, setCustomLoading] = useState(false);
@@ -137,6 +139,15 @@ export function LlmProviderSettings({
 		} finally {
 			setNavigationBusy(false);
 		}
+	};
+
+	const openModels = (providerId: string, refresh = false) => {
+		if (busy || !providers?.some((provider) => provider.id === providerId)) return;
+		clearSecret();
+		setLocalError(null);
+		setSelectedProviderId(providerId);
+		setInitialModelRefresh(refresh);
+		setView("models");
 	};
 
 	const startCredentialEdit = (provider: LlmProvider) => {
@@ -277,6 +288,8 @@ export function LlmProviderSettings({
 	}));
 	const title = view === "list"
 		? intl.formatMessage({ id: "provider.title" })
+		: view === "models"
+			? intl.formatMessage({ id: "provider.models.title" }, { name: selectedProvider?.name ?? intl.formatMessage({ id: "provider.title" }) })
 		: view === "credential-create"
 			? intl.formatMessage({ id: "provider.credential.configure" })
 			: view === "credential-edit"
@@ -288,6 +301,8 @@ export function LlmProviderSettings({
 					});
 	const description = view === "list"
 		? intl.formatMessage({ id: "provider.connections.description" })
+		: view === "models"
+			? intl.formatMessage({ id: "provider.models.description" })
 		: view === "custom-create" || view === "custom-edit"
 			? intl.formatMessage({ id: "provider.custom.form.description" })
 			: intl.formatMessage({ id: "provider.credential.description" });
@@ -311,7 +326,8 @@ export function LlmProviderSettings({
 					activeTab={listTab}
 					onTabChange={setListTab}
 					busy={busy}
-					subscription={providers?.some((provider) => provider.id === "openai-chatgpt") ? <ChatGptConnection disabled={navigationBusy} onBusyChange={setCustomBusy} /> : null}
+					subscription={providers?.some((provider) => provider.id === "openai-chatgpt") ? <ChatGptConnection disabled={navigationBusy} onBusyChange={setCustomBusy}
+						onViewModels={() => openModels("openai-chatgpt")} onRefreshModels={() => openModels("openai-chatgpt", true)} /> : null}
 					providers={providers}
 					providersError={providersError}
 					providerState={providerState}
@@ -329,7 +345,17 @@ export function LlmProviderSettings({
 					onEditCustom={(providerId) => void startCustomEdit(providerId)}
 					onCreateCredential={(providerId) => void startCredentialCreate(providerId)}
 					onEditCredential={startCredentialEdit}
+					onViewModels={(providerId) => openModels(providerId)}
+					onRefreshModels={(providerId) => openModels(providerId, true)}
 				/>
+			) : view === "models" ? (
+				selectedProvider ? <ProviderModelsPanel
+					key={selectedProvider.id}
+					provider={selectedProvider}
+					initialRefresh={initialModelRefresh}
+					onBusyChange={setCustomBusy}
+					onRefreshed={async () => { await Promise.all([refreshProviders(), refreshCustomProviders()]); }}
+				/> : <p className="text-[11px] text-[var(--text-muted)]" role="status">{intl.formatMessage({ id: "provider.models.unavailable" })}</p>
 			) : view === "custom-create" || view === "custom-edit" ? (
 				<CustomProviderEditor
 					key={`${view}:${selectedCustomProvider?.id ?? "new"}`}

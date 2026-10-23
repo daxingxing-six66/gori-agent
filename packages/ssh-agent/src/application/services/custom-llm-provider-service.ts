@@ -3,6 +3,7 @@ import { ManagementError } from "../../domain/errors.ts";
 import type { Clock } from "../../domain/ids.ts";
 import type {
 	CreateCustomLlmProviderInput,
+	CustomLlmModel,
 	CustomLlmProvider,
 	DeleteCustomLlmProviderInput,
 	UpdateCustomLlmProviderInput,
@@ -13,6 +14,10 @@ import type { LlmProviderCredentialStore } from "../repositories/llm-provider-cr
 import type { TransactionRunner } from "../transaction-runner.ts";
 import type { CustomLlmProviderRuntime } from "./custom-llm-provider-runtime.ts";
 import { createApiKeyCredential } from "./llm-provider-api-key.ts";
+import { discoverCustomLlmModels } from "./custom-llm-model-discovery.ts";
+import { modelRefreshFailed } from "./llm-model-refresh-error.ts";
+import { HttpBoundaryError } from "../failure-policy.ts";
+import { backendMessage } from "../../i18n/message.ts";
 
 export interface CustomLlmProviderService {
 	list(): Promise<readonly CustomLlmProvider[]>;
@@ -21,6 +26,7 @@ export interface CustomLlmProviderService {
 	update(input: UpdateCustomLlmProviderInput): Promise<CustomLlmProvider>;
 	delete(input: DeleteCustomLlmProviderInput): Promise<void>;
 	find(providerId: string): CustomLlmProvider | undefined;
+	refreshModels(providerId: string, signal: AbortSignal): Promise<void>;
 }
 
 export interface DefaultCustomLlmProviderServiceOptions {
@@ -31,6 +37,7 @@ export interface DefaultCustomLlmProviderServiceOptions {
 	credentials: LlmProviderCredentialStore;
 	transactions: TransactionRunner;
 	hasActiveRun(providerId: string): boolean;
+	fetch?: typeof fetch;
 }
 
 export class DefaultCustomLlmProviderService implements CustomLlmProviderService {
@@ -41,6 +48,8 @@ export class DefaultCustomLlmProviderService implements CustomLlmProviderService
 	readonly #credentials: LlmProviderCredentialStore;
 	readonly #transactions: TransactionRunner;
 	readonly #hasActiveRun: (providerId: string) => boolean;
+	readonly #fetch: typeof fetch;
+	readonly #generations = new Map<string, number>();
 
 	constructor(options: DefaultCustomLlmProviderServiceOptions) {
 		this.#repository = options.repository;
@@ -50,6 +59,7 @@ export class DefaultCustomLlmProviderService implements CustomLlmProviderService
 		this.#credentials = options.credentials;
 		this.#transactions = options.transactions;
 		this.#hasActiveRun = options.hasActiveRun;
+		this.#fetch = options.fetch ?? globalThis.fetch;
 	}
 
 	restore(): void {
@@ -93,6 +103,7 @@ export class DefaultCustomLlmProviderService implements CustomLlmProviderService
 			}
 		});
 		this.#runtime.register(provider);
+		this.bumpGeneration(provider.id);
 		return provider;
 	}
 
@@ -112,6 +123,7 @@ export class DefaultCustomLlmProviderService implements CustomLlmProviderService
 			}
 		});
 		this.#runtime.register(provider);
+		this.bumpGeneration(provider.id);
 		return provider;
 	}
 
@@ -123,10 +135,53 @@ export class DefaultCustomLlmProviderService implements CustomLlmProviderService
 			this.#credentials.removeCredential(input.providerId);
 		});
 		this.#runtime.remove(input.providerId);
+		this.bumpGeneration(input.providerId);
 	}
 
 	find(providerId: string): CustomLlmProvider | undefined {
 		return this.#repository.findById(providerId);
+	}
+
+	async refreshModels(providerId: string, signal: AbortSignal): Promise<void> {
+		const current = this.requireProvider(providerId);
+		const generation = this.#generations.get(providerId);
+		this.requireIdle(providerId);
+		const authentication = await this.#transactions.run(async () => {
+			if (this.#generations.get(providerId) !== generation || JSON.stringify(this.requireProvider(providerId)) !== JSON.stringify(current)) {
+				throw new ManagementError("revision_conflict", "Provider changed before model discovery", "expectedRevision");
+			}
+			return {
+				metadata: await this.#credentials.getMetadata(providerId),
+				credential: current.authMode === "api_key" ? await this.#credentials.read(providerId, { signal }) : undefined,
+			};
+		});
+		const apiKey = authentication.credential?.type === "api_key" ? authentication.credential.key : undefined;
+		if (current.authMode === "api_key" && !apiKey) {
+			throw new HttpBoundaryError("llm_provider_not_configured", 409, backendMessage("chat.provider_not_configured"));
+		}
+		let models: CustomLlmModel[];
+		try { models = await discoverCustomLlmModels(current, apiKey, signal, this.#fetch); }
+		catch { throw modelRefreshFailed(); }
+		const updated = buildCustomLlmProvider({ ...current, models }, current.revision + 1, current.createdAt, this.#clock.now());
+		await this.#transactions.run(async () => {
+			signal.throwIfAborted();
+			this.requireIdle(providerId);
+			if (this.#generations.get(providerId) !== generation || JSON.stringify(this.requireProvider(providerId)) !== JSON.stringify(current)) {
+				throw new ManagementError("revision_conflict", "Provider changed during model discovery", "expectedRevision");
+			}
+			const metadata = await this.#credentials.getMetadata(providerId);
+			const credential = current.authMode === "api_key" ? await this.#credentials.read(providerId, { signal }) : undefined;
+			if (JSON.stringify(metadata) !== JSON.stringify(authentication.metadata) || JSON.stringify(credential) !== JSON.stringify(authentication.credential)) {
+				throw new ManagementError("revision_conflict", "Provider authentication changed during model discovery", "expectedRevision");
+			}
+			this.#repository.update(updated, current.revision);
+		});
+		this.#runtime.register(updated);
+		this.bumpGeneration(providerId);
+	}
+
+	private bumpGeneration(providerId: string): void {
+		this.#generations.set(providerId, (this.#generations.get(providerId) ?? 0) + 1);
 	}
 
 	private requireProvider(providerId: string): CustomLlmProvider {

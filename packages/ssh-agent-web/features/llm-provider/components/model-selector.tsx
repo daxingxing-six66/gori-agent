@@ -1,7 +1,7 @@
 "use client";
 
 import { BrainCircuit, Check, ChevronDown, ImageIcon, Search, Settings2, Sparkles } from "lucide-react";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useIntl } from "react-intl";
 import { useLocalizedErrorMessage } from "@/features/i18n/components/use-localized-error-message";
@@ -14,6 +14,15 @@ function formatTokens(value: number): string {
 	if (value >= 1_000_000) return `${Math.round(value / 100_000) / 10}m`;
 	if (value >= 1_000) return `${Math.round(value / 100) / 10}k`;
 	return String(value);
+}
+
+function sameModel(left: LlmModel | null, right: LlmModel): boolean {
+	return left !== null && left.id === right.id && left.providerId === right.providerId && left.name === right.name
+		&& left.api === right.api && left.reasoning === right.reasoning && left.contextWindow === right.contextWindow
+		&& left.maxTokens === right.maxTokens && left.input.length === right.input.length
+		&& left.input.every((value, index) => value === right.input[index])
+		&& left.supportedThinkingLevels.length === right.supportedThinkingLevels.length
+		&& left.supportedThinkingLevels.every((value, index) => value === right.supportedThinkingLevels[index]);
 }
 
 export function ModelSelector({ selectedModel, onSelect, disabled = false, modelLabel, attention = false, appearance = "default", showChevron = true, noneOptionLabel, selectedNone = selectedModel === null, popoverLayer = "anchor" }: {
@@ -41,6 +50,7 @@ export function ModelSelector({ selectedModel, onSelect, disabled = false, model
 	const [modelsByProvider, setModelsByProvider] = useState<Record<string, readonly LlmModel[]>>({});
 	const [loadingProviderIds, setLoadingProviderIds] = useState<string[]>([]);
 	const [modelErrors, setModelErrors] = useState<Record<string, unknown>>({});
+	const modelRequests = useRef(new Map<string, AbortController>());
 	const [dialogPopoverPosition, setDialogPopoverPosition] = useState<{ top: number; left: number; width: number; height: number } | null>(null);
 	const modelProviders = deriveLlmProviderState(providers ?? []).modelProviders;
 	const filteredModels = useMemo(() => {
@@ -99,24 +109,48 @@ export function ModelSelector({ selectedModel, onSelect, disabled = false, model
 		if (!providers.some((provider) => provider.id === selectedModel.providerId && provider.configured)) onSelect(null);
 	}, [onSelect, providers, selectedModel]);
 
-	const loadModels = async (providerId: string, force = false) => {
-		if (!force && modelsByProvider[providerId]) return;
-		if (loadingProviderIds.includes(providerId)) return;
+	useEffect(() => {
+		if (!selectedModel) return;
+		const catalog = modelsByProvider[selectedModel.providerId];
+		if (!catalog) return;
+		const current = catalog.find((model) => model.id === selectedModel.id) ?? null;
+		if (!sameModel(current, selectedModel)) onSelect(current);
+	}, [modelsByProvider, onSelect, selectedModel]);
+
+	const loadModels = useCallback(async (providerId: string) => {
+		modelRequests.current.get(providerId)?.abort();
+		const controller = new AbortController();
+		modelRequests.current.set(providerId, controller);
 		setLoadingProviderIds((current) => [...current, providerId]);
+		setModelsByProvider((current) => {
+			const next = { ...current };
+			delete next[providerId];
+			return next;
+		});
 		setModelErrors((current) => {
 			const next = { ...current };
 			delete next[providerId];
 			return next;
 		});
 		try {
-			const response = await llmProviderApi.listModels(providerId);
-			setModelsByProvider((current) => ({ ...current, [providerId]: response.models }));
+			const response = await llmProviderApi.listModels(providerId, controller.signal);
+			if (!controller.signal.aborted) setModelsByProvider((current) => ({ ...current, [providerId]: response.models }));
 		} catch (requestError) {
-			setModelErrors((current) => ({ ...current, [providerId]: requestError }));
+			if (!controller.signal.aborted) setModelErrors((current) => ({ ...current, [providerId]: requestError }));
 		} finally {
-			setLoadingProviderIds((current) => current.filter((id) => id !== providerId));
+			if (modelRequests.current.get(providerId) === controller) {
+				modelRequests.current.delete(providerId);
+				if (!controller.signal.aborted) setLoadingProviderIds((current) => current.filter((id) => id !== providerId));
+			}
 		}
-	};
+	}, []);
+
+	useEffect(() => {
+		if (!open || !activeProviderId || !providers?.some((provider) => provider.id === activeProviderId && provider.configured)) return;
+		void loadModels(activeProviderId);
+		const requests = modelRequests.current;
+		return () => { requests.get(activeProviderId)?.abort(); };
+	}, [activeProviderId, loadModels, open, providers]);
 
 	const openSelector = async () => {
 		setOpen(true);
@@ -134,7 +168,6 @@ export function ModelSelector({ selectedModel, onSelect, disabled = false, model
 			? preferredProviderId
 			: availableModelProviders[0]?.id ?? "";
 		setActiveProviderId(nextProviderId);
-		if (nextProviderId) void loadModels(nextProviderId);
 	};
 	const popoverTarget = rootRef.current === null
 		? null
@@ -172,7 +205,7 @@ export function ModelSelector({ selectedModel, onSelect, disabled = false, model
 									type="button"
 									key={provider.id}
 									className={`mb-1 flex h-9 w-full items-center gap-2 rounded-lg px-2.5 text-left transition ${activeProviderId === provider.id ? "bg-white text-[#326e52] shadow-[0_1px_2px_rgb(24_24_27/5%)]" : "text-zinc-500 hover:bg-white/60 hover:text-zinc-800"}`}
-									onClick={() => { setActiveProviderId(provider.id); setQuery(""); void loadModels(provider.id); }}
+									onClick={() => { setActiveProviderId(provider.id); setQuery(""); }}
 								>
 									<span className={`h-1.5 w-1.5 shrink-0 rounded-full ${provider.configured ? "bg-[var(--accent)]" : "bg-zinc-300"}`} />
 									<span className="min-w-0 truncate text-[9px] font-semibold">{provider.name}</span>
@@ -191,7 +224,7 @@ export function ModelSelector({ selectedModel, onSelect, disabled = false, model
 							<div className="app-scrollbar min-h-0 flex-1 overflow-y-auto p-2.5">
 								{noneOptionLabel ? <NoneModelOption label={noneOptionLabel} selected={selectedNone} onSelect={() => { onSelect(null); setOpen(false); }} /> : null}
 								{loadingProviderIds.includes(activeProviderId) ? <p className="py-10 text-center text-[9px] text-zinc-400">{intl.formatMessage({ id: "provider.selector.catalogLoading" })}</p> : null}
-								{modelErrors[activeProviderId] ? <div className="py-8 text-center"><p className="text-[9px] text-rose-600">{localizedErrorMessage(modelErrors[activeProviderId])}</p><button type="button" className="mt-2 text-[9px] font-semibold text-[#397b5c]" onClick={() => void loadModels(activeProviderId, true)}>{intl.formatMessage({ id: "provider.selector.retry" })}</button></div> : null}
+								{modelErrors[activeProviderId] ? <div className="py-8 text-center"><p className="text-[9px] text-rose-600">{localizedErrorMessage(modelErrors[activeProviderId])}</p><button type="button" className="mt-2 text-[9px] font-semibold text-[#397b5c]" onClick={() => void loadModels(activeProviderId)}>{intl.formatMessage({ id: "provider.selector.retry" })}</button></div> : null}
 								{modelProviders.length > 0 && !loadingProviderIds.includes(activeProviderId) && !modelErrors[activeProviderId] && filteredModels.length === 0 ? <p className="py-10 text-center text-[9px] text-zinc-400">{intl.formatMessage({ id: "provider.selector.noMatch" })}</p> : null}
 								{filteredModels.map((model) => <button type="button" key={model.id} className={`mb-1 flex w-full items-start gap-2.5 rounded-xl px-3 py-2.5 text-left transition hover:bg-[#f4f7f5] ${selectedModel?.id === model.id && selectedModel.providerId === model.providerId ? "bg-[#edf4f0]" : ""}`} onClick={() => { onSelect(model); setOpen(false); }}><span className="mt-0.5 grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-zinc-100 text-zinc-500"><BrainCircuit size={13} /></span><span className="min-w-0 flex-1"><span className="flex items-center gap-1.5"><strong className="truncate text-[9px] font-semibold text-zinc-700">{model.name}</strong>{model.reasoning ? <Sparkles size={10} className="shrink-0 text-[#397b5c]" /> : null}</span><span className="mt-1 flex flex-wrap items-center gap-2 font-mono text-[8px] text-zinc-400"><span>{model.id}</span><span>{intl.formatMessage({ id: "provider.selector.context" }, { value: formatTokens(model.contextWindow) })}</span>{model.input.includes("image") ? <span className="inline-flex items-center gap-1"><ImageIcon size={9} /> {intl.formatMessage({ id: "provider.selector.image" })}</span> : null}</span></span><Check size={13} className={`mt-1 shrink-0 text-[#397b5c] ${selectedModel?.id === model.id && selectedModel.providerId === model.providerId ? "opacity-100" : "opacity-0"}`} /></button>)}
 							</div>

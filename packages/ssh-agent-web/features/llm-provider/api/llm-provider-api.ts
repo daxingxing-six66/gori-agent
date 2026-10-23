@@ -15,6 +15,8 @@ export const llmProviderApi = {
 	listProviders: (signal?: AbortSignal) => apiRequest<LlmProviderList>("/api/llm/providers", { signal }),
 	listModels: (providerId: string, signal?: AbortSignal) =>
 		apiRequest<LlmProviderModels>(`/api/llm/providers/${encodeURIComponent(providerId)}/models`, { signal }),
+	refreshModels: (providerId: string, signal?: AbortSignal) =>
+		apiRequest<LlmProviderModels>(`/api/llm/providers/${encodeURIComponent(providerId)}/models`, { method: "POST", signal }),
 	listCredentials: () => apiRequest<LlmProviderCredentialList>("/api/llm/provider-credentials"),
 	getCredential: (providerId: string) =>
 		apiRequest<LlmProviderCredential>(`/api/llm/providers/${encodeURIComponent(providerId)}/credential`),

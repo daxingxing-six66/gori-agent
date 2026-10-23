@@ -50,6 +50,7 @@ export const enUSMessages = {
 	"common.revision_conflict": "The resource was modified by another request",
 	"management.llm_provider_conflict": "The LLM Provider already exists",
 	"management.llm_provider_in_use": "The LLM Provider has an active Chat Run",
+	"management.llm_model_refresh_failed": "Could not refresh this provider's models. The previous catalog was kept.",
 	"management.active_credential_in_use": "The active Credential cannot be deleted",
 	"management.workspace_has_sessions": "The Workspace still contains Sessions",
 	"management.session_has_active_operations": "The Session has active operations",

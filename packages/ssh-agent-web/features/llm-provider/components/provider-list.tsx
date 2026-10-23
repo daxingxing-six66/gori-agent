@@ -1,6 +1,6 @@
 "use client";
 
-import { Bot, Check, ChevronRight, KeyRound, LockKeyhole, Plus, RotateCw } from "lucide-react";
+import { Bot, Check, ChevronRight, KeyRound, List, LockKeyhole, Plus, RotateCw } from "lucide-react";
 import { useId, type ReactNode } from "react";
 import { useIntl } from "react-intl";
 import { useLocalizedErrorMessage } from "@/features/i18n/components/use-localized-error-message";
@@ -10,7 +10,7 @@ export type ProviderListTab = "connections" | "custom";
 
 export function ProviderList({ activeTab, onTabChange, busy, subscription, providers, providersError, providerState,
 	loading, customProviders, customError, customLoading, onReloadProviders, onReloadCustomProviders,
-	onCreateCustom, onEditCustom, onCreateCredential, onEditCredential,
+	onCreateCustom, onEditCustom, onCreateCredential, onEditCredential, onViewModels, onRefreshModels,
 }: {
 	activeTab: ProviderListTab;
 	onTabChange(tab: ProviderListTab): void;
@@ -29,6 +29,8 @@ export function ProviderList({ activeTab, onTabChange, busy, subscription, provi
 	onEditCustom(providerId: string): void;
 	onCreateCredential(providerId?: string): void;
 	onEditCredential(provider: LlmProvider): void;
+	onViewModels(providerId: string): void;
+	onRefreshModels(providerId: string): void;
 }) {
 	const intl = useIntl();
 	const localizeError = useLocalizedErrorMessage();
@@ -67,10 +69,16 @@ export function ProviderList({ activeTab, onTabChange, busy, subscription, provi
 					{loading && providers === null ? <p className="provider-list-loading" role="status">{intl.formatMessage({ id: "provider.credential.loading" })}</p> : null}
 					{providers !== null && credentials.length === 0 ? <EmptyState kind="credential" /> : null}
 					<div className="provider-rows">
-						{credentials.map((provider) => <button key={provider.id} type="button" className="provider-row provider-row-link" disabled={busy} onClick={() => onEditCredential(provider)}>
-							<ProviderIdentity name={provider.name} description={provider.baseUrl ?? "API Key"} />
-							<ProviderStatus configured={provider.configured} /><ChevronRight size={14} className="provider-row-chevron" aria-hidden="true" />
-						</button>)}
+						{credentials.map((provider) => <div key={provider.id} className="provider-row provider-custom-row">
+							<button type="button" className="provider-custom-identity" disabled={busy} onClick={() => onEditCredential(provider)}>
+								<ProviderIdentity name={provider.name} description={provider.baseUrl ?? "API Key"} />
+								<ChevronRight size={14} className="provider-row-chevron" aria-hidden="true" />
+							</button>
+							<div className="provider-custom-actions">
+								<ProviderStatus configured={provider.configured} />
+								<ModelActions disabled={busy} refreshDisabled={!provider.configured} onView={() => onViewModels(provider.id)} onRefresh={() => onRefreshModels(provider.id)} />
+							</div>
+						</div>)}
 					</div>
 				</section>
 				<p className="provider-security-note"><LockKeyhole size={13} aria-hidden="true" />{intl.formatMessage({ id: "provider.connection.security" })}</p>
@@ -94,6 +102,7 @@ export function ProviderList({ activeTab, onTabChange, busy, subscription, provi
 							</button>
 							<div className="provider-custom-actions">
 								<ProviderStatus configured={catalog?.configured ?? false} />
+								<ModelActions disabled={busy || customLoading || !catalog} refreshDisabled={!catalog?.configured} onView={() => onViewModels(provider.id)} onRefresh={() => onRefreshModels(provider.id)} />
 								{provider.authMode === "api_key" ? <button type="button" className="provider-action" disabled={busy || !catalog}
 									onClick={() => catalog?.credential ? onEditCredential(catalog) : onCreateCredential(provider.id)}>
 									<KeyRound size={13} aria-hidden="true" />{intl.formatMessage({ id: catalog?.credential ? "provider.credential.manage" : "provider.credential.configure" })}
@@ -105,6 +114,14 @@ export function ProviderList({ activeTab, onTabChange, busy, subscription, provi
 			</section>}
 		</div>
 	</div>;
+}
+
+function ModelActions({ disabled, refreshDisabled, onView, onRefresh }: { disabled: boolean; refreshDisabled: boolean; onView(): void; onRefresh(): void }) {
+	const intl = useIntl();
+	return <>
+		<button type="button" className="provider-action" disabled={disabled} onClick={onView}><List size={13} aria-hidden="true" />{intl.formatMessage({ id: "provider.models.view" })}</button>
+		<button type="button" className="provider-action" disabled={disabled || refreshDisabled} onClick={onRefresh}><RotateCw size={13} aria-hidden="true" />{intl.formatMessage({ id: "provider.models.refresh" })}</button>
+	</>;
 }
 
 function ProviderIdentity({ name, description }: { name: string; description: string }) {

@@ -52,6 +52,7 @@ export const zhCNMessages = {
 	"common.revision_conflict": "资源已被其他请求修改",
 	"management.llm_provider_conflict": "LLM Provider 已存在",
 	"management.llm_provider_in_use": "LLM Provider 存在活动的 Chat Run",
+	"management.llm_model_refresh_failed": "无法刷新此提供商的模型，已保留原模型目录。",
 	"management.active_credential_in_use": "不能删除正在使用的 Credential",
 	"management.workspace_has_sessions": "Workspace 中仍然存在 Session",
 	"management.session_has_active_operations": "Session 中存在活动操作",

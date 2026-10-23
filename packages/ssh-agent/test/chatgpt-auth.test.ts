@@ -11,11 +11,11 @@ import { createTestLlmModels } from "./test-llm-models.ts";
 const backends: SqliteManagementBackend[] = [];
 afterEach(async () => { vi.restoreAllMocks(); await Promise.all(backends.splice(0).map((backend) => backend.close())); });
 
-function setup(extra: { databasePath?: string; loginTimeoutMs?: number } = {}) {
+function setup(extra: { databasePath?: string; loginTimeoutMs?: number; wrapFetch?: (fallback: typeof fetch) => typeof fetch } = {}) {
 	const fixture = createChatGptFixture();
 	const backend = createSqliteManagementBackend({ databasePath: extra.databasePath ?? ":memory:",
 		credentialEncryptionKey: new Uint8Array(32).fill(7), llmModelsFactory: createTestLlmModels,
-		chatgpt: { fetch: fixture.fetch, loginTimeoutMs: extra.loginTimeoutMs } });
+		chatgpt: { fetch: extra.wrapFetch?.(fixture.fetch) ?? fixture.fetch, loginTimeoutMs: extra.loginTimeoutMs } });
 	backends.push(backend);
 	return { backend, fixture };
 }
@@ -97,6 +97,39 @@ describe("ChatGPT subscription authorization", () => {
 		expect(await waitFor(backend, attempt.id, "failed")).toMatchObject({ errorCode: "chatgpt_sign_in_failed" });
 		expect(fixture.calls).toHaveLength(0);
 		expect((await (await request(backend, "")).json()).connected).toBe(false);
+	});
+
+	it("refreshes account models through the unified provider endpoint without using the public catalog", async () => {
+		const { backend, fixture } = setup();
+		const attempt = await begin(backend, fixture); await callback(attempt.authorizationUrl); await waitFor(backend, attempt.id);
+		fixture.setModels({ models: [{ slug: "new-account-model", display_name: "New account model", visibility: "list" }] });
+		const response = await backend.handleRequest(new Request(`http://localhost/api/llm/providers/${CHATGPT_PROVIDER_ID}/models`, { method: "POST" }));
+		expect(response.status).toBe(200); expect(await response.json()).toMatchObject({ providerId: CHATGPT_PROVIDER_ID, models: [{ id: "new-account-model" }] });
+		expect(fixture.calls.some((call) => call.url.includes("pi.dev"))).toBe(false);
+		expect(backend.database.prepare("SELECT 1 FROM llm_provider_model_catalogs WHERE provider_id = ?").get(CHATGPT_PROVIDER_ID)).toBeUndefined();
+		fixture.setModelsFail(true);
+		const failed = await backend.handleRequest(new Request(`http://localhost/api/llm/providers/${CHATGPT_PROVIDER_ID}/models`, { method: "POST" }));
+		expect(failed.status).toBe(502); expect(backend.llmModelCatalog.getModels(CHATGPT_PROVIDER_ID).map((model) => model.id)).toEqual(["new-account-model"]);
+	});
+
+	it("rejects an account refresh superseded by sign-in and ignores its old account's late model response", async () => {
+		let block = false; let requested = false; let finish: (response: Response) => void = () => undefined;
+		const pending = new Promise<Response>((resolve) => { finish = resolve; });
+		const { backend, fixture } = setup({ wrapFetch: (fallback) => async (input, init) => {
+			if (block && String(input).endsWith("/v1/models")) { block = false; requested = true; return pending; }
+			return fallback(input, init);
+		} });
+		const first = await begin(backend, fixture); await callback(first.authorizationUrl); await waitFor(backend, first.id);
+		block = true;
+		const refresh = backend.handleRequest(new Request(`http://localhost/api/llm/providers/${CHATGPT_PROVIDER_ID}/models`, { method: "POST" }));
+		await expect.poll(() => requested).toBe(true);
+		fixture.setClaims({ sub: "another-account" });
+		fixture.setModels({ models: [{ slug: "new-account-model", display_name: "New account model", visibility: "list" }] });
+		const second = await begin(backend, fixture, true); await callback(second.authorizationUrl); await waitFor(backend, second.id);
+		expect((await refresh).status).toBe(502);
+		finish(Response.json({ models: [{ slug: "old-account-late", display_name: "Old account", visibility: "list" }] }));
+		await Promise.resolve(); await Promise.resolve();
+		expect(backend.llmModelCatalog.getModels(CHATGPT_PROVIDER_ID).map((model) => model.id)).toEqual(["new-account-model"]);
 	});
 
 	it.each([

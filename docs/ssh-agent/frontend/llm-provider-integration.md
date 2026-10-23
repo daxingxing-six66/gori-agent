@@ -8,7 +8,7 @@
 
 ## 1. 业务背景与前端流程
 
-SSH Agent 直接使用 `pi-ai` 提供的内置 Provider 和 Model 目录，不把这些只读数据复制到 SQLite。目录会随着 `pi-ai` 升级变化，前端不能硬编码 Provider ID、Model ID、名称或数量。
+SSH Agent 使用 `pi-ai` 提供的内置 Provider 和首次 Model 基线，内置 Provider 的有效目录优先采用后端保存的 `pi.dev` 快照；订阅账号和自定义服务分别按账号发现与用户配置提供目录。前端不能硬编码 Provider ID、Model ID、名称或数量。
 
 `LlmProviderCredential` 是应用级资源，不属于 Workspace。每个 `providerId` 最多保存一个 Credential，所有 Workspace 和聊天会话共享这份 Provider 认证配置。模型由用户在聊天输入框右下角选择，本批次不保存默认模型，也不提供模型选择写接口。
 
@@ -35,6 +35,8 @@ SSH Agent 直接使用 `pi-ai` 提供的内置 Provider 和 Model 目录，不�
 - Provider 的 `configured` 也可能来自后端进程环境或云平台 ambient credentials；此时 `credential` 可以为 `null`。
 
 设置页使用“账号与密钥”和“自定义服务”两个页签，表单保存或返回后保留来源页签。“账号与密钥”集中显示订阅账号与内置服务 API Key，其添加选择器只列内置服务；自定义服务的密钥创建、更新和删除入口直接位于对应服务行，不在两个列表中重复显示。无认证服务不显示密钥入口。列表用名称、端点和可用状态呈现，revision 继续用于表单并发控制。授权、写入或等待异步表单导航期间禁止切页签与关闭设置；页签支持方向键与 Home/End。
+
+订阅、API Key、自定义服务均常显“查看模型”和“刷新模型”。查看打开独立详情页，展示提供商 ID、默认端点、认证方式、模型数量及可搜索的模型能力列表，GET 不触发远端刷新。刷新打开同一详情页并显式 POST；先读旧目录，刷新失败仍可查看，成功后补读提供商与自定义配置以同步数量/revision。刷新期间禁止重复确认与离开设置；未配置认证的服务可查看目录但禁止刷新。模型选择器每次打开、切换提供商及共享提供商状态更新时重新 GET，取消旧请求，防止显示刷新前的缓存；成功补读后清除已移除的当前选择，仍存在的同 ID 模型同步最新能力并沿用思考档位回退。
 
 ## 2. 接口定义、请求体与响应体
 
@@ -236,6 +238,20 @@ GET /api/llm/providers/:providerId/models
 
 静态 Provider 的 Model 按 `name, id` 排序，动态 Provider 保留发现顺序。`supportedThinkingLevels` 由 `pi-ai` 的 `getSupportedThinkingLevels(model)` 生成，是 Chat Run 可提交强度的唯一事实来源；非推理模型只返回 `["off"]`，`xhigh` 和 `max` 只有模型显式支持时才会出现。前端不能只根据 `reasoning` 推断可选强度。未知 Provider 返回 `404 not_found`。模型目录为空是合法状态，动态 Provider 可能尚未刷新目录。
 
+### 2.5.1 手动刷新模型
+
+```http
+POST /api/llm/providers/:providerId/models
+```
+
+无请求体，成功 `200` 返回与 GET 相同的 `{ providerId, models }`。单次预算 20 秒，支持取消，不调用推理模型：
+
+- 内置 API Key Provider 从维护的 `pi.dev` 目录更新，不代表 API Key 的实际账号授权。
+- `openai-chatgpt` 从当前订阅账号发现，继续隔离不同账号的目录；原 `POST /api/llm/chatgpt/models` 保留兼容。
+- 自定义服务由后端使用已保存认证访问配置 `baseUrl` 路径下的 `/models`，无认证服务不发送密钥；与未保存编辑表单的浏览器直接发现相互独立。支持分页，拒绝跨地址重定向，响应超限或不完整时不部分提交。成功精确替换目录并递增 revision，同 ID 保留既有能力和成本，新 ID 使用保守默认配置，可在服务编辑器调整。
+
+失败保留旧目录，返回 `llm_model_refresh_failed`（502）的安全本地化消息；认证缺失为 `llm_provider_not_configured`（409），活动自定义服务为 `llm_provider_in_use`（409），发现期间配置/凭据变更为 `revision_conflict`（409）。不返回或重新输入已保存 API Key，不自动重试刷新。
+
 ### 2.6 获取所有已保存 Credential
 
 ```http
@@ -339,7 +355,7 @@ DELETE /api/llm/providers/:providerId/credential?expectedRevision=2
 
 ## 3. ChatGPT 订阅连接
 
-`openai-chatgpt` 在“账号与密钥”页签使用独立紧凑卡片，保留一个当前账号；所有 Workspace 共用，切换账号会替换当前凭据。已连接时显示账号与套餐状态，常显“管理用量”；重新登录、刷新模型、切换账号和断开收进“更多操作”，断开仍需确认。菜单支持 Escape、外部点击和焦点离开关闭；未登录时显示套餐/本机授权说明及登录入口，等待时保留手动打开浏览器和取消。后端不返回 access/refresh/id token，前端不提交这些值。浏览器需与 Gori 后端在同一电脑，授权回调使用独立临时 loopback 端口。
+`openai-chatgpt` 在“账号与密钥”页签使用独立紧凑卡片，保留一个当前账号；所有 Workspace 共用，切换账号会替换当前凭据。已连接时显示账号与套餐状态，常显“查看模型”“刷新模型”和“管理用量”；重新登录、切换账号和断开收进“更多操作”，断开仍需确认。菜单支持 Escape、外部点击和焦点离开关闭；未登录时显示套餐/本机授权说明及登录入口，等待时保留手动打开浏览器和取消。后端不返回 access/refresh/id token，前端不提交这些值。浏览器需与 Gori 后端在同一电脑，授权回调使用独立临时 loopback 端口。
 
 - `GET /api/llm/chatgpt` 返回 `{ connected, email, sharing, manageUsageUrl }`。
 - `POST /api/llm/chatgpt/sign-in` 接收 JSON `{ newAccount?: boolean }`，返回 `{ id, status, authorizationUrl }`；新账号显式使用 newAccount=true。

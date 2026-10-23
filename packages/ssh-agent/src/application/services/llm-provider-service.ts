@@ -15,10 +15,14 @@ import type { TransactionRunner } from "../transaction-runner.ts";
 import type { CustomLlmProviderService } from "./custom-llm-provider-service.ts";
 import type { LlmModelCatalog } from "./llm-model-catalog.ts";
 import { createApiKeyCredential } from "./llm-provider-api-key.ts";
+import { HttpBoundaryError } from "../failure-policy.ts";
+import { modelRefreshFailed } from "./llm-model-refresh-error.ts";
+import { backendMessage } from "../../i18n/message.ts";
 
 export interface LlmProviderService {
 	listProviders(): Promise<readonly LlmProviderDefinition[]>;
 	listModels(providerId: string): Promise<LlmProviderModels>;
+	refreshModels(providerId: string, signal?: AbortSignal): Promise<LlmProviderModels>;
 	listCredentials(): Promise<readonly LlmProviderCredential[]>;
 	getCredential(providerId: string): Promise<LlmProviderCredential>;
 	configureApiKey(input: ConfigureLlmProviderApiKeyInput): Promise<LlmProviderCredential>;
@@ -31,7 +35,7 @@ export interface DefaultLlmProviderServiceOptions {
 	credentials: LlmProviderCredentialStore;
 	clock: Clock;
 	transactions: TransactionRunner;
-	customProviders: Pick<CustomLlmProviderService, "find">;
+	customProviders: Pick<CustomLlmProviderService, "find" | "refreshModels">;
 }
 
 export class DefaultLlmProviderService implements LlmProviderService {
@@ -40,7 +44,7 @@ export class DefaultLlmProviderService implements LlmProviderService {
 	private readonly credentials: LlmProviderCredentialStore;
 	private readonly clock: Clock;
 	private readonly transactions: TransactionRunner;
-	private readonly customProviders: Pick<CustomLlmProviderService, "find">;
+	private readonly customProviders: Pick<CustomLlmProviderService, "find" | "refreshModels">;
 
 	constructor(options: DefaultLlmProviderServiceOptions) {
 		this.models = options.models;
@@ -94,6 +98,26 @@ export class DefaultLlmProviderService implements LlmProviderService {
 				}),
 			);
 		return { providerId, models: this.models.getProvider(providerId)?.refreshModels ? models : models.sort(compareByNameAndId) };
+	}
+
+	async refreshModels(providerId: string, signal?: AbortSignal): Promise<LlmProviderModels> {
+		this.requireProvider(providerId);
+		const refreshSignal = AbortSignal.any([AbortSignal.timeout(20_000), ...(signal ? [signal] : [])]);
+		try {
+			if (providerId === CHATGPT_PROVIDER_ID && !await this.models.checkAuth(providerId, { signal: refreshSignal })) {
+				throw new HttpBoundaryError("llm_provider_not_configured", 409, backendMessage("chat.provider_not_configured"));
+			}
+			if (this.customProviders.find(providerId)) {
+				await this.customProviders.refreshModels(providerId, refreshSignal);
+				this.catalog.invalidateSnapshot(providerId);
+			} else {
+				await this.catalog.refresh(providerId, refreshSignal);
+			}
+		} catch (error) {
+			if (error instanceof ManagementError || error instanceof HttpBoundaryError) throw error;
+			throw modelRefreshFailed();
+		}
+		return this.listModels(providerId);
 	}
 
 	listCredentials(): Promise<readonly LlmProviderCredential[]> {

@@ -1,6 +1,6 @@
 "use client";
 
-import { ExternalLink, LoaderCircle, LogIn, MoreHorizontal, RefreshCw, Sparkles, Unplug, Users } from "lucide-react";
+import { ExternalLink, List, LoaderCircle, LogIn, MoreHorizontal, RefreshCw, Sparkles, Unplug, Users } from "lucide-react";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { useIntl } from "react-intl";
 import { useLocalizedErrorMessage } from "@/features/i18n/components/use-localized-error-message";
@@ -8,7 +8,12 @@ import { chatGptApi, type ChatGptConnection as Connection, type ChatGptSignIn } 
 import { useLlmProviders } from "@/features/llm-provider/components/llm-provider-context";
 import { ApiError } from "@/shared/errors/api-error";
 
-export function ChatGptConnection({ onBusyChange, disabled = false }: { onBusyChange(busy: boolean): void; disabled?: boolean }) {
+export function ChatGptConnection({ onBusyChange, disabled = false, onViewModels, onRefreshModels }: {
+	onBusyChange(busy: boolean): void;
+	disabled?: boolean;
+	onViewModels(): void;
+	onRefreshModels(): void;
+}) {
 	const intl = useIntl();
 	const localizeError = useLocalizedErrorMessage();
 	const { refreshProviders } = useLlmProviders();
@@ -150,7 +155,9 @@ export function ChatGptConnection({ onBusyChange, disabled = false }: { onBusyCh
 					{connection?.connected && connection.email ? <p className="mt-1 truncate text-[11px] text-[var(--text-muted)]" title={connection.email}>{connection.email}</p> : null}
 				</div>
 			</div>
-			{connection?.connected && !attempt ? <div className="flex shrink-0 items-center gap-2">
+			{connection?.connected && !attempt ? <div className="flex max-w-full shrink-0 flex-wrap items-center gap-2">
+				<button type="button" className="provider-action" disabled={unavailable} onClick={onViewModels}><List size={13} aria-hidden="true" />{message("provider.models.view")}</button>
+				<button type="button" className="provider-action" disabled={unavailable || !connection.sharing} onClick={onRefreshModels}><RefreshCw size={13} aria-hidden="true" />{message("provider.models.refresh")}</button>
 				<a href={connection.manageUsageUrl} target="_blank" rel="noreferrer noopener" className="provider-action">
 					{message("provider.chatgpt.manageUsage")} <ExternalLink size={12} aria-hidden="true" />
 				</a>
@@ -162,7 +169,6 @@ export function ChatGptConnection({ onBusyChange, disabled = false }: { onBusyCh
 					</button>
 					{actionsOpen ? <div id={actionsId} className="provider-connection-actions absolute right-0 top-full z-20 mt-1.5 w-44 rounded-lg border border-[var(--line)] bg-[var(--surface-raised)] p-1 shadow-lg" role="group" aria-label={message("provider.chatgpt.moreActions")}>
 						<button ref={firstActionRef} type="button" disabled={unavailable} className="flex w-full items-center gap-2 rounded-md px-3 py-2.5 text-left text-[11px] text-[var(--text-secondary)] hover:bg-[var(--surface-hover)] focus-visible:bg-[var(--surface-hover)]" onClick={() => void begin(false)}><LogIn size={13} aria-hidden="true" />{message("provider.chatgpt.reconnect")}</button>
-						<button type="button" disabled={unavailable} className="flex w-full items-center gap-2 rounded-md px-3 py-2.5 text-left text-[11px] text-[var(--text-secondary)] hover:bg-[var(--surface-hover)] focus-visible:bg-[var(--surface-hover)]" onClick={() => void perform(chatGptApi.refreshModels)}><RefreshCw size={13} aria-hidden="true" />{message("provider.chatgpt.refreshModels")}</button>
 						<button type="button" disabled={unavailable} className="flex w-full items-center gap-2 rounded-md px-3 py-2.5 text-left text-[11px] text-[var(--text-secondary)] hover:bg-[var(--surface-hover)] focus-visible:bg-[var(--surface-hover)]" onClick={() => void begin(true)}><Users size={13} aria-hidden="true" />{message("provider.chatgpt.changeAccount")}</button>
 						<div className="my-1 border-t border-[var(--line-soft)]" />
 						<button type="button" disabled={unavailable} className="flex w-full items-center gap-2 rounded-md px-3 py-2.5 text-left text-[11px] text-[var(--danger)] hover:bg-[var(--danger-soft)] focus-visible:bg-[var(--danger-soft)]" onClick={() => { setActionsOpen(false); setConfirmDisconnect(true); }}><Unplug size={13} aria-hidden="true" />{message("provider.chatgpt.disconnect")}</button>

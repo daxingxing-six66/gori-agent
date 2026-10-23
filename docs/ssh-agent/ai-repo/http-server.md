@@ -36,6 +36,7 @@ Workspace POST/PATCH 通过 `sandboxWritableRoots` 设置独立可写目录默�
 - 支持 Workspace + Session tree、Workspace 范围 Credential、活动 Credential 切换、Workspace、Session 和 Guard 管理路由；Guard 还提供后端预设规则包目录查询和原子导入接口；全局 Credential 路由已经移除。
 - Workspace 创建请求只接收 hostname/port，不接收前端提供的 Host Key；创建响应和首次 Tool 调用前的 Tree 返回 `hostKey: null`，自动 TOFU 后 Tree 返回后端持久化的信任记录。
 - `/api/llm/providers` 和 Provider 模型路由读取 `pi-ai` 运行时目录；LLM Provider Credential 路由只返回元数据，API Key 和环境认证值只写。
+- `POST /api/llm/providers/:providerId/models` 委托手动刷新并返回 `{ providerId, models }`，读取接口仍为 GET；Request 取消信号进入有界发现，内置目录、订阅账号与自定义服务按各自来源更新，失败不发布部分目录。详见 [llm-provider.md](./llm-provider.md)。
 - Node 层负责 CORS、普通 JSON 请求体上限和流式响应；SFTP content 上传和 Session Attachment 原始字节上传绕过整体缓冲。Attachment 独立执行 20 MiB 上限和 Content-Length 一致性校验。API handler 负责路由、校验及错误映射。
 - REST 与 SSE 在出口协商 `zh-CN`/`en-US`：REST 使用 `Accept-Language`，SSE 的 `locale` 查询参数优先于该 Header，缺省为 `zh-CN`。响应保持原 JSON/SSE 结构，只替换后端静态字符串，并携带 `Content-Language`；使用 Header 协商时同时携带 `Vary: Accept-Language`。
 - 包内公开异常统一经过 `application/failure-policy.ts` 的 `normalizePublicError()`，HTTP owner 通过共用 reporter 记录诊断；已知和未知错误都携带 errorId。已知领域异常保留稳定 code、status、field、retryable 和安全 details；未知异常只返回 `internal_error` 与可查日志的 `errorId`，底层 message、cause 和 stack 不发送到浏览器。详细边界见 [backend-i18n.md](./backend-i18n.md)。

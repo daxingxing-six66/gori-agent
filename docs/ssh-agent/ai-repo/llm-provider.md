@@ -6,6 +6,7 @@
 
 - Provider 定义和首次启动的 Model 基线来自 `@earendil-works/pi-ai`。SSH Agent 启动时及之后每两小时只枚举 `llm_provider_credentials`，从 `pi.dev/api/models/providers/:providerId` 拉取这些厂商的已校验目录。
 - 一次成功响应会精确替换该 Provider 的 SQLite 快照：同 ID 覆盖、新 ID 新增、远端缺失 ID 删除。成功空数组会清空目录；网络、HTTP、解析或校验失败保留最后一次成功快照。
+- `POST /api/llm/providers/:providerId/models` 手动刷新并返回与 GET 相同的有效模型目录。内置 Provider 仍从 `pi.dev` 取维护目录，不推断当前 API Key 的账号权限；`openai-chatgpt` 使用当前订阅账号发现。请求支持取消，单次刷新预算为 20 秒；同一 Provider 的目录刷新串行，避免定时与手动响应乱序覆盖。未知 Provider 返回 404，发现失败返回安全本地化的 `llm_model_refresh_failed`（502），保留原目录。
 - 读取模型时优先使用 SQLite 快照；没有快照时使用 `pi-ai` 基线。模型列表与 Chat Run 使用同一个有效目录，避免列表可见但运行选择来源不同。
 - 上游明确返回当前所选模型的 `ModelError` 且消息为 `Model <id> is not supported` 时，Chat Runtime 不再次拉取，而是从有效目录和 SQLite 快照中直接删除该模型，并返回稳定错误 `chat_model_not_supported`。删除会保留目录 ETag，远端目录未变化时的 `304` 不会重新加入该模型；远端目录版本变化后才重新精确替换。不维护 unavailable/deprecated 等中间状态。
 - Provider 目录返回 `pi-ai` 声明的厂商名称和默认 `baseUrl`；没有固定地址时 `baseUrl` 为 `null`，它不代表运行期最终解析出的有效地址。
@@ -20,7 +21,7 @@
 - 创建 API Key 自定义 Provider 时可同时提交只写 Credential；Provider、Credential 元数据和加密 Secret 由 Application Service 使用共享 transaction runner 原子写入，失败不会留下未配置 Provider。Credential Store 的管理写方法只参与调用方事务，`pi-ai` 直接调用的 `CredentialStore.modify/delete` 仍自行串行化。后续密钥补充和轮换仍使用独立 Credential API。
 - 自定义 Provider ID 必须使用 `custom-` 前缀且不可修改；模型数组更新采用精确替换。Provider 更新和删除受 revision 乐观锁保护，存在 active Chat Run 时返回 `llm_provider_in_use`。
 - 自定义 Provider 的创建规则集中在独立 factory；SQLite mapper 将行、`compat_json` 和 `models_json` 作为不可信数据完整校验，再构造领域对象。损坏的持久化聚合不会进入运行时 Model Catalog。
-- 自定义 Provider 使用用户维护的静态模型目录，不参与 `pi.dev` 启动或两小时刷新。删除 Provider 会同步清除 Credential、Secret 和遗留目录快照；API Key 切换为无认证时也会原子清除 Credential。
+- 自定义 Provider 的持久化模型目录可由用户编辑，也可通过统一模型 POST 手动更新；仍不参与 `pi.dev` 启动或两小时刷新。独立 `custom-llm-model-discovery.ts` 从配置 `baseUrl` 路径下的 `/models` 读取目录，后端使用保存的 API Key（无认证模式不发送密钥），按协议设置认证头，拒绝重定向，不向浏览器回传 Secret。支持 `data`/`models`、Anthropic/Google 分页，最多 20 页、2000 个模型，每页最多 1 MiB；无效响应、超限或不完整分页均保留旧目录，不做部分替换。同 ID 保留已有名称、窗口、输入、推理与成本配置；新 ID 采用文本输入、无推理、32768 上下文、4096 输出和零成本的保守本地配置，可在服务编辑器调整，不声称为真实模型规格。成功精确替换并递增 revision，旧快照同步失效；提交前复核服务/凭据版本及活动 Run，拒绝迟到结果覆盖编辑、轮换或同 ID 重建。删除 Provider 会同步清除 Credential、Secret 和遗留目录快照；API Key 切换为无认证时也会原子清除 Credential。
 - 其他厂商的 OAuth HTTP 流程尚未开放。ChatGPT 使用独立连接和撤销接口，通用 Credential DELETE 拒绝该 Provider。静态 Provider 模型按名称排序，动态 Provider 保留发现顺序。ChatGPT 账号目录不经过 pi.dev 或通用 SQLite 快照，上述静态目录刷新规则不适用于它。
 - Provider 管理和模型选择异常在 HTTP/Chat SSE 出口通过稳定 code 本地化；Provider/Model 名称与 ID、上游响应和模型输出不翻译，底层 Provider 异常不得直接返回浏览器。
 
@@ -35,6 +36,7 @@ Chat 模型另需支持按历史位置保留 system 消息；目前聊天适配�
 | 模型快照持久化端口 | [llm-model-catalog-repository.ts](../../../packages/ssh-agent/src/application/repositories/llm-model-catalog-repository.ts) |
 | 精确替换目录与远端响应校验 | [llm-model-catalog.ts](../../../packages/ssh-agent/src/application/services/llm-model-catalog.ts) |
 | 两小时定时刷新 | [llm-model-refresh-scheduler.ts](../../../packages/ssh-agent/src/application/services/llm-model-refresh-scheduler.ts) |
+| 自定义服务手动发现 | [custom-llm-model-discovery.ts](../../../packages/ssh-agent/src/application/services/custom-llm-model-discovery.ts) |
 | Provider、Model 和 Credential 用例 | [llm-provider-service.ts](../../../packages/ssh-agent/src/application/services/llm-provider-service.ts) |
 | 自定义 Provider 聚合构造、用例和 Pi 运行时适配 | [custom-llm-provider-factory.ts](../../../packages/ssh-agent/src/application/custom-llm-provider-factory.ts)、[custom-llm-provider-service.ts](../../../packages/ssh-agent/src/application/services/custom-llm-provider-service.ts)、[custom-llm-provider-runtime.ts](../../../packages/ssh-agent/src/application/services/custom-llm-provider-runtime.ts) |
 | HTTP 路由与校验 | [http-handler.ts](../../../packages/ssh-agent/src/api/http-handler.ts)、[request-validation.ts](../../../packages/ssh-agent/src/api/request-validation.ts) |
@@ -43,6 +45,8 @@ Chat 模型另需支持按历史位置保留 system 消息；目前聊天适配�
 | SQLite 模型快照 | [sqlite-llm-model-catalog-repository.ts](../../../packages/ssh-agent/src/infrastructure/sqlite/sqlite-llm-model-catalog-repository.ts) |
 | SQLite 自定义 Provider Repository 和持久化边界校验 | [sqlite-custom-llm-provider-repository.ts](../../../packages/ssh-agent/src/infrastructure/sqlite/sqlite-custom-llm-provider-repository.ts)、[custom-llm-provider-row.ts](../../../packages/ssh-agent/src/infrastructure/sqlite/custom-llm-provider-row.ts) |
 | pi-ai 目录装配 | [create-sqlite-management-backend.ts](../../../packages/ssh-agent/src/runtime/create-sqlite-management-backend.ts)、[main.ts](../../../packages/ssh-agent/src/server/main.ts) |
-| 回归测试 | [llm-provider-api.test.ts](../../../packages/ssh-agent/test/llm-provider-api.test.ts)、[llm-model-catalog.test.ts](../../../packages/ssh-agent/test/llm-model-catalog.test.ts)、[custom-llm-provider-api.test.ts](../../../packages/ssh-agent/test/custom-llm-provider-api.test.ts) |
+| 回归测试 | [llm-provider-api.test.ts](../../../packages/ssh-agent/test/llm-provider-api.test.ts)、[llm-model-catalog.test.ts](../../../packages/ssh-agent/test/llm-model-catalog.test.ts)、[custom-llm-provider-api.test.ts](../../../packages/ssh-agent/test/custom-llm-provider-api.test.ts)、[llm-provider-model-refresh.test.ts](../../../packages/ssh-agent/test/llm-provider-model-refresh.test.ts) |
 
 扩展认证方式时优先遵守 `pi-ai` 的 `CredentialStore` 和 Provider auth 契约。不要让 SSH Agent 依赖 `coding-agent` 的 `auth.json`、`models.json`、`ModelRuntime` 或设置目录。
+
+设置页三类服务均提供常显“查看模型 / 刷新模型”，详情展示 Provider ID、默认端点、认证方式及可搜索的有效目录、窗口、输出与输入/思考能力。仅查看不触发远端发现；刷新失败保留已读列表，处理期间锁定重复操作。模型选择器每次打开、切换服务及共享目录更新时补读有效目录，关闭、换服务和卸载取消旧请求。共享 HTTP/Management API/Backend 只新增模型刷新委托和可注入发现 fetch；已核对原 Workspace、Session、SSH/SFTP、Terminal、Deploy、Diagnose、附件、压缩、统计、提示词及缓存上下文职责保持原样。本地验证使用临时 SQLite、假 fetch 和合成账号，不使用真实凭据或付费推理。
