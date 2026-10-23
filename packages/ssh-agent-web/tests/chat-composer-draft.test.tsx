@@ -322,6 +322,26 @@ describe("composer draft wiring", () => {
 		expect(panel(sessionA).props.value).toBe("");
 	});
 
+	it("keeps a selected diagnosis command editable until the user submits the completed draft", async () => {
+		const onSubmit = vi.fn().mockResolvedValue(true);
+		const onToolSelect = vi.fn();
+		const overrides = { onSubmit, onToolSelect, isLocalCommand: (message: string) => message.startsWith("/diagnose") };
+		panel(sessionA, overrides).props.onChange("/diagnose ");
+		expect(panel(sessionA, overrides).props.value).toBe("/diagnose ");
+		expect(onSubmit).not.toHaveBeenCalled();
+		expect(onToolSelect).not.toHaveBeenCalled();
+		panel(sessionB).props.onChange("另一个会话的草稿");
+		expect(panel(sessionA, overrides).props.value).toBe("/diagnose ");
+		const completed = "/diagnose 请排查接口响应变慢\n保留日志线索";
+		panel(sessionA, overrides).props.onChange(completed);
+		expect(onSubmit).not.toHaveBeenCalled();
+		panel(sessionA, overrides).props.onSubmit();
+		expect(onSubmit).toHaveBeenCalledExactlyOnceWith(completed, []);
+		await Promise.resolve();
+		expect(panel(sessionA, overrides).props.value).toBe("");
+		expect(panel(sessionB).props.value).toBe("另一个会话的草稿");
+	});
+
 	it("restores failed submissions to their original Session while preserving the visible Session", async () => {
 		const submission = deferred<boolean>();
 		const onSubmit = vi.fn().mockReturnValue(submission.promise);

@@ -26,6 +26,7 @@ import {
 } from "@/features/chat/model/chat-composer";
 import {
 	canSelectChatComposerTool,
+	chatComposerCommandDraft,
 	chatComposerMenuIncludesFiles,
 	filterChatComposerTools,
 	firstEnabledComposerMenuIndex,
@@ -244,8 +245,16 @@ export const ChatTokenEditor = forwardRef<ChatTokenEditorHandle, ChatTokenEditor
 	const selectTool = (tool: ChatComposerTool) => {
 		const editor = editorRef.current;
 		const range = menuRangeRef.current;
-		if (!editor || !range || !canSelectChatComposerTool(tool)) return;
+		if (disabled || !editor || !range || !canSelectChatComposerTool(tool)) return;
 		range.deleteContents();
+		if (tool.draftCommand) {
+			renderMessage(editor, chatComposerCommandDraft(serializeEditor(editor), tool.draftCommand));
+			moveCaretToEnd(editor);
+			syncValueAndMenu(true);
+			closeMenu();
+			editor.focus();
+			return;
+		}
 		range.collapse(true);
 		const selection = window.getSelection();
 		selection?.removeAllRanges();
@@ -332,7 +341,7 @@ export const ChatTokenEditor = forwardRef<ChatTokenEditorHandle, ChatTokenEditor
 		}
 		if (event.key !== "Enter" || event.shiftKey) return;
 		event.preventDefault();
-		onSubmit();
+		if (!event.repeat) onSubmit();
 	};
 
 	const paste = (event: ReactClipboardEvent<HTMLDivElement>) => {

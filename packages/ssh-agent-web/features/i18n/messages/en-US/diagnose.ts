@@ -1,7 +1,7 @@
 import type { zhCNDiagnoseMessages } from "../zh-CN/diagnose";
 export const enUSDiagnoseMessages = {
 	"diagnose.tool.name": "Diagnose",
-	"diagnose.tool.description": "Start or view a diagnosis",
+	"diagnose.tool.description": "Add your question, then send to start diagnosis",
 	"diagnose.title": "Diagnosis",
 	"diagnose.status.active": "Diagnosing",
 	"diagnose.status.completed": "Ended",

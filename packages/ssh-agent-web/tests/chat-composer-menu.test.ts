@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
 	canSelectChatComposerTool,
+	chatComposerCommandDraft,
 	chatComposerMenuIncludesFiles,
 	filterChatComposerTools,
 	matchChatComposerMenuTrigger,
@@ -77,6 +78,20 @@ describe("chat composer tool selection", () => {
 		const message = "检查 @term 后继续";
 		expect(removeChatComposerMenuTrigger(message, 3, 8)).toBe("检查  后继续");
 		expect(removeChatComposerMenuTrigger("/terminal", 0, 9)).toBe("");
+	});
+
+	it("creates an editable command draft without replacing existing text or references", () => {
+		expect(chatComposerCommandDraft("", "/diagnose")).toBe("/diagnose ");
+		const problem = '排查卡顿\n<file name="app.log" path="/work/app.log" type="text/plain" />';
+		expect(chatComposerCommandDraft(problem, "/diagnose")).toBe(`/diagnose ${problem}`);
+		expect(chatComposerCommandDraft(" \n已写的问题", "/diagnose")).toBe("/diagnose  \n已写的问题");
+	});
+
+	it("does not add a second command prefix and requires a whole command boundary", () => {
+		expect(chatComposerCommandDraft("/diagnose", "/diagnose")).toBe("/diagnose ");
+		expect(chatComposerCommandDraft("/diagnose 排查超时", "/diagnose")).toBe("/diagnose 排查超时");
+		expect(chatComposerCommandDraft(" \n/diagnose\n排查超时", "/diagnose")).toBe(" \n/diagnose\n排查超时");
+		expect(chatComposerCommandDraft("/diagnose-other", "/diagnose")).toBe("/diagnose /diagnose-other");
 	});
 
 	it("skips disabled tools during keyboard navigation and rejects direct selection", () => {

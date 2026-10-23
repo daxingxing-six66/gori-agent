@@ -13,6 +13,8 @@ export interface ChatComposerTool {
 	name: string;
 	description: string;
 	keywords: readonly string[];
+	/** Insert an editable command instead of executing an immediate tool action. */
+	draftCommand?: string;
 	status?: {
 		label: string;
 		tone: "active" | "inactive" | "pending";
@@ -106,4 +108,13 @@ export function nextEnabledComposerMenuIndex(
 
 export function removeChatComposerMenuTrigger(text: string, startOffset: number, endOffset: number): string {
 	return text.slice(0, startOffset) + text.slice(endOffset);
+}
+
+export function chatComposerCommandDraft(text: string, command: string): string {
+	const content = text.trimStart();
+	const suffix = content.slice(command.length);
+	if (content.startsWith(command) && (suffix.length === 0 || /^\s/u.test(suffix))) {
+		return suffix.length === 0 ? `${text} ` : text;
+	}
+	return `${command} ${text}`;
 }

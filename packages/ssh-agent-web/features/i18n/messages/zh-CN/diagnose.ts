@@ -1,6 +1,6 @@
 export const zhCNDiagnoseMessages = {
 	"diagnose.tool.name": "诊断模式",
-	"diagnose.tool.description": "开始或查看问题诊断",
+	"diagnose.tool.description": "补充问题后发送，开始诊断",
 	"diagnose.title": "诊断任务",
 	"diagnose.status.active": "诊断中",
 	"diagnose.status.completed": "已结束",

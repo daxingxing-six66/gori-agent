@@ -46,6 +46,8 @@ class ComponentHost {
 interface EditorText { nodeType: number; textContent: string }
 class EditorElement {
 	childNodes: EditorText[] = [];
+	focus = vi.fn();
+	normalize = vi.fn();
 	setText(text: string): void { this.childNodes = text ? [{ nodeType: 3, textContent: text }] : []; }
 	contains(node: unknown): boolean { return node === this || this.childNodes.includes(node as typeof this.childNodes[number]); }
 	replaceChildren(fragment: { nodes: EditorText[] }): void { this.childNodes = fragment.nodes; }
@@ -243,5 +245,159 @@ describe("composer history recall keyboard interaction", () => {
 		document.activeElement = new EditorElement(); selection.addRange.mockClear();
 		value.props.value = "Other session draft"; value.render(); host.commit();
 		expect(selection.addRange).not.toHaveBeenCalled();
+	});
+});
+
+/** Minimal editable range/selection behavior used by the real menu handlers below. */
+function commandMenuFixture(message: string, caretOffset: number, tool: NonNullable<EditorProps["tools"]>[number], overrides: Partial<EditorProps> = {}) {
+	const value = fixture({ value: message, tools: [tool], onToolSelect: vi.fn(), ...overrides });
+	value.editor.setText(message);
+	value.props.onChange = vi.fn((text: string) => { value.props.value = text; });
+	class ReferenceElement {
+		nodeType = 1;
+		tagName = "SPAN";
+		textContent = "";
+		dataset: Record<string, string> = {};
+		childNodes: EditorText[] = [];
+		className = "";
+		contentEditable = "false";
+		title = "";
+	}
+	vi.stubGlobal("HTMLElement", ReferenceElement);
+	type RangeContainer = EditorText | EditorElement;
+	class EditableRange {
+		startContainer: RangeContainer = value.editor.childNodes[0]!;
+		startOffset = 0;
+		endContainer: RangeContainer = this.startContainer;
+		endOffset = 0;
+		setStart(container: RangeContainer, offset: number) { this.startContainer = container; this.startOffset = offset; }
+		setEnd(container: RangeContainer, offset: number) { this.endContainer = container; this.endOffset = offset; }
+		selectNodeContents(editor: EditorElement) { this.setStart(editor, 0); this.setEnd(editor, editor.childNodes.length); }
+		collapse = vi.fn((atStart: boolean) => {
+			if (!atStart && this.endContainer === value.editor) {
+				const last = value.editor.childNodes.at(-1)!;
+				this.setEnd(last, last.textContent.length);
+			}
+			if (atStart) this.setEnd(this.startContainer, this.startOffset);
+			else this.setStart(this.endContainer, this.endOffset);
+		});
+		deleteContents() {
+			if (this.startContainer !== this.endContainer || this.startContainer instanceof EditorElement) throw new Error("Expected one text trigger range");
+			this.startContainer.textContent = this.startContainer.textContent.slice(0, this.startOffset) + this.startContainer.textContent.slice(this.endOffset);
+		}
+		toString() {
+			if (this.startContainer === value.editor) {
+				const target = value.editor.childNodes.indexOf(this.endContainer as EditorText);
+				return value.editor.childNodes.slice(0, target).map((node) => node.textContent).join("") + (this.endContainer as EditorText).textContent.slice(0, this.endOffset);
+			}
+			return (this.startContainer as EditorText).textContent.slice(this.startOffset, this.endOffset);
+		}
+	}
+	const ranges: EditableRange[] = [];
+	let currentRange = new EditableRange(); currentRange.setStart(value.editor.childNodes[0]!, caretOffset); currentRange.setEnd(value.editor.childNodes[0]!, caretOffset);
+	const selection = { rangeCount: 1, isCollapsed: true, getRangeAt: () => currentRange, removeAllRanges: vi.fn(), addRange: vi.fn((range: EditableRange) => { currentRange = range; }) };
+	vi.stubGlobal("window", { getSelection: () => selection });
+	vi.stubGlobal("document", {
+		createRange: () => { const range = new EditableRange(); ranges.push(range); return range; },
+		createDocumentFragment: () => ({ nodes: [] as EditorText[], append(node: EditorText) { this.nodes.push(node); } }),
+		createTextNode: (textContent: string) => ({ nodeType: 3, textContent }),
+		createElement: () => new ReferenceElement(),
+	});
+	const open = () => {
+		const { input } = value.render();
+		input.props.onInput?.({} as Parameters<NonNullable<typeof input.props.onInput>>[0]);
+		return value.render();
+	};
+	return { ...value, open, ranges, selection, ReferenceElement };
+}
+
+const diagnoseDraftTool = { id: "diagnose", icon: "diagnose", name: "Diagnose", description: "", keywords: ["diag"], draftCommand: "/diagnose" } as const;
+
+describe("editable diagnosis menu command", () => {
+	it("uses Enter to prepare a focused draft, then allows a separate Enter to submit the user's completed problem", () => {
+		const value = commandMenuFixture("/diag", 5, diagnoseDraftTool);
+		expect(key(value.open().input, { key: "Enter" }).preventDefault).toHaveBeenCalledOnce();
+		expect(value.props.value).toBe("/diagnose ");
+		expect(value.props.onToolSelect).not.toHaveBeenCalled();
+		expect(value.props.onSubmit).not.toHaveBeenCalled();
+		expect(elements(value.render().view).some((item) => item.props.role === "listbox")).toBe(false);
+		expect(value.editor.focus).toHaveBeenCalledOnce();
+		expect(value.ranges.some((range) => range.collapse.mock.calls.some(([atStart]) => atStart === false))).toBe(true);
+		expect(value.selection.addRange).toHaveBeenCalled();
+		key(value.render().input, { key: "Enter", repeat: true });
+		expect(value.props.onSubmit).not.toHaveBeenCalled();
+		const completed = "/diagnose 请排查接口超时";
+		value.editor.setText(completed);
+		value.render().input.props.onInput?.({} as Parameters<NonNullable<EditorNode["props"]["onInput"]>>[0]);
+		expect(value.props.value).toBe(completed);
+		key(value.render().input, { key: "Enter" });
+		expect(value.props.onSubmit).toHaveBeenCalledOnce();
+	});
+
+	it("uses the mouse mention entry to keep existing text and file references in the editable diagnosis draft", () => {
+		const reference = '<file name="app.log" path="/work/app.log" type="text/plain" />';
+		const value = commandMenuFixture(`检查 @diag ${reference} 保留后续说明`, 8, diagnoseDraftTool);
+		const token = new value.ReferenceElement(); token.textContent = "app.log";
+		token.dataset = { chatReference: "file", name: "app.log", path: "/work/app.log", mimeType: "text/plain" };
+		const prefix = { nodeType: 3, textContent: "检查 @diag " };
+		value.editor.childNodes = [prefix, token, { nodeType: 3, textContent: " 保留后续说明" }];
+		const caret = value.selection.getRangeAt(); caret.setStart(prefix, 8); caret.setEnd(prefix, 8);
+		const option = elements(value.open().view).find((item) => item.props.role === "option")!;
+		const event: Pick<Parameters<NonNullable<typeof option.props.onMouseDown>>[0], "button" | "preventDefault"> = { button: 0, preventDefault: vi.fn() };
+		option.props.onMouseDown?.(event as Parameters<NonNullable<typeof option.props.onMouseDown>>[0]);
+		expect(event.preventDefault).toHaveBeenCalledOnce();
+		expect(value.props.value).toBe(`/diagnose 检查  ${reference} 保留后续说明`);
+		expect(value.props.onToolSelect).not.toHaveBeenCalled();
+		expect(value.props.onSubmit).not.toHaveBeenCalled();
+		expect(value.editor.focus).toHaveBeenCalledOnce();
+	});
+
+	it("keeps one diagnosis prefix when the command is selected again from a mention", () => {
+		const value = commandMenuFixture("/diagnose 接口超时 @diag", 21, diagnoseDraftTool);
+		const actualOffset = value.props.value.length;
+		const caret = value.selection.getRangeAt(); caret.setStart(value.editor.childNodes[0]!, actualOffset); caret.setEnd(value.editor.childNodes[0]!, actualOffset);
+		key(value.open().input, { key: "Enter" });
+		expect(value.props.value).toBe("/diagnose 接口超时 ");
+		expect(value.props.onToolSelect).not.toHaveBeenCalled();
+		expect(value.props.onSubmit).not.toHaveBeenCalled();
+	});
+
+	it("closes the chosen menu even when preserved draft text ends in another mention trigger", () => {
+		const value = commandMenuFixture("/diag @config", 5, diagnoseDraftTool);
+		key(value.open().input, { key: "Enter" });
+		expect(value.props.value).toBe("/diagnose  @config");
+		expect(elements(value.render().view).some((item) => item.props.role === "listbox")).toBe(false);
+		expect(value.props.onToolSelect).not.toHaveBeenCalled();
+		expect(value.props.onSubmit).not.toHaveBeenCalled();
+	});
+
+	it.each([{ toolDisabled: true, editorDisabled: false }, { toolDisabled: false, editorDisabled: true }])("does not insert a disabled diagnosis entry: %j", ({ toolDisabled, editorDisabled }) => {
+		const value = commandMenuFixture("/diag", 5, { ...diagnoseDraftTool, disabled: toolDisabled }, { disabled: editorDisabled });
+		const view = value.open(); key(view.input, { key: "Enter" });
+		const option = elements(view.view).find((item) => item.props.role === "option")!;
+		const event: Pick<Parameters<NonNullable<typeof option.props.onMouseDown>>[0], "button" | "preventDefault"> = { button: 0, preventDefault: vi.fn() };
+		option.props.onMouseDown?.(event as Parameters<NonNullable<typeof option.props.onMouseDown>>[0]);
+		expect(value.props.value).toBe("/diag");
+		expect(value.props.onChange).not.toHaveBeenCalled();
+		expect(value.props.onToolSelect).not.toHaveBeenCalled();
+		expect(value.props.onSubmit).not.toHaveBeenCalled();
+	});
+
+	it("lets Chinese composition finish before a menu Enter can select the diagnosis draft", () => {
+		const value = commandMenuFixture("/diag", 5, diagnoseDraftTool);
+		const view = value.open();
+		expect(key(view.input, { key: "Enter", nativeEvent: { isComposing: true } } as Partial<KeyboardEvent<HTMLDivElement>>).preventDefault).not.toHaveBeenCalled();
+		expect(value.props.value).toBe("/diag");
+		expect(value.props.onChange).not.toHaveBeenCalled();
+		expect(value.props.onToolSelect).not.toHaveBeenCalled();
+		expect(value.props.onSubmit).not.toHaveBeenCalled();
+	});
+
+	it("preserves immediate activation for tools without a draft command", () => {
+		const value = commandMenuFixture("/term", 5, { id: "terminal", icon: "terminal", name: "Terminal", description: "", keywords: [] });
+		key(value.open().input, { key: "Enter" });
+		expect(value.props.value).toBe("");
+		expect(value.props.onToolSelect).toHaveBeenCalledExactlyOnceWith("terminal");
+		expect(value.props.onSubmit).not.toHaveBeenCalled();
 	});
 });

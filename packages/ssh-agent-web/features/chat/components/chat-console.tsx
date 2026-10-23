@@ -116,6 +116,7 @@ export function ChatConsole({ sessionId }: { sessionId: string }) {
 		...sandbox.tools,
 		{ id: "diagnose", icon: "diagnose", name: intl.formatMessage({ id: "diagnose.tool.name" }),
 			description: intl.formatMessage({ id: "diagnose.tool.description" }), keywords: ["diagnose", "诊断", "排查"],
+			draftCommand: "/diagnose",
 			disabled: diagnose.busy || sandbox.pending || (!diagnose.activeTask && (active || !!deployment.activeTask)),
 			...(diagnose.activeTask ? { status: { label: intl.formatMessage({ id: "diagnose.status.active" }), tone: "active" as const } } : {}) },
 		{
@@ -293,9 +294,6 @@ export function ChatConsole({ sessionId }: { sessionId: string }) {
 		}
 		if (toolId === "sandbox") { void sandbox.execute("/sandbox"); return; }
 		if (sandbox.pending) return;
-		if (toolId === "diagnose") {
-			void diagnose.show().then((shown) => { if (shown) { setActiveTaskTabId("diagnose"); taskDisplay.reveal(); } }); return;
-		}
 		if (toolId === "deploy" && (!sandbox.readOnly || deployment.activeTask) && (!active || deployment.activeTask) && !deployment.busy) {
 			if (deployment.pickerOpen) { deployment.closePicker(); composerRef.current?.focus(); return; }
 			void deployment.show().then((surface) => {
@@ -304,7 +302,7 @@ export function ChatConsole({ sessionId }: { sessionId: string }) {
 			return;
 		}
 		if (toolId === "compact" && compactionDisabledReason === undefined) void runtime.compact();
-	}, [active, compactionDisabledReason, deployment, diagnose.show, runtime.compact, sandbox.execute, sandbox.pending, sandbox.readOnly, taskDisplay.reveal, terminalTask.menuDisabledReason, terminalTask.reveal]);
+	}, [active, compactionDisabledReason, deployment, runtime.compact, sandbox.execute, sandbox.pending, sandbox.readOnly, taskDisplay.reveal, terminalTask.menuDisabledReason, terminalTask.reveal]);
 
 	const requestBubblewrapInstallation = useCallback(async () => {
 		if (!model || active || sandbox.readOnly || sandbox.pending || runtime.submitting || terminalMode.status?.effectiveServerInteractionMode !== "command") return;
