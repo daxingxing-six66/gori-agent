@@ -1,5 +1,5 @@
 import type { Clock, IdGenerator, TerminalAttachmentId } from "../../domain/ids.ts";
-import type { TerminalInputControl, TerminalHumanInputRequest } from "../../domain/terminal-human.ts";
+import type { TerminalInputControl, TerminalHumanInputRequest, TerminalHumanHandoffReceipt } from "../../domain/terminal-human.ts";
 import type { TerminalCloseReason, TerminalGeometry, TerminalSandboxFacts, TerminalSession } from "../../domain/terminal.ts";
 import { TerminalError } from "../../domain/terminal.ts";
 import type { TerminalRepository } from "../repositories/terminal-repository.ts";
@@ -9,6 +9,7 @@ import { TerminalCanonicalState, type TerminalSnapshot } from "./terminal-canoni
 import { TERMINAL_DEFAULTS } from "./terminal-defaults.ts";
 import { TerminalInputArbiter } from "./terminal-input-control.ts";
 import { TerminalHumanActivityRecorder } from "./terminal-human-activity.ts";
+import { TerminalHumanHandoffObservation } from "./terminal-human-handoff.ts";
 import {
 	TerminalReplayGapError,
 	type TerminalReplayResult,
@@ -74,6 +75,8 @@ export class TerminalSessionActor {
 	#inFlightInteractions = 0;
 	readonly #input = new TerminalInputArbiter();
 	readonly #human: TerminalHumanActivityRecorder;
+	readonly #handoff = new TerminalHumanHandoffObservation();
+	#contentVersion = 0;
 	#humanCheckpointTimer: ReturnType<typeof setTimeout> | undefined;
 
 	constructor(options: {
@@ -113,14 +116,25 @@ export class TerminalSessionActor {
 	finishHumanHandoff(runId: string): Promise<void> {
 		return this.#enqueue(async () => {
 			this.#requireActive(); this.#input.requireAgent(runId);
-			this.#human.checkpoint(this.#capture(), "handoff");
+			const capture = this.#capture();
+			this.#human.checkpoint(capture, "handoff");
+			this.#handoff.freeze(this.#human.latest, capture, this.#contentVersion);
 		});
 	}
 
-	requireAgentControl(runId: string, writing = false): void { this.#input.requireAgent(runId, writing); }
+	requireAgentControl(runId: string, writing = false): void {
+		this.#input.requireAgent(runId, writing && !this.#handoff.reusable(runId, this.#contentVersion));
+	}
+
+	acknowledgeHumanHandoff(receipt: TerminalHumanHandoffReceipt): Promise<TerminalCanonicalCapture | null> {
+		return this.#enqueue(async () => {
+			this.#requireActive(); this.#input.requireAgent(receipt.agentRunId);
+			return this.#handoff.acknowledge(receipt);
+		});
+	}
 
 	markHumanActivityObserved(runId: string): Promise<void> {
-		return this.#enqueue(async () => { this.#input.observed(runId); this.#human.observed(); });
+		return this.#enqueue(async () => { this.#input.observed(runId); this.#human.observed(); this.#handoff.observed(); });
 	}
 
 	controlInput(attachmentId: string, claim: boolean): Promise<TerminalInputControl> {
@@ -177,6 +191,7 @@ export class TerminalSessionActor {
 				offset += chunk.byteLength;
 			}
 			await this.#canonical.write(output);
+			this.#contentVersion += 1;
 			const event: TerminalSequencedEvent = {
 				sequence: this.#nextSequence(),
 				type: "terminal.output",
@@ -422,6 +437,7 @@ export class TerminalSessionActor {
 			requireGeometry(geometry);
 			if (geometry.rows === this.#session.geometry.rows && geometry.cols === this.#session.geometry.cols) return;
 			this.#canonical.resize(geometry);
+			this.#contentVersion += 1;
 			await this.#requireChannel().resize(geometry);
 			const previous = this.#session;
 			const sequence = previous.eventSequence + 1;
@@ -470,6 +486,7 @@ export class TerminalSessionActor {
 			this.#runBindings.delete(runId);
 			const previous = this.#input.view;
 			this.#input.unbind(runId);
+			this.#handoff.release();
 			this.#publishInputControl(previous);
 			this.#refreshConsumerActivity();
 		});
@@ -478,11 +495,15 @@ export class TerminalSessionActor {
 	write(data: Uint8Array, runId: string): Promise<number> {
 		return this.#enqueue(async () => {
 			this.#requireActive();
-			this.#input.requireAgent(runId, true);
+			this.requireAgentControl(runId, true);
 			this.#inFlightInteractions += 1;
 			this.#refreshConsumerActivity();
 			try {
+				// A dispatched write can be uncertain even before its echo arrives; never reuse its old handoff again.
+				this.#handoff.observed();
 				await this.#requireChannel().write(data);
+				this.#input.observed(runId);
+				this.#human.observed();
 				return this.#session.eventSequence;
 			} finally {
 				this.#inFlightInteractions -= 1;

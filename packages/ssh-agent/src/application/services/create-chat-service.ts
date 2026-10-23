@@ -130,6 +130,7 @@ export function createChatService(options: CreateChatServiceOptions): ChatServic
 			runtimeContexts,
 			runtimeFacts,
 			terminalFacts: options.terminalFacts,
+			terminalInteractions: options.terminalInteractions,
 			models: options.models,
 			toolCalls,
 			queues,

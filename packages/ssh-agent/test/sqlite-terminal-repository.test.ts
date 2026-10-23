@@ -1,11 +1,15 @@
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { describe, expect, it } from "vitest";
 import type { TerminalInteraction, TerminalObservation, TerminalSession } from "../src/domain/terminal.ts";
+import type { TerminalHumanActivity } from "../src/domain/terminal-human.ts";
 import { applyMigrations } from "../src/infrastructure/sqlite/migrations.ts";
 import { SqliteTerminalRepository } from "../src/infrastructure/sqlite/sqlite-terminal-repository.ts";
 
-const createDatabase = (): DatabaseSync => {
-	const database = new DatabaseSync(":memory:");
+const createDatabase = (filename = ":memory:"): DatabaseSync => {
+	const database = new DatabaseSync(filename);
 	database.exec("PRAGMA foreign_keys = ON");
 	applyMigrations(database);
 	database.exec(`
@@ -96,7 +100,7 @@ describe("SqliteTerminalRepository", () => {
 		try {
 			const repository = new SqliteTerminalRepository(database);
 			const original = terminalSession({ status: "closed" }); repository.insertSession(original);
-			database.exec("DROP TABLE terminal_human_activities; DELETE FROM ssh_agent_schema_migrations WHERE version=37");
+			database.exec("DROP TABLE terminal_human_activities; DELETE FROM ssh_agent_schema_migrations WHERE version>=37");
 			applyMigrations(database); applyMigrations(database);
 			expect(repository.findSession(original.id)).toEqual(original);
 			expect(repository.latestHumanActivity("session-1")).toBeNull();
@@ -110,6 +114,77 @@ describe("SqliteTerminalRepository", () => {
 			expect(repository.latestHumanActivity("session-1")).toBeNull();
 		} finally { database.close(); }
 	});
+
+	it("upgrades the frozen v37 human table with unknown screen completeness and round-trips explicit completeness", () => {
+		const database = new DatabaseSync(":memory:");
+		try {
+			// Exercise v38 in isolation against the original v37 table, without reversing the latest schema.
+			database.exec(`CREATE TABLE ssh_agent_schema_migrations(version INTEGER PRIMARY KEY, applied_at INTEGER NOT NULL) STRICT;
+				CREATE TABLE sessions(id TEXT PRIMARY KEY) STRICT;
+				CREATE TABLE terminal_sessions(id TEXT PRIMARY KEY) STRICT;
+				CREATE TABLE terminal_human_activities (
+					id TEXT PRIMARY KEY, session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+					terminal_session_id TEXT NOT NULL REFERENCES terminal_sessions(id) ON DELETE CASCADE,
+					start_sequence INTEGER NOT NULL CHECK (start_sequence >= 0),
+					end_sequence INTEGER NOT NULL CHECK (end_sequence >= start_sequence),
+					input_count INTEGER NOT NULL CHECK (input_count > 0), input_bytes INTEGER NOT NULL CHECK (input_bytes > 0),
+					write_status TEXT NOT NULL CHECK (write_status IN ('writing', 'written', 'uncertain')),
+					transcript TEXT NOT NULL, screen_text TEXT NOT NULL, truncated INTEGER NOT NULL CHECK (truncated IN (0, 1)),
+					started_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, finished_at INTEGER,
+					end_reason TEXT CHECK (end_reason IN ('handoff', 'closed', 'lost'))
+				) STRICT;
+				CREATE INDEX terminal_human_session_idx ON terminal_human_activities(session_id);
+				INSERT INTO sessions VALUES ('session-1'); INSERT INTO terminal_sessions VALUES ('terminal-1');
+				INSERT INTO terminal_human_activities VALUES ('human','session-1','terminal-1',1,2,1,8,'written',
+					'retained history','$ visible',1,1,2,2,'handoff');
+				PRAGMA foreign_keys=ON;`);
+			const recordVersion = database.prepare("INSERT INTO ssh_agent_schema_migrations VALUES (?,1)");
+			for (let version = 1; version <= 37; version++) recordVersion.run(version);
+			const repository = new SqliteTerminalRepository(database);
+			const activity: TerminalHumanActivity = { id: "human", sessionId: "session-1", terminalSessionId: "terminal-1",
+				startSequence: 1, endSequence: 2, inputCount: 1, inputBytes: 8, writeStatus: "written",
+				transcript: "retained history", screenText: "$ visible", truncated: true,
+				startedAt: 1, updatedAt: 2, finishedAt: 2, endReason: "handoff" };
+			applyMigrations(database); applyMigrations(database);
+			expect(repository.latestHumanActivity("session-1")).toEqual(activity);
+			expect(database.prepare("SELECT screen_truncated FROM terminal_human_activities WHERE id='human'").get()?.screen_truncated).toBeNull();
+			for (const screenTruncated of [false, true]) {
+				repository.saveHumanActivity({ ...activity, screenTruncated });
+				expect(repository.latestHumanActivity("session-1")).toEqual({ ...activity, screenTruncated });
+			}
+			expect(() => database.exec("UPDATE terminal_human_activities SET screen_truncated=2 WHERE id='human'")).toThrow();
+			expect(database.prepare("PRAGMA foreign_key_check").all()).toEqual([]);
+		} finally { database.close(); }
+	});
+
+	it.each([false, true])("preserves human identity, visible text and screenTruncated=%s after reopening a file database", (screenTruncated) => {
+		const directory = mkdtempSync(join(tmpdir(), "gori-terminal-reopen-"));
+		const filename = join(directory, "terminal.sqlite");
+		let database: DatabaseSync | undefined;
+		try {
+			database = createDatabase(filename);
+			const repository = new SqliteTerminalRepository(database);
+			const terminal = terminalSession({ status: "closed" });
+			repository.insertSession(terminal);
+			const activity: TerminalHumanActivity = { id: "human-reopen", sessionId: "session-1", terminalSessionId: terminal.id,
+				startSequence: 4, endSequence: 8, inputCount: 2, inputBytes: 20, writeStatus: "written",
+				transcript: "retained history\n中文输出", screenText: "$ 当前屏幕", truncated: true, screenTruncated,
+				startedAt: 10, updatedAt: 20, finishedAt: 20, endReason: "handoff" };
+			repository.saveHumanActivity(activity);
+			const versions = database.prepare("SELECT version FROM ssh_agent_schema_migrations ORDER BY version").all();
+			database.close(); database = undefined;
+
+			database = new DatabaseSync(filename);
+			database.exec("PRAGMA foreign_keys=ON");
+			applyMigrations(database); applyMigrations(database);
+			const reopened = new SqliteTerminalRepository(database);
+			expect(reopened.latestHumanActivity("session-1")).toEqual(activity);
+			expect(reopened.findSession(terminal.id)).toEqual(terminal);
+			expect(database.prepare("SELECT version FROM ssh_agent_schema_migrations ORDER BY version").all()).toEqual(versions);
+			expect(database.prepare("PRAGMA foreign_key_check").all()).toEqual([]);
+		} finally { database?.close(); rmSync(directory, { recursive: true, force: true }); }
+	});
+
 	it.each([
 		{ mode: "full_access", backend: "none", enforcement: "none", approvedAt: 10, extra: true },
 		{ mode: "full_access", backend: "none", enforcement: "none", source: "landlock_unavailable", detectedAt: 10, approvedAt: 10 },

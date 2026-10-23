@@ -91,3 +91,5 @@ UI 历史单独使用 `sqlite-chat-history-query.ts`，复用 SqliteChatReposito
 v36 仅新增 `chat_runtime_context_heads`，按 Session/channel 保存最新事件 ID、递增版本及内容摘要，外键随 Session/消息删除。真实状态事件保存为 chat_messages 的 system 行；读取业务事实、比较、插入事件与推进 head 同事务，失败整体回滚。迁移不改旧聊天、工具结果或头部；旧会话在下次请求前追加协议及当前状态。实现见 `sqlite-runtime-context-repository.ts`，验证见 `runtime-context.test.ts`，语义见 [runtime-context.md](./runtime-context.md)。
 
 v37 新增 terminal_human_activities，独立保存人工输入数量、时间、写入结果和有界可见记录/屏幕，不保存人工按键或隐藏密码。旧 Terminal/Interaction 行保持，Session/Terminal 删除级联；重启将未结束人工记录标为 lost/truncated，写入中改 uncertain，绝不重放。见 [人机协作](./features/terminal-human-interaction.md)。
+
+v38 为人工活动追加 nullable `screen_truncated`（0/1），独立于历史完整性 `truncated`。旧行保留 null，读取为未知并保守要求观察；新记录明确保存当前屏幕是否因预算裁剪，历史裁剪或重绘不单独阻断完整屏幕的复用。升级不改旧可见文本、时间、交接身份、Chat 头部或消息；内容版本及本次 Provider 交付回执仅存 Actor/Run 内存。`sqlite-terminal-repository.test.ts` 覆盖 v37 原行升级、null 与布尔值回读、重复迁移、约束与文件数据库重开。

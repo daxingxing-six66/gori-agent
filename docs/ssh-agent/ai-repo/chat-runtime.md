@@ -128,4 +128,4 @@ Runtime Factory 将 Run ID 绑定到远端 Tool。Full Access grant 绑定完整
 
 本地文件预览按类型分流：读写、上传和下载四类成功工具行使用统一的悬浮/键盘查看入口，上传/下载路径来自已确认的结果详情；点击文件名本身只展开工具详情。文本继续使用 `features/file-reader/`，图片、音频、视频使用独立 `features/media-preview/` 标签、元数据与流接口，共用 TaskContainer 展示而不混合处理生命周期。macOS 系统临时目录别名由共享文件访问边界规范后校验；见 [多媒体预览](./media-preview.md)。
 
-2026-10-22 Terminal 人机协作：普通消息创建 Run 前经可选 startRun 边界冻结并排空本页 Terminal 输入；后端 Run 绑定与人工写入在同一 Actor 队列仲裁。人工活动在首次模型请求前同步，失败阻止执行。见 [功能路由](./features/terminal-human-interaction.md)。
+2026-10-22 Terminal 人机协作：普通消息创建 Run 前经可选 startRun 边界冻结并排空本页 Terminal 输入；后端 Run 绑定与人工写入在同一 Actor 队列仲裁。人工活动在首次模型请求前同步，失败阻止执行。独立 `terminal-human-context-delivery.ts` 校验附件水合后实际 Provider 上下文中的后台消息及引用正文，只有成功响应对象对应的终端工具调用才能确认交付；模型文字、保存成功或失败请求都不能解除限制。确认后的完整、可靠、未变化交接可省去重复 observe，服务端在审批前和 PTY 写入队列内复核，原 Guard/审批保持。见 [功能路由](./features/terminal-human-interaction.md)。

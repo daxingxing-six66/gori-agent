@@ -124,6 +124,11 @@ export class TerminalInteractionRecorder {
 		this.fail("write_uncertain", "terminal_write_uncertain");
 	}
 
+	markWriteBlocked(code: string): void {
+		this.#updateInput("blocked", null, null);
+		this.fail("failed", code);
+	}
+
 	fail(status: FailureStatus, code: string): void {
 		if (this.#interaction.status === "completed" || isTerminalInteractionFailure(this.#interaction.status)) return;
 		this.#transition(status, [this.#interaction.status], { failure: { code }, completedAt: this.#now() });

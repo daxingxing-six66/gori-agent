@@ -73,4 +73,4 @@
 
 2026-10-21 逐次缓存统计：摘要的聚合 Usage 保留 `requests` 原始 API 响应用量列表，单摘要一条、history 与 turnPrefix 双摘要两条；顶层计数/费用仍按原规则相加，聚合顶层不制造单次 cacheReadDetails。状态及摘要正文不放入该列表。统计展开明细显示每次请求，旧压缩记录不能从合计数字还原单次调用。见 [statistics.md](./statistics.md)。
 
-2026-10-22 Terminal 人机协作：terminal-human 通道的最新完整快照沿用各通道保留机制，在压缩后继续保留；不把隐藏按键补进摘要，也不把旧终端的画面当成当前现场。见 [功能路由](./features/terminal-human-interaction.md)。
+2026-10-22 Terminal 人机协作：terminal-human 通道的最新完整快照沿用各通道保留机制，在压缩后继续保留；不把隐藏按键补进摘要，也不把旧终端的画面当成当前现场。压缩或只读预览本身不确认人工现场交付；保留的交接必须真正进入成功的主模型请求，才能由对应响应的工具调用申请条件复用。原消息身份和正文保持，恢复后不制造重复交接；验证见 `terminal-human-runtime.test.ts`。见 [功能路由](./features/terminal-human-interaction.md)。

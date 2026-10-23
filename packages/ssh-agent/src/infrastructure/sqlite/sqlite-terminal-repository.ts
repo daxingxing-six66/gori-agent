@@ -61,15 +61,16 @@ export class SqliteTerminalRepository implements TerminalRepository {
 	saveHumanActivity(activity: TerminalHumanActivity): void {
 		this.#database.prepare(`INSERT INTO terminal_human_activities
 			(id, session_id, terminal_session_id, start_sequence, end_sequence, input_count, input_bytes, write_status,
-			 transcript, screen_text, truncated, started_at, updated_at, finished_at, end_reason)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			 transcript, screen_text, truncated, screen_truncated, started_at, updated_at, finished_at, end_reason)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 			ON CONFLICT(id) DO UPDATE SET end_sequence=excluded.end_sequence, input_count=excluded.input_count,
 			input_bytes=excluded.input_bytes, write_status=excluded.write_status, transcript=excluded.transcript,
-			screen_text=excluded.screen_text, truncated=excluded.truncated, updated_at=excluded.updated_at,
+			screen_text=excluded.screen_text, truncated=excluded.truncated, screen_truncated=excluded.screen_truncated, updated_at=excluded.updated_at,
 			finished_at=excluded.finished_at, end_reason=excluded.end_reason`).run(activity.id, activity.sessionId,
 			activity.terminalSessionId, activity.startSequence, activity.endSequence, activity.inputCount,
 			activity.inputBytes, activity.writeStatus, activity.transcript, activity.screenText,
-			Number(activity.truncated), activity.startedAt, activity.updatedAt, activity.finishedAt, activity.endReason);
+			Number(activity.truncated), activity.screenTruncated === undefined ? null : Number(activity.screenTruncated),
+			activity.startedAt, activity.updatedAt, activity.finishedAt, activity.endReason);
 	}
 
 	latestHumanActivity(sessionId: SessionId): TerminalHumanActivity | null {
@@ -80,6 +81,7 @@ export class SqliteTerminalRepository implements TerminalRepository {
 			startSequence: Number(row.start_sequence), endSequence: Number(row.end_sequence), inputCount: Number(row.input_count),
 			inputBytes: Number(row.input_bytes), writeStatus: row.write_status as TerminalHumanActivity["writeStatus"],
 			transcript: String(row.transcript), screenText: String(row.screen_text), truncated: row.truncated === 1,
+			...(row.screen_truncated === null ? {} : { screenTruncated: row.screen_truncated === 1 }),
 			startedAt: Number(row.started_at), updatedAt: Number(row.updated_at), finishedAt: row.finished_at === null ? null : Number(row.finished_at),
 			endReason: row.end_reason as TerminalHumanActivity["endReason"] };
 	}

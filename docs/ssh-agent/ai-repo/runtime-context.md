@@ -21,7 +21,7 @@
 | protocol | 固定协议说明 | 独立保留，摘要不能自行激活模式 |
 | sandbox | 当前执行模式、只读及排序后的有效可写目录，始终提供完整快照 | 只读快照替代旧宽松根列表，指引明确禁止例外与部署写入；工具执行仍独立校验 |
 | terminal | Run 冻结模式、PTY 身份及实际沙箱事实，命令模式 active=false | 原子 on/off system 记录仍是交互模式权威；新增普通 system 不遮蔽其查询；空闲读取当前 PTY，旧 Run 不能借新 PTY 恢复执行 |
-| terminal-human | 人工活动、可见记录、当前屏幕、范围与完整性；记录属于当前 PTY 与否显式标记 | 首次模型请求前同步，保存失败不调用模型；引用终端文字不授予指令，写入前仍强制 observe |
+| terminal-human | 人工活动、可见记录、交接屏幕、范围与历史/屏幕完整性；记录属于当前 PTY 与否显式标记 | 首次模型请求前同步，保存失败不调用模型；实际成功请求收到完整交接且现场未变时可复用，否则写入前要求 observe；引用文字不授予指令 |
 | diagnose | 当前任务 scope、direction/status/explanation，说明最多 300 Unicode 字符；结束 inactive | 节点修订不改前次简报，完整记录由 diagnose_inspect 读取；新任务 scope 替代旧任务，旧 Run 不获得新任务工具 |
 | diagnose-instructions | 当前活动任务的内置 Skill 原文及固定指引 | 不随节点修订重发；内容或任务身份变化才追加；结束快照撤销旧指引 |
 | deployment | 部署身份、选择来源、阶段及阶段结果、计划版本、阶段工具；结束 inactive | 失败仍保持活动，重试读取当前已确认计划；进入待审明确禁止执行，旧执行指引不能覆盖新待审状态 |
@@ -61,4 +61,4 @@
 
 相关边界见 [session-prompt.md](./session-prompt.md)、[context-compaction.md](./context-compaction.md)、[logging.md](./logging.md)。
 
-Terminal 人工记录不包含原始按键或隐藏密码；最新通道同样参与 preview、去重与压缩保留，完整边界见 [人机协作](./features/terminal-human-interaction.md)。
+Terminal 人工记录不包含原始按键或隐藏密码；最新通道同样参与 preview、去重与压缩保留。`TerminalHumanContextDelivery` 在实际 Provider Context 校验后台消息正文与元数据，通过成功响应对象关联其 Terminal Tool 调用，才向 Actor 确认交接范围；失败、截断响应和仅保存上下文均不确认交付。收据、内容版本与首写资格只存内存，不追加运行时消息或修改固定目录，重复确认不扰动缓存前缀。完整交接的实际交付可推进对应冻结范围的 Observation 游标，之后到达的输出仍待观察；版本过期或屏幕/写入不可靠时要求 observe。SQLite v38 将 screenTruncated 与历史 truncated 分离，旧 null 保守视为未知。完整边界见 [人机协作](./features/terminal-human-interaction.md)。

@@ -1061,6 +1061,11 @@ const MIGRATIONS = [
 			CREATE INDEX terminal_human_session_idx ON terminal_human_activities(session_id);
 		`,
 	},
+	{
+		version: 38,
+		sql: `ALTER TABLE terminal_human_activities ADD COLUMN screen_truncated INTEGER
+			CHECK (screen_truncated IN (0, 1));`,
+	},
 ] as const;
 
 export function applyMigrations(database: DatabaseSync): void {

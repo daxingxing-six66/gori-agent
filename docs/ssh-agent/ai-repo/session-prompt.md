@@ -65,4 +65,4 @@ v17 升级兼容早期带 `initial_mode` 必填列的 v16 数据库，保留已�
 
 诊断 Skill 在 diagnose-instructions 通道按任务身份及内容追加一次，节点变化不重复全文；结束追加 inactive，旧事件作为历史保留。压缩独立保留有效指引，不靠摘要转述。
 
-2026-10-22 Terminal 人机协作：Terminal 人工活动通过独立 terminal-human 通道追加，不改旧头部或固定工具定义；可见记录放 quoted-data，首次终端写入前强制 observe，原 on/off 模式权威不变。见 [功能路由](./features/terminal-human-interaction.md)。
+2026-10-22 Terminal 人机协作：Terminal 人工活动通过独立 terminal-human 通道追加，不改旧头部或固定工具定义；可见记录放 quoted-data。成功模型请求确实包含完整交接屏幕、且 PTY 内容未变化时，首次写入可复用交接；未交付、屏幕不完整、写入不确定或内容过期时要求 observe。交付回执与内容版本只存后端内存，不逐请求追加到提示词；原 on/off 模式权威不变。见 [功能路由](./features/terminal-human-interaction.md)。

@@ -4,7 +4,7 @@
 
 适用于与业务 Session 绑定的长周期 SSH PTY、Canonical Terminal State、浏览器投影、Agent Terminal Tool 和审计时间线。
 
-人工输入沿用当前 PTY 沙盒，免逐键 Guard/审批；Agent 的 Guard/审批保持。交接先冻结人工输入并保存可见记录，下一轮首次请求同步现场，Agent 写入前强制 observe。实现及验证边界见 [人机协作](./terminal-human-interaction.md)。
+人工输入沿用当前 PTY 沙盒，免逐键 Guard/审批；Agent 的 Guard/审批保持。交接先冻结人工输入并保存可见记录，下一轮首次请求同步现场；本次成功模型请求已收到的完整交接、现场未变时可直接复用，其他情况写入前仍要求成功交付 observe。实现及验证边界见 [人机协作](./terminal-human-interaction.md)。
 
 终端视口下方通过独立 `terminal-input-status.tsx` 展示人工/Agent 输入状态，以不同图标、原有双语文字、柔和底色和细边框区分五种状态；提示不覆盖终端输出，控制逻辑和通用容器职责不变。
 
@@ -21,6 +21,7 @@
 - Terminal Interaction 的 Guard 决策和失败信息使用显式领域类型，SQLite 恢复时在基础设施边界校验 JSON。`TerminalInteractionPolicy` 负责绑定运行实例、审批等待、输入规范化、Guard 与取消检查，不写状态或 PTY；每次调用的 `TerminalInteractionRecorder` 负责 Interaction/Input/Observation 状态、时间、持久化校验和审计事件，不决定权限或派发输入。Interaction Service 保留幂等结果、互斥槽、观察游标和阶段编排；独立 capture 模块负责 replay、prompt/quiet/snapshot/timeout 边界与 Agent 视图截断。
 - 输入执行按“绑定 Actor/确认审批已结束 → 检查取消 → 读取已准备输入/复检 Guard → 持久化 writing 与输入事件 → 写入 PTY → 持久化 written/observing → 捕获 Observation → 持久化 completed”的顺序推进。写入前使用已保存的显示文本和 bytes，调用参数变化不会替换已审批的输入；两次 Guard 覆盖审批等待前后的不同时间点。取消在执行入口、异步 Guard 后和输入事件持久化后复检，已检测到取消的调用不进入写入。失败状态更新和 Input 更新都检查持久化结果；写入或写入后状态记录失败收敛为 `write_uncertain`，其他执行/观察失败收敛为 `failed`，取消收敛为 `cancelled`。已结束的调用重试不会自动重放输入；执行期 Guard 拒绝保存最新规则决定和阻断时间线，预检硬拒绝直接建立 rejected/blocked 记录。
 - Agent 观察起点按 live TerminalSession actor 保存，跨 Chat Run 复用；首次从空起点读取已有输出，后续从上次成功标记 delivered 的 Canonical capture 接续。`observe`、`submit`、`CTRL_C` 都包含调用间隙尚未交付的内容；仅成功持久化 Observation 不推进起点，取消、Guard 拒绝、写入或交付失败也不推进。交付时采用该 Observation 的结束快照，之后到达的输出留给下一次调用；同一 tool call 的重试仍返回已持久化的结果。游标和待交付快照随 actor 回收，不在后端重启后恢复（旧 Terminal 会收敛为 lost）。
+- 人工交接采用同样的实际交付边界：成功 Provider 请求的 AssistantMessage 确实带出 Terminal Tool 调用，且其实际请求保留后台交接正文时，才确认对应冻结 capture 并向前接续游标；仅落库不推进。Actor 使用独立于通用 eventSequence/revision 的输出/resize 内容版本，预检和实际写入队列均复核，稳定完整现场可省一次 observe。现场过期、屏幕裁剪/未知或写入不确定仍要求显式 observe；仅历史 truncated 不触发。真正派发前消费旧交接复用资格，明确拒绝保存为 failed/blocked，实际派发失败仍为 write_uncertain；显式 observe 成功后持续刷新不反复阻断首写。收据和版本只在内存，不生成虚构 Interaction 或 SSE 观察事件，见 `terminal-human-handoff.ts`、`terminal-human-context-delivery.ts` 与 `terminal-handoff-observation.test.ts`。
 - Observation 回放发生 gap（包括超大单帧清空 ring）时返回保留的终端文本并设置 `truncated`、显式提示历史可能不完整，不因旧游标一直失败。文本增量仍基于 Canonical 文本前缀；滚屏、重绘或 resize 使前缀不再匹配时，回退为保留文本并同样提示可能不完整。`streaming` 仍返回当前屏幕快照，rawByteCount 在回放缺失时只统计可取得的 bytes，不代表完整历史字节数。
 - Terminal REST 负责状态、幂等 open/close、attachment bootstrap/ready/focus/resize/detach、timeline 和 observation；SSE 使用版本化 TS envelope、Base64 output、snapshot + sequence replay、gap resync、heartbeat 和订阅者背压上限。事件地址由独立 `shared/events/client.ts` 生成，与 REST 使用不同 origin；见 [transport-channels.md](../transport-channels.md)。
 - 面板的“恢复 Terminal 状态”表示浏览器 snapshot/replay 尚未完成，不表示后端 PTY 尚未打开，首次附着也经过该阶段。工作区标题、监控、Deploy、Diagnose 通过共享 Workspace 连接减少事件 origin 占用；不能通过提前标记 Live 绕过 terminal.stream.ready 和 ready API 的确认。连接容量回归见 transport-channels.test.ts，Terminal 自身协议不变。
@@ -61,6 +62,7 @@
 | Terminal 通道准备、整体 deadline、取消与迟到资源清理 | `packages/ssh-agent/src/application/terminal/terminal-channel-opener.ts` |
 | Agent Tool、Guard/Approval、输入和 Observation | `packages/ssh-agent/src/application/services/terminal-interaction-service.ts`、`packages/ssh-agent/src/application/services/chat-tool-authorization-policy.ts`、`packages/ssh-agent/src/application/services/chat-tool-call-coordinator.ts`、`packages/ssh-agent/src/application/services/chat-approval-service.ts`、`packages/ssh-agent/src/application/terminal/terminal-observation-capture.ts`、`packages/ssh-agent/src/application/tools/terminal-interaction-tool.ts` |
 | Interaction 的输入策略/执行检查与逐次状态记录 | `packages/ssh-agent/src/application/terminal/terminal-interaction-policy.ts`、`packages/ssh-agent/src/application/terminal/terminal-interaction-recorder.ts` |
+| 人工交接真实交付、条件复用、内容版本和 Observation 接续 | `packages/ssh-agent/src/application/terminal/terminal-human-context-delivery.ts`、`terminal-human-handoff.ts`、`terminal-human-activity.ts`、`packages/ssh-agent/test/terminal-handoff-observation.test.ts`、`terminal-human-runtime.test.ts` |
 | 执行顺序、审批/Guard、取消、不重放输入、并发打开及启动资源清理回归 | `packages/ssh-agent/test/terminal-interaction-service.test.ts`、`packages/ssh-agent/test/terminal-session-service.test.ts` |
 | 稳定 Tool 定义、执行门禁与 Run 绑定协调 | `packages/ssh-agent/src/application/services/chat-agent-runtime-factory.ts`、`packages/ssh-agent/src/application/services/chat-service.ts` |
 | Tool schema、矛盾字段在副作用前拒绝、模型重新生成和原生 Node ESM 运行时回归 | `packages/ssh-agent/test/terminal-interaction-tool.test.ts`、`packages/ssh-agent/test/chat-tool-authorization-policy.test.ts`、`packages/ssh-agent/test/chat-agent-runtime-factory.test.ts`、`packages/ssh-agent/test/terminal-node-runtime.test.ts` |

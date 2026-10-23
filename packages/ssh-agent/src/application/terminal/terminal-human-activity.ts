@@ -19,6 +19,7 @@ export class TerminalHumanActivityRecorder {
 	}
 
 	get active(): boolean { return this.#activity !== null && this.#activity.finishedAt === null; }
+	get latest(): TerminalHumanActivity | null { return this.#activity; }
 	get needsObservation(): boolean { return this.#needsObservation; }
 	observed(): void { this.#needsObservation = false; }
 
@@ -30,6 +31,7 @@ export class TerminalHumanActivityRecorder {
 				endSequence: capture.sequence, inputCount: pending?.inputCount ?? 0, inputBytes: pending?.inputBytes ?? 0,
 				writeStatus: pending?.writeStatus === "uncertain" ? "uncertain" : "writing",
 				transcript: pending?.transcript ?? "", screenText: capture.screenText, truncated: pending?.truncated ?? false,
+				screenTruncated: false,
 				startedAt: pending?.startedAt ?? now, updatedAt: now, finishedAt: null, endReason: null };
 			this.#previousText = capture.allText;
 		}
@@ -58,7 +60,7 @@ export class TerminalHumanActivityRecorder {
 		const transcript = tail(activity.transcript + added,
 			TERMINAL_DEFAULTS.observation.maxAgentViewBytes - Buffer.byteLength(screen.text));
 		const now = this.#clock.now();
-		this.#activity = { ...activity, transcript: transcript.text, screenText: screen.text,
+		this.#activity = { ...activity, transcript: transcript.text, screenText: screen.text, screenTruncated: screen.truncated,
 			endSequence: capture.sequence, updatedAt: now,
 			truncated: activity.truncated || !continuous || screen.truncated || transcript.truncated };
 		this.#previousText = capture.allText;

@@ -57,6 +57,8 @@ import type { ChatRuntimeContextService } from "./chat-runtime-context-service.t
 import { DeploymentError } from "../../domain/deployment.ts";
 import type { DiagnoseRuntime } from "../diagnose-runtime.ts";
 import type { TerminalHumanActivity } from "../../domain/terminal-human.ts";
+import { TerminalHumanContextDelivery } from "../terminal/terminal-human-context-delivery.ts";
+import type { TerminalInteractionService } from "./terminal-interaction-service.ts";
 
 type ToolCallCoordinator = Pick<ChatToolCallCoordinator, "beforeToolCall" | "requestSftpOverwriteApproval">;
 type QueueService = Pick<ChatQueueService, "cancelSteeringAfterTurn">;
@@ -67,6 +69,7 @@ export interface ChatAgentRuntimeFactoryOptions {
 	runtimeFacts?: ChatRuntimeFacts;
 	terminalFacts?: (sessionId: string) => TerminalRuntimeFacts | null;
 	terminalHumanFacts?: (sessionId: string) => TerminalHumanActivity | null;
+	terminalInteractions?: Pick<TerminalInteractionService, "acknowledgeHumanHandoff">;
 	models: Models;
 	toolCalls: ToolCallCoordinator;
 	queues: QueueService;
@@ -97,6 +100,7 @@ export interface ChatAgentRuntimeFactoryOptions {
 export class ChatAgentRuntimeFactory {
 	readonly #runtimeContexts?: ChatRuntimeContextService;
 	readonly #runtimeFacts: ChatRuntimeFacts;
+	readonly #terminalInteractions?: ChatAgentRuntimeFactoryOptions["terminalInteractions"];
 	readonly #models: Models;
 	readonly #toolCalls: ToolCallCoordinator;
 	readonly #queues: QueueService;
@@ -118,6 +122,7 @@ export class ChatAgentRuntimeFactory {
 	constructor(options: ChatAgentRuntimeFactoryOptions) {
 		this.#runtimeContexts = options.runtimeContexts;
 		this.#runtimeFacts = options.runtimeFacts ?? new ChatRuntimeFacts(options);
+		this.#terminalInteractions = options.terminalInteractions;
 		this.#models = options.models;
 		this.#toolCalls = options.toolCalls;
 		this.#queues = options.queues;
@@ -301,6 +306,9 @@ export class ChatAgentRuntimeFactory {
 					: { ...synchronized, messages: projectRuntimeSnapshots(synchronized.messages, await readFacts()) };
 			};
 			let requestAttempt = 0;
+			const humanDelivery = input.run.serverInteractionMode === "terminal" && this.#terminalInteractions
+				? new TerminalHumanContextDelivery(input.run, receipt => this.#terminalInteractions!.acknowledgeHumanHandoff(receipt))
+				: undefined;
 			const agent = this.#createAgent({
 				onRunFailure: (error) => requireRuntime().captureFailure(error),
 				sessionId: input.run.sessionId,
@@ -325,7 +333,7 @@ export class ChatAgentRuntimeFactory {
 						return attachmentFailureStream(selectedModel, error);
 					}
 					const headers = addOpenCodeGoSessionHeaders(selectedModel, input.run.sessionId, options?.headers);
-					return providerFailureStream(
+					const stream = providerFailureStream(
 						selectedModel,
 						() =>
 							this.#models.streamSimple(
@@ -346,6 +354,7 @@ export class ChatAgentRuntimeFactory {
 							requestAttemptId: `${input.run.id}:${++requestAttempt}`,
 						},
 					);
+					return humanDelivery ? humanDelivery.track(providerContext, stream) : stream;
 				},
 				convertToLlm: (messages) => convertToLlm(modelVisibleMessages(messages)),
 				afterToolCall: async ({ context }) => { context.tools = configureTaskTools(); return undefined; },
@@ -405,6 +414,7 @@ export class ChatAgentRuntimeFactory {
 				toolExecution: "parallel",
 				beforeToolCall: async ({ assistantMessage, toolCall, args }, signal) => {
 					try {
+						if (toolCall.name === "terminal_interaction") await humanDelivery?.acknowledge(assistantMessage);
 						if (toolCall.name === "deployment_execute_next" && input.deploymentRunId) {
 							const stage = (args as { stage: "build" | "upload" | "restart" | "verify" }).stage;
 							this.#deployments?.validateStageRequest?.(input.run.sessionId, input.deploymentRunId, input.run.id, stage, toolCall.id);

@@ -31,3 +31,5 @@
 诊断状态与内置 Skill 通过独立通道加入估算。结束后旧事件仍在历史内，最新 inactive 快照撤销旧指引；压缩保留最新通道版本。报告全文不放入任务元数据或历史卡片，详见 [runtime-context.md](./runtime-context.md)。
 
 状态与 Skill 的文本成本计入当前有效消息；本次保持压缩阈值和工具输出上限，固定工具目录增加的基础占用需和缓存读取一起观测。
+
+Terminal 人工交接继续按 terminal-human 消息的实际可见文本与完整性字段计入占用；条件复用所用的 Provider 成功交付回执和 Actor 内容版本仅存内存，不增加每次请求的提示词或估算消息。只读占用预览不确认模型交付，也不开放终端写入。见 [人机协作](./features/terminal-human-interaction.md)。

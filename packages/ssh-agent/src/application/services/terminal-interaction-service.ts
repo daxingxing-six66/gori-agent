@@ -1,4 +1,5 @@
 import type { Clock, IdGenerator } from "../../domain/ids.ts";
+import type { TerminalHumanHandoffReceipt } from "../../domain/terminal-human.ts";
 import type { TerminalInteraction, TerminalObservation } from "../../domain/terminal.ts";
 import { TerminalError } from "../../domain/terminal.ts";
 import type { SessionRepository } from "../repositories/session-repository.ts";
@@ -111,9 +112,19 @@ export class TerminalInteractionService {
 			await actor.markHumanActivityObserved(result.interaction.agentRunId);
 		const cursor = actor && this.#observationCursors.get(actor);
 		if (cursor?.pending?.observationId === result.observation.id) {
-			cursor.delivered = cursor.pending.capture;
+			if (cursor.pending.capture.sequence > cursor.delivered.sequence) cursor.delivered = cursor.pending.capture;
 			delete cursor.pending;
 		}
+	}
+
+	/** Called only for handoff evidence included in the successful request that produced a tool call. */
+	async acknowledgeHumanHandoff(receipt: TerminalHumanHandoffReceipt): Promise<void> {
+		const actor = this.#terminals.getActor(receipt.sessionId);
+		if (!actor || actor.id !== receipt.terminalSessionId) return;
+		const capture = await actor.acknowledgeHumanHandoff(receipt);
+		if (!capture) return;
+		const cursor = this.#cursor(actor);
+		if (capture.sequence > cursor.delivered.sequence) cursor.delivered = capture;
 	}
 
 	async markLatestProcessing(agentRunId: string): Promise<void> {
@@ -135,11 +146,11 @@ export class TerminalInteractionService {
 		record: TerminalInteractionRecorder,
 		signal?: AbortSignal,
 	): Promise<TerminalInteractionResult> {
-		const actor = this.#policy.requireActor(request);
 		this.#policy.requireApprovalResolved(record.interaction);
-		const cursor = this.#cursor(actor);
-		const baseline = cursor.delivered;
 		try {
+			const actor = this.#policy.requireActor(request);
+			const cursor = this.#cursor(actor);
+			const baseline = cursor.delivered;
 			this.#policy.requireNotCancelled(signal);
 			if (request.action.type === "observe") record.markObserving();
 			else await this.#writeInput(request, record, actor, signal);
@@ -148,6 +159,8 @@ export class TerminalInteractionService {
 			cursor.pending = { observationId: result.observation.id, capture: captured.canonical };
 			return result;
 		} catch (error) {
+			if (request.action.type !== "observe" && error instanceof TerminalError &&
+				(error.code === "terminal_observe_required" || error.code === "terminal_control_conflict")) record.markWriteBlocked(error.code);
 			if (error instanceof TerminalObservationCancelledError) record.fail("cancelled", "run_cancelled");
 			else record.fail("failed", error instanceof TerminalError ? error.code : "terminal_interaction_failed");
 			throw error;
@@ -176,6 +189,9 @@ export class TerminalInteractionService {
 			await actor.write(input.encodedBytes, request.agentRunId);
 			record.markWritten(input, sequence);
 		} catch (error) {
+			if (error instanceof TerminalError && (error.code === "terminal_observe_required" || error.code === "terminal_control_conflict")) {
+				throw error;
+			}
 			record.markWriteUncertain(sequence);
 			throw error;
 		}
