@@ -1,6 +1,11 @@
 export const zhCNServerMetricsMessages = {
 	"serverMetrics.memoryLabel": "内存",
 	"serverMetrics.networkLabel": "网络",
+	"serverMetrics.diskIoLabel": "磁盘 I/O",
+	"serverMetrics.diskRead": "读 {value}",
+	"serverMetrics.diskWrite": "写 {value}",
+	"serverMetrics.diskReadLabel": "磁盘读取 {value}",
+	"serverMetrics.diskWriteLabel": "磁盘写入 {value}",
 	"serverMetrics.label": "远端服务器整体资源",
 	"serverMetrics.cpu": "CPU {value}",
 	"serverMetrics.memory": "内存 {value}",

@@ -30,7 +30,8 @@ describe("server metrics EventSource adapter", () => {
 		const source = TestEventSource.latest;
 		expect(source.url).toContain("/api/workspaces/ws%2Fone/events?topics=monitoring&locale=en-US");
 		const snapshot = { workspaceId: "ws/one", sampledAt: 1000, cpu: { usagePercent: 3.4 },
-			memory: { usedBytes: 50, totalBytes: 100, usagePercent: 50 } };
+			memory: { usedBytes: 50, totalBytes: 100, usagePercent: 50 },
+			diskIo: { readBytesPerSecond: 1024, writeBytesPerSecond: 2048 } };
 		source.emit("monitor.snapshot", "invalid");
 		source.emit("monitor.snapshot", JSON.stringify({ ...snapshot, workspaceId: "other" }));
 		expect(onSnapshot).not.toHaveBeenCalled();

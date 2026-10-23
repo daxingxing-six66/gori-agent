@@ -9,6 +9,7 @@ import type { BackendLocale, BackendMessageKey } from "../i18n/message.ts";
 import { localizePublicValue } from "../i18n/projection.ts";
 import type { ConnectionPoolSnapshot } from "./ssh-channel-broker.ts";
 import type { RemoteNetworkMetrics } from "../domain/remote-network-metrics.ts";
+import type { RemoteDiskIoMetrics } from "../domain/remote-disk-io-metrics.ts";
 
 export interface RemoteMetricsSnapshot {
 	workspaceId: string;
@@ -16,6 +17,7 @@ export interface RemoteMetricsSnapshot {
 	cpu: { usagePercent: number; cores: number; loadAverage: [number, number, number] };
 	memory: { usedBytes: number; totalBytes: number; usagePercent: number };
 	network?: RemoteNetworkMetrics;
+	diskIo?: RemoteDiskIoMetrics;
 	filesystems: Array<{
 		device: string;
 		mountPoint: string;

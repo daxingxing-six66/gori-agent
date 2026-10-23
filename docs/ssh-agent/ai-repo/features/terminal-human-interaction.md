@@ -27,11 +27,16 @@
 
 浏览器输入队列最多 256 KiB，16ms 合并并串行发送，单批上限 32 KiB；control/input HTTP 和人工 SSH 写入有 10 秒边界。SSH 写入超时销毁 Channel，结果标为 uncertain。丢失确认、断线、失权或队列超限不会自动重放按键；输入故障显示手动重新同步入口。snapshot/replay、隐藏或未持权页面不能发送输入。
 
+已 live 的聚焦页面申请人工控制权时，xterm 可以把立即键入的内容暂存在同一个有界内存队列；提示使用“交接中”，成功持权前不发送到 PTY。失焦、申请失败、Agent 撤权或队列超限时，未派发内容明确进入故障，不静默丢弃或自动重放。发送聊天会先等待这次申请、已捕获输入的确认和控制投影；已关闭或断流的旧 participant 不能放行提交，晚到写入失败仍保留故障，需明确重新同步后恢复。
+
+SSE 入口即时撤销人工权限，恢复输入通过原有 `TerminalEventQueue` 顺序完成，避免控制变化先于前序 xterm 输出生效；HTTP 控制确认与画面同步分别判断。从第一次等待控制投影开始有独立 10 秒期限，后续事件不延长；超时停止发送并阻止聊天提交，成功同步、关闭及故障均取消计时器。通用任务容器不处理这项同步生命周期。
+
 ## 可见记录与交接
 
 - `TerminalHumanActivityRecorder` 在人工输入前保存写入中元数据，完成后保存 written/uncertain；记录身份、输入计数/字节数量、时间、事件范围、可见 transcript、screenText 和完整性。记录不是完整命令审计，不保存原始按键或隐藏密码，也不伪造 Agent Interaction/Input/Tool Call。
 - 每个 Canonical 输出批次更新内存中的可见投影，最多每 250ms 保存检查点；输入和交接强制保存。清屏、重绘、alternate screen 或前缀不连续时保存保留文本并明确 truncated。`screenTruncated` 单独说明交接时当前屏幕是否因预算裁剪；仅历史 truncated 不阻断完整屏幕的复用。总文本预算 64 KiB，优先保留当前屏幕，再保留最近可见记录，UTF-8 边界不截坏字符。
 - Run 先锁住人工输入，再等待最后回显安静 150ms（持续输出最多等待 1 秒），最后在 Actor 队列捕获和保存交接现场；不等待前台程序结束。保存失败撤销 Run 绑定，不开始模型执行。
+- 新 Run 绑定的任一步持久化失败都撤销本次 Run Set 和控制权，已有有效绑定的重复刷新失败不会撤销原绑定；解绑只清理对应 Run 的交接资格。关闭时人工检查点与 Terminal 终态分别尝试，人工记录失败不能跳过终态和资源回收；单个失败保留原始原因，多个失败使用 AggregateError，人工输入的公开 uncertain 错误通过内部 cause 保留根因。
 - `ChatRuntimeFacts` 将最新记录放入独立 `terminal-human` 通道。首次模型请求前经原事务日志同步，失败不请求模型；引用文字转义后进入 quoted-data，不获得指令或权限含义。`currentTerminal` 只表示 PTY 身份是否相同，不承诺屏幕实时性；交接画面冻结，后续工具观察覆盖它的屏幕含义，旧终端记录以 false 标明历史。工具仍以本轮真实绑定和沙盒为准。
 - 通道按持久化内容去重，刷新、请求重试和压缩沿用事件身份；原各通道最高版本保留机制包含 terminal-human。仅保存或生成交接不推进 Agent Observation 游标；满足下述真实交付条件后，按冻结快照的结束范围接续，交接之后的输出留给下一次观察。
 - SQLite v37 新增 `terminal_human_activities`，按 Session/Terminal 外键级联，旧 Terminal/Interaction 数据不变；v38 追加 nullable `screen_truncated`。旧记录 null 读取为未知，不被当作屏幕完整，保守要求 observe。重启把未结束人工记录标为 lost/truncated，写入中改 uncertain；PTY 继续遵守 lost 恢复规则，不重放任何输入。
@@ -47,9 +52,13 @@
 
 后端核心为 `domain/terminal-human.ts`、`application/terminal/terminal-input-control.ts`、`terminal-human-activity.ts`、`terminal-human-handoff.ts` 与 `terminal-human-context-delivery.ts`，由 Terminal Actor/Service 和请求运行时装配；SQLite 与 runtime facts 通过原端口接入。前端核心为 `features/terminal/runtime/terminal-human-input.ts` 和 `terminal-submission-gate.ts`；Panel 只接线和展示状态，Chat 通过可选 startRun 边界接入，通用任务容器不承接业务。
 
+Canonical capture 的值类型与统一投影由 `terminal-canonical-state.ts` 持有，Recorder/Handoff 不再从 Actor 导入证据类型。`terminal-human-handoff-settle.ts` 独立管理交接时等待回显的两个计时器和订阅，仅依赖事件源；人工记录器不再承担这段等待生命周期。
+
 回归包括 `test/terminal-human-interaction.test.ts`、`terminal-handoff-observation.test.ts`、`terminal-human-runtime.test.ts`、`sqlite-terminal-repository.test.ts`、`runtime-context.test.ts` 和前端 `tests/terminal-human-input.test.ts`：覆盖输入仲裁、晚到输入、顺序/去重、密码不落库、前台画面、文本预算、持久化失败、首次模型请求、稳定交接免 observe、交接后输出/resize 与写入队列竞态、历史和屏幕截断区别、人工/Agent 写入不确定、旧收据拒绝、显式 observe 及游标接续、v37→v38 迁移和压缩保留。沿用 Terminal、Chat 和主题的定向回归。
 
 验证使用临时 SQLite、假 SSH Channel、Canonical xterm 和 faux 模型；不代表真实 SSH、真实 vim/top、浏览器 IME 或供应商模型的端到端实测。
+
+2026-10-23 质量走查新增绑定末阶段失败回滚、旧 Run 清理、关闭检查点失败、cause、申领期间立即键入、失焦/超限/撤权、断流先于输入确认和慢显示控制事件的回归，另以 `terminal-human-handoff-settle.test.ts` 验证 quiet/max 等待及订阅/计时器清理。分级结论、实际重构和剩余协议风险见 [走查报告](../../../../CODE_QUALITY_REVIEW.md)。显式 observe 的 delivered 仍沿用工具结果返回语义；同一 assistant batch 后续工具不保证模型已在下一次请求读取该观察，未改成 Provider 确认协议。
 
 ## 缓存前缀检查
 

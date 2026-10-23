@@ -1,5 +1,5 @@
 import type { TerminalHumanActivity, TerminalHumanHandoffReceipt } from "../../domain/terminal-human.ts";
-import type { TerminalCanonicalCapture } from "./terminal-session-actor.ts";
+import type { TerminalCanonicalCapture } from "./terminal-canonical-state.ts";
 
 /** Actor-local evidence. Content versions and delivery receipts never enter model messages. */
 export class TerminalHumanHandoffObservation {

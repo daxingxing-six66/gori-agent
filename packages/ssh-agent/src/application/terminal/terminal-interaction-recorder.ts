@@ -9,7 +9,8 @@ import {
 	type TerminalInteractionRequest,
 } from "./terminal-interaction-policy.ts";
 import type { CapturedTerminalObservation } from "./terminal-observation-capture.ts";
-import type { TerminalCanonicalCapture, TerminalSessionActor } from "./terminal-session-actor.ts";
+import type { TerminalCanonicalCapture } from "./terminal-canonical-state.ts";
+import type { TerminalSessionActor } from "./terminal-session-actor.ts";
 
 export interface TerminalInteractionResult {
 	readonly interaction: TerminalInteraction;

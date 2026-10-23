@@ -14,6 +14,14 @@ export interface TerminalSnapshot {
 	readonly cols: number;
 }
 
+/** Parsed terminal evidence shared by observations and human handoffs. */
+export interface TerminalCanonicalCapture {
+	readonly sequence: number;
+	readonly geometry: TerminalGeometry;
+	readonly screenText: string;
+	readonly allText: string;
+}
+
 const { Terminal } = HeadlessRuntime;
 
 class HeadlessSerializeAddon implements ITerminalAddon {
@@ -86,6 +94,15 @@ export class TerminalCanonicalState {
 			sequence,
 			rows: this.#terminal.rows,
 			cols: this.#terminal.cols,
+		};
+	}
+
+	capture(sequence: number): TerminalCanonicalCapture {
+		return {
+			sequence,
+			geometry: this.geometry,
+			screenText: this.currentScreenText(),
+			allText: this.allText(),
 		};
 	}
 

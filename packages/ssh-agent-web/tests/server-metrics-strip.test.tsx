@@ -21,6 +21,32 @@ function render(state: ServerMetricsState, locale: "zh-CN" | "en-US" = "zh-CN") 
 }
 
 describe("session header server metrics", () => {
+	it.each(["zh-CN", "en-US"] as const)("renders disk throughput with explicit read and write directions in %s", (locale) => {
+		const html = render({ ...live, snapshot: { ...live.snapshot!, diskIo: {
+			readBytesPerSecond: 2.5 * 1024 ** 2, writeBytesPerSecond: 768 * 1024,
+		} } }, locale);
+		expect(html).toContain(locale === "zh-CN" ? "磁盘 I/O" : "Disk I/O");
+		expect(html).toContain(locale === "zh-CN" ? 'aria-label="磁盘读取 2.5 MiB/s"' : 'aria-label="Disk read 2.5 MiB/s"');
+		expect(html).toContain(locale === "zh-CN" ? 'aria-label="磁盘写入 768.0 KiB/s"' : 'aria-label="Disk write 768.0 KiB/s"');
+		expect(html.indexOf(locale === "zh-CN" ? "网络" : "Network")).toBeLessThan(html.indexOf(locale === "zh-CN" ? "磁盘 I/O" : "Disk I/O"));
+	});
+
+	it("distinguishes missing or initial disk statistics from actual idle disks", () => {
+		const missing = render(live);
+		expect(missing).toContain('aria-label="磁盘读取 —"');
+		expect(missing).toContain('aria-label="磁盘写入 —"');
+		const baseline = render({ ...live, snapshot: { ...live.snapshot!, diskIo: {
+			readBytesPerSecond: null, writeBytesPerSecond: null,
+		} } });
+		expect(baseline).toContain('aria-label="磁盘读取 —"');
+		expect(baseline).not.toContain("0 B/s");
+		const idle = render({ ...live, snapshot: { ...live.snapshot!, diskIo: {
+			readBytesPerSecond: 0, writeBytesPerSecond: 0,
+		} } });
+		expect(idle).toContain('aria-label="磁盘读取 0 B/s"');
+		expect(idle).toContain('aria-label="磁盘写入 0 B/s"');
+	});
+
 	it.each(["zh-CN", "en-US"] as const)("renders resources and Session paths in the detail card in %s", (locale) => {
 		const html = render(live, locale);
 		for (const value of ["3.4%", "50.0%", "120.0 KiB/s", "1.2 MiB/s"]) expect(html).toContain(value);

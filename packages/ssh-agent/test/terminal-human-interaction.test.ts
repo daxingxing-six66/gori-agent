@@ -126,6 +126,50 @@ describe("human and Agent terminal cooperation", () => {
 		expect(f.repository.latestHumanActivity("s")?.endReason).toBe("handoff");
 	});
 
+	it("releases all Run ownership when the final binding persistence fails", async () => {
+		const f = await fixture(), attachment = await f.attach();
+		await f.service.controlInput("s", attachment, true);
+		const updateSession = f.repository.updateSession.bind(f.repository);
+		let writes = 0;
+		vi.spyOn(f.repository, "updateSession").mockImplementation((...args) => {
+			if (++writes === 2) throw new Error("binding activity persistence failed");
+			return updateSession(...args);
+		});
+
+		await expect(f.service.bindRun("s", "run", "terminal")).rejects.toThrow("binding activity persistence failed");
+		expect(f.actor.inputControl.mode).toBe("idle");
+		expect((await f.service.controlInput("s", attachment, true)).mode).toBe("human");
+		await f.service.bindRun("s", "run-next", "terminal");
+		expect(f.actor.inputControl).toMatchObject({ mode: "agent", agentRunId: "run-next" });
+		await f.service.unbindRun("s", "run-next");
+		await expect(f.actor.close("user_requested")).resolves.toBeUndefined();
+	});
+
+	it("preserves an existing Run when its repeated binding fails", async () => {
+		const f = await fixture();
+		await f.service.bindRun("s", "run", "terminal");
+		vi.spyOn(f.repository, "updateSession").mockImplementationOnce(() => { throw new Error("binding refresh failed"); });
+		await expect(f.service.bindRun("s", "run", "terminal")).rejects.toThrow("binding refresh failed");
+		expect(f.actor.inputControl).toMatchObject({ mode: "agent", agentRunId: "run" });
+		await f.service.unbindRun("s", "run");
+		await expect(f.actor.close("user_requested")).resolves.toBeUndefined();
+	});
+
+	it("ignores stale Run cleanup without revoking the current handoff receipt", async () => {
+		const f = await fixture(), attachment = await f.attach();
+		const control = await f.service.controlInput("s", attachment, true);
+		await f.service.writeHumanInput("s", attachment, { terminalSessionId: f.terminal.id, controlEpoch: control.epoch,
+			inputSequence: 1, bytes: Buffer.from("human input") });
+		await f.service.bindRun("s", "run", "terminal");
+		await f.service.unbindRun("s", "run");
+		await f.service.bindRun("s", "run-next", "terminal");
+		const activity = f.repository.latestHumanActivity("s")!;
+		await f.interactions.acknowledgeHumanHandoff({ sessionId: "s", terminalSessionId: f.terminal.id,
+			agentRunId: "run-next", activityId: activity.id, endSequence: activity.endSequence });
+		await f.service.unbindRun("s", "run");
+		expect(() => f.actor.requireAgentControl("run-next", true)).not.toThrow();
+	});
+
 	it("never replays an uncertain write and marks interrupted human records as incomplete on restart", async () => {
 		const f = await fixture(), attachment = await f.attach();
 		const control = await f.service.controlInput("s", attachment, true);
@@ -136,6 +180,70 @@ describe("human and Agent terminal cooperation", () => {
 		expect(f.channel.writes).toHaveLength(1);
 		f.repository.recoverInterrupted(Date.now());
 		expect(f.repository.latestHumanActivity("s")).toMatchObject({ writeStatus: "uncertain", truncated: true, endReason: "lost" });
+	});
+
+	it("preserves the internal input failure cause without exposing or replaying keyboard bytes", async () => {
+		const f = await fixture(), attachment = await f.attach();
+		const control = await f.service.controlInput("s", attachment, true);
+		const cause = new Error("SSH write failed");
+		vi.spyOn(f.channel, "write").mockRejectedValueOnce(cause);
+		const input = { terminalSessionId: f.terminal.id, controlEpoch: control.epoch, inputSequence: 1, bytes: Buffer.from("hidden-secret") };
+		await expect(f.service.writeHumanInput("s", attachment, input)).rejects.toMatchObject({ code: "terminal_input_uncertain", cause });
+		await expect(f.service.writeHumanInput("s", attachment, input)).rejects.toMatchObject({ code: "terminal_control_conflict" });
+		expect(JSON.stringify(f.db.prepare("SELECT * FROM terminal_human_activities").all())).not.toContain("hidden-secret");
+		expect(f.channel.write).toHaveBeenCalledTimes(1);
+	});
+
+	it.each([
+		["user_requested", "closed"],
+		["backend_shutdown", "lost"],
+	] as const)("finishes %s shutdown even when the final human checkpoint fails", async (reason, status) => {
+		const f = await fixture(), attachment = await f.attach();
+		const control = await f.service.controlInput("s", attachment, true);
+		await f.service.writeHumanInput("s", attachment, { terminalSessionId: f.terminal.id, controlEpoch: control.epoch,
+			inputSequence: 1, bytes: Buffer.from("human input") });
+		await f.actor.captureCanonical();
+		const cause = new Error("final human checkpoint failed");
+		vi.spyOn(f.repository, "saveHumanActivity").mockImplementationOnce(() => { throw cause; });
+
+		await expect(f.actor.close(reason)).rejects.toBe(cause);
+		expect(f.service.get("s")?.status).toBe(status);
+		expect(f.service.getActor("s")).toBeUndefined();
+		expect(f.channel.disposed).toBe(true);
+		expect(f.repository.listTimeline("s", undefined, 100).some(event => event.type === `terminal.${status}`)).toBe(true);
+		await expect(f.service.open({ sessionId: "s", requestId: "reopen" })).resolves.toMatchObject({ status: "opening" });
+	});
+
+	it("persists a foreground Shell exit despite a failed final human checkpoint", async () => {
+		const f = await fixture(), attachment = await f.attach();
+		const control = await f.service.controlInput("s", attachment, true);
+		await f.service.writeHumanInput("s", attachment, { terminalSessionId: f.terminal.id, controlEpoch: control.epoch,
+			inputSequence: 1, bytes: Buffer.from("exit\r") });
+		await f.actor.captureCanonical();
+		vi.spyOn(f.repository, "saveHumanActivity").mockImplementationOnce(() => { throw new Error("final checkpoint failed"); });
+		await f.channel.close();
+		await f.actor.captureCanonical();
+		expect(f.service.get("s")?.status).toBe("closed");
+		expect(f.service.getActor("s")).toBeUndefined();
+		expect(f.channel.disposed).toBe(true);
+	});
+
+	it("retains both persistence failures while disposing a failed terminal shutdown", async () => {
+		const f = await fixture(), attachment = await f.attach();
+		const control = await f.service.controlInput("s", attachment, true);
+		await f.service.writeHumanInput("s", attachment, { terminalSessionId: f.terminal.id, controlEpoch: control.epoch,
+			inputSequence: 1, bytes: Buffer.from("human input") });
+		await f.actor.captureCanonical();
+		const checkpointError = new Error("checkpoint failed"), terminalError = new Error("terminal state failed");
+		vi.spyOn(f.repository, "saveHumanActivity").mockImplementationOnce(() => { throw checkpointError; });
+		const updateSession = f.repository.updateSession.bind(f.repository);
+		vi.spyOn(f.repository, "updateSession").mockImplementation((next, ...args) => {
+			if (next.status === "closed") throw terminalError;
+			return updateSession(next, ...args);
+		});
+		await expect(f.actor.close("user_requested")).rejects.toMatchObject({ errors: [checkpointError, terminalError] });
+		expect(f.service.getActor("s")).toBeUndefined();
+		expect(f.channel.disposed).toBe(true);
 	});
 
 	it("validates bounded binary input and exposes control and input through REST", async () => {

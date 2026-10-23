@@ -6,6 +6,7 @@ import { parseServerMetricsSnapshot, type ServerMetricsSnapshot } from "../featu
 function snapshot(workspaceId = "ws", sampledAt = Date.now()): ServerMetricsSnapshot {
 	return { workspaceId, sampledAt, cpu: { usagePercent: 3.4 },
 		memory: { usedBytes: 100, totalBytes: 200, usagePercent: 50 },
+		diskIo: { readBytesPerSecond: 2048, writeBytesPerSecond: 4096 },
 		network: { interfaceName: "eth0", receiveBytesPerSecond: 1024, transmitBytesPerSecond: 512 } };
 }
 
@@ -31,6 +32,7 @@ describe("session server metrics cache", () => {
 		expect(open).toHaveBeenCalledTimes(1);
 		connections[0].onSnapshot(snapshot());
 		expect(resource.getSnapshot().status).toBe("live");
+		expect(resource.getSnapshot().snapshot?.diskIo).toEqual({ readBytesPerSecond: 2048, writeBytesPerSecond: 4096 });
 		expect(first).toHaveBeenCalled();
 		expect(second).toHaveBeenCalled();
 		leaveFirst();
@@ -46,6 +48,7 @@ describe("session server metrics cache", () => {
 		connections[0].onSnapshot(snapshot());
 		leave();
 		expect(store.resource("ws", "zh-CN").getSnapshot().snapshot?.cpu.usagePercent).toBe(3.4);
+		expect(store.resource("ws", "zh-CN").getSnapshot().snapshot?.diskIo?.writeBytesPerSecond).toBe(4096);
 		const leaveAgain = resource.subscribe(() => {});
 		connections[0].onSnapshot({ ...snapshot(), cpu: { usagePercent: 99 } });
 		expect(resource.getSnapshot().snapshot?.cpu.usagePercent).toBe(3.4);
@@ -106,6 +109,26 @@ describe("session server metrics cache", () => {
 });
 
 describe("server metrics event projection", () => {
+	it("preserves disk rates, zero values and nullable baselines while accepting older snapshots", () => {
+		expect(parseServerMetricsSnapshot(snapshot())?.diskIo).toEqual({ readBytesPerSecond: 2048, writeBytesPerSecond: 4096 });
+		expect(parseServerMetricsSnapshot({ ...snapshot(), diskIo: { readBytesPerSecond: 0, writeBytesPerSecond: 0 } })?.diskIo)
+			.toEqual({ readBytesPerSecond: 0, writeBytesPerSecond: 0 });
+		expect(parseServerMetricsSnapshot({ ...snapshot(), diskIo: { readBytesPerSecond: null, writeBytesPerSecond: null } })?.diskIo)
+			.toEqual({ readBytesPerSecond: null, writeBytesPerSecond: null });
+		expect(parseServerMetricsSnapshot({ ...snapshot(), diskIo: undefined })?.diskIo).toBeUndefined();
+	});
+
+	it.each([null, [], "invalid", { readBytesPerSecond: 1 },
+		{ readBytesPerSecond: -1, writeBytesPerSecond: 0 }, { readBytesPerSecond: 0, writeBytesPerSecond: Infinity },
+		{ readBytesPerSecond: NaN, writeBytesPerSecond: null }, { readBytesPerSecond: "1024", writeBytesPerSecond: 1 },
+	])("drops invalid optional disk statistics without losing other resource metrics: %j", (diskIo) => {
+		const parsed = parseServerMetricsSnapshot({ ...snapshot(), diskIo });
+		expect(parsed?.diskIo).toBeUndefined();
+		expect(parsed?.cpu.usagePercent).toBe(3.4);
+		expect(parsed?.memory.usagePercent).toBe(50);
+		expect(parsed?.network?.receiveBytesPerSecond).toBe(1024);
+	});
+
 	it("accepts older snapshots without network metrics and drops malformed network data", () => {
 		const old = { ...snapshot(), network: undefined };
 		expect(parseServerMetricsSnapshot(old)?.network).toBeUndefined();

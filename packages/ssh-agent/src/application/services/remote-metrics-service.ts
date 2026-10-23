@@ -3,6 +3,7 @@ import type { RemoteMetricsSnapshot, WorkspaceEventHub } from "../workspace-even
 import type { WorkspaceSshTargetResolver } from "./ssh-target-resolver.ts";
 import { connectionKeyFor, serializeConnectionKey } from "../../domain/ssh-target.ts";
 import { REMOTE_NETWORK_COMMAND, RemoteNetworkSampler } from "../monitoring/remote-network-sampler.ts";
+import { REMOTE_DISK_IO_COMMAND, RemoteDiskIoSampler } from "../monitoring/remote-disk-io-sampler.ts";
 
 export const REMOTE_METRICS_BASE_COMMAND = [
 	"LC_ALL=C",
@@ -13,6 +14,7 @@ export const REMOTE_METRICS_BASE_COMMAND = [
 	`awk '{ print "UP", $1 }' /proc/uptime`,
 	`df -Pk | awk 'NR > 1 { print "FS", $1, $2, $3, $6 }'`,
 	REMOTE_NETWORK_COMMAND,
+	REMOTE_DISK_IO_COMMAND,
 ].join("; ");
 
 export const REMOTE_METRICS_PROCESS_COMMAND = `LC_ALL=C; ps -eo pid=,ppid=,user=,stat=,pcpu=,pmem=,rss=,etimes=,comm=,args= --sort=-pcpu | head -20 | sed 's/^/PROC /'`;
@@ -30,6 +32,7 @@ interface Collector {
 	cpu?: CpuCounters;
 	latest?: RemoteMetricsSnapshot;
 	network: RemoteNetworkSampler;
+	diskIo: RemoteDiskIoSampler;
 }
 
 export class RemoteMetricsService {
@@ -77,7 +80,9 @@ export class RemoteMetricsService {
 			existing.stopTimer = undefined;
 			return;
 		}
-		const collector: Collector = { workspaceId, queue: Promise.resolve(), network: new RemoteNetworkSampler() };
+		const collector: Collector = {
+			workspaceId, queue: Promise.resolve(), network: new RemoteNetworkSampler(), diskIo: new RemoteDiskIoSampler(),
+		};
 		this.collectors.set(workspaceId, collector);
 		this.enqueue(collector, true);
 		collector.baseTimer = setInterval(() => this.enqueue(collector, false), 2_000);
@@ -128,6 +133,7 @@ export class RemoteMetricsService {
 				uptimeSeconds: parsed.uptimeSeconds,
 				processes: process === undefined ? (collector.latest?.processes ?? []) : parseRemoteProcesses(process),
 				network: collector.network.sample(base, source),
+				diskIo: collector.diskIo.sample(base, source),
 			};
 			collector.latest = snapshot;
 			this.options.events.publish(collector.workspaceId, { type: "monitor.snapshot", data: snapshot });

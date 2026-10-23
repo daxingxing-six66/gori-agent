@@ -60,7 +60,6 @@ export function TerminalPanel({
 	const terminalRef = useRef<Terminal | null>(null);
 	const inputRef = useRef<TerminalHumanInput | null>(null);
 	const busyRef = useRef(inputBusy);
-	busyRef.current = inputBusy;
 	const [inputPhase, setInputPhase] = useState<HumanInputPhase>("unavailable");
 	const [inputError, setInputError] = useState<string | null>(null);
 	const { resolvedTheme } = useTheme();
@@ -77,7 +76,10 @@ export function TerminalPanel({
 	const { minRows, maxRows, minCols, maxCols } = status.capabilities;
 
 	useEffect(() => { onPhaseChange(phase); }, [onPhaseChange, phase]);
-	useEffect(() => { inputRef.current?.setBusy(inputBusy); }, [inputBusy]);
+	useEffect(() => {
+		busyRef.current = inputBusy;
+		inputRef.current?.setBusy(inputBusy);
+	}, [inputBusy]);
 
 	useEffect(() => {
 		resolvedThemeRef.current = resolvedTheme;
@@ -382,7 +384,7 @@ export function TerminalPanel({
 					setInputPhase("unavailable");
 				}
 				if (envelope.type === "terminal.control_changed") {
-					try { humanInput?.updateControl(requireTerminalInputControl(envelope.data)); }
+					try { humanInput?.revokeControl(requireTerminalInputControl(envelope.data)); }
 					catch (value) { fail(value); return; }
 				}
 				if (isObservationMaskStateEvent(envelope)) observationStateEventCount += 1;

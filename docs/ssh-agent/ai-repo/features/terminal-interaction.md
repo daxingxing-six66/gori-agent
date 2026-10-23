@@ -43,6 +43,7 @@
 - `SessionLifecycleCoordinator` 已接入 Chat Run、Command Operation、Attachment upload、Session update/delete 和 TerminalSession lease；删除屏障建立后禁止新使用者进入。
 - PTY 复用共享 Connection Pool Channel slot，并额外限制每个 Connection generation 的长期 PTY 数量；slot 和两级 reservation 直到 actor 持久化终态并 dispose 后才释放。
 - actor 是 Headless Terminal、event sequence、replay、attachment、resize owner、geometry、run binding 和 idle 判断的唯一写者。
+- Canonical capture 类型及投影由 `terminal-canonical-state.ts` 统一拥有，Actor 内正常采样、人工检查点及 dispose 使用同一投影；人工回显等待独立在 `terminal-human-handoff-settle.ts`，不混入记录器。新 Run 的绑定失败完整回滚本次权限，旧 Run 清理不撤销新交接资格。终端关闭分别尝试人工检查点和 Terminal 终态提交，前者失败仍回收资源并尝试发布终态，原始失败保留供诊断。
 - 资源策略为受限级联：仅无 attachment、无活动 Tool/Run 消费者且达到 idle TTL 时自动关闭。后端重启把遗留 live Terminal 收敛为 `lost`，写入中 Interaction 收敛为 `write_uncertain`，不自动重放输入。
 - 产品、状态机和冻结契约见 [Terminal Interaction Layer 技术设计](../../design/terminal-interaction-layer.md) 与 [前后端联合实现设计](../../design/terminal-interaction-implementation-design.md)；有差异时以源码和本文为准。
 

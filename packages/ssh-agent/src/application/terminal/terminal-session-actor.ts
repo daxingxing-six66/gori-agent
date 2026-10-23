@@ -5,7 +5,7 @@ import { TerminalError } from "../../domain/terminal.ts";
 import type { TerminalRepository } from "../repositories/terminal-repository.ts";
 import type { SessionUseLease } from "../services/session-lifecycle-coordinator.ts";
 import type { TerminalChannelExit, TerminalChannelHandle } from "../ssh-channel-broker.ts";
-import { TerminalCanonicalState, type TerminalSnapshot } from "./terminal-canonical-state.ts";
+import { TerminalCanonicalState, type TerminalCanonicalCapture, type TerminalSnapshot } from "./terminal-canonical-state.ts";
 import { TERMINAL_DEFAULTS } from "./terminal-defaults.ts";
 import { TerminalInputArbiter } from "./terminal-input-control.ts";
 import { TerminalHumanActivityRecorder } from "./terminal-human-activity.ts";
@@ -38,13 +38,6 @@ export interface TerminalAttachmentBootstrap {
 export interface TerminalResizeOwnership {
 	readonly owner: boolean;
 	readonly ownershipEpoch: number | null;
-}
-
-export interface TerminalCanonicalCapture {
-	readonly sequence: number;
-	readonly geometry: TerminalGeometry;
-	readonly screenText: string;
-	readonly allText: string;
 }
 
 export interface TerminalEventStreamConnection {
@@ -162,12 +155,12 @@ export class TerminalSessionActor {
 				this.#human.written(this.#capture());
 				this.#refreshConsumerActivity();
 				return { acceptedSequence: request.inputSequence };
-			} catch {
+			} catch (cause) {
 				const previous = this.#input.view;
 				this.#input.release(attachmentId);
 				try { this.#human.written(this.#capture(), true); this.#publishInputControl(previous); }
 				catch (error) { this.#handleRuntimeFailure(error); }
-				throw new TerminalError("terminal_input_uncertain", "Terminal input could not be confirmed. It will not be replayed; inspect the terminal before continuing.", { status: 409 });
+				throw new TerminalError("terminal_input_uncertain", "Terminal input could not be confirmed. It will not be replayed; inspect the terminal before continuing.", { status: 409, cause });
 			}
 		});
 	}
@@ -466,30 +459,36 @@ export class TerminalSessionActor {
 		return this.#enqueue(async () => {
 			this.#requireActive();
 			const previous = this.#input.view;
+			const alreadyBound = this.#runBindings.has(runId);
 			this.#input.bind(runId, this.#human.needsObservation);
 			try {
 				this.#human.checkpoint(this.#capture());
 				this.#publishInputControl(previous);
+				this.#runBindings.add(runId);
+				this.#refreshConsumerActivity();
 			} catch (error) {
-				const bound = this.#input.view;
-				this.#input.unbind(runId);
-				this.#publishInputControl(bound);
+				if (!alreadyBound) {
+					try { this.#releaseRunOwnership(runId); }
+					catch (cleanupError) { this.#handleRuntimeFailure(cleanupError); }
+				}
 				throw error;
 			}
-			this.#runBindings.add(runId);
-			this.#refreshConsumerActivity();
 		});
 	}
 
 	unbindRun(runId: string): Promise<void> {
 		return this.#enqueue(async () => {
-			this.#runBindings.delete(runId);
-			const previous = this.#input.view;
-			this.#input.unbind(runId);
-			this.#handoff.release();
-			this.#publishInputControl(previous);
-			this.#refreshConsumerActivity();
+			this.#releaseRunOwnership(runId);
 		});
+	}
+
+	#releaseRunOwnership(runId: string): void {
+		this.#runBindings.delete(runId);
+		const previous = this.#input.view;
+		this.#input.unbind(runId);
+		if (previous.agentRunId === runId) this.#handoff.release();
+		this.#publishInputControl(previous);
+		this.#refreshConsumerActivity();
 	}
 
 	write(data: Uint8Array, runId: string): Promise<number> {
@@ -516,12 +515,7 @@ export class TerminalSessionActor {
 		return this.#enqueue(async () => {
 			if (this.#disposed && this.#finalCapture) return this.#finalCapture;
 			this.#requireActive();
-			return {
-				sequence: this.#session.eventSequence,
-				geometry: this.#canonical.geometry,
-				screenText: this.#canonical.currentScreenText(),
-				allText: this.#canonical.allText(),
-			};
+			return this.#capture();
 		});
 	}
 
@@ -677,8 +671,10 @@ export class TerminalSessionActor {
 			failureMessage: exit?.message ?? previous.failureMessage,
 			updatedAt: now,
 		};
+		const failures: unknown[] = [];
+		try { this.#human.checkpoint(this.#capture(), status === "lost" ? "lost" : "closed"); }
+		catch (error) { failures.push(error); }
 		try {
-			this.#human.checkpoint(this.#capture(), status === "lost" ? "lost" : "closed");
 			this.#persist(next, previous);
 			this.#session = next;
 			this.#publish({
@@ -692,9 +688,13 @@ export class TerminalSessionActor {
 			this.#appendTimeline(status === "closed" ? "terminal.closed" : "terminal.lost", {
 				reason: next.closeReason,
 			});
+		} catch (error) {
+			failures.push(error);
 		} finally {
 			this.#dispose();
 		}
+		if (failures.length === 1) throw failures[0];
+		if (failures.length > 1) throw new AggregateError(failures, "Terminal shutdown persistence failed");
 	}
 
 	#changeOwner(attachmentId: TerminalAttachmentId | null): void {
@@ -799,12 +799,7 @@ export class TerminalSessionActor {
 		if (this.#disposed) return;
 		this.#disposed = true;
 		if (this.#humanCheckpointTimer !== undefined) clearTimeout(this.#humanCheckpointTimer);
-		this.#finalCapture = {
-			sequence: this.#session.eventSequence,
-			geometry: this.#canonical.geometry,
-			screenText: this.#canonical.currentScreenText(),
-			allText: this.#canonical.allText(),
-		};
+		this.#finalCapture = this.#capture();
 		this.#channel?.dispose();
 		this.#canonical.dispose();
 		this.#listeners.clear();
@@ -847,8 +842,7 @@ export class TerminalSessionActor {
 	}
 
 	#capture(): TerminalCanonicalCapture {
-		return { sequence: this.#session.eventSequence, geometry: this.#canonical.geometry,
-			screenText: this.#canonical.currentScreenText(), allText: this.#canonical.allText() };
+		return this.#canonical.capture(this.#session.eventSequence);
 	}
 
 	async #writeHumanBytes(bytes: Uint8Array): Promise<void> {

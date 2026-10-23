@@ -13,7 +13,7 @@ Frontend <- Workspace SSE <- Event Hub <- Transfer Service / Metrics Collector /
 
 每个 Workspace 最多一个 Metrics Collector。同一 Workspace 的多个 SSE 订阅共享采样结果；最后一个 monitoring 订阅离开 30 秒后释放 Collector。
 
-已有 Session 页首也可订阅同一 `monitoring` topic，无需先打开 Overview。订阅建立后，`stream.ready` 后会立即向新订阅者发送已有 `monitor.snapshot` 缓存（若有），不额外执行 SSH 命令；后续继续接收周期快照。Session 仅展示 CPU/内存/网络，Overview 原三个指标卡保持不变。
+已有 Session 页首也可订阅同一 `monitoring` topic，无需先打开 Overview。订阅建立后，`stream.ready` 后会立即向新订阅者发送已有 `monitor.snapshot` 缓存（若有），不额外执行 SSH 命令；后续继续接收周期快照。Session 资源卡展示 CPU/内存/网络及磁盘 I/O 读写速率，Overview 原三个指标卡保持不变。
 
 ## 公共 Schema
 
@@ -263,6 +263,10 @@ interface RemoteMetricsSnapshot {
     receiveBytesPerSecond: number | null; // 服务器接收；首次基准为 null
     transmitBytesPerSecond: number | null; // 服务器发送；首次基准为 null
   };
+  diskIo?: {
+    readBytesPerSecond: number | null; // 底层整盘块设备汇总；首次/重建基准为 null
+    writeBytesPerSecond: number | null;
+  };
   filesystems: Array<{ device: string; mountPoint: string; usedBytes: number; totalBytes: number; usagePercent: number }>;
   uptimeSeconds: number;
   processes: Array<{
@@ -280,6 +284,8 @@ interface RemoteMetricsSnapshot {
 ```
 
 CPU、内存、load、uptime 和磁盘每 2 秒采样；进程每 3 秒采样，按 CPU 降序最多 20 条。探测命令由后端固定，不接受前端或 LLM 输入。单次失败发送 `monitor.error`，SSE 保持连接并继续下一轮。
+
+`diskIo` 复用基础采样，按远端实际时间差计算；不把分区与整盘、映射层与其底层设备重复累加。无统计时省略该字段，首次或统计重置为 null，真实空闲为 0；前端分别展示占位符和 0 B/s。该字段保持可选，旧消费者不受影响，采集过程不写入数据库或模型上下文。
 
 ```json
 {

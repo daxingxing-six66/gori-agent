@@ -11,14 +11,15 @@ const target: SshTargetSnapshot = {
 	keepaliveIntervalMs: 1000, keepaliveMaxCount: 3,
 };
 
-function fixture() {
+function fixture(diskProbe = (sample: number) =>
+	"DISK_TIME " + (100 + sample * 2) + "\nDISK_IO vda 252:0 1 " + sample * 8 + " " + sample * 4 + "\n") {
 	const events = new WorkspaceEventHub();
 	let sample = 0;
 	const execute = vi.fn(async (input: ExecuteRemoteCommandInput) => {
 		if (input.command === REMOTE_METRICS_BASE_COMMAND) {
 			sample++;
 			await input.onStdout(Buffer.from(`CORES 4\nCPU ${sample * 100} 0 0 800 0 0 0 0\nMEM 8000 3000\n` +
-				`UP ${100 + sample * 2}\nNET_TIME ${100 + sample * 2}\nNET eth0 ${sample * 2048} ${sample * 1024}\nNET_ROUTE4 eth0 00000000 0003 0\n`));
+				`UP ${100 + sample * 2}\nNET_TIME ${100 + sample * 2}\nNET eth0 ${sample * 2048} ${sample * 1024}\nNET_ROUTE4 eth0 00000000 0003 0\n` + diskProbe(sample)));
 		}
 		return { exitCode: 0 };
 	});
@@ -40,6 +41,7 @@ describe("shared remote metrics subscriptions", () => {
 		await first.read(); // stream.ready
 		await first.read(); // initial sample
 		expect(execute).toHaveBeenCalledTimes(2); // base and process
+		expect(service.latest("ws")?.diskIo).toEqual({ readBytesPerSecond: null, writeBytesPerSecond: null });
 		let replayedToFirst = false;
 		const firstNext = first.read().then(() => { replayedToFirst = true; });
 		const second = events.subscribe("ws", new Set(["monitoring"])).getReader();
@@ -63,6 +65,7 @@ describe("shared remote metrics subscriptions", () => {
 		await vi.advanceTimersByTimeAsync(2_000);
 		expect(execute).toHaveBeenCalledTimes(3);
 		expect(service.latest("ws")?.network).toMatchObject({ receiveBytesPerSecond: 1024, transmitBytesPerSecond: 512 });
+		expect(service.latest("ws")?.diskIo).toEqual({ readBytesPerSecond: 2048, writeBytesPerSecond: 1024 });
 		await first.cancel();
 		await vi.advanceTimersByTimeAsync(2_000);
 		expect(service.latest("ws")).toBeDefined();
@@ -75,6 +78,7 @@ describe("shared remote metrics subscriptions", () => {
 		const third = events.subscribe("ws", new Set(["monitoring"])).getReader();
 		await vi.advanceTimersByTimeAsync(0);
 		expect(service.latest("ws")?.network?.receiveBytesPerSecond).toBeNull();
+		expect(service.latest("ws")?.diskIo).toEqual({ readBytesPerSecond: null, writeBytesPerSecond: null });
 		await third.cancel();
 		service.close();
 		events.close();
@@ -94,6 +98,21 @@ describe("shared remote metrics subscriptions", () => {
 		service.close();
 		events.close();
 	});
+
+	it.each(["", "DISK_TIME 100\nDISK_IO vda 252:0 1 invalid 100\n"])(
+		"keeps CPU, memory and network collection working without optional disk statistics", async (diskOutput) => {
+			const { events, service } = fixture(() => diskOutput);
+			const reader = events.subscribe("ws", new Set(["monitoring"])).getReader();
+			await vi.advanceTimersByTimeAsync(2_000);
+			expect(service.latest("ws")?.diskIo).toBeUndefined();
+			expect(service.latest("ws")?.cpu.cores).toBe(4);
+			expect(service.latest("ws")?.memory.totalBytes).toBe(8_192_000);
+			expect(service.latest("ws")?.network?.receiveBytesPerSecond).toBe(1024);
+			await reader.cancel();
+			service.close();
+			events.close();
+		},
+	);
 
 	it("does not publish a late sample or launch a process probe after service shutdown", async () => {
 		const { events, service, execute } = fixture();

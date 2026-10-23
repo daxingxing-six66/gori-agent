@@ -198,9 +198,9 @@ export class TerminalError extends Error {
 	constructor(
 		code: string,
 		message: string,
-		options: { readonly status?: number; readonly retryable?: boolean; readonly details?: TerminalErrorDetails } = {},
+		options: { readonly status?: number; readonly retryable?: boolean; readonly details?: TerminalErrorDetails; readonly cause?: unknown } = {},
 	) {
-		super(message);
+		super(message, options.cause === undefined ? undefined : { cause: options.cause });
 		this.name = "TerminalError";
 		this.code = code;
 		this.status = options.status ?? 400;

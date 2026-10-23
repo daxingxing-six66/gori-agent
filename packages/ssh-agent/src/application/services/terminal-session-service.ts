@@ -22,7 +22,7 @@ import type {
 	TerminalResizeOwnership,
 } from "../terminal/terminal-session-actor.ts";
 import { TerminalSessionActor } from "../terminal/terminal-session-actor.ts";
-import { settleHumanActivity } from "../terminal/terminal-human-activity.ts";
+import { settleHumanActivity } from "../terminal/terminal-human-handoff-settle.ts";
 import type { SessionLifecycleCoordinator, SessionUseLease } from "./session-lifecycle-coordinator.ts";
 import type { SshTargetResolver } from "./ssh-target-resolver.ts";
 import type { RemoteSandboxProvider } from "./remote-sandbox-provider.ts";

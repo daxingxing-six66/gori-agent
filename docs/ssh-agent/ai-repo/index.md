@@ -40,7 +40,7 @@
 | Chat 图片/文本附件引用、内容校验、多模态投影、read 提示和引用持久化 | [chat-image-input.md](./chat-image-input.md) | `packages/ssh-agent/src/application/services/chat-attachment-service.ts` |
 | SFTP 文件管理、Transfer、Workspace SSE 和 Linux 实时监控 | [sftp-monitoring.md](./sftp-monitoring.md) | `packages/ssh-agent/src/application/services/file-transfer-service.ts`、`packages/ssh-agent/src/application/services/remote-metrics-service.ts` |
 | REST/SSE 独立连接额度、双监听传输、构建配置和关闭 | [transport-channels.md](./transport-channels.md) | `packages/ssh-agent/src/server/management-http-transport.ts`、`packages/ssh-agent-web/shared/events/client.ts` |
-| Session 页首 CPU/内存/网络速率、共享监控缓存和默认网卡统计 | [session-server-metrics.md](./session-server-metrics.md) | `packages/ssh-agent-web/features/server-metrics/`、`packages/ssh-agent/src/application/monitoring/remote-network-sampler.ts` |
+| Session 页首 CPU/内存/网络/磁盘 I/O 速率、共享监控缓存和默认网卡统计 | [session-server-metrics.md](./session-server-metrics.md) | `packages/ssh-agent-web/features/server-metrics/`、`packages/ssh-agent/src/application/monitoring/` |
 | 文件工具路径冲突、整批串并行与共享 SFTP Channel | [file-tool-concurrency.md](./file-tool-concurrency.md) | `packages/ssh-agent/src/application/services/file-tool-concurrency.ts`、`packages/ssh-agent/src/infrastructure/ssh/ssh2-sftp-channel-pool.ts` |
 | 新会话首条消息自动标题、模型命名和 SSE 更新 | [session-title.md](./session-title.md) | `packages/ssh-agent/src/application/services/session-title-service.ts` |
 | 动态状态追加、18 工具固定目录、缓存指纹与压缩恢复 | [runtime-context.md](./runtime-context.md) | `packages/ssh-agent/src/application/services/chat-runtime-context-service.ts`、`packages/ssh-agent/src/domain/runtime-context.ts` |

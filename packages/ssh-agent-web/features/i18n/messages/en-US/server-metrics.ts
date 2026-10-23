@@ -1,6 +1,11 @@
 export const enUSServerMetricsMessages = {
 	"serverMetrics.memoryLabel": "Memory",
 	"serverMetrics.networkLabel": "Network",
+	"serverMetrics.diskIoLabel": "Disk I/O",
+	"serverMetrics.diskRead": "Read {value}",
+	"serverMetrics.diskWrite": "Write {value}",
+	"serverMetrics.diskReadLabel": "Disk read {value}",
+	"serverMetrics.diskWriteLabel": "Disk write {value}",
 	"serverMetrics.label": "Remote server resources",
 	"serverMetrics.cpu": "CPU {value}",
 	"serverMetrics.memory": "Memory {value}",

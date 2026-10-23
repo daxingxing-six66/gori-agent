@@ -17,7 +17,8 @@ import {
 	type TerminalInteractionResult,
 } from "../terminal/terminal-interaction-recorder.ts";
 import { captureTerminalObservation, TerminalObservationCancelledError } from "../terminal/terminal-observation-capture.ts";
-import type { TerminalCanonicalCapture, TerminalSessionActor } from "../terminal/terminal-session-actor.ts";
+import type { TerminalCanonicalCapture } from "../terminal/terminal-canonical-state.ts";
+import type { TerminalSessionActor } from "../terminal/terminal-session-actor.ts";
 import type { CommandGuardDecision, CommandGuardEvaluator } from "./command-guard-evaluator.ts";
 import type { TerminalSessionService } from "./terminal-session-service.ts";
 

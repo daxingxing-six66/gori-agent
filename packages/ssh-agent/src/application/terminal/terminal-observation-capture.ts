@@ -2,7 +2,8 @@ import { Buffer } from "node:buffer";
 import type { TerminalBoundaryReason, TerminalObservationExpectation } from "../../domain/terminal.ts";
 import { TERMINAL_DEFAULTS } from "./terminal-defaults.ts";
 import type { TerminalSequencedEvent } from "./terminal-replay-ring.ts";
-import type { TerminalCanonicalCapture, TerminalSessionActor } from "./terminal-session-actor.ts";
+import type { TerminalCanonicalCapture } from "./terminal-canonical-state.ts";
+import type { TerminalSessionActor } from "./terminal-session-actor.ts";
 
 export interface CapturedTerminalObservation {
 	readonly canonical: TerminalCanonicalCapture;
