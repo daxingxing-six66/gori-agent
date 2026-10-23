@@ -53,9 +53,20 @@ export function useChatRuntime(sessionId: string, startRun?: (start: () => Promi
 	const historySession = useRef(sessionId);
 	historySession.current = sessionId;
 	const compactionControllerRef = useRef<AbortController | null>(null);
-	const olderMessagesRequestRef = useRef(false);
+	const olderMessagesScope = useMemo(() => Symbol(sessionId), [sessionId]);
+	const olderMessagesMountedRef = useRef<symbol | null>(null);
+	const olderMessagesReadyRef = useRef<symbol | null>(null);
+	const olderMessagesRequestRef = useRef<{ scope: symbol } | null>(null);
 	const queueMutationRef = useRef<symbol | null>(null);
 	const submissionRef = useRef<symbol | null>(null);
+	useLayoutEffect(() => {
+		olderMessagesMountedRef.current = olderMessagesScope;
+		return () => {
+			olderMessagesMountedRef.current = null;
+			olderMessagesReadyRef.current = null;
+			if (olderMessagesRequestRef.current?.scope === olderMessagesScope) olderMessagesRequestRef.current = null;
+		};
+	}, [olderMessagesScope]);
 	useEffect(() => {
 		queueMutationRef.current = null;
 		submissionRef.current = null;
@@ -105,7 +116,7 @@ export function useChatRuntime(sessionId: string, startRun?: (start: () => Promi
 			setCompacting(false);
 			setLoadingOlderMessages(false);
 			setNextBeforeSequence(null);
-			olderMessagesRequestRef.current = false;
+			olderMessagesRequestRef.current = null;
 			setLoading(true);
 			setRequestError(null);
 			dispatch({ type: "reset" });
@@ -114,31 +125,40 @@ export function useChatRuntime(sessionId: string, startRun?: (start: () => Promi
 			} catch (requestError) {
 				if (!cancelled) setRequestError(requestError);
 			} finally {
-				if (!cancelled) setLoading(false);
+				if (!cancelled) {
+					olderMessagesReadyRef.current = olderMessagesScope;
+					setLoading(false);
+				}
 			}
 		});
 		return () => { cancelled = true; };
-	}, [synchronize]);
+	}, [olderMessagesScope, synchronize]);
 
 	const loadOlderMessages = useCallback(async (): Promise<boolean> => {
 		const beforeSequence = nextBeforeSequence;
-		if (beforeSequence === null || olderMessagesRequestRef.current) return false;
-		olderMessagesRequestRef.current = true;
+		if (olderMessagesMountedRef.current !== olderMessagesScope ||
+			olderMessagesReadyRef.current !== olderMessagesScope || beforeSequence === null || olderMessagesRequestRef.current) return false;
+		const request = { scope: olderMessagesScope };
+		olderMessagesRequestRef.current = request;
+		const currentRequest = () => olderMessagesMountedRef.current === olderMessagesScope && olderMessagesRequestRef.current === request;
 		setLoadingOlderMessages(true);
 		setRequestError(null);
 		try {
 			const page = await chatApi.listMessages(sessionId, { beforeSequence, limit: 100 });
+			if (!currentRequest()) return false;
 			dispatch({ type: "mergePersisted", messages: page.messages });
 			setNextBeforeSequence((current) => current === beforeSequence ? page.nextBeforeSequence : current);
 			return page.messages.length > 0;
 		} catch (requestError) {
-			setRequestError(requestError);
+			if (currentRequest()) setRequestError(requestError);
 			return false;
 		} finally {
-			olderMessagesRequestRef.current = false;
-			setLoadingOlderMessages(false);
+			if (currentRequest()) {
+				olderMessagesRequestRef.current = null;
+				setLoadingOlderMessages(false);
+			}
 		}
-	}, [nextBeforeSequence, sessionId]);
+	}, [nextBeforeSequence, olderMessagesScope, sessionId]);
 
 	const runId = activeChatRun(state.run) ? state.run?.id ?? null : null;
 	useLayoutEffect(() => {

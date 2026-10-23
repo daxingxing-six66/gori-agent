@@ -1,7 +1,7 @@
 "use client";
 
 import { ArrowDown, ChevronUp } from "lucide-react";
-import { type CSSProperties, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useIntl } from "react-intl";
 import { WorkspaceSidebar } from "@/components/workspace-sidebar";
 import { ChatComposerPanel, type ChatComposerPanelHandle } from "@/features/chat/components/chat-composer-panel";
@@ -10,7 +10,8 @@ import { ChatTimeline } from "@/features/chat/components/chat-timeline";
 import { UserDecisionPanel } from "@/features/chat/components/user-decision-panel";
 import { activeChatRun } from "@/features/chat/model/chat-runtime-state";
 import { waitingForChatResponse } from "@/features/chat/model/chat-activity";
-import { chatScrollBehavior, isNearChatHistoryTop } from "@/features/chat/model/chat-scroll";
+import { isNearChatHistoryTop } from "@/features/chat/model/chat-scroll";
+import { useChatScroll } from "@/features/chat/runtime/use-chat-scroll";
 import type { ChatRun, ToolApproval } from "@/features/chat/model/chat";
 import type { SessionAttachment } from "@/features/session/api/session-attachment-api";
 import { useChatModelSelection } from "@/features/chat/runtime/use-chat-model-selection";
@@ -70,11 +71,7 @@ export function ChatConsole({ sessionId }: { sessionId: string }) {
 	const [autoAuditError, setAutoAuditError] = useState<unknown>(null);
 	const composerRef = useRef<ChatComposerPanelHandle>(null);
 	const decisionReopenRef = useRef<HTMLButtonElement>(null);
-	const scrollRef = useRef<HTMLDivElement>(null);
-	const initialScrollCompleteRef = useRef(false);
-	const followNewContentRef = useRef(true);
-	const historyScrollRestoreRef = useRef<{ scrollHeight: number; scrollTop: number } | null>(null);
-	const [showReturnToBottom, setShowReturnToBottom] = useState(false);
+	const historyRequestRef = useRef<{ sessionId: string } | null>(null);
 	const [hiddenDecisionId, setHiddenDecisionId] = useState<string | null>(null);
 	const planningRequestRef = useRef<{ sessionId: string } | null>(null);
 	const [planningSubmitting, setPlanningSubmitting] = useState(false);
@@ -83,6 +80,10 @@ export function ChatConsole({ sessionId }: { sessionId: string }) {
 	const sandbox = useSessionSandbox({ sessionId, session: item?.session, refreshSessions: refresh,
 		refreshTerminal: terminalMode.refresh, disabled: active || runtime.submitting || runtime.compacting || autoAuditPending || planningSubmitting || deployment.busy || diagnose.busy || terminalMode.loading || terminalMode.mutating || terminalMode.status?.transitionInProgress === true });
 	const showActivity = waitingForChatResponse(runtime.state, runtime.loading, runtime.submitting);
+	const chatScroll = useChatScroll({ sessionId, loading: runtime.loading, timeline: runtime.state.timeline, showActivity,
+		present: item !== undefined, loadingOlderMessages: runtime.loadingOlderMessages });
+	const { scrollRef, showReturnToBottom, scrollToBottom, handleScroll: handleViewportScroll,
+		preserveHistoryPosition, clearHistoryPosition } = chatScroll;
 	const autoAuditChecked = autoAuditOverride ?? item?.session.autoAudit ?? false;
 	const terminalTask = useTerminalTask({ sessionId, mode: terminalMode, runActive: active,
 		submitting: runtime.submitting, sandboxPending: sandbox.pending });
@@ -168,37 +169,14 @@ export function ChatConsole({ sessionId }: { sessionId: string }) {
 	useEffect(() => {
 		planningRequestRef.current = null;
 		setPlanningSubmitting(false);
-		initialScrollCompleteRef.current = false;
-		followNewContentRef.current = true;
-		historyScrollRestoreRef.current = null;
-		setShowReturnToBottom(false);
+		historyRequestRef.current = null;
 		setHiddenDecisionId(null);
 		setActiveTaskTabId("terminal");
 	}, [sessionId]);
 
-	useLayoutEffect(() => {
-		const restore = historyScrollRestoreRef.current;
-		const container = scrollRef.current;
-		if (!restore || !container) return;
-		container.scrollTop = restore.scrollTop + container.scrollHeight - restore.scrollHeight;
-	}, [runtime.state.timeline]);
-
 	useEffect(() => {
-		if (!runtime.loadingOlderMessages) historyScrollRestoreRef.current = null;
-	}, [runtime.loadingOlderMessages]);
-
-	useEffect(() => {
-		const container = scrollRef.current;
-		if (!container) return;
-		if (!runtime.loading && !initialScrollCompleteRef.current) {
-			container.scrollTo({ top: container.scrollHeight });
-			initialScrollCompleteRef.current = true;
-			followNewContentRef.current = true;
-			setShowReturnToBottom(false);
-			return;
-		}
-		if (followNewContentRef.current) container.scrollTo({ top: container.scrollHeight, behavior: "smooth" });
-	}, [runtime.loading, runtime.state.timeline, showActivity]);
+		if (!runtime.loadingOlderMessages) clearHistoryPosition();
+	}, [clearHistoryPosition, runtime.loadingOlderMessages]);
 
 	useEffect(() => {
 		if (deployment.open) setActiveTaskTabId("deploy");
@@ -212,24 +190,16 @@ export function ChatConsole({ sessionId }: { sessionId: string }) {
 	const handleChatScroll = useCallback(() => {
 		const container = scrollRef.current;
 		if (!container) return;
-		const behavior = chatScrollBehavior(container);
-		followNewContentRef.current = behavior.followNewContent;
-		setShowReturnToBottom(behavior.showReturnToBottom);
-		if (isNearChatHistoryTop(container.scrollTop) && runtime.hasOlderMessages && !runtime.loadingOlderMessages) {
-			historyScrollRestoreRef.current = { scrollHeight: container.scrollHeight, scrollTop: container.scrollTop };
-			void runtime.loadOlderMessages().then((loaded) => {
-				if (!loaded) historyScrollRestoreRef.current = null;
-			});
+		handleViewportScroll();
+		if (runtime.loading) return;
+		if (isNearChatHistoryTop(container.scrollTop) && runtime.hasOlderMessages && !runtime.loadingOlderMessages && !historyRequestRef.current) {
+			const request = { sessionId };
+			historyRequestRef.current = request;
+			preserveHistoryPosition();
+			// Clear the anchor after the loading indicator is removed, including empty/error pages.
+			void runtime.loadOlderMessages().finally(() => { if (historyRequestRef.current === request) historyRequestRef.current = null; });
 		}
-	}, [runtime.hasOlderMessages, runtime.loadOlderMessages, runtime.loadingOlderMessages]);
-
-	const scrollToBottom = () => {
-		const container = scrollRef.current;
-		if (!container) return;
-		followNewContentRef.current = true;
-		setShowReturnToBottom(false);
-		container.scrollTo({ top: container.scrollHeight, behavior: "smooth" });
-	};
+	}, [handleViewportScroll, preserveHistoryPosition, runtime.hasOlderMessages, runtime.loadOlderMessages, runtime.loading, runtime.loadingOlderMessages, scrollRef, sessionId]);
 
 	const submit = useCallback(async (message: string, attachments: SessionAttachment[]): Promise<boolean> => {
 		const localResult = await sandbox.execute(message, attachments.length > 0);
@@ -455,7 +425,10 @@ export function ChatConsole({ sessionId }: { sessionId: string }) {
 				</div> : null}
 
 				<div className="session-console-chat relative min-h-0">
-					<div ref={scrollRef} className="app-scrollbar h-full overflow-y-auto" onScroll={handleChatScroll}>
+					<div ref={scrollRef} className="app-scrollbar h-full overflow-y-auto" onScroll={handleChatScroll}
+						onWheelCapture={chatScroll.handleWheel} onTouchStartCapture={chatScroll.handleTouchStart}
+						onTouchMoveCapture={chatScroll.handleTouchMove} onTouchEndCapture={chatScroll.handleTouchEnd}
+						onTouchCancelCapture={chatScroll.handleTouchEnd} onKeyDownCapture={chatScroll.handleKeyDown}>
 						<ChatTimeline showActivity={showActivity} loading={runtime.loading} loadingOlderMessages={runtime.loadingOlderMessages} timeline={runtime.state.timeline} tools={runtime.state.tools} approvals={runtime.state.approvals} approvalMutationId={runtime.approvalMutationId} targetHost={targetHost} run={runtime.state.run} latestUserText={latestUserText} onResolveApproval={resolveApproval} onRestoreDraft={restoreDraft} onOpenFile={openFile}
 							onOpenAttachment={openAttachment}
 							onOpenDiagnose={(id) => { setActiveTaskTabId("diagnose"); taskDisplay.reveal(); diagnose.openHistory(id); }}

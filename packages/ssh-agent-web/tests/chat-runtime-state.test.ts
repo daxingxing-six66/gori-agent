@@ -169,12 +169,12 @@ describe("Chat runtime state", () => {
 		const pending = chatRuntimeReducer(initialChatRuntimeState, { type: "hydrate", messages: [], decisions: [decision] });
 		expect(chatRuntimeReducer(pending, { type: "setRun", run: null }).decisions).toEqual({});
 	});
-	it("follows new content near the bottom and exposes a return action after scrolling away", () => {
-		expect(chatScrollBehavior({ scrollHeight: 1200, scrollTop: 400, clientHeight: 600 })).toEqual({
+	it("recognizes the actual bottom within rounding tolerance without treating the old near-bottom range as following", () => {
+		expect(chatScrollBehavior({ scrollHeight: 1200, scrollTop: 598, clientHeight: 600 })).toEqual({
 			followNewContent: true,
 			showReturnToBottom: false,
 		});
-		expect(chatScrollBehavior({ scrollHeight: 1200, scrollTop: 300, clientHeight: 600 })).toEqual({
+		expect(chatScrollBehavior({ scrollHeight: 1200, scrollTop: 400, clientHeight: 600 })).toEqual({
 			followNewContent: false,
 			showReturnToBottom: true,
 		});

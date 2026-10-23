@@ -1,4 +1,5 @@
-export const CHAT_BOTTOM_DISTANCE_THRESHOLD = 220;
+/** Allow fractional layout rounding without treating a nearby history position as the bottom. */
+export const CHAT_BOTTOM_DISTANCE_THRESHOLD = 2;
 export const CHAT_TOP_DISTANCE_THRESHOLD = 120;
 
 export interface ChatScrollMetrics {
