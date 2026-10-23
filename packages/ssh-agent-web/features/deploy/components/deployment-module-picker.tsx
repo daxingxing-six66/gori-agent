@@ -1,7 +1,7 @@
 "use client";
 
 import { X } from "lucide-react";
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { useIntl } from "react-intl";
 import type { DeploymentDiscovery } from "../model/deployment";
 import { deploymentModuleOptions, type DeploymentModuleOption } from "../model/deployment-module-options";
@@ -19,6 +19,7 @@ export function DeploymentModulePicker({ discovery, loading, busy, disabled, err
 	const choosing = useRef(false);
 	const [selected, setSelected] = useState<string | null>(null);
 	const options = useMemo(() => deploymentModuleOptions(discovery?.profiles ?? []), [discovery?.profiles]);
+	const selectedIndex = Math.max(0, options.findIndex((option) => option.key === selected));
 	useEffect(() => { root.current?.focus({ preventScroll: true }); }, []);
 	useEffect(() => {
 		const closeOutside = (event: PointerEvent) => {
@@ -34,8 +35,32 @@ export function DeploymentModulePicker({ discovery, loading, busy, disabled, err
 		try { await onSelect(option.file, option.moduleId); }
 		finally { choosing.current = false; setSelected(null); }
 	};
+	const selectOption = (option: DeploymentModuleOption) => {
+		if (!loading && !busy && !disabled && !choosing.current) setSelected(option.key);
+	};
+	const handleSelectionKey = (event: KeyboardEvent<HTMLElement>, index = selectedIndex) => {
+		if (!["ArrowDown", "ArrowUp", "ArrowLeft", "ArrowRight", "Home", "End", "Enter"].includes(event.key)) return;
+		event.preventDefault();
+		event.stopPropagation();
+		if (loading || busy || disabled || choosing.current || options.length === 0) return;
+		if (event.key === "Enter") {
+			const option = options[index];
+			if (option && !event.repeat) void choose(option);
+			return;
+		}
+		const next = event.key === "ArrowDown" || event.key === "ArrowRight" ? (index + 1) % options.length
+			: event.key === "ArrowUp" || event.key === "ArrowLeft" ? (index + options.length - 1) % options.length
+			: event.key === "Home" ? 0 : options.length - 1;
+		const option = options[next];
+		if (!option) return;
+		setSelected(option.key);
+		rows.current[next]?.focus();
+	};
 	return <div ref={root} className="deploy-module-popover" role="dialog" tabIndex={-1} aria-modal={false} aria-labelledby={titleId} aria-busy={loading || busy}
-		onKeyDown={(event) => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); onClose(true); } }}>
+		onKeyDown={(event) => {
+			if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); onClose(true); }
+			else if (event.target === event.currentTarget) handleSelectionKey(event);
+		}}>
 		<header className="deploy-module-popover-header"><h2 id={titleId}>{intl.formatMessage({ id: "deploy.picker.title" })}</h2>
 			<button type="button" onClick={() => onClose(true)} aria-label={intl.formatMessage({ id: "deploy.picker.close" })}><X size={16} /></button>
 		</header>
@@ -46,12 +71,10 @@ export function DeploymentModulePicker({ discovery, loading, busy, disabled, err
 			{options.length === 0 && !error ? <p className="deploy-module-feedback">{intl.formatMessage({ id: "deploy.noProfile" })}</p> : null}
 			<ol className="deploy-module-list" aria-label={intl.formatMessage({ id: "deploy.module" })}>
 				{options.map((option, index) => <li key={option.key}><label className="deploy-module-card">
-					<input type="radio" name={titleId} className="deploy-module-select" checked={selected === option.key} ref={(node) => { rows.current[index] = node; }} disabled={busy || disabled}
-					onChange={(event) => { if (event.target.checked) void choose(option); }} onKeyDown={(event) => {
-						const next = event.key === "ArrowDown" ? (index + 1) % options.length : event.key === "ArrowUp" ? (index + options.length - 1) % options.length
-							: event.key === "Home" ? 0 : event.key === "End" ? options.length - 1 : null;
-						if (next !== null) { event.preventDefault(); rows.current[next]?.focus(); }
-					}} aria-label={intl.formatMessage({ id: "deploy.picker.selectModule" }, { module: option.moduleName })} />
+					<input type="radio" name={titleId} className="deploy-module-select" checked={selectedIndex === index} ref={(node) => { rows.current[index] = node; }} disabled={busy || disabled}
+					onFocus={() => selectOption(option)} onChange={(event) => { if (event.target.checked) selectOption(option); }}
+					onClick={() => { void choose(option); }} onKeyDown={(event) => handleSelectionKey(event, index)}
+						aria-label={intl.formatMessage({ id: "deploy.picker.selectModule" }, { module: option.moduleName })} />
 					<span className="deploy-module-number" aria-hidden="true">{index + 1}.</span>
 					<span className="deploy-module-name" title={option.moduleName}>{option.moduleName}</span>
 				</label></li>)}

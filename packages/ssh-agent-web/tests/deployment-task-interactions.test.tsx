@@ -319,25 +319,71 @@ describe("deployment module launcher interaction", () => {
  }; }
  function render(value: ComponentProps<typeof DeploymentModulePicker>) { return host.render(() => DeploymentModulePicker(value)); }
  function rows(view: ReactNode) { return native(view, "input").filter((item) => item.props.type === "radio"); }
- function select(node: ReactElement<ComponentProps<"input">>) { node.props.onChange?.({ target: { checked: true } } as ChangeEvent<HTMLInputElement>); }
- function key(node: ReactElement<ComponentProps<"div"> | ComponentProps<"input">>, value: string) {
-  const event = { key: value, preventDefault: vi.fn(), stopPropagation: vi.fn() };
+ function panel(view: ReactNode) { return native(view, "div")[0]!; }
+ function checked(view: ReactNode) { return rows(view).map((row) => row.props.checked); }
+ function select(node: ReactElement<ComponentProps<"input">>) {
+  node.props.onClick?.({} as MouseEvent<HTMLInputElement>);
+  node.props.onChange?.({ target: { checked: true } } as ChangeEvent<HTMLInputElement>);
+ }
+ function key(node: ReactElement<ComponentProps<"div"> | ComponentProps<"input">>, value: string, details: { target?: unknown; repeat?: boolean } = {}) {
+  const event = { key: value, repeat: details.repeat ?? false, target: details.target ?? node, currentTarget: node,
+   preventDefault: vi.fn(), stopPropagation: vi.fn() };
   node.props.onKeyDown?.(event as unknown as KeyboardEvent<HTMLInputElement> & KeyboardEvent<HTMLDivElement>); return event;
  }
+ function attachRows(view: ReactNode) {
+  return rows(view).map((row) => { const target = { focus: vi.fn(), disabled: false };
+   if (typeof row.props.ref === "function") row.props.ref(target as unknown as HTMLInputElement); return target; });
+ }
  beforeEach(() => { vi.stubGlobal("document", { addEventListener: vi.fn(), removeEventListener: vi.fn() }); });
- it("focuses the panel without highlighting a module and supports arrow, Home and End navigation", () => {
+ it("preselects the first asynchronously loaded module without starting deployment or moving the panel focus", () => {
   const value = props(); value.loading = true; let view = render(value);
   const panel = { focus: vi.fn() };
   (native(view, "div")[0]!.props.ref as { current: unknown }).current = panel;
   host.commit(); expect(panel.focus).toHaveBeenCalledExactlyOnceWith({ preventScroll: true });
+  expect(rows(view)).toHaveLength(0); expect(value.onSelect).not.toHaveBeenCalled();
   value.loading = false; view = render(value);
-  const targets = rows(view).map((row) => { const target = { focus: vi.fn(), disabled: false };
-   if (typeof row.props.ref === "function") row.props.ref(target as unknown as HTMLInputElement); return target; });
+  const targets = attachRows(view);
   host.commit(); expect(targets[0]!.focus).not.toHaveBeenCalled();
-  expect(key(rows(view)[0]!, "ArrowUp").preventDefault).toHaveBeenCalledOnce(); expect(targets[2]!.focus).toHaveBeenCalledOnce();
-  key(rows(view)[2]!, "ArrowDown"); expect(targets[0]!.focus).toHaveBeenCalledOnce();
-  key(rows(view)[0]!, "End"); key(rows(view)[2]!, "Home");
-  expect(targets[2]!.focus).toHaveBeenCalledTimes(2); expect(targets[0]!.focus).toHaveBeenCalledTimes(2);
+  expect(checked(view)).toEqual([true, false, false]); expect(value.onSelect).not.toHaveBeenCalled();
+ });
+ it("confirms the default first module with Enter from the initially focused panel", () => {
+  const value = props(); const view = render(value);
+  const event = key(panel(view), "Enter");
+  expect(event.preventDefault).toHaveBeenCalledOnce(); expect(event.stopPropagation).toHaveBeenCalledOnce();
+  expect(value.onSelect).toHaveBeenCalledExactlyOnceWith("deploy-a.md", "api");
+ });
+ it("moves the panel selection with up/down, wraps at the ends and supports Home/End without dispatching", () => {
+  const value = props(); let view = render(value); const targets = attachRows(view);
+  expect(key(panel(view), "ArrowDown").preventDefault).toHaveBeenCalledOnce();
+  view = render(value); expect(checked(view)).toEqual([false, true, false]); expect(targets[1]!.focus).toHaveBeenCalledOnce();
+  key(panel(view), "ArrowDown"); view = render(value); expect(checked(view)).toEqual([false, false, true]);
+  key(panel(view), "ArrowDown"); view = render(value); expect(checked(view)).toEqual([true, false, false]);
+  key(panel(view), "ArrowUp"); view = render(value); expect(checked(view)).toEqual([false, false, true]);
+  key(panel(view), "Home"); view = render(value); expect(checked(view)).toEqual([true, false, false]);
+  key(panel(view), "End"); view = render(value); expect(checked(view)).toEqual([false, false, true]);
+  expect(value.onSelect).not.toHaveBeenCalled();
+ });
+ it("navigates focused radios without native selection dispatch and confirms the exact cross-profile module with Enter", () => {
+  const value = props(); let view = render(value); const targets = attachRows(view);
+  const event = key(rows(view)[0]!, "ArrowUp");
+  expect(event.preventDefault).toHaveBeenCalledOnce(); expect(event.stopPropagation).toHaveBeenCalledOnce();
+  view = render(value); expect(checked(view)).toEqual([false, false, true]); expect(targets[2]!.focus).toHaveBeenCalledOnce();
+  key(rows(view)[2]!, "ArrowLeft"); view = render(value); expect(checked(view)).toEqual([false, true, false]);
+  key(rows(view)[1]!, "ArrowRight"); view = render(value); expect(checked(view)).toEqual([false, false, true]);
+  expect(value.onSelect).not.toHaveBeenCalled();
+  key(rows(view)[2]!, "Enter"); expect(value.onSelect).toHaveBeenCalledExactlyOnceWith("deploy-b.md", "api");
+ });
+ it("changes selection on radio focus or change without treating navigation as confirmation", () => {
+  const value = props(); let view = render(value);
+  rows(view)[2]!.props.onFocus?.({} as Parameters<NonNullable<ComponentProps<"input">["onFocus"]>>[0]);
+  view = render(value); expect(checked(view)).toEqual([false, false, true]);
+  rows(view)[1]!.props.onChange?.({ target: { checked: true } } as ChangeEvent<HTMLInputElement>);
+  view = render(value); expect(checked(view)).toEqual([false, true, false]); expect(value.onSelect).not.toHaveBeenCalled();
+  key(panel(view), "Enter"); expect(value.onSelect).toHaveBeenCalledExactlyOnceWith("deploy-a.md", "worker");
+ });
+ it("activates the already checked default module when clicked", () => {
+  const value = props(); const view = render(value); expect(rows(view)[0]?.props.checked).toBe(true);
+  select(rows(view)[0]!); expect(value.onSelect).toHaveBeenCalledExactlyOnceWith("deploy-a.md", "api");
  });
  it("closes with Escape or the close control and lets an outside pointer retain its own focus", () => {
   const value = props(); const view = render(value); const root = native(view, "div")[0]!;
@@ -358,12 +404,54 @@ describe("deployment module launcher interaction", () => {
   expect(rows(render(value)).map((row) => row.props.checked)).toEqual([false, false, true]);
   expect(value.onSelect).toHaveBeenCalledExactlyOnceWith("deploy-b.md", "api");
   pending.resolve(); await pending.promise; await Promise.resolve();
-  expect(rows(render(value)).every((row) => !row.props.checked)).toBe(true);
+  expect(checked(render(value))).toEqual([true, false, false]);
   select(rows(view)[2]!); expect(value.onSelect).toHaveBeenCalledTimes(2);
  });
- it("does not dispatch a stale row handler after selection is disabled", () => {
-  const value = props(); value.disabled = true; const view = render(value); select(rows(view)[0]!);
+ it.each(["disabled", "busy", "loading"] as const)("does not navigate or confirm while %s", (state) => {
+  const value = props(); value[state] = true; let view = render(value);
+  key(panel(view), "ArrowDown"); view = render(value); key(panel(view), "Enter");
+  if (state === "loading") expect(rows(view)).toHaveLength(0);
+  else {
+   select(rows(view)[0]!); key(rows(view)[0]!, "Enter");
+   expect(checked(render(value))).toEqual([true, false, false]);
+   expect(rows(view).every((row) => row.props.disabled)).toBe(true);
+  }
   expect(value.onSelect).not.toHaveBeenCalled();
-  expect(rows(view).every((row) => row.props.disabled)).toBe(true);
+ });
+ it("ignores navigation and Enter for an empty module list", () => {
+  const value = props(); value.discovery = null; const view = render(value);
+  key(panel(view), "ArrowDown"); key(panel(view), "ArrowUp"); key(panel(view), "Enter");
+  expect(rows(view)).toHaveLength(0); expect(value.onSelect).not.toHaveBeenCalled();
+ });
+ it("ignores repeated Enter and locks duplicate confirmations until the pending choice finishes", async () => {
+  const value = props(); const pending = deferred<void>(); value.onSelect = vi.fn(() => pending.promise);
+  let view = render(value); key(panel(view), "Enter", { repeat: true }); expect(value.onSelect).not.toHaveBeenCalled();
+  key(panel(view), "Enter"); key(rows(view)[0]!, "Enter"); select(rows(view)[2]!);
+  expect(value.onSelect).toHaveBeenCalledExactlyOnceWith("deploy-a.md", "api");
+  expect(checked(render(value))).toEqual([true, false, false]);
+  pending.resolve(); await pending.promise; await Promise.resolve(); view = render(value);
+  key(panel(view), "Enter"); expect(value.onSelect).toHaveBeenCalledTimes(2);
+ });
+ it("lets Enter on close, retry and setup keep their native button actions", () => {
+  const value = props(); value.error = "Try again"; const view = render(value);
+  const buttons = native(view, "button");
+  for (const target of buttons) {
+   const event = key(panel(view), "Enter", { target });
+   expect(event.preventDefault).not.toHaveBeenCalled(); expect(event.stopPropagation).not.toHaveBeenCalled();
+   click(target);
+  }
+  expect(value.onClose).toHaveBeenCalledExactlyOnceWith(true);
+  expect(value.onRetry).toHaveBeenCalledOnce(); expect(value.onSetup).toHaveBeenCalledOnce();
+  expect(value.onSelect).not.toHaveBeenCalled();
+ });
+ it("keeps selection by profile/module identity on refresh and falls back to the first remaining module if it disappears", () => {
+  const value = props(); let view = render(value); key(panel(view), "End"); view = render(value);
+  expect(checked(view)).toEqual([false, false, true]);
+  const original = value.discovery!;
+  value.discovery = { ...original, profiles: [original.profiles[1]!, original.profiles[0]!] };
+  view = render(value); expect(checked(view)).toEqual([true, false, false]);
+  value.discovery = { ...original, profiles: [original.profiles[0]!] };
+  view = render(value); expect(checked(view)).toEqual([true, false]); expect(value.onSelect).not.toHaveBeenCalled();
+  key(panel(view), "Enter"); expect(value.onSelect).toHaveBeenCalledExactlyOnceWith("deploy-a.md", "api");
  });
 });

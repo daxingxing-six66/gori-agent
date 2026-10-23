@@ -79,7 +79,7 @@ function planned(): DeploymentRun {
 }
 
 describe("deployment task and plan review", () => {
-	it("keeps profile selection unselected and distinguishes identical module ids across profiles", () => {
+	it("preselects the first module and distinguishes identical module ids across profiles", () => {
 		const profiles: DeploymentProfileSummary[] = [
 			{ file: "deploy-a.md", project: "A", target: { host: "example.org" }, modules: [{ id: "api", name: "API" }, { id: "worker", name: "Worker" }] },
 			{ file: "deploy-b.md", project: "B", target: { host: "example.org" }, modules: [{ id: "api", name: "API" }] },
@@ -96,7 +96,9 @@ describe("deployment task and plan review", () => {
 		expect(html.match(/type="radio"/g)).toHaveLength(3);
 		expect(html).toContain('<ol class="deploy-module-list"');
 		expect(html.match(/class="deploy-module-card"/g)).toHaveLength(3);
-		expect(html).not.toContain('checked=""');
+		const radios = html.match(/<input[^>]*type="radio"[^>]*>/gu) ?? [];
+		expect(radios[0]).toContain('checked=""');
+		expect(radios.slice(1).every((radio) => !radio.includes('checked=""'))).toBe(true);
 		expect(html).toContain('role="dialog"');
 		expect(html).not.toContain("deploy-stage-overview");
 		expect(html).toContain("添加服务配置");
