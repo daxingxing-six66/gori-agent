@@ -85,6 +85,7 @@ npm start
 | 模块 | 职责 |
 | --- | --- |
 | `packages/ssh-agent-web` | React / Vinext 浏览器界面 |
+| `packages/gori-website` | 独立交互式产品宣传站，运行 `npm run dev:website` |
 | `packages/ssh-agent` | HTTP、SQLite、SSH 和聊天服务 |
 | `packages/agent` | pi Agent 核心 |
 | `packages/ai` | 模型和供应商适配 |

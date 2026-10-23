@@ -1,0 +1,78 @@
+<div class="studio-experience" id="studio-experience">
+  <header class="signal-header">
+    <a class="signal-brand" href="#top" aria-label="Gori 小猩首页">gori<span>_</span><small>SSH AGENT<br />LOCAL FIRST</small></a>
+    <div class="signal-header-actions"><button class="signal-experience-button" data-open-scenario="inspect">打开工作台 <span>↗</span></button><button class="signal-menu-button" id="signal-menu-open" aria-label="打开探索菜单" aria-haspopup="dialog">探索 <i></i><i></i></button></div>
+  </header>
+
+  <section class="signal-journey" id="signal-journey" aria-label="从自然语言到服务器操作的四幕交互叙事">
+    <div class="signal-stage" id="signal-stage">
+      <canvas id="studio-canvas" aria-hidden="true"></canvas>
+      <div class="signal-static-field" aria-hidden="true"><pre>0101     remote_server_call     0101
+     ssh → workspace → Linux
+0100     stdout → observation   0110
+     intent → command → result
+1010     free -h                0010</pre></div>
+      <div class="signal-vignette" aria-hidden="true"></div>
+      <span class="signal-coordinate" aria-hidden="true">GORI TRANSMISSION / 001<br />YOUR SERVER. YOUR WORDS.</span>
+      <div class="signal-copy-stack">
+        <article class="signal-chapter is-active" data-signal-chapter="0">
+          <p class="signal-kicker"><span></span> A NEW WAY TO OPERATE</p>
+          <h1>你的想法。<br /><em>开始流动。</em></h1>
+          <p class="signal-description">不必从一条命令开始。<br />说出你想做的，剩下的，让 Gori 接上。</p>
+          <div class="signal-intents" role="group" aria-label="选择要跟随的示例意图"><button data-signal-intent="inspect" aria-pressed="true">看看服务器</button><button data-signal-intent="deploy" aria-pressed="false">发布一个服务</button><button data-signal-intent="diagnose" aria-pressed="false">排查 502</button></div>
+          <button class="signal-send magnetic-control" id="signal-send"><span>发送这条意图</span><b>↗</b></button>
+        </article>
+        <article class="signal-chapter" data-signal-chapter="1" aria-hidden="true" inert>
+          <p class="signal-kicker">01 / INTENT → COMMAND</p><h2>想法聚合。<br /><em>命令成形。</em></h2><p class="signal-description">自然语言表达目标。<br />Agent 选择工具，你能看见它准备做什么。</p><div class="signal-command-inline"><span>TOOL CALL</span><code id="signal-tool-name">remote_server_call</code></div><button class="signal-text-control" data-signal-go="2">沿着命令继续 <span>↓</span></button>
+        </article>
+        <article class="signal-chapter" data-signal-chapter="2" aria-hidden="true" inert>
+          <p class="signal-kicker">02 / COMMAND → SSH</p><h2>穿过通道。<br /><em>抵达服务器。</em></h2><p class="signal-description">Gori 在你的电脑运行，<br />通过 SSH 连接你配置的 Linux 服务器。</p><button class="signal-send signal-pulse-control magnetic-control" id="signal-pulse"><span>发出一个数据包</span><b>↗</b></button><p class="signal-packet-note" id="signal-packet-note" role="status">点击观察数据流的响应 · 视觉演示</p>
+        </article>
+        <article class="signal-chapter" data-signal-chapter="3" aria-hidden="true" inert>
+          <p class="signal-kicker">03 / OUTPUT → UNDERSTANDING</p><h2>结果回来。<br /><em>事情变清楚。</em></h2><p class="signal-description">命令、输出与观测留在同一处。<br />继续追问，让下一步自然发生。</p><button class="signal-send magnetic-control" id="signal-open-result" data-open-scenario="inspect"><span>进入这次操作</span><b>↗</b></button>
+        </article>
+      </div>
+
+      <aside class="signal-terminal-hud" aria-label="当前幕的示例数据"><div class="signal-hud-bar"><span><i></i> gori / my-linux</span><span id="signal-hud-state">INTENT RECEIVED</span></div><div class="signal-hud-body"><span class="signal-hud-label" id="signal-hud-label">YOUR WORDS</span><p id="signal-hud-prompt">帮我看看这台服务器的内存使用情况。</p><pre id="signal-hud-code">&gt; awaiting your next idea<span class="signal-caret">_</span></pre></div><div class="signal-hud-foot"><span>预设示例 · 不连接服务器</span><span id="signal-hud-route">LOCAL → AGENT</span></div></aside>
+      <nav class="signal-chapter-nav" aria-label="跳转叙事章节"><button data-signal-go="0" aria-current="step"><b>00</b><span>意图</span></button><button data-signal-go="1"><b>01</b><span>命令</span></button><button data-signal-go="2"><b>02</b><span>执行</span></button><button data-signal-go="3"><b>03</b><span>结果</span></button></nav>
+      <div class="signal-bottom-bar"><span class="signal-scroll-cue">SCROLL TO TRANSMIT <span>↓</span></span><span id="signal-phase-status" role="status">00 / 03 · 输入意图</span><button id="studio-motion" aria-pressed="false">暂停流动 Ⅱ</button></div>
+      <div class="signal-progress" aria-hidden="true"><span></span></div>
+    </div>
+  </section>
+
+  <section class="studio-manifesto" id="how-it-works" aria-labelledby="studio-manifesto-title"><div class="studio-section-meta"><span>01 / THE WAY IT WORKS</span><span>SCROLL. FOLLOW. UNDERSTAND.</span></div><h2 id="studio-manifesto-title"><span>把命令行的复杂，</span><br /><span>留在背后。</span><br /><span>把操作的每一步，</span><br /><span>放在眼前。</span></h2><div class="studio-manifesto-bottom"><p>对话负责意图。终端展示过程。<br />任务页组织部署与排障，SFTP 连接文件。</p><p>本机后端 → SSH → 你的服务器<br /><span>模型请求发往你选择的供应商。</span></p></div></section>
+
+  <section class="studio-capabilities" id="features" aria-labelledby="studio-capabilities-title">
+    <div class="studio-capabilities-sticky"><div class="studio-section-meta"><h2 id="studio-capabilities-title">能力，在这里展开。</h2><span id="studio-capability-count">01 / 04</span></div>
+      <div class="studio-capability-track" id="studio-capability-track">
+        <article class="studio-capability-panel capability-terminal"><div class="capability-panel-title"><span>01 / TERMINAL</span><h3>Say it.<br /><em>See it.</em></h3><p>用自然语言操作。<br />在终端中，对照命令与 Agent 观测的内容。</p><button data-open-scenario="inspect">打开终端示例 <span>↗</span></button></div><div class="capability-terminal-scene"><span class="capability-code-heading">TERMINAL MODE / EXAMPLE</span><pre><span class="terminal-user">gori@my-linux</span> ~
+<b>$</b> free -h
+
+              total    used    available
+Mem:          7.8Gi   2.1Gi        5.2Gi
+Swap:         2.0Gi      0B
+
+<span class="code-observation">↳ LLM 已观测至此</span>
+<span class="code-dim">命令、输出、观测，共享一段上下文。</span></pre><div class="capability-scanline" aria-hidden="true"></div></div></article>
+        <article class="studio-capability-panel capability-deploy"><div class="capability-panel-title"><span>02 / DEPLOY</span><h3>Plan it.<br /><em>Ship it.</em></h3><p>先审阅计划，再逐阶段执行。<br />构建、上传、重启、验证，每一步都有记录。</p><button data-open-scenario="deploy">走一遍部署流程 <span>↗</span></button></div><div class="capability-deploy-scene"><div class="deploy-route"><span><i>01</i>构建</span><span><i>02</i>上传</span><span><i>03</i>重启</span><span><i>04</i>验证</span></div><pre><span>deployment_execute_next</span>
+{
+  service: <b>"my-app"</b>,
+  stage: <b>"verify"</b>,
+  result: <b>"health check passed"</b>
+}</pre><p>示例已完成所需审批。计划确认不代替权限授权。</p></div></article>
+        <article class="studio-capability-panel capability-diagnose"><div class="capability-panel-title"><span>03 / DIAGNOSE</span><h3>Trace it.<br /><em>Know it.</em></h3><p>从线索走向结论。<br />区分已确认的事实，与仍待验证的方向。</p><button data-open-scenario="diagnose">跟随一次排查 <span>↗</span></button></div><div class="capability-diagnose-scene"><div class="diagnose-orbit" aria-hidden="true"><span>?</span><i></i><i></i><i></i></div><div class="diagnose-fact"><span>CONFIRMED / 示例证据</span><p>Nginx → <b>:8080</b><br />Application → <b>:8081</b></p><small>端口配置不一致。<br />完整过程保留在诊断记录中。</small></div></div></article>
+        <article class="studio-capability-panel capability-files"><div class="capability-panel-title"><span>04 / SFTP & METRICS</span><h3>All here.<br /><em>In reach.</em></h3><p>远程目录、文件传输与服务器指标。<br />在工作区中，一起触手可及。</p><button data-open-scenario="files">打开远程文件示例 <span>↗</span></button></div><div class="capability-files-scene"><div class="file-space-path">/srv/my-app</div><div><span>▱</span> logs <small>DIRECTORY</small></div><div><span>▱</span> config <small>DIRECTORY</small></div><div><span>▤</span> app.js <small>128 KiB</small></div><div class="file-space-metrics"><span>CPU <b>12%</b></span><span>MEM <b>2.1 GiB</b></span><span>NET <b>↓ 48 KB/s</b></span></div><p>目录与指标均为示意数据。</p></div></article>
+      </div>
+      <nav class="studio-capability-navigation" aria-label="选择要探索的功能"><button data-capability-go="0" aria-current="true">01 <span>Terminal</span></button><button data-capability-go="1">02 <span>Deploy</span></button><button data-capability-go="2">03 <span>Diagnose</span></button><button data-capability-go="3">04 <span>Files</span></button></nav>
+    </div>
+  </section>
+
+  <section class="studio-decision" aria-labelledby="studio-decision-title"><div class="studio-decision-copy"><span class="studio-overline">02 / YOU ARE IN CONTROL</span><h2 id="studio-decision-title">让 AI 动手。<br /><em>由你决定。</em></h2><p>查看将要执行的命令，配置可写范围与只读模式。<br />需要 Full Access 例外时，单独检查，再做决定。</p><a data-repo-path="blob/main/SECURITY.md">了解权限与边界 ↗</a></div><div data-studio-approval></div></section>
+
+  <section class="studio-arrival" id="start" aria-labelledby="studio-arrival-title"><div class="studio-section-meta"><span>03 / YOUR NEXT MOVE</span><span>MIT OPEN SOURCE · LOCAL FIRST</span></div><p>到你了。</p><h2 id="studio-arrival-title">下一条命令，<br />从一句话开始。</h2><div class="studio-arrival-actions"><a class="studio-github magnetic-control" data-repo><span>获取 Gori</span><b>↗</b></a><button class="studio-arrival-preview" data-open-scenario="inspect">先在工作台体验 ↗</button></div><details class="studio-install"><summary><span>在本机开始 / 安装命令与三步配置</span><b>+</b></summary><div data-studio-install></div></details><div class="studio-faq"><span class="studio-overline">BEFORE YOU GO</span><div data-studio-faq></div></div></section>
+  <footer class="studio-footer"><div><a href="#top">gori<span>_</span></a><p>YOUR SERVER.<br />YOUR WORDS.</p></div><div class="studio-footer-bottom"><span>Built on pi. Made for your server.</span><a data-repo-path="blob/main/LICENSE">MIT License ↗</a><a data-repo>GitHub ↗</a><a href="#top">回到起点 ↑</a></div></footer>
+
+  <dialog class="studio-workbench-modal" id="studio-workbench-modal" aria-label="Gori 交互工作台"><div class="studio-modal-bar"><div><span>GORI / PLAYGROUND</span><small>本地预设演示 · 不连接真实服务器</small></div><button id="studio-workbench-close" aria-label="关闭交互工作台">关闭 <span>×</span></button></div><div data-studio-workbench></div></dialog>
+  <dialog class="studio-navigation-modal" id="studio-navigation-modal" aria-label="探索 Gori"><div class="studio-menu-top"><span>gori_ / EXPLORE</span><button id="signal-menu-close" aria-label="关闭探索菜单">关闭 ×</button></div><div class="studio-menu-links"><a href="#signal-journey"><small>00</small>跟随数据流<span>↗</span></a><a href="#features"><small>01</small>探索能力<span>↗</span></a><a href="#start"><small>02</small>开始使用<span>↗</span></a></div><div class="studio-menu-designs"><span>OTHER DIRECTIONS</span><div data-studio-designs></div></div></dialog>
+  <div class="studio-cursor" aria-hidden="true"><span>SIGNAL</span></div>
+</div>

@@ -1,6 +1,6 @@
 # Gori 本地工程与启动代码路由
 
-适用于独立五模块工程，不套用原 pi 产品的发布脚本。
+适用于产品核心五模块及独立宣传站 package，不套用原 pi 产品的发布脚本。
 
 | 关注点 | 源码入口 |
 | --- | --- |
@@ -12,6 +12,7 @@
 | 无秘密配置参考 | `.env.example` |
 
 - 构建顺序为 telemetry、ai、agent、SSH 后端、浏览器；ai 使用随源码携带的模型目录离线构建。
+- `packages/gori-website` 为独立静态宣传站，使用根 `dev:website`、`build:website`、`preview:website`，默认 loopback 4188。它不加入产品构建与启动链路，不依赖后端或真实模型；根 `check` 追加其 JavaScript 类型检查。详见 [宣传站路由](./gori-website.md)。
 - 构建前清除旧 `.build-config.json`，完整成功后记录 API 和事件端口。浏览器两种地址在构建时确定；生产启动时指定不一致的 `SSH_AGENT_PORT` 或 `SSH_AGENT_EVENTS_PORT` 会失败，旧构建缺少事件端口时明确要求重建。
 - 默认网页端口 3000、API 端口 3001、事件端口 3002，三者必须不同且只绑定 loopback。网页端口由 `SSH_AGENT_WEB_PORT` 控制；启动前检查所有端口，不结束其他程序。REST/SSE 连接隔离见 [transport-channels.md](./transport-channels.md)。
 - `--setup` 顺序执行忽略依赖生命周期脚本的安装、构建和启动。不创建 GitHub Release。

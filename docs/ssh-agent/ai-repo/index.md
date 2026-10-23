@@ -14,6 +14,7 @@
 | 要处理的问题 | 功能文档 | 首要源码入口 |
 |---|---|---|
 | 独立工程的构建、生产/开发启动、热更新、端口与数据目录 | [local-distribution.md](./local-distribution.md) | `scripts/build.mjs`、`scripts/start.mjs`、`package.json`、`tsconfig.json` |
+| 独立宣传网站、产品场景演示、静态构建与本地预览 | [gori-website.md](./gori-website.md) | `packages/gori-website/` |
 | Workspace、Session、Credential 的实体、Service、Repository 和生命周期约束 | [management-domain.md](./management-domain.md) | `packages/ssh-agent/src/domain/`、`packages/ssh-agent/src/application/` |
 | Guard 配置、规则 ID、匹配模式和整体 PATCH 语义 | [guard.md](./guard.md) | `packages/ssh-agent/src/domain/guard.ts`、`packages/ssh-agent/src/application/services/guard-service.ts` |
 | LLM Provider/Model 目录、Provider Credential 和 pi-ai 接入 | [llm-provider.md](./llm-provider.md) | `packages/ssh-agent/src/domain/llm-provider.ts`、`packages/ssh-agent/src/application/services/llm-provider-service.ts` |

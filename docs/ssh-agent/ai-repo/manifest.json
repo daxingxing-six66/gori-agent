@@ -2209,7 +2209,7 @@
 				"packages/ssh-agent/package.json"
 			],
 			"sourceDigests": {
-				"package.json": "sha256:75d820088b2395f3fd8690cbf8df8edb189db31f1de69dd8d5eb0f8f37755d94",
+				"package.json": "sha256:6524d19b04cf4dff337a848f7e47eb7bbaa8c56aa798c496c631f53c4569ba8b",
 				"scripts/build.mjs": "sha256:d3aa56e1bff0402c3542939c02de61e1adfa3db43b412e46902d009875f3d0d2",
 				"scripts/start.mjs": "sha256:dfd0919aacac0b8635cab9673442df584c82926f79a29209724a3670e3314478",
 				"scripts/start.test.mjs": "sha256:2585fd0ecd802022b8428e0787494ae9dc4d9fe947dcc0782ccd1b03d112f09b",
@@ -2547,7 +2547,7 @@
 			],
 			"sourceDigests": {
 				".gitignore": "sha256:26e3f65fceac2b8267c7cda8374fa56cd919e3c0f70c7519e9e12f0e46ccf765",
-				"package.json": "sha256:75d820088b2395f3fd8690cbf8df8edb189db31f1de69dd8d5eb0f8f37755d94",
+				"package.json": "sha256:6524d19b04cf4dff337a848f7e47eb7bbaa8c56aa798c496c631f53c4569ba8b",
 				"packages/ssh-agent/package.json": "sha256:f187c4c473ae35f618ee66a6434d173342936ddf640e7e5a03133b736b2d0911",
 				"native/landlock-run/main.c": "sha256:fff3917beb2b2afbe0f8024a951d5af93f010ad6d2115d77c3b2abdd10d9515a",
 				"native/landlock-run/build.mjs": "sha256:0da448ee597d9677a6732baf52ba411c275fdedce671f28ba034f2c702007587",
@@ -3883,6 +3883,55 @@
 				"packages/ssh-agent/src/application/services/chat-agent-runtime-factory.ts": "sha256:1efc0a435044f13b731da68c1a0809a92fa62609a2e417da7c9167136cfb002d",
 				"packages/ssh-agent/test/terminal-handoff-observation.test.ts": "sha256:443d08644cce269a1291a6f43d03e26b7f7ebdefda5350cdcb9801cfbdb2107b",
 				"packages/ssh-agent/test/terminal-human-context-delivery.test.ts": "sha256:e878a5a89ffc81709508122ed53428f9c20a5f6ebf9e6959bc7e1f637f0af214"
+			}
+		},
+		{
+			"document": "docs/ssh-agent/ai-repo/gori-website.md",
+			"sources": [
+				"packages/gori-website/package.json",
+				"packages/gori-website/vite.config.js",
+				"packages/gori-website/tsconfig.json",
+				"packages/gori-website/index.html",
+				"packages/gori-website/src/main.js",
+				"packages/gori-website/src/demo.js",
+				"packages/gori-website/src/dom.js",
+				"packages/gori-website/src/scenarios.js",
+				"packages/gori-website/src/styles.css",
+				"packages/gori-website/src/workspace.css",
+				"packages/gori-website/public/gori.png",
+				"packages/gori-website/README.md",
+				"packages/gori-website/src/designs.js",
+				"packages/gori-website/src/designs.css",
+				"packages/gori-website/src/tabby.css",
+				"packages/gori-website/src/mono.css",
+				"packages/gori-website/src/studio-scene.js",
+				"packages/gori-website/src/studio.html",
+				"packages/gori-website/src/studio-page.js",
+				"packages/gori-website/src/studio-dataflow.js",
+				"packages/gori-website/src/studio-experience.css"
+			],
+			"sourceDigests": {
+				"packages/gori-website/package.json": "sha256:bcad15ce21a74259592a6bd07dca08bb17de692dd77b8b5757b7ab1dbbd4f3c6",
+				"packages/gori-website/vite.config.js": "sha256:5473ca506cd0f6bcd00bb6fa068b68454b8d1a52962733e9f99060276034b884",
+				"packages/gori-website/tsconfig.json": "sha256:97eba1517b0d629daac750d003aa9c44f03f2213a3afd6b6c10bf11060df5fe5",
+				"packages/gori-website/index.html": "sha256:43b9a4c540fede4efc279d55820353c1b4b230db32a26f0e7f15318177a57618",
+				"packages/gori-website/src/main.js": "sha256:f616322071304428dc35377ac9022f6a4427692e1cbfc8648437ed645f5eb8db",
+				"packages/gori-website/src/demo.js": "sha256:cfbafcc0ac26f818d4455a9734c4d5c94a6c6192992f9983fa1a5d3e07207960",
+				"packages/gori-website/src/dom.js": "sha256:bb96290f75489d1af97909791f122df77070dbefd5594018eaa8144ddcfe769a",
+				"packages/gori-website/src/scenarios.js": "sha256:82a53f79dfa95c7f770c7dee8081701700ceef197af0a094e9363f23a3710467",
+				"packages/gori-website/src/styles.css": "sha256:6c0222b2cbffdb52a93ec9a940dfdbe98dd4d6d412f99627508b4f80368d3fb2",
+				"packages/gori-website/src/workspace.css": "sha256:00217ce12d63693b3bb76e1cc7f92ba84056519e6228e885c8120b7d2d4cab77",
+				"packages/gori-website/public/gori.png": "sha256:8f860e1f79ddc98bc023220c27acd12857cc3417fe5765634e98bf7d43930e69",
+				"packages/gori-website/README.md": "sha256:52712bc0c2fab6c230ef1673956cc6d590c8ec9ec2ecc8459d45e3022e9ce97f",
+				"packages/gori-website/src/designs.js": "sha256:338482de7ddd5debcaa64d3c390992e622925a1fa9de4389febdc429242a695d",
+				"packages/gori-website/src/designs.css": "sha256:a8efb99495b03b656f8b2abe7c854dcbdf1720b9cba568801529876d4b77ae5f",
+				"packages/gori-website/src/tabby.css": "sha256:3f9ba0f46075c7e0923a9b2f261ac6871bca500ab8dd7f41d19db13abf234125",
+				"packages/gori-website/src/mono.css": "sha256:991a84dce62125b3f5b4288c035687b7f261d3d1e6d80c83c6993f5e437c7d41",
+				"packages/gori-website/src/studio-scene.js": "sha256:365296321e04a4b30dc8efe477462236cc47356e6b4fbe762d0348cfec44058a",
+				"packages/gori-website/src/studio.html": "sha256:d73d05043ab1bdc4ec2ffc86d7bc72f04212a4715d048bc9e0b81ccc199c42b5",
+				"packages/gori-website/src/studio-page.js": "sha256:2a54f58dbf14b965a39aa317ce38e4ca9550bc7698719524c32d44e022061b6f",
+				"packages/gori-website/src/studio-dataflow.js": "sha256:bce87b60893715fa26b1d4628ee4d5253352ed361f03a29ddde8904df9845aad",
+				"packages/gori-website/src/studio-experience.css": "sha256:5c904ea1085973de55f9d745170eb3403553bf27fc4220b346ff8e3d15dbe4da"
 			}
 		}
 	]

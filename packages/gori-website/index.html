@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#fff8ed" />
+    <meta name="description" content="Gori（小猩），面向个人开发者的轻量 SSH Agent。用自然语言完成 Linux 服务器上的日常操作，在一个工作区查看命令、部署、排障与文件。" />
+    <title>Gori 小猩 — 你的服务器，聊聊就搞定。</title>
+    <script>
+      const requestedDesign = new URLSearchParams(location.search).get('design');
+      document.documentElement.dataset.design = ['studio', 'mono'].includes(requestedDesign) ? requestedDesign : 'tabby';
+    </script>
+    <link rel="icon" type="image/png" href="/gori.png" />
+    <link rel="stylesheet" href="/src/styles.css" />
+    <script type="module" src="/src/main.js"></script>
+  </head>
+  <body id="top">
+    <svg class="icon-definitions" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+      <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14m-6-6 6 6-6 6" /></symbol>
+      <symbol id="i-external" viewBox="0 0 24 24"><path d="M7 17 17 7M7 7h10v10" /></symbol>
+      <symbol id="i-terminal" viewBox="0 0 24 24"><path d="m5 6 6 6-6 6m9 0h6" /></symbol>
+      <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6" /></symbol>
+      <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V4H4v12h4" /></symbol>
+      <symbol id="i-github" viewBox="0 0 24 24"><path d="M9 19c-4.5 1.5-4.5-2.5-6-3m12 6v-3.9a3.4 3.4 0 0 0-.9-2.7c3-.3 6.2-1.5 6.2-6.9A5.4 5.4 0 0 0 18.8 5a5 5 0 0 0-.1-3.5S17.5 1.1 15 2.8a13.3 13.3 0 0 0-6 0C6.5 1.1 5.3 1.5 5.3 1.5A5 5 0 0 0 5.2 5a5.4 5.4 0 0 0-1.5 3.7c0 5.4 3.2 6.6 6.2 6.9a3.4 3.4 0 0 0-.9 2.7V22" /></symbol>
+      <symbol id="i-box" viewBox="0 0 24 24"><path d="m12 3 9 5v9l-9 5-9-5V8l9-5Zm0 10v9M3 8l9 5 9-5M7.5 5.5l9 5" /></symbol>
+      <symbol id="i-search" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5" /></symbol>
+      <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 7V5a2 2 0 0 1 2-2h5l2 3h7a2 2 0 0 1 2 2v11H3V7Z" /></symbol>
+      <symbol id="i-shield" viewBox="0 0 24 24"><path d="m12 3 9 4v5c0 5-9 10-9 10S3 17 3 12V7l9-4Z"/><path d="m8 12 3 3 5-6" /></symbol>
+      <symbol id="i-menu" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16" /></symbol>
+      <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5m11 11L19 19M5 19l1.5-1.5m11-11L19 5" /></symbol>
+      <symbol id="i-moon" viewBox="0 0 24 24"><path d="M20 14A8.5 8.5 0 0 1 10 4a8.5 8.5 0 1 0 10 10Z" /></symbol>
+    </svg>
+    <a class="skip-link" href="#main">跳到主要内容</a>
+    <header class="site-header">
+      <nav class="nav wrap" aria-label="主导航">
+        <a class="brand" href="#top" aria-label="Gori 小猩首页"><img src="/gori.png" alt="" width="38" height="38" /><span>gori<span class="brand-dot">.</span></span><span class="brand-sub">小猩</span></a>
+        <div class="nav-links" id="nav-links"><a href="#playground">交互体验</a><a href="#features">功能</a><a href="#how-it-works">工作方式</a><a href="#start">开始使用</a></div>
+        <div class="nav-actions"><a class="github-link" data-repo href="https://github.com/daxingxing-six66/gori-agent" target="_blank" rel="noopener noreferrer"><svg class="icon"><use href="#i-github" /></svg><span>GitHub</span><svg class="icon small"><use href="#i-external" /></svg></a><button class="icon-button menu-button" id="menu-toggle" aria-label="打开导航菜单" aria-controls="nav-links" aria-expanded="false" hidden><svg class="icon"><use href="#i-menu" /></svg></button></div>
+      </nav>
+    </header>
+    <main id="main">
+      <section class="hero" aria-labelledby="hero-title">
+        <div class="hero-grid" aria-hidden="true"></div>
+        <pre class="hero-ascii" id="hero-ascii" aria-hidden="true"></pre>
+        <span class="hero-coordinate" aria-hidden="true">GORI / SSH AGENT<br />001 — YOUR SERVER, YOUR WORDS.</span>
+        <p class="eyebrow hero-eyebrow"><span class="status-dot"></span> 为个人开发者打造的开源 SSH Agent</p>
+        <h1 id="hero-title">你的服务器，<br /><span>聊聊就搞定。</span></h1>
+        <p class="hero-description">少记几条命令，多做一点创造。<br />让 Gori 把你的想法，变成 Linux 服务器上的实际操作。</p>
+        <div class="hero-actions"><a class="button primary" href="#playground">动手体验 Gori <svg class="icon"><use href="#i-arrow" /></svg></a><a class="button secondary" href="#start">在本机开始 <svg class="icon"><use href="#i-terminal" /></svg></a></div>
+        <p class="hero-note"><span>MIT 开源</span><span>本机运行</span><span>自选模型</span></p>
+        <div class="hero-margin-note left-note" aria-hidden="true"><span class="tiny-cross">+</span><span>YOUR SERVER.<br />YOUR WORKSPACE.</span></div>
+        <div class="hero-margin-note right-note" aria-hidden="true"><span>LESS MEMORIZING.<br />MORE BUILDING.</span><span class="tiny-cross">+</span></div>
+      </section>
+
+      <section class="mono-hero wrap" aria-labelledby="mono-title"><div class="mono-title-row"><h1 id="mono-title">JUST<br /><span>SAY IT.</span></h1><div class="mono-intro"><p class="eyebrow">GORI / A LIGHTWEIGHT SSH AGENT</p><h2>你的服务器，<br />聊聊就搞定。</h2><p>从一句自然语言，<br />到一个完成的任务。</p><a href="#playground" class="mono-round-link" aria-label="进入 Gori 交互工作台"><svg class="icon"><use href="#i-arrow" /></svg></a></div></div><div class="mono-bottom"><span>LESS COMMANDS.<br />MORE POSSIBILITIES.</span><span>MIT OPEN SOURCE<br />LOCAL FIRST.</span><a href="#start">在本机开始 ↗</a></div></section>
+
+      <section class="playground-section wrap" id="playground" aria-labelledby="playground-title">
+        <div class="section-topline"><h2 id="playground-title"><span class="tiny-cross">+</span> 一句话，试试能做什么</h2><span class="demo-label">交互演示 · 示例数据 · 不连接服务器</span></div>
+        <div class="scenario-tabs" role="tablist" aria-label="选择演示场景">
+          <button class="scenario-tab" id="tab-inspect" role="tab" aria-selected="true" aria-controls="demo-panel" data-scenario="inspect"><svg class="icon"><use href="#i-terminal" /></svg>看看服务器<span class="tab-index">01</span></button>
+          <button class="scenario-tab" id="tab-deploy" role="tab" aria-selected="false" aria-controls="demo-panel" tabindex="-1" data-scenario="deploy"><svg class="icon"><use href="#i-box" /></svg>发布一个服务<span class="tab-index">02</span></button>
+          <button class="scenario-tab" id="tab-diagnose" role="tab" aria-selected="false" aria-controls="demo-panel" tabindex="-1" data-scenario="diagnose"><svg class="icon"><use href="#i-search" /></svg>排查一个问题<span class="tab-index">03</span></button>
+          <button class="scenario-tab" id="tab-files" role="tab" aria-selected="false" aria-controls="demo-panel" tabindex="-1" data-scenario="files"><svg class="icon"><use href="#i-folder" /></svg>打开远程文件<span class="tab-index">04</span></button>
+        </div>
+        <div class="workspace" id="demo-panel" role="tabpanel" aria-labelledby="tab-inspect" tabindex="0">
+          <div class="workspace-toolbar"><div class="window-controls" aria-hidden="true"><i></i><i></i><i></i></div><span class="workspace-address"><svg class="icon small"><use href="#i-terminal" /></svg> gori / my-linux</span><div class="workspace-tools"><span class="connection-label"><span class="status-dot"></span> 演示工作区</span><button class="icon-button" id="demo-theme" aria-label="切换演示工作区主题" aria-pressed="false" hidden><svg class="icon small"><use href="#i-sun" /></svg></button></div></div>
+          <div class="workspace-body">
+            <aside class="demo-sidebar" aria-label="演示工作区概览"><div class="demo-brand"><img src="/gori.png" alt="" width="27" height="27" /> Gori</div><span class="sidebar-label">WORKSPACE</span><div class="sidebar-server"><span class="server-icon">▤</span><div>my-linux<small>Linux · SSH</small></div><span class="status-dot"></span></div><span class="sidebar-label session-label">当前会话</span><div class="sidebar-session"><span>↳</span><span id="demo-session">服务器状态检查</span></div><div class="sidebar-bottom"><span class="sidebar-shortcut">⌘</span> 你的服务器，你来掌控</div></aside>
+            <div class="demo-conversation"><div class="conversation-heading"><span id="conversation-title">服务器状态检查</span><span class="muted">Session</span></div><div class="conversation-content"><div class="user-message"><span class="message-avatar">你</span><p id="demo-prompt">帮我看看这台服务器的内存使用情况。</p></div><div class="agent-message"><span class="agent-avatar"><svg class="icon small"><use href="#i-terminal" /></svg></span><div><span class="message-author">Gori</span><p id="demo-response">我会先读取内存信息，再帮你解读结果。</p></div></div><div id="demo-activity" class="demo-activity"></div></div><div class="demo-composer"><div class="composer-placeholder">把你想做的，交给 Gori。</div><div class="composer-bottom"><span>自选模型 <span class="muted">⌄</span></span><span class="composer-send" aria-hidden="true">↑</span></div></div></div>
+            <div class="demo-result"><div class="result-heading"><span class="result-tab"><svg class="icon small" id="result-icon"><use href="#i-terminal" /></svg><span id="result-title">Terminal</span></span><span class="result-caption" id="result-caption">命令与结果，清楚可见</span></div><div class="result-body" id="demo-result-body"><pre class="terminal-output"><code><span class="terminal-prompt">gori@my-linux</span> <span class="terminal-path">~</span>
+$ <span class="terminal-cursor">_</span>
+
+等待运行示例…</code></pre></div><div class="result-status"><span class="status-dot"></span><span id="demo-status" role="status">准备就绪</span><span class="result-status-tail">SSH / Linux</span></div></div>
+          </div>
+          <div class="demo-controls" hidden><div class="demo-progress" id="demo-progress" aria-label="演示进度"></div><span class="demo-step" id="demo-step">01 / 03</span><div class="demo-control-actions"><button class="text-button" id="demo-reset">重新开始</button><button class="button demo-next" id="demo-next">运行示例 <svg class="icon small"><use href="#i-arrow" /></svg></button></div></div>
+        </div>
+        <noscript><p class="noscript-note">启用 JavaScript 后可切换交互演示。你仍可以在下方了解功能、工作方式与安装步骤。</p></noscript>
+        <div class="playground-caption"><p><span class="caption-mark">↳</span> 说出目标，看到过程，再检查结果。</p><a href="#features">探索 Gori 的更多能力 <span>↓</span></a></div>
+      </section>
+
+      <section class="feature-section wrap section-space" id="features" aria-labelledby="feature-title">
+        <div class="section-intro"><p class="eyebrow">ONE WORKSPACE. LESS FRICTION.</p><h2 id="feature-title">从“我想做什么”，<br />到“这件事完成了”。</h2><p>对话、终端、部署和文件，待在同一个工作区。<br />把注意力留给问题本身。</p></div>
+        <div class="feature-grid">
+          <article class="feature-card feature-terminal"><div class="feature-card-heading"><span class="feature-number">01 / TERMINAL</span><svg class="icon"><use href="#i-terminal" /></svg></div><h3>聊着做，也看得见。</h3><p>自然语言表达目标。开启 Terminal Mode，查看命令、终端输出与 Agent 观测范围。</p><div class="mini-terminal" aria-hidden="true"><span class="mini-terminal-label">TERMINAL <span>●</span></span><div><span class="mint">$</span> free -h</div><div class="terminal-observation">Mem: &nbsp;7.8Gi &nbsp;2.1Gi &nbsp;5.2Gi<br /><span>↳ LLM 已观测至此</span></div></div><button class="feature-link" data-open-scenario="inspect" hidden>体验自然语言操作 <span>↗</span></button></article>
+          <article class="feature-card"><div class="feature-card-heading"><span class="feature-number">02 / DEPLOY</span><svg class="icon"><use href="#i-box" /></svg></div><h3>从计划，到上线。</h3><p>先审阅部署计划，再逐阶段构建、上传、重启和验证。日志和执行状态始终可见。</p><div class="mini-pipeline" aria-label="构建、上传、重启、验证四个部署阶段"><span><b>⌘</b>构建</span><i></i><span><b>↑</b>上传</span><i></i><span><b>↻</b>重启</span><i></i><span><b>✓</b>验证</span></div><button class="feature-link" data-open-scenario="deploy" hidden>走一遍部署流程 <span>↗</span></button></article>
+          <article class="feature-card"><div class="feature-card-heading"><span class="feature-number">03 / DIAGNOSE</span><svg class="icon"><use href="#i-search" /></svg></div><h3>排查有路径，结论有依据。</h3><p>把故障拆成诊断节点，记录已确认与未确认的方向。结束后，回看独立的结论报告。</p><div class="mini-diagnose" aria-hidden="true"><span><i>✓</i> 检查服务状态 <b>已确认</b></span><span><i>✓</i> 查看错误日志 <b>已确认</b></span><span><i>·</i> 核对上游配置 <b class="pending">诊断中</b></span></div><button class="feature-link" data-open-scenario="diagnose" hidden>跟随一次问题排查 <span>↗</span></button></article>
+          <article class="feature-card"><div class="feature-card-heading"><span class="feature-number">04 / FILES & METRICS</span><svg class="icon"><use href="#i-folder" /></svg></div><h3>文件和状态，触手可及。</h3><p>SFTP 浏览、上传和下载远程文件。在工作区查看 CPU、内存、网络与进程指标。</p><div class="mini-files" aria-hidden="true"><div><svg class="icon small"><use href="#i-folder" /></svg><span>/srv/my-app</span><span>远程目录</span></div><div><span>▤</span><span>application.log</span><span>24 KB</span></div><div><span>▤</span><span>config.yml</span><span>1.2 KB</span></div></div><button class="feature-link" data-open-scenario="files" hidden>打开演示文件 <span>↗</span></button></article>
+        </div>
+        <div class="capability-line"><span>还有这些，刚刚好。</span><p>工作区与会话管理 <i>+</i> 图片与文本附件 <i>+</i> 上下文压缩 <i>+</i> 中英文界面 <i>+</i> 明暗主题</p></div>
+      </section>
+
+      <section class="control-section" aria-labelledby="control-title"><div class="control-inner wrap"><div class="control-copy"><p class="eyebrow">POWERFUL, WITH YOU IN CONTROL.</p><h2 id="control-title">让 AI 动手，<br />决定权在你。</h2><p>工具调用、操作结果与授权请求，都在对话里。需要人工审批时，检查清楚，再决定下一步。</p><ul class="control-list"><li><svg class="icon"><use href="#i-check" /></svg>查看将要执行的具体命令</li><li><svg class="icon"><use href="#i-check" /></svg>配置 Session 可写目录与只读模式</li><li><svg class="icon"><use href="#i-check" /></svg>为 Full Access 例外单独做决定</li></ul><a class="control-doc-link" data-repo-path="blob/main/SECURITY.md" href="https://github.com/daxingxing-six66/gori-agent/blob/main/SECURITY.md" target="_blank" rel="noopener noreferrer">了解权限与安全边界 <svg class="icon small"><use href="#i-external" /></svg></a></div><div class="approval-demo"><div class="approval-demo-top"><svg class="icon"><use href="#i-shield" /></svg><span>一次操作，一次决定。</span><span class="approval-example">示例</span></div><div class="approval-demo-body"><span class="approval-badge" id="approval-badge">等待你的审批</span><h3>重启 my-app 服务</h3><p>此示例命令申请一次 Full Access 例外。</p><pre><code>sudo systemctl restart my-app</code></pre><div class="approval-reason"><span>申请理由</span><p>让刚上传的服务版本生效，需要在配置的可写目录之外管理系统服务。</p></div><div class="approval-actions" hidden><button id="approval-reject" class="button">拒绝</button><button id="approval-allow" class="button approval-allow">批准这个示例 <svg class="icon small"><use href="#i-check" /></svg></button></div><p class="approval-feedback" id="approval-feedback" role="status">试着做一个决定。这里不会执行真实命令。</p><button class="approval-reset text-button" id="approval-reset" hidden>再试一次 ↻</button></div></div></div></section>
+
+      <section class="architecture-section wrap section-space" id="how-it-works" aria-labelledby="architecture-title"><div class="architecture-heading"><div><p class="eyebrow">LOCAL FIRST. SSH UNDERNEATH.</p><h2 id="architecture-title">在你的电脑运行，<br />连接你自己的服务器。</h2></div><p>熟悉的 SSH，清晰的连接方式。<br />Gori 后端在本机运行；模型请求发送到你配置的供应商。</p></div><div class="architecture-diagram"><div class="architecture-node local-node"><div class="node-illustration laptop-illustration"><svg class="icon"><use href="#i-terminal" /></svg></div><span class="node-kicker">YOUR COMPUTER</span><h3>Gori 本地工作区</h3><p>浏览器 UI + 本机后端</p></div><div class="architecture-connection"><span>SSH / SFTP</span><div><i></i><svg class="icon"><use href="#i-arrow" /></svg></div><small>使用你配置的 SSH 凭据</small></div><div class="architecture-node"><div class="node-illustration server-illustration"><span></span><span></span><span></span></div><span class="node-kicker">YOUR SERVER</span><h3>你的 Linux 服务器</h3><p>执行命令 · 文件传输 · 指标采集</p></div><div class="architecture-model"><span class="model-symbol">✳</span><div><h3>你选择的模型供应商</h3><p>模型请求与上下文会发往该供应商，可在设置中配置。</p></div><span class="model-protocol">HTTPS ↗</span></div></div></section>
+
+      <section class="start-section wrap section-space" id="start" aria-labelledby="start-title"><div class="start-copy"><p class="eyebrow">YOUR NEXT SIDE PROJECT STARTS HERE.</p><h2 id="start-title">给你的服务器，<br />配一位小猩。</h2><p>获取源码，在本机启动 Gori。<br />连接服务器，选择模型，然后说出第一句话。</p><a class="button primary" data-repo href="https://github.com/daxingxing-six66/gori-agent" target="_blank" rel="noopener noreferrer">在 GitHub 获取 Gori <svg class="icon small"><use href="#i-external" /></svg></a><div class="start-requirements"><span>Node.js ≥ 22.19.0</span><span>npm</span><span>Linux 远程服务器</span></div></div><div class="install-card"><div class="install-toolbar"><span><svg class="icon small"><use href="#i-terminal" /></svg> 本机终端</span><button class="copy-button" id="copy-install" aria-label="复制安装命令" hidden><svg class="icon small"><use href="#i-copy" /></svg><span>复制命令</span></button></div><pre><code id="install-command">git clone https://github.com/daxingxing-six66/gori-agent.git
+cd gori-agent
+node scripts/start.mjs --setup</code></pre><div class="install-footnote"><span class="status-dot"></span> 首次启动会安装依赖、构建并初始化本地服务。</div><ol class="onboarding-list"><li><span>01</span><div>配置模型供应商<small>使用你选择的模型与凭据。</small></div></li><li><span>02</span><div>创建 SSH 工作区<small>填写地址，使用密码或私钥连接。</small></div></li><li><span>03</span><div>开始你的第一个会话<small>“帮我看看这台服务器的状态。”</small></div></li></ol><p class="release-note">当前为开源准备版本，采用源码构建。平台与联调验证范围请查看 <a data-repo-path="blob/main/docs/release-readiness.md" href="https://github.com/daxingxing-six66/gori-agent/blob/main/docs/release-readiness.md" target="_blank" rel="noopener noreferrer">验收记录 ↗</a>。</p></div></section>
+
+      <section class="faq-section wrap" aria-labelledby="faq-title"><div><p class="eyebrow">A FEW THINGS TO KNOW.</p><h2 id="faq-title">开始之前。</h2></div><div class="faq-list"><details><summary>Gori 适合谁使用？<span>+</span></summary><p>面向希望用自然语言处理 Linux 服务器日常操作的个人开发者。每个 SSH 工作区对应一个服务器目标，可以管理不同工作区和会话；当前产品不以集群编排或团队公网服务为目标。</p></details><details><summary>需要在服务器上安装 Gori 吗？<span>+</span></summary><p>Gori 后端在你的电脑运行，通过 SSH 连接远程服务器。启用远端命令沙箱时，可能需要准备 Landlock 启动器或安装 Bubblewrap；具体能力与审批要求取决于远程环境。</p></details><details><summary>可以用自己的模型吗？<span>+</span></summary><p>可以在设置中选择和配置模型供应商，也可以添加自定义供应商。模型请求与必要上下文会发送到该供应商；本机运行不代表所有数据都留在本机。</p></details><details><summary>宣传站中的演示会操作我的服务器吗？<span>+</span></summary><p>不会。这些交互只使用浏览器中的预设示例，没有连接 Gori 后端、模型或 SSH 服务。安装 Gori 并配置自己的工作区后，才能执行实际操作。</p></details><details><summary>Gori 是开源的吗？<span>+</span></summary><p>是，Gori 使用 MIT 许可证。Agent 与模型适配基础模块来自 pi，保留原作者声明。你可以在 GitHub 阅读代码、查看问题和参与项目。</p></details></div></section>
+    </main>
+    <footer class="site-footer wrap"><div><a class="brand" href="#top"><img src="/gori.png" alt="" width="32" height="32" /><span>gori<span class="brand-dot">.</span></span></a><span class="footer-tagline">少记命令，多做创造。</span></div><div class="footer-links"><a data-repo href="https://github.com/daxingxing-six66/gori-agent" target="_blank" rel="noopener noreferrer">GitHub ↗</a><a data-repo-path="blob/main/README.md" href="https://github.com/daxingxing-six66/gori-agent/blob/main/README.md" target="_blank" rel="noopener noreferrer">文档 ↗</a><a data-repo-path="blob/main/LICENSE" href="https://github.com/daxingxing-six66/gori-agent/blob/main/LICENSE" target="_blank" rel="noopener noreferrer">MIT License ↗</a><a href="#top">回到顶部 ↑</a></div><p>Gori · 小猩 &nbsp; / &nbsp; Built on pi. Made for your server.</p></footer>
+    <div class="toast" id="toast" role="status" hidden></div>
+    <nav class="design-picker" aria-label="切换设计方案"><span>DESIGN</span><a href="?design=tabby" data-design-link="tabby"><b>01</b> 暖色终端</a><a href="?design=studio" data-design-link="studio"><b>02</b> 空间实验</a><a href="?design=mono" data-design-link="mono"><b>03</b> 黑白编辑</a></nav>
+  </body>
+</html>

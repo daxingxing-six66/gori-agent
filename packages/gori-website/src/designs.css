@@ -1,0 +1,18 @@
+@import url('./tabby.css');
+@import url('./studio-experience.css');
+@import url('./mono.css');
+
+.mono-hero { display: none; }
+[data-design='mono'] .hero { display: none; }
+[data-design='mono'] .mono-hero { display: block; }
+.hero-ascii, .hero-coordinate { display: none; }
+.brand img, .demo-brand img { filter: grayscale(1); }
+.design-picker { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); z-index: 25; display: flex; align-items: center; gap: 5px; padding: 5px; border: 1px solid #7773; background: #fffffff0; backdrop-filter: blur(18px); border-radius: 40px; box-shadow: 0 5px 28px #0002; color: #2c2b31; width: max-content; max-width: calc(100% - 20px); }
+.design-picker > span { font: 9px var(--mono); letter-spacing: 1px; color: #777; padding: 0 12px; }
+.design-picker a { min-height: 36px; display: flex; align-items: center; gap: 7px; padding: 0 14px; border-radius: 24px; font-size: 11px; }
+.design-picker a:hover { background: #eee; }
+.design-picker a[aria-current] { background: #2b2b30; color: #fff; }
+.design-picker b { font: 9px var(--mono); opacity: .6; }
+.site-footer { padding-bottom: 100px !important; }
+.toast { bottom: 80px !important; }
+@media (max-width: 520px) { .design-picker > span { display: none; } .design-picker a { padding-inline: 11px; font-size: 10px; } }

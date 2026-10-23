@@ -13,12 +13,16 @@
     "packages/ai",
     "packages/agent",
     "packages/ssh-agent",
-    "packages/ssh-agent-web"
+    "packages/ssh-agent-web",
+    "packages/gori-website"
   ],
   "scripts": {
     "dev": "node scripts/start.mjs --dev",
     "start": "node scripts/start.mjs",
-    "check": "npm run check:ai-repo && npm run check:sandbox && npm run check:model-data && tsgo --noEmit && tsc --noEmit -p packages/ssh-agent-web/tsconfig.json",
+    "dev:website": "npm run dev --workspace=@gori/website",
+    "build:website": "npm run build --workspace=@gori/website",
+    "preview:website": "npm run preview --workspace=@gori/website",
+    "check": "npm run check:ai-repo && npm run check:sandbox && npm run check:model-data && tsgo --noEmit && tsc --noEmit -p packages/ssh-agent-web/tsconfig.json && npm run check --workspace=@gori/website",
     "check:model-data": "node packages/ai/scripts/check-model-data.ts",
     "hydrate:model-data": "npm run hydrate-model-data --workspace=@earendil-works/pi-ai",
     "build": "node scripts/build.mjs",

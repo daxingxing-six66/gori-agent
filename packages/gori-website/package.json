@@ -1,0 +1,19 @@
+{
+  "name": "@gori/website",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Gori 交互式产品宣传站",
+  "license": "MIT",
+  "engines": { "node": ">=22.19.0" },
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "build": "vite build",
+    "preview": "vite preview --host 127.0.0.1",
+    "check": "tsc --noEmit -p tsconfig.json"
+  },
+  "devDependencies": {
+    "typescript": "5.9.3",
+    "vite": "8.3.0"
+  }
+}
