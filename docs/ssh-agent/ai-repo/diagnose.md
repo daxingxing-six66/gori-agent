@@ -4,7 +4,7 @@
 
 ## 行为与状态
 
-- Composer 菜单中选择“诊断模式”（键盘或鼠标）只将 `/diagnose ` 放入可编辑聊天草稿，保留已有文字、文件/目录引用和附件，收起菜单并将光标放到末尾；已有活动任务时也先准备草稿，不立即调用 API、创建任务或发送默认消息。补充问题后显式发送 `/diagnose 问题`，才将问题和图片/UTF-8 文本文档附件交给原 Chat 链路；文档沿统一附件投影追加 read 提示，不直接注入正文。显式发送无参数 `/diagnose` 时沿用原规则：无活动任务则创建并由模型询问，已有任务则只定位，不新增消息或模型请求。
+- Composer 菜单中选择“诊断模式”（键盘或鼠标）只将 `/diagnose ` 放入可编辑聊天草稿；命令在框内显示为不带 `/` 的 `diagnose` 高亮标签，使用主题强调色、浅底和细边框，问题正文仍可编辑，保留已有文字、文件/目录引用和附件，收起菜单并将光标放到末尾；已有活动任务时也先准备草稿，不立即调用 API、创建任务或发送默认消息。补充问题后显式发送 `/diagnose 问题`，才将问题和图片/UTF-8 文本文档附件交给原 Chat 链路；文档沿统一附件投影追加 read 提示，不直接注入正文。显式发送无参数 `/diagnose` 时沿用原规则：无活动任务则创建并由模型询问，已有任务则只定位，不新增消息或模型请求。
 - 一个 Session 最多一个活动诊断，与 Deploy 模式互斥；部署旧 Prepare/直接提案的最终插入也检查共享策略。`deployment_setup` 在 Run 创建时拒绝活动诊断。历史选择与活动模式分开，查看旧任务不改变模型绑定。
 - `DiagnoseTask` 状态为 active/completed/cancelled。completed 只表示保存了结论，允许未定位根因。普通 Run 完成、失败、停止、页面隐藏、断线或服务重启都不结束活动诊断。
 - `DiagnoseNode` 只有 direction/status/explanation 三个业务字段。status 为 diagnosing/confirmed/unconfirmed。仅当前节点可修订；追加下一条前，当前节点须为 confirmed/unconfirmed 且说明非空。unconfirmed 可说明信息不足或转向理由，不要求证明、排除或关联证据。
@@ -80,7 +80,7 @@ Workspace SSE 新增 `diagnoses` topic：diagnose.task.updated、diagnose.node.u
 
 ChatConsole 只装配菜单、Hook 和稳定 `diagnose` Tab。Tab × 隐藏页面；通用 TaskContainer 没有业务分支。useChatRuntime.attachRun 为后端创建的 Run 复用原状态恢复及 Run SSE。普通发送直接附着 Run，依靠原 SSE 完成气泡，不额外并发拉取历史；REST 补读与临时气泡按 requestId 绑定的 runId 合并，保留旧轮次的同文消息。发送用同步 ref 阻止同一 render 的重复请求。
 
-诊断菜单通过通用 `ChatComposerTool.draftCommand` 声明 `/diagnose`，`chat-token-editor.tsx` 只处理触发词替换、草稿同步和焦点，不导入诊断业务；`chat-composer-menu.ts` 保留命令前缀且避免重复插入。`/` 与正文中的 `@` 入口均保留其余内容，显式提交继续由 `use-diagnose.execute` 解析并复用原后端流程。菜单选择用掉本次 Enter，长按产生的重复 Enter 不发送草稿；IME 及 Shift+Enter 保持原编辑行为。Terminal、Deploy、沙盒和压缩仍使用原即时菜单回调。
+诊断菜单通过通用 `ChatComposerTool.draftCommand` 声明 `/diagnose`，`chat-token-editor.tsx` 只处理触发词替换、命令标签投影、草稿同步和焦点，不导入诊断业务；`chat-composer-menu.ts` 保留命令前缀且避免重复插入。`/` 与正文中的 `@` 入口均保留其余内容，显式提交继续由 `use-diagnose.execute` 解析并复用原后端流程。菜单选择用掉本次 Enter，长按产生的重复 Enter 不发送草稿；IME 及 Shift+Enter 保持原编辑行为。命令标签不可逐字编辑，可用相邻 Backspace 整体删除；标签只隐藏可见的 `/`，序列化、草稿保存与提交仍使用原 `/diagnose` 文本，外部草稿或历史回填时重新高亮，仅识别完整前导命令，不把正文或 `/diagnoses` 当作标签。局部样式位于 `features/chat/components/chat-command-token.css`。Terminal、Deploy、沙盒和压缩仍使用原即时菜单回调。
 
 开启诊断后，attachRun 合并统一聊天历史接口的最近 100 个序号组，包含正式诊断入口和已保存的首条 user 意图；独立卡片 SSE 已推进 maxSequence 时也不会跳过之前仍显示为实时条目的聊天。消息读取完成就提交时间线，不等待审批、决策或队列恢复。返回只有 task、没有 Run 时，以及任务已提交但首次 Chat 请求失败的恢复路径，也通过同一历史接口补读，保留实际错误，不构造虚假的卡片或用户消息。会话切换拒绝旧请求触发恢复。实时与已落库条目按 [Chat Runtime](./chat-runtime.md) 的序号锚点规则合并，避免序号与毫秒时间戳混排；已有更早分页位置保留。
 
@@ -93,6 +93,8 @@ ChatConsole 只装配菜单、Hook 和稳定 `diagnose` Tab。Tab × 隐藏页�
 ## 验证与共享入口复核
 
 定向回归：后端 diagnose-service.test.ts、diagnose-api.test.ts 覆盖节点门禁、SQL 历史不可改、UTF-8 限额、回执、回滚、跨轮、正常审批保留、报告独立读取、结论排队去重和直接退出；前端 diagnose-task.test.tsx、use-diagnose-races.test.ts 覆盖状态/Markdown、报告入口、实体修订乱序、Session 迟到响应、历史选择、隐藏恢复和结论请求竞争。
+
+2026-10-26 高亮标签回归验证键盘/鼠标选择、无斜杠标签和原始命令序列化、继续编辑、恢复草稿、完整命令边界及退格删除时保留问题和文件引用。浏览器使用隔离的真实编辑器组件验证菜单选择、问题输入、命令还原提交及退格删除；未调用诊断 API 或真实模型。
 
 2026-10-23 菜单草稿回归使用 `chat-composer-menu.test.ts`、`chat-token-editor-keyboard.test.tsx` 和 `chat-composer-draft.test.tsx` 验证键盘/鼠标仅准备草稿、保留引用与附件、去重命令前缀、光标及 IME/重复按键、手动提交和失败恢复；不创建真实诊断或模型请求。
 

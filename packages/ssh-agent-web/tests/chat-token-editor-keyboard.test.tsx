@@ -262,6 +262,7 @@ function commandMenuFixture(message: string, caretOffset: number, tool: NonNulla
 		className = "";
 		contentEditable = "false";
 		title = "";
+		remove() { value.editor.childNodes = value.editor.childNodes.filter((node) => node !== this); }
 	}
 	vi.stubGlobal("HTMLElement", ReferenceElement);
 	type RangeContainer = EditorText | EditorElement;
@@ -318,6 +319,11 @@ describe("editable diagnosis menu command", () => {
 		const value = commandMenuFixture("/diag", 5, diagnoseDraftTool);
 		expect(key(value.open().input, { key: "Enter" }).preventDefault).toHaveBeenCalledOnce();
 		expect(value.props.value).toBe("/diagnose ");
+		const command = value.editor.childNodes[0] as InstanceType<typeof value.ReferenceElement>;
+		expect(command.className).toBe("chat-command-token");
+		expect(command.contentEditable).toBe("false");
+		expect(command.textContent).toBe("diagnose");
+		expect(command.dataset.chatCommand).toBe("/diagnose");
 		expect(value.props.onToolSelect).not.toHaveBeenCalled();
 		expect(value.props.onSubmit).not.toHaveBeenCalled();
 		expect(elements(value.render().view).some((item) => item.props.role === "listbox")).toBe(false);
@@ -327,11 +333,44 @@ describe("editable diagnosis menu command", () => {
 		key(value.render().input, { key: "Enter", repeat: true });
 		expect(value.props.onSubmit).not.toHaveBeenCalled();
 		const completed = "/diagnose 请排查接口超时";
-		value.editor.setText(completed);
+		value.editor.childNodes = [command, { nodeType: 3, textContent: " 请排查接口超时" }];
 		value.render().input.props.onInput?.({} as Parameters<NonNullable<EditorNode["props"]["onInput"]>>[0]);
 		expect(value.props.value).toBe(completed);
 		key(value.render().input, { key: "Enter" });
 		expect(value.props.onSubmit).toHaveBeenCalledOnce();
+	});
+
+	it.each(["/diagnose", "/diagnose 请排查接口超时", " \n/diagnose\n请检查日志"])("restores a highlighted command while preserving the serialized draft: %s", (message) => {
+		const value = commandMenuFixture(message, message.length, diagnoseDraftTool);
+		value.render(); host.commit();
+		const tokens = value.editor.childNodes.filter((node) => node instanceof value.ReferenceElement);
+		expect(tokens).toHaveLength(1);
+		expect(tokens[0]?.textContent).toBe("diagnose");
+		const { input } = value.render();
+		input.props.onInput?.({} as Parameters<NonNullable<typeof input.props.onInput>>[0]);
+		expect(value.props.onChange).not.toHaveBeenCalled();
+		expect(value.props.value).toBe(message);
+	});
+
+	it.each(["/diagnoses timeout", "请解释 /diagnose", "/terminal"])("keeps non-command text plain: %s", (message) => {
+		const value = commandMenuFixture(message, message.length, diagnoseDraftTool);
+		value.render(); host.commit();
+		expect(value.editor.childNodes.some((node) => node instanceof value.ReferenceElement)).toBe(false);
+		expect(value.editor.childNodes[0]?.textContent).toBe(message);
+	});
+
+	it("removes the command with Backspace while keeping the problem and file reference", () => {
+		const reference = '<file name="app.log" path="/work/app.log" type="text/plain" />';
+		const message = `/diagnose 请检查 ${reference}`;
+		const value = commandMenuFixture(message, message.length, diagnoseDraftTool);
+		value.render(); host.commit();
+		const caret = value.selection.getRangeAt();
+		const body = Object.assign(value.editor.childNodes[1]!, { previousSibling: value.editor.childNodes[0] });
+		caret.setStart(body, 0); caret.setEnd(body, 0);
+		expect(key(value.render().input, { key: "Backspace" }).preventDefault).toHaveBeenCalledOnce();
+		expect(value.props.value).toBe(` 请检查 ${reference}`);
+		expect(value.editor.childNodes.some((node) => node instanceof value.ReferenceElement && node.dataset.chatCommand)).toBe(false);
+		expect(value.props.onSubmit).not.toHaveBeenCalled();
 	});
 
 	it("uses the mouse mention entry to keep existing text and file references in the editable diagnosis draft", () => {
@@ -347,6 +386,7 @@ describe("editable diagnosis menu command", () => {
 		option.props.onMouseDown?.(event as Parameters<NonNullable<typeof option.props.onMouseDown>>[0]);
 		expect(event.preventDefault).toHaveBeenCalledOnce();
 		expect(value.props.value).toBe(`/diagnose 检查  ${reference} 保留后续说明`);
+		expect(value.editor.childNodes[0]?.textContent).toBe("diagnose");
 		expect(value.props.onToolSelect).not.toHaveBeenCalled();
 		expect(value.props.onSubmit).not.toHaveBeenCalled();
 		expect(value.editor.focus).toHaveBeenCalledOnce();

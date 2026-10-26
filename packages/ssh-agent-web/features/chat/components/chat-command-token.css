@@ -1,0 +1,17 @@
+.chat-command-token {
+	display: inline-flex;
+	align-items: center;
+	max-width: 100%;
+	border: 1px solid var(--accent-line);
+	border-radius: 6px;
+	background: var(--accent-soft);
+	padding: 0 7px;
+	color: var(--accent-ink);
+	font-size: inherit;
+	font-weight: 600;
+	line-height: 20px;
+	vertical-align: baseline;
+	white-space: nowrap;
+	cursor: default;
+	user-select: all;
+}

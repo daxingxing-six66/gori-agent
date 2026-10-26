@@ -36,6 +36,7 @@ import {
 	type ChatComposerMenuTrigger,
 	type ChatComposerTool,
 } from "@/features/chat/model/chat-composer-menu";
+import "./chat-command-token.css";
 
 export type { ChatComposerTool } from "@/features/chat/model/chat-composer-menu";
 
@@ -141,10 +142,10 @@ export const ChatTokenEditor = forwardRef<ChatTokenEditorHandle, ChatTokenEditor
 	useEffect(() => {
 		const editor = editorRef.current;
 		if (!editor || synchronizedValueRef.current === value) return;
-		renderMessage(editor, value);
+		renderMessage(editor, value, tools);
 		if (document.activeElement === editor) moveCaretToEnd(editor);
 		synchronizedValueRef.current = value;
-	}, [value]);
+	}, [value, tools]);
 
 	useEffect(() => {
 		if (autoFocus) editorRef.current?.focus();
@@ -248,7 +249,7 @@ export const ChatTokenEditor = forwardRef<ChatTokenEditorHandle, ChatTokenEditor
 		if (disabled || !editor || !range || !canSelectChatComposerTool(tool)) return;
 		range.deleteContents();
 		if (tool.draftCommand) {
-			renderMessage(editor, chatComposerCommandDraft(serializeEditor(editor), tool.draftCommand));
+			renderMessage(editor, chatComposerCommandDraft(serializeEditor(editor), tool.draftCommand), tools);
 			moveCaretToEnd(editor);
 			syncValueAndMenu(true);
 			closeMenu();
@@ -334,7 +335,7 @@ export const ChatTokenEditor = forwardRef<ChatTokenEditorHandle, ChatTokenEditor
 			if (canNavigate && onNavigateHistory?.(direction)) event.preventDefault();
 			return;
 		}
-		if (event.key === "Backspace" && removeReferenceBeforeCaret(editorRef.current)) {
+		if (event.key === "Backspace" && removeTokenBeforeCaret(editorRef.current)) {
 			event.preventDefault();
 			syncValueAndMenu(true);
 			return;
@@ -488,9 +489,25 @@ export const ChatTokenEditor = forwardRef<ChatTokenEditorHandle, ChatTokenEditor
 	);
 });
 
-function renderMessage(editor: HTMLElement, message: string): void {
+function renderMessage(editor: HTMLElement, message: string, tools: readonly ChatComposerTool[]): void {
 	const fragment = document.createDocumentFragment();
-	for (const part of parseChatComposerMessage(message)) {
+	const content = message.trimStart();
+	const tool = tools.find(({ draftCommand }) => draftCommand && content.startsWith(draftCommand)
+		&& (content.length === draftCommand.length || /\s/u.test(content.charAt(draftCommand.length))));
+	let body = message;
+	if (tool?.draftCommand) {
+		const leadingWhitespace = message.slice(0, message.length - content.length);
+		if (leadingWhitespace) fragment.append(document.createTextNode(leadingWhitespace));
+		const token = document.createElement("span");
+		token.className = "chat-command-token";
+		token.contentEditable = "false";
+		token.dataset.chatCommand = tool.draftCommand;
+		token.title = tool.name;
+		token.textContent = tool.draftCommand.replace(/^\//u, "");
+		fragment.append(token);
+		body = content.slice(tool.draftCommand.length);
+	}
+	for (const part of parseChatComposerMessage(body)) {
 		fragment.append(part.type === "text" ? document.createTextNode(part.text) : createReferenceElement(part.reference));
 	}
 	editor.replaceChildren(fragment);
@@ -579,6 +596,10 @@ function serializeChildren(parent: Node): string {
 			continue;
 		}
 		if (!(node instanceof HTMLElement)) continue;
+		if (node.dataset.chatCommand) {
+			result += node.dataset.chatCommand;
+			continue;
+		}
 		const reference = referenceFromElement(node);
 		if (reference) {
 			result += serializeChatComposerReference(reference);
@@ -621,7 +642,7 @@ function textCaretBefore(container: Node, offset: number): { node: Text; offset:
 	return { node: previous as Text, offset: previous.textContent?.length ?? 0 };
 }
 
-function removeReferenceBeforeCaret(editor: HTMLElement | null): boolean {
+function removeTokenBeforeCaret(editor: HTMLElement | null): boolean {
 	if (!editor) return false;
 	const selection = window.getSelection();
 	if (!selection?.rangeCount || !selection.isCollapsed) return false;
@@ -630,7 +651,7 @@ function removeReferenceBeforeCaret(editor: HTMLElement | null): boolean {
 	let previous: ChildNode | null = null;
 	if (range.startContainer.nodeType === Node.TEXT_NODE && range.startOffset === 0) previous = range.startContainer.previousSibling;
 	else if (range.startContainer === editor && range.startOffset > 0) previous = editor.childNodes.item(range.startOffset - 1);
-	if (!(previous instanceof HTMLElement) || !referenceFromElement(previous)) return false;
+	if (!(previous instanceof HTMLElement) || (!previous.dataset.chatCommand && !referenceFromElement(previous))) return false;
 	previous.remove();
 	return true;
 }
