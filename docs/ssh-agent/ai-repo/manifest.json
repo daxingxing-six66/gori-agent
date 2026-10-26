@@ -1664,7 +1664,7 @@
 				"packages/ssh-agent-web/features/workspace/components/workspace-tree-provider.tsx": "sha256:04b704d714101de310bfef94bcac745df3ec1d112c4defb49b67f5c086fe6f36",
 				"packages/ssh-agent-web/features/workspace/model/workspace.ts": "sha256:2898d379f5ddd31972a22d489f5e0c7a1ab308571791d0c22b414e7e6e7ad42c",
 				"packages/ssh-agent-web/features/credential/api/credential-api.ts": "sha256:288d57eb595312fb1750aa668146b41b47fb927f097561e68afd608194a85707",
-				"packages/ssh-agent-web/features/credential/components/credential-dialog.tsx": "sha256:56f6d187ca54477482d749d1fb42d26aaf5b50e5ceb44dd18fffdefdd35c8403",
+				"packages/ssh-agent-web/features/credential/components/credential-dialog.tsx": "sha256:8058c1f777da2b468befeb2c99065737815b3e4d11aa5cf05276acd98d1f4e1f",
 				"packages/ssh-agent-web/features/credential/components/credential-manager.tsx": "sha256:a9563d9149de76d065b3c68beba46d40547f59f41b9a9fce9dbe66bb5bef1b90",
 				"packages/ssh-agent-web/features/session/api/session-api.ts": "sha256:b481598c7d506ad4f190a5daea0c30be521a78ed47c918c75ce4d510877765c2",
 				"packages/ssh-agent-web/features/session/api/session-attachment-api.ts": "sha256:3584680ba68c6572b88f91342d1e2b407fce0fd23e899238e9255ad233a34064",

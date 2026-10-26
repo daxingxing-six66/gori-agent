@@ -41,7 +41,7 @@ export function CredentialDialog(props: CredentialDialogProps) {
 	const initialValue = props.mode === "draft" ? props.initialValue : undefined;
 	const [displayName, setDisplayName] = useState(initialValue?.displayName ?? "");
 	const [remoteUser, setRemoteUser] = useState(initialValue?.remoteUser ?? "");
-	const [type, setType] = useState<"private_key" | "password">(initialValue?.type ?? "private_key");
+	const [type, setType] = useState<"private_key" | "password">(initialValue?.type ?? "password");
 	const [privateKey, setPrivateKey] = useState(initialValue?.type === "private_key" ? initialValue.privateKey : "");
 	const [passphrase, setPassphrase] = useState(initialValue?.type === "private_key" ? initialValue.passphrase ?? "" : "");
 	const [password, setPassword] = useState(initialValue?.type === "password" ? initialValue.password : "");
