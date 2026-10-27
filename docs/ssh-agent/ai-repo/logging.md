@@ -19,9 +19,24 @@
 | 进程入口安装和异常监控 | `packages/ssh-agent/src/server/main.ts` |
 | 压缩异常 cause | `packages/ssh-agent/src/domain/context-compaction.ts` |
 | 压缩失败日志 | `packages/ssh-agent/src/application/services/chat-context-service.ts` |
+| SQLite owner、慢事务与冲突来源诊断 | `packages/ssh-agent/src/infrastructure/sqlite/sqlite-transaction-runner.ts`、`sqlite-transaction-diagnostics.ts` |
+| 监控 Collector 生命周期、采样排队与阶段耗时 | `packages/ssh-agent/src/application/services/remote-metrics-service.ts`、`application/monitoring/remote-metrics-diagnostics.ts` |
 | 回归测试 | `packages/ssh-agent/test/file-logger.test.ts` |
 
 启用新日志入口需要重新加载后端进程；不会恢复旧进程已经丢失的异常信息。
+
+## SQLite 连接占用与监控积压取证
+
+`SqliteTransactionBusyError` 来自共享连接的事务 owner 检查。异常栈只能说明哪条读取或写入被拒绝，不能据此判断持有事务的是同一 Session、OAuth、SSE 或其他业务。诊断只增加现场记录，不改变事务保护、同步提交、回滚、异常传播、Terminal idle 扫描及监控 FIFO 的现有行为。
+
+- `SSH Agent SQLite transaction diagnostic` 记录进程 ID、随机 `connectionId`、本连接递增 `transactionId`、事务入队与开始时间、owner 的静态 `sourceStack`、当前阶段、排队/持有/阶段耗时及等待队列长度。阶段为 begin、operation、awaiting_operation、commit 或 rollback；`awaiting_operation` 仅表示等待业务 Promise，不推断该 Promise 对应的外部资源。
+- `sqlite.transaction.blocked` 在原拒绝之前同步输出，还包括冲突访问的 `prepare/exec/statement/iterator/authorizer` 边界和调用栈。同一 owner 最多记录八个不同访问来源的完整栈，累计冲突数继续计入 `blockedAccesses`，避免重复堆栈淹没来源。
+- 异步事务等待达到一秒时输出一次 `sqlite.transaction.slow`，定时器 unref，事务结束时清理。排队/持有至少一秒或发生过冲突的事务，结束时输出同 ID 的 `sqlite.transaction.finished`，记录 committed、rolled_back、begin_failed 或 rollback_failed 及失败阶段。若进程在异常时退出，结束记录可能缺失，但 blocked 已包含当时 owner 的现场。
+- `SSH Agent remote metrics diagnostics` 记录 Collector started、stop_scheduled、stop_cancelled、stopped 及释放原因；随机 `collectorId` 区分同一 Workspace 前后两次实例。每次 tick 的 `sampleId`、触发源 initial/base_timer/process_timer、queuedAt、startedAt、queueWaitMs 和三处队列深度区分正在执行与等待的任务。
+- 采样阶段为 resolve_target、base_probe、process_probe、parse、publish，并保留各阶段和整次执行耗时。排队至少一秒时记录 sample.started，排队或执行至少一秒时记录 sample.finished；健康、无积压的每次 tick 不新增 INFO。原监控失败日志追加相同关联字段，原错误对象与 monitor.error 投影沿用既有行为。
+- 排查时先找 blocked 的 owner 来源与 connection/transaction ID，再关联 slow/finished；随后核对同一 Workspace 的 Collector/Sample ID、原入队时间、等待时长及递减队列深度，判断是否为旧任务集中执行。日志不足时保留待验证结论，不能把静态代码中的潜在长事务认定为这次实际 owner。
+
+新增结构诊断不记录 SQL、绑定参数、回调参数/结果、认证材料、Target、命令或输出，也不把任意业务异常正文用作诊断标签；日志 sink 失败不替换原业务异常。回归见 `test/sqlite-transaction-diagnostics.test.ts`、`test/remote-metrics-diagnostics.test.ts`，只使用内存 SQLite、假 Broker 和时钟。
 
 
 ## 上下文缓存观测

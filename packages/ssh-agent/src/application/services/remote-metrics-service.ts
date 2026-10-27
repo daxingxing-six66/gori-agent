@@ -4,6 +4,7 @@ import type { WorkspaceSshTargetResolver } from "./ssh-target-resolver.ts";
 import { connectionKeyFor, serializeConnectionKey } from "../../domain/ssh-target.ts";
 import { REMOTE_NETWORK_COMMAND, RemoteNetworkSampler } from "../monitoring/remote-network-sampler.ts";
 import { REMOTE_DISK_IO_COMMAND, RemoteDiskIoSampler } from "../monitoring/remote-disk-io-sampler.ts";
+import { RemoteMetricsCollectorDiagnostics } from "../monitoring/remote-metrics-diagnostics.ts";
 
 export const REMOTE_METRICS_BASE_COMMAND = [
 	"LC_ALL=C",
@@ -33,6 +34,7 @@ interface Collector {
 	latest?: RemoteMetricsSnapshot;
 	network: RemoteNetworkSampler;
 	diskIo: RemoteDiskIoSampler;
+	diagnostics: RemoteMetricsCollectorDiagnostics;
 }
 
 export class RemoteMetricsService {
@@ -69,57 +71,80 @@ export class RemoteMetricsService {
 	close(): void {
 		this.unsubscribe();
 		this.unregisterSnapshots();
-		for (const collector of this.collectors.values()) this.stop(collector);
+		for (const collector of this.collectors.values()) this.stop(collector, "service_closed");
 		this.collectors.clear();
 	}
 
 	private start(workspaceId: string): void {
 		const existing = this.collectors.get(workspaceId);
 		if (existing) {
-			if (existing.stopTimer) clearTimeout(existing.stopTimer);
+			if (existing.stopTimer) {
+				clearTimeout(existing.stopTimer);
+				existing.diagnostics.lifecycle("collector.stop_cancelled");
+			}
 			existing.stopTimer = undefined;
 			return;
 		}
 		const collector: Collector = {
 			workspaceId, queue: Promise.resolve(), network: new RemoteNetworkSampler(), diskIo: new RemoteDiskIoSampler(),
+			diagnostics: new RemoteMetricsCollectorDiagnostics(workspaceId),
 		};
 		this.collectors.set(workspaceId, collector);
-		this.enqueue(collector, true);
-		collector.baseTimer = setInterval(() => this.enqueue(collector, false), 2_000);
-		collector.processTimer = setInterval(() => this.enqueue(collector, true), 3_000);
+		collector.diagnostics.lifecycle("collector.started");
+		this.enqueue(collector, true, "initial");
+		collector.baseTimer = setInterval(() => this.enqueue(collector, false, "base_timer"), 2_000);
+		collector.processTimer = setInterval(() => this.enqueue(collector, true, "process_timer"), 3_000);
 	}
 
 	private scheduleStop(workspaceId: string): void {
 		const collector = this.collectors.get(workspaceId);
 		if (!collector || collector.stopTimer) return;
+		collector.diagnostics.lifecycle("collector.stop_scheduled");
 		collector.stopTimer = setTimeout(() => {
 			if (this.options.events.count(workspaceId, "monitoring") === 0) {
-				this.stop(collector);
+				this.stop(collector, "no_subscribers");
 				this.collectors.delete(workspaceId);
 			}
 		}, 30_000);
 	}
 
-	private stop(collector: Collector): void {
+	private stop(collector: Collector, reason: "no_subscribers" | "service_closed"): void {
 		if (collector.baseTimer) clearInterval(collector.baseTimer);
 		if (collector.processTimer) clearInterval(collector.processTimer);
 		if (collector.stopTimer) clearTimeout(collector.stopTimer);
+		collector.diagnostics.lifecycle("collector.stopped", reason);
 	}
 
-	private enqueue(collector: Collector, includeProcesses: boolean): void {
-		collector.queue = collector.queue.then(() => this.sample(collector, includeProcesses)).catch(() => {});
+	private enqueue(collector: Collector, includeProcesses: boolean,
+		trigger: Parameters<RemoteMetricsCollectorDiagnostics["enqueue"]>[1]): void {
+		const sample = collector.diagnostics.enqueue(includeProcesses, trigger);
+		collector.queue = collector.queue.then(() => this.sample(collector, sample)).catch(() => {});
 	}
 
-	private async sample(collector: Collector, includeProcesses: boolean): Promise<void> {
-		if (this.collectors.get(collector.workspaceId) !== collector) return;
+	private async sample(collector: Collector,
+		sample: Parameters<RemoteMetricsCollectorDiagnostics["start"]>[0]): Promise<void> {
+		const diagnostics = collector.diagnostics.start(sample);
 		try {
+			if (this.collectors.get(collector.workspaceId) !== collector) {
+				diagnostics.outcome = "inactive_collector";
+				return;
+			}
 			const target = await this.options.targets.resolveWorkspace(collector.workspaceId);
+			diagnostics.enter("base_probe");
 			const base = await executeProbe(this.options.broker, target, REMOTE_METRICS_BASE_COMMAND);
-			if (this.collectors.get(collector.workspaceId) !== collector) return;
-			const process = includeProcesses
+			if (this.collectors.get(collector.workspaceId) !== collector) {
+				diagnostics.outcome = "inactive_collector";
+				return;
+			}
+			if (sample.includeProcesses) diagnostics.enter("process_probe");
+			const process = sample.includeProcesses
 				? await executeProbe(this.options.broker, target, REMOTE_METRICS_PROCESS_COMMAND)
 				: undefined;
-			if (this.collectors.get(collector.workspaceId) !== collector) return;
+			if (this.collectors.get(collector.workspaceId) !== collector) {
+				diagnostics.outcome = "inactive_collector";
+				return;
+			}
+			diagnostics.enter("parse");
 			const parsed = parseRemoteMetricsBase(base, collector.cpu);
 			const connection = this.options.broker.snapshotWorkspace(collector.workspaceId);
 			const source = `${serializeConnectionKey(connectionKeyFor(target))}:${connection.generation}`;
@@ -135,6 +160,7 @@ export class RemoteMetricsService {
 				network: collector.network.sample(base, source),
 				diskIo: collector.diskIo.sample(base, source),
 			};
+			diagnostics.enter("publish");
 			collector.latest = snapshot;
 			this.options.events.publish(collector.workspaceId, { type: "monitor.snapshot", data: snapshot });
 			this.options.events.publish(collector.workspaceId, {
@@ -142,9 +168,13 @@ export class RemoteMetricsService {
 				data: connection,
 			});
 		} catch (error) {
-			if (this.collectors.get(collector.workspaceId) !== collector) return;
+			diagnostics.outcome = "failed";
+			if (this.collectors.get(collector.workspaceId) !== collector) {
+				diagnostics.outcome = "inactive_collector";
+				return;
+			}
 			console.error("SSH Agent remote metrics collection failed", {
-				workspaceId: collector.workspaceId,
+				...diagnostics.fields(),
 				error,
 			});
 			this.options.events.publish(collector.workspaceId, {
@@ -156,6 +186,8 @@ export class RemoteMetricsService {
 					messageKey: "monitor.probe_failed",
 				},
 			});
+		} finally {
+			diagnostics.finish();
 		}
 	}
 }

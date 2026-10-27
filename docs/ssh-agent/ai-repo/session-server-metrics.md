@@ -5,6 +5,7 @@
 ## 数据与生命周期
 
 - `RemoteMetricsService` 继续按 Workspace 维护唯一 Collector；Session 的 `monitoring` 订阅可启动它，无需先打开 Overview。原基础/进程采集周期、串行队列和最后订阅离开后 30 秒释放策略保留。
+- `remote-metrics-diagnostics.ts` 仅观察现有 Collector/FIFO：记录实例与采样身份、入队/执行时间、等待/运行队列深度及采样阶段，慢/排队至少一秒时记关联日志，失败时沿用原错误日志并补诊断字段。不改变采集、重试或释放，也不进入 SSE、数据库或 Agent 上下文；取证顺序见 [logging.md](./logging.md)。
 - `WorkspaceEventHub.registerSnapshotProvider()` 是只读缓存接入点：订阅建立时在 `stream.ready` 后，只向新订阅者发送该 topic 的现存快照，不广播给旧订阅者、不额外执行远端命令、不新增 REST 查询或数据库存储。服务关闭注销提供者，已停止 Collector 的迟到采样不再发布。
 - `monitor.snapshot` 增加可选 `network`，包含 `interfaceName` 和 `receiveBytesPerSecond/transmitBytesPerSecond`。首次采样或重建基准时速率为 null；缺少可读统计或可用默认路由时省略 network，CPU/内存仍正常展示。
 - 网络 probe 与原基础 probe 共用一个 SSH exec，不睡眠、不抓包、不依赖额外安装。读取 `/proc/net/dev`、IPv4/IPv6 默认路由及远端 uptime；优先选最低 metric 的可用 IPv4 默认路由，无 IPv4 时选 IPv6，不累加所有网卡。

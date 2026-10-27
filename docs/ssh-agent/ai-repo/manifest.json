@@ -228,7 +228,7 @@
 				"packages/ssh-agent/src/application/services/chat-service.ts": "sha256:5858cf09b623f62e6747a05bb2b4631d3941e936bef0e430323ff199f103f9c8",
 				"packages/ssh-agent/src/application/services/chat-tool-call-coordinator.ts": "sha256:6ec114c17e1e635056dd21598144038ce9e67a1959a363eb55f371b015225058",
 				"packages/ssh-agent/src/application/services/file-transfer-service.ts": "sha256:30f37fcf9398b7693c68b89a49c49bf4ac94ac147a5038ad15bc2fb9748aec3d",
-				"packages/ssh-agent/src/application/services/remote-metrics-service.ts": "sha256:af2adf25a8af9c8b359079c0d99cc7fa12a088c1450c294f77ae80ea57f9bd1c",
+				"packages/ssh-agent/src/application/services/remote-metrics-service.ts": "sha256:d5380fec286ad2244d3865f55283abc89b31a2b0332735d30394fa74ec1976b5",
 				"packages/ssh-agent/src/application/tools/remote-server-call-tool.ts": "sha256:cbac431e34f216c21a2e1b2c942e79c9882a610903410d01358b396c87369d2b",
 				"packages/ssh-agent/src/application/tools/sftp-download-tool.ts": "sha256:edcb7fcb58b29cc1c32a22fdfae0d8d5b39cb5ceae1d63f7089c764c61cd3377",
 				"packages/ssh-agent/src/application/tools/sftp-upload-tool.ts": "sha256:a9674d0d673b971ebea61a9a9f7f01017a313497102a7f4d67861324d7417fad",
@@ -380,6 +380,7 @@
 				"packages/ssh-agent/src/application/terminal/terminal-defaults.ts": "sha256:fce5d30cfa4365468abe47b52db4b46673dc1555aaa5b1e96be058e98868d36e",
 				"packages/ssh-agent/src/application/terminal/terminal-observation-capture.ts": "sha256:158731cb441bf15e74dafbd031163ea3bcf5937f5c832d729760a65f2f3bbdf4",
 				"packages/ssh-agent/src/application/terminal/terminal-canonical-state.ts": "sha256:2df60f83b8220d2244c87dd0e3c45623da395283299f5701a5dc95a064a89490",
+				"packages/ssh-agent/src/application/terminal/terminal-human-handoff-settle.ts": "sha256:362854e97a77cc350b68afccd1ea8a4fa9b7c3f1479a1ba372ec46b2059d9e60",
 				"packages/ssh-agent/src/application/terminal/terminal-replay-ring.ts": "sha256:f2ce4f57c14083d6d15ad038e46c3f54de4bc89d1203b637963687af4ca54092",
 				"packages/ssh-agent/src/application/terminal/terminal-runtime-registry.ts": "sha256:7f3e15dfcee69ba4f010d2db62db5812fc9db829cd6c8163b05559f4dd858d3e",
 				"packages/ssh-agent/src/application/terminal/terminal-session-actor.ts": "sha256:956ea42262ed34815695657fe012b852daafed335b59a9791f54ef73f3ec9d6d",
@@ -465,8 +466,7 @@
 				"packages/ssh-agent/src/application/terminal/terminal-human-context-delivery.ts": "sha256:3b54f455a2c0f4f64853265705b7e1cfa8e12410647568e72b25b55038861bc3",
 				"packages/ssh-agent/test/terminal-handoff-observation.test.ts": "sha256:443d08644cce269a1291a6f43d03e26b7f7ebdefda5350cdcb9801cfbdb2107b",
 				"packages/ssh-agent/test/terminal-human-context-delivery.test.ts": "sha256:e878a5a89ffc81709508122ed53428f9c20a5f6ebf9e6959bc7e1f637f0af214",
-				"packages/ssh-agent/test/terminal-human-runtime.test.ts": "sha256:2fc1fccff45bffd94613de51ddf57586240f5a84f5f5f6984d544b9649215569",
-				"packages/ssh-agent/src/application/terminal/terminal-human-handoff-settle.ts": "sha256:362854e97a77cc350b68afccd1ea8a4fa9b7c3f1479a1ba372ec46b2059d9e60"
+				"packages/ssh-agent/test/terminal-human-runtime.test.ts": "sha256:2fc1fccff45bffd94613de51ddf57586240f5a84f5f5f6984d544b9649215569"
 			}
 		},
 		{
@@ -685,7 +685,9 @@
 				"packages/ssh-agent/src/domain/runtime-context.ts",
 				"packages/ssh-agent/src/application/services/chat-runtime-context-service.ts",
 				"packages/ssh-agent/src/application/services/chat-runtime-facts.ts",
-				"packages/ssh-agent/src/infrastructure/sqlite/sqlite-runtime-context-repository.ts"
+				"packages/ssh-agent/src/infrastructure/sqlite/sqlite-runtime-context-repository.ts",
+				"packages/ssh-agent/src/infrastructure/sqlite/sqlite-transaction-diagnostics.ts",
+				"packages/ssh-agent/test/sqlite-transaction-diagnostics.test.ts"
 			],
 			"sourceDigests": {
 				"packages/ssh-agent/src/application/custom-llm-provider-factory.ts": "sha256:c5165748bc5dacd1b1a72cf4690638154d8586b73dd31a9568faa3ff8e4d4e68",
@@ -706,7 +708,7 @@
 				"packages/ssh-agent/src/infrastructure/sqlite/sqlite-llm-provider-credential-store.ts": "sha256:041604ae9bcf25446cfce554329555e6496dc4941f7906c9628c0889737d370a",
 				"packages/ssh-agent/src/infrastructure/sqlite/sqlite-llm-model-catalog-repository.ts": "sha256:82a110350c50e865ab4f46b90cb8b9266e28423c90b57852cbd9de473801c800",
 				"packages/ssh-agent/src/infrastructure/sqlite/sqlite-session-repository.ts": "sha256:dcc61ad9fcbda8b512441fa2a60c2de845408898042c37abcbb07833297d9aea",
-				"packages/ssh-agent/src/infrastructure/sqlite/sqlite-transaction-runner.ts": "sha256:6e30e7845b84ec43df209f8203ec45a2e9bf606cd1403e6805c27e53fd15387e",
+				"packages/ssh-agent/src/infrastructure/sqlite/sqlite-transaction-runner.ts": "sha256:5bc693534cce283028332ea4e9224ce6a8bf21faa71d33ae4daedbc2e6618d1c",
 				"packages/ssh-agent/src/infrastructure/sqlite/sqlite-workspace-repository.ts": "sha256:9f97a0320f9a068a238d6a9a6070c5c0ef6ae116c353319de0ce999ce9846ed9",
 				"packages/ssh-agent/src/infrastructure/sqlite/sqlite-workspace-host-trust-repository.ts": "sha256:f7450356f88f0ae070fc6e3eccbcd992864609f363ba3eea5250413729aeb9f7",
 				"packages/ssh-agent/src/runtime/create-sqlite-management-backend.ts": "sha256:81bcab5f032a7833e77e918f40d2d3fe40f17848d7b9bedf46373611cf2eb25d",
@@ -740,7 +742,9 @@
 				"packages/ssh-agent/src/domain/runtime-context.ts": "sha256:5831a93e354f00af9f406ed9153f9dd1e01018516ead603dcc2ad4bd9c070e72",
 				"packages/ssh-agent/src/application/services/chat-runtime-context-service.ts": "sha256:dd6376877f327be1c338b5d97169da3036e1903700095da73c6bb0a098bcdc52",
 				"packages/ssh-agent/src/application/services/chat-runtime-facts.ts": "sha256:0a28e63171889f9adf5d4507b298271caf9aae6652ff930e885f4ac28a3706fb",
-				"packages/ssh-agent/src/infrastructure/sqlite/sqlite-runtime-context-repository.ts": "sha256:b696f7fa7bd580b63d0f3055fa95699a4223e9b2382aef592b85de442730dd19"
+				"packages/ssh-agent/src/infrastructure/sqlite/sqlite-runtime-context-repository.ts": "sha256:b696f7fa7bd580b63d0f3055fa95699a4223e9b2382aef592b85de442730dd19",
+				"packages/ssh-agent/src/infrastructure/sqlite/sqlite-transaction-diagnostics.ts": "sha256:ce540ff052ffbf9fd976f3950062627c509f7227e39f83bdbe080ee7bff19aa7",
+				"packages/ssh-agent/test/sqlite-transaction-diagnostics.test.ts": "sha256:ff845c8aba4489cbe164ebf79eb5178366fa89c38fb053940150aaa72dbdbb91"
 			}
 		},
 		{
@@ -967,7 +971,9 @@
 				"packages/ssh-agent-web/features/chat/components/chat-message.tsx",
 				"packages/ssh-agent/src/domain/remote-disk-io-metrics.ts",
 				"packages/ssh-agent/src/application/monitoring/remote-disk-io-sampler.ts",
-				"packages/ssh-agent/test/remote-disk-io-sampler.test.ts"
+				"packages/ssh-agent/test/remote-disk-io-sampler.test.ts",
+				"packages/ssh-agent/src/application/monitoring/remote-metrics-diagnostics.ts",
+				"packages/ssh-agent/test/remote-metrics-diagnostics.test.ts"
 			],
 			"sourceDigests": {
 				"packages/ssh-agent/src/domain/file-transfer.ts": "sha256:483b4436430de57c0bc18a624e5e1d380cfafe7b09c472026f0f929de75b2e37",
@@ -975,7 +981,7 @@
 				"packages/ssh-agent/src/application/services/file-transfer-service.ts": "sha256:30f37fcf9398b7693c68b89a49c49bf4ac94ac147a5038ad15bc2fb9748aec3d",
 				"packages/ssh-agent/src/application/tools/sftp-download-tool.ts": "sha256:edcb7fcb58b29cc1c32a22fdfae0d8d5b39cb5ceae1d63f7089c764c61cd3377",
 				"packages/ssh-agent/src/application/tools/sftp-upload-tool.ts": "sha256:a9674d0d673b971ebea61a9a9f7f01017a313497102a7f4d67861324d7417fad",
-				"packages/ssh-agent/src/application/services/remote-metrics-service.ts": "sha256:af2adf25a8af9c8b359079c0d99cc7fa12a088c1450c294f77ae80ea57f9bd1c",
+				"packages/ssh-agent/src/application/services/remote-metrics-service.ts": "sha256:d5380fec286ad2244d3865f55283abc89b31a2b0332735d30394fa74ec1976b5",
 				"packages/ssh-agent/src/application/services/ssh-target-resolver.ts": "sha256:44f790ddd853e5a6a894765ffaac782069eba95c065add5d0f8881ae90ef7a6b",
 				"packages/ssh-agent/src/application/ssh-channel-broker.ts": "sha256:552b2f77628d4076f26d1abd6f022f71e529749ad1f04d69a3959bc791994cab",
 				"packages/ssh-agent/src/application/workspace-event-hub.ts": "sha256:3b677ec02e0699d712541a09b463315b8af8b2aa10e5ac4924c061434f2f9093",
@@ -1012,7 +1018,9 @@
 				"packages/ssh-agent-web/features/chat/components/chat-message.tsx": "sha256:c2cb3ebd8607d3e9806720b3862c65b0e77e16e41f5df9f17193825b91f2e091",
 				"packages/ssh-agent/src/domain/remote-disk-io-metrics.ts": "sha256:d35c4b5dfa8715aa7ce89f0120f7fe267387b2196deca7e35b6503823408b615",
 				"packages/ssh-agent/src/application/monitoring/remote-disk-io-sampler.ts": "sha256:d3bd96f471039d5600021c26774de620073f0d6f4014c336f041925d0be8d9a1",
-				"packages/ssh-agent/test/remote-disk-io-sampler.test.ts": "sha256:9b7c963023c36b2c95d287e640693a94179e0d97f48921276aa7322e0ad5de33"
+				"packages/ssh-agent/test/remote-disk-io-sampler.test.ts": "sha256:9b7c963023c36b2c95d287e640693a94179e0d97f48921276aa7322e0ad5de33",
+				"packages/ssh-agent/src/application/monitoring/remote-metrics-diagnostics.ts": "sha256:da9f7041a94f36a0503c07832c6d5947ffa5f846b941893f2f8a04b9e5cc3f95",
+				"packages/ssh-agent/test/remote-metrics-diagnostics.test.ts": "sha256:1254f7ab5d02962af4808b4fc263a6b9c1a7aeeda6f49b7096b93d08bec6f93c"
 			}
 		},
 		{
@@ -2178,7 +2186,13 @@
 				"packages/ssh-agent/test/file-logger.test.ts",
 				"packages/ssh-agent/src/data-directory.ts",
 				"packages/ssh-agent/test/data-directory.test.ts",
-				"packages/ssh-agent/test/chat-context-service.test.ts"
+				"packages/ssh-agent/test/chat-context-service.test.ts",
+				"packages/ssh-agent/src/infrastructure/sqlite/sqlite-transaction-runner.ts",
+				"packages/ssh-agent/src/infrastructure/sqlite/sqlite-transaction-diagnostics.ts",
+				"packages/ssh-agent/src/application/services/remote-metrics-service.ts",
+				"packages/ssh-agent/src/application/monitoring/remote-metrics-diagnostics.ts",
+				"packages/ssh-agent/test/sqlite-transaction-diagnostics.test.ts",
+				"packages/ssh-agent/test/remote-metrics-diagnostics.test.ts"
 			],
 			"sourceDigests": {
 				"packages/ssh-agent/src/server/file-logger.ts": "sha256:ba315a5b5819578c2de5c560e4c61714fcadac0398b1c7a05a8e64e2a6fd6823",
@@ -2188,7 +2202,13 @@
 				"packages/ssh-agent/test/file-logger.test.ts": "sha256:6826285442c6b81f71fb657afdfa89fa89841a05fba55628fe8d35f57bea27cb",
 				"packages/ssh-agent/src/data-directory.ts": "sha256:085ce42719f392e7c3450f7ae4481ad11bf26a46822af73b4e730f5e114e693c",
 				"packages/ssh-agent/test/data-directory.test.ts": "sha256:36f82fd1b320cca26ebc2c2a629fc96062a6867415743b2b49809717851a722f",
-				"packages/ssh-agent/test/chat-context-service.test.ts": "sha256:9b887656b578b12b33ceea498d87fd19d7f2a16a11b78d777a810c952f39d953"
+				"packages/ssh-agent/test/chat-context-service.test.ts": "sha256:9b887656b578b12b33ceea498d87fd19d7f2a16a11b78d777a810c952f39d953",
+				"packages/ssh-agent/src/infrastructure/sqlite/sqlite-transaction-runner.ts": "sha256:5bc693534cce283028332ea4e9224ce6a8bf21faa71d33ae4daedbc2e6618d1c",
+				"packages/ssh-agent/src/infrastructure/sqlite/sqlite-transaction-diagnostics.ts": "sha256:ce540ff052ffbf9fd976f3950062627c509f7227e39f83bdbe080ee7bff19aa7",
+				"packages/ssh-agent/src/application/services/remote-metrics-service.ts": "sha256:d5380fec286ad2244d3865f55283abc89b31a2b0332735d30394fa74ec1976b5",
+				"packages/ssh-agent/src/application/monitoring/remote-metrics-diagnostics.ts": "sha256:da9f7041a94f36a0503c07832c6d5947ffa5f846b941893f2f8a04b9e5cc3f95",
+				"packages/ssh-agent/test/sqlite-transaction-diagnostics.test.ts": "sha256:ff845c8aba4489cbe164ebf79eb5178366fa89c38fb053940150aaa72dbdbb91",
+				"packages/ssh-agent/test/remote-metrics-diagnostics.test.ts": "sha256:1254f7ab5d02962af4808b4fc263a6b9c1a7aeeda6f49b7096b93d08bec6f93c"
 			}
 		},
 		{
@@ -3147,12 +3167,14 @@
 				"packages/ssh-agent-web/features/i18n/messages/en-US/session.ts",
 				"packages/ssh-agent/src/domain/remote-disk-io-metrics.ts",
 				"packages/ssh-agent/src/application/monitoring/remote-disk-io-sampler.ts",
-				"packages/ssh-agent/test/remote-disk-io-sampler.test.ts"
+				"packages/ssh-agent/test/remote-disk-io-sampler.test.ts",
+				"packages/ssh-agent/src/application/monitoring/remote-metrics-diagnostics.ts",
+				"packages/ssh-agent/test/remote-metrics-diagnostics.test.ts"
 			],
 			"sourceDigests": {
 				"packages/ssh-agent/src/domain/remote-network-metrics.ts": "sha256:d6977eb852bb1c0f1f23a65b71889d5d25a9a9433d47c22ddf5d36c953531511",
 				"packages/ssh-agent/src/application/monitoring/remote-network-sampler.ts": "sha256:49f33d95a3ee87012ba2dd858123b54c4ee8bf38be2b6d567d05be24e5f9bde5",
-				"packages/ssh-agent/src/application/services/remote-metrics-service.ts": "sha256:af2adf25a8af9c8b359079c0d99cc7fa12a088c1450c294f77ae80ea57f9bd1c",
+				"packages/ssh-agent/src/application/services/remote-metrics-service.ts": "sha256:d5380fec286ad2244d3865f55283abc89b31a2b0332735d30394fa74ec1976b5",
 				"packages/ssh-agent/src/application/workspace-event-hub.ts": "sha256:3b677ec02e0699d712541a09b463315b8af8b2aa10e5ac4924c061434f2f9093",
 				"packages/ssh-agent/test/remote-network-sampler.test.ts": "sha256:490031ccafcc8b473b9379d0b398494dd2b52a6912e8f3520d238c4ede8db81f",
 				"packages/ssh-agent/test/remote-metrics-subscriptions.test.ts": "sha256:6b9c8f00c43dbc2a0180506d294103d3964a42f73cbbed4cddf9d6a0e111aa7f",
@@ -3185,7 +3207,9 @@
 				"packages/ssh-agent-web/features/i18n/messages/en-US/session.ts": "sha256:cfdf92ba55a48e6165087b267076583e4ebf23f5e5ae0e59a0aed02350c3bff1",
 				"packages/ssh-agent/src/domain/remote-disk-io-metrics.ts": "sha256:d35c4b5dfa8715aa7ce89f0120f7fe267387b2196deca7e35b6503823408b615",
 				"packages/ssh-agent/src/application/monitoring/remote-disk-io-sampler.ts": "sha256:d3bd96f471039d5600021c26774de620073f0d6f4014c336f041925d0be8d9a1",
-				"packages/ssh-agent/test/remote-disk-io-sampler.test.ts": "sha256:9b7c963023c36b2c95d287e640693a94179e0d97f48921276aa7322e0ad5de33"
+				"packages/ssh-agent/test/remote-disk-io-sampler.test.ts": "sha256:9b7c963023c36b2c95d287e640693a94179e0d97f48921276aa7322e0ad5de33",
+				"packages/ssh-agent/src/application/monitoring/remote-metrics-diagnostics.ts": "sha256:da9f7041a94f36a0503c07832c6d5947ffa5f846b941893f2f8a04b9e5cc3f95",
+				"packages/ssh-agent/test/remote-metrics-diagnostics.test.ts": "sha256:1254f7ab5d02962af4808b4fc263a6b9c1a7aeeda6f49b7096b93d08bec6f93c"
 			}
 		},
 		{
@@ -3661,6 +3685,7 @@
 				"packages/ssh-agent-web/tests/helpers/hook-driver.ts": "sha256:ca9d7ea801215e97a7cb93f3e233458bf17c003cb539ca7cb3a96f8d40b130d8",
 				"packages/ssh-agent-web/features/diagnose/api/diagnose-api.ts": "sha256:69e543d70cc4b05c8ffe67bbc4fd5eb7c26faba9eeeb4d1e907dc42fa8253f92",
 				"packages/ssh-agent-web/features/diagnose/components/diagnose-conclusion-page.tsx": "sha256:d715b34b566c6281b23410514c853dfaeaaa56fce1b2fc520a0a0d5ef5e150ac",
+				"packages/ssh-agent-web/features/diagnose/components/diagnose-copy-conclusion.tsx": "sha256:79b9c299aa90f33fef96780b7ec144e1d62defbc1bb51414d0431496c8624661",
 				"packages/ssh-agent-web/features/diagnose/components/diagnose-history-card.tsx": "sha256:eef0e7f112284f52db2d2c95771268bbab7faa0cba34d4b49840815907399611",
 				"packages/ssh-agent-web/features/diagnose/components/diagnose-markdown.tsx": "sha256:0c929b8bf0a673d5758e69747eee067dde41743832536006a2c5ff6694ea430e",
 				"packages/ssh-agent-web/features/diagnose/components/diagnose-record-list.tsx": "sha256:3a529fc3e1852f2ac9ec2f285265e9f3cbf97e0b4ac144e191857cdba8965071",
@@ -3687,6 +3712,7 @@
 				"packages/ssh-agent-web/features/diagnose/api/read-diagnose-records.ts": "sha256:da99e4df466d8fb419521840175cfa82d5d32a4093bbb37aab65003437e8ffb8",
 				"packages/ssh-agent-web/features/diagnose/components/diagnose-copy-records.tsx": "sha256:55e18e8e950298d6a2cbfff877d8c5523d63a2582c01a25b9500d864f7b8875a",
 				"packages/ssh-agent-web/tests/diagnose-records-copy.test.ts": "sha256:0a9aebf1fad06c8a6b1ac751bdcfbaaea7c94466ca9ea84ff596c08b40aa20a8",
+				"packages/ssh-agent-web/tests/diagnose-conclusion-copy.test.tsx": "sha256:3ec9b057807d107d96b2e823bd972456214531e29d7028b0b94790eb8a5f65bc",
 				"packages/ssh-agent/resources/skills/gori-diagnosis/SKILL.md": "sha256:f6195f22501ff9296fe3a63a892776157ac24e144a1cd1f1476cf024657b9f8d",
 				"packages/ssh-agent/src/domain/runtime-context.ts": "sha256:5831a93e354f00af9f406ed9153f9dd1e01018516ead603dcc2ad4bd9c070e72",
 				"packages/ssh-agent/src/application/services/chat-runtime-context-service.ts": "sha256:dd6376877f327be1c338b5d97169da3036e1903700095da73c6bb0a098bcdc52",
@@ -3698,9 +3724,7 @@
 				"packages/ssh-agent-web/features/chat/components/chat-composer-panel.tsx": "sha256:69875b9717e93ee09cc2a5b7233e92b8ed28dfba87dc9c5f187a789d8da38444",
 				"packages/ssh-agent-web/tests/chat-composer-menu.test.ts": "sha256:31fd7e809790009daf4f9de0e3741d5bb48336b25c276774c4f2cf80b233900f",
 				"packages/ssh-agent-web/tests/chat-token-editor-keyboard.test.tsx": "sha256:fd0955f7008e3be5a8b000814ee04360b26f3e54c6c8fc6168a53135c7df118b",
-				"packages/ssh-agent-web/tests/chat-composer-draft.test.tsx": "sha256:3cfbe0503c4efe7a33a092afb40db814014c77c70afbb179f577cb854e435490",
-				"packages/ssh-agent-web/features/diagnose/components/diagnose-copy-conclusion.tsx": "sha256:79b9c299aa90f33fef96780b7ec144e1d62defbc1bb51414d0431496c8624661",
-				"packages/ssh-agent-web/tests/diagnose-conclusion-copy.test.tsx": "sha256:3ec9b057807d107d96b2e823bd972456214531e29d7028b0b94790eb8a5f65bc"
+				"packages/ssh-agent-web/tests/chat-composer-draft.test.tsx": "sha256:3cfbe0503c4efe7a33a092afb40db814014c77c70afbb179f577cb854e435490"
 			}
 		},
 		{
@@ -3933,6 +3957,8 @@
 				"packages/ssh-agent/src/domain/terminal-human.ts": "sha256:d7bcbac73af5af301363520dedc164ab92467b49e40f99b4309a03d247bc4579",
 				"packages/ssh-agent/src/application/terminal/terminal-input-control.ts": "sha256:18212e4ab3ac070101844773cdb4d35052e1bc88d5553b07b81eaa4b2adc825d",
 				"packages/ssh-agent/src/application/terminal/terminal-human-activity.ts": "sha256:5ce1038e96bc9d5e33925d88916cd3f22ad7b5cdf26c11bdcbae2903010d4fb1",
+				"packages/ssh-agent/src/application/terminal/terminal-canonical-state.ts": "sha256:2df60f83b8220d2244c87dd0e3c45623da395283299f5701a5dc95a064a89490",
+				"packages/ssh-agent/src/application/terminal/terminal-human-handoff-settle.ts": "sha256:362854e97a77cc350b68afccd1ea8a4fa9b7c3f1479a1ba372ec46b2059d9e60",
 				"packages/ssh-agent/src/application/terminal/terminal-session-actor.ts": "sha256:956ea42262ed34815695657fe012b852daafed335b59a9791f54ef73f3ec9d6d",
 				"packages/ssh-agent/src/application/services/terminal-session-service.ts": "sha256:9de229ddb30b55e7c94574db93b906f5b38f9da8917e11358905de9ecda0cf46",
 				"packages/ssh-agent/src/application/services/terminal-interaction-service.ts": "sha256:1b9679366004ebaff8d95faa42732a710ce6bf26ad1e2c4d5e4a222efffec2ad",
@@ -3958,6 +3984,7 @@
 				"packages/ssh-agent-web/features/chat/components/chat-console.tsx": "sha256:1d6a32bc88467503ce12e3503cf0620bacd921a120401a37c1e1ad33d313eee8",
 				"packages/ssh-agent/test/terminal-human-fixture.ts": "sha256:1b6adcc5194f03a5f83d8f632d49b51556654551c0947a6c05c17140edc1a528",
 				"packages/ssh-agent/test/terminal-human-interaction.test.ts": "sha256:316f1f01d1db044376e2dc0b911a9b9a543cdc8885f45ecddb39c65e113271f5",
+				"packages/ssh-agent/test/terminal-human-handoff-settle.test.ts": "sha256:13da096f2d40caf3fb4074efc0bd9967b3fab66bafc644305b88723277bd4bc8",
 				"packages/ssh-agent/test/terminal-human-runtime.test.ts": "sha256:2fc1fccff45bffd94613de51ddf57586240f5a84f5f5f6984d544b9649215569",
 				"packages/ssh-agent-web/tests/terminal-human-input.test.ts": "sha256:eabaf8c2d995f95f50d5bbb2e89806d3d580a9c62b7e756c5aabb0dcea0b4f15",
 				"packages/ssh-agent-web/tests/chat-runtime-cancel.test.ts": "sha256:9238b91fc5a25398219867ca3eeaaf19f2e1d9ebfb3519a8b365ef45e423ba6b",
@@ -3965,10 +3992,7 @@
 				"packages/ssh-agent/src/application/terminal/terminal-human-context-delivery.ts": "sha256:3b54f455a2c0f4f64853265705b7e1cfa8e12410647568e72b25b55038861bc3",
 				"packages/ssh-agent/src/application/services/chat-agent-runtime-factory.ts": "sha256:1efc0a435044f13b731da68c1a0809a92fa62609a2e417da7c9167136cfb002d",
 				"packages/ssh-agent/test/terminal-handoff-observation.test.ts": "sha256:443d08644cce269a1291a6f43d03e26b7f7ebdefda5350cdcb9801cfbdb2107b",
-				"packages/ssh-agent/test/terminal-human-context-delivery.test.ts": "sha256:e878a5a89ffc81709508122ed53428f9c20a5f6ebf9e6959bc7e1f637f0af214",
-				"packages/ssh-agent/src/application/terminal/terminal-canonical-state.ts": "sha256:2df60f83b8220d2244c87dd0e3c45623da395283299f5701a5dc95a064a89490",
-				"packages/ssh-agent/src/application/terminal/terminal-human-handoff-settle.ts": "sha256:362854e97a77cc350b68afccd1ea8a4fa9b7c3f1479a1ba372ec46b2059d9e60",
-				"packages/ssh-agent/test/terminal-human-handoff-settle.test.ts": "sha256:13da096f2d40caf3fb4074efc0bd9967b3fab66bafc644305b88723277bd4bc8"
+				"packages/ssh-agent/test/terminal-human-context-delivery.test.ts": "sha256:e878a5a89ffc81709508122ed53428f9c20a5f6ebf9e6959bc7e1f637f0af214"
 			}
 		},
 		{

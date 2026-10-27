@@ -29,6 +29,7 @@
 - Transfer 只持久化 `pending/running/completed/failed/cancelled/uncertain`；文件内容不持久化，重启不续传。
 - JSON 请求仍受 2 MiB 限制；上传内容和下载响应直接流式桥接。SSE 每 15 秒 heartbeat。
 - Metrics Collector 每 Workspace 唯一，基础数据 2 秒、Top 20 进程 3 秒；同一 Workspace 内探测串行。
+- Collector 的独立诊断模块记录实例与采样身份、tick 来源、原入队时间、排队等待及 resolve_target/base_probe/process_probe/parse/publish 阶段耗时，慢/积压采样与原失败日志可关联。保持原 FIFO、采集频率、错误事件和 30 秒释放策略，不合并或丢弃积压任务，不新增重试；不记录目标、命令和输出。具体字段及取证顺序见 [logging.md](./logging.md)，回归 `test/remote-metrics-diagnostics.test.ts`。
 - Session 页首复用该 Collector 显示 CPU/内存/网络和磁盘 I/O，包含默认路由网卡的收发速率、底层整盘块设备的读写速率与新订阅者的缓存快照初始化；网络/I/O 计算和前端订阅由独立模块持有，共用基础 probe，不增加远端命令次数。缺少可选统计不会阻断其他指标，Overview 仍保留原三个卡片。详见 [session-server-metrics.md](./session-server-metrics.md)。
 - 前端区分 SSE 首次连接、实时、重连和关闭状态；`monitor.error` 会替换无限等待状态，并在已有快照时保留最后一次成功数据。
 - 概览采用 Dashboard 布局：三个资源指标卡位于顶部，进程表为主区域，连接池与手动沙箱检测放在辅助区域，SSH 参数默认收起。窄屏自动改为单列，宽表在自身容器内横向滚动；展示仍只使用现有快照，不生成历史曲线或模拟指标。
