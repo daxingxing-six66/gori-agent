@@ -22,6 +22,7 @@ export const zhCNDiagnoseMessages = {
 	"diagnose.summarizing": "已请求整理结论，可在对话中查看运行或排队状态。未保存结论时可重试或直接退出。",
 	"diagnose.history.open": "查看诊断记录",
 	"diagnose.copy": "复制记录",
+	"diagnose.copyConclusion": "复制结论",
 	"diagnose.copying": "正在复制…",
 	"diagnose.copied": "已复制",
 	"diagnose.copyFailed": "复制失败，请重试",

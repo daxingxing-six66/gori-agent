@@ -23,6 +23,7 @@ export const enUSDiagnoseMessages = {
 	"diagnose.summarizing": "Conclusion requested. Check the conversation for its Run or queue status. You can retry or exit directly if no conclusion has been saved.",
 	"diagnose.history.open": "View diagnosis records",
 	"diagnose.copy": "Copy records",
+	"diagnose.copyConclusion": "Copy conclusion",
 	"diagnose.copying": "Copying…",
 	"diagnose.copied": "Copied",
 	"diagnose.copyFailed": "Could not copy. Try again.",

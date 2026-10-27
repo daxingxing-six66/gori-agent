@@ -33,6 +33,11 @@
 .diagnose-error button { margin-left:8px; }
 .diagnose-request-note { margin:0; padding:0 22px 12px; color:var(--text-muted); font-size:10px; line-height:1.6; }
 .diagnose-conclusion { max-width:920px; margin:auto; }
+.diagnose-conclusion-tools { display:flex; justify-content:flex-end; margin-bottom:4px; }
+.diagnose-conclusion .diagnose-copy-conclusion { display:inline-flex; align-items:center; justify-content:center; width:32px; height:32px; padding:0; border:0; border-radius:6px; background:transparent; color:var(--text-muted); }
+.diagnose-conclusion .diagnose-copy-conclusion:hover { background:var(--surface-hover); color:var(--ink); }
+.diagnose-conclusion .diagnose-copy-conclusion[data-status="copied"] { color:var(--success); }
+.diagnose-conclusion .diagnose-copy-conclusion[data-status="failed"] { color:var(--danger); }
 .diagnose-markdown { font-size:12px; line-height:1.9; overflow-wrap:anywhere; color:var(--text-secondary); }
 .diagnose-markdown h1, .diagnose-markdown h2, .diagnose-markdown h3 { color:var(--ink); line-height:1.5; font-weight:600; margin:1.3em 0 .55em; }
 .diagnose-markdown h1 { font-size:22px; } .diagnose-markdown h2 { font-size:18px; } .diagnose-markdown h3 { font-size:15px; }

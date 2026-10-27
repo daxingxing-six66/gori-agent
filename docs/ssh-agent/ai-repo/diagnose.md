@@ -88,7 +88,7 @@ ChatConsole 只装配菜单、Hook 和稳定 `diagnose` Tab。Tab × 隐藏页�
 
 记录页底部“复制记录”将该任务全部节点按 sequence 升序复制成缩进的 JSON 数组，每项只含 direction/status/explanation，保留说明原文，空任务输出 []。`api/read-diagnose-records.ts` 独立补齐所有分页并检查完整性，不改变页面缓存、展开或滚动状态；任一页失败不输出半份数据。`components/diagnose-copy-records.tsx` 负责剪贴板和复制中/成功/失败反馈，同步锁避免重复点击，离开该任务时取消在途读取。任务活动、已结束或已退出均可复制；结论页不显示此记录按钮。
 
-保存报告后不自动跳页，点击“结论”进入同 Tab 独立 Markdown 阅读视图，最大宽度 920px，可返回记录；直接退出无报告时没有空结论入口。ReactMarkdown + remark-gfm 复用现有依赖，跳过原始 HTML，仅允许 http/https/mailto 外链，图片显示替代文字；表格/代码局部滚动。报告读取错误只重试读取，不生成新报告。静态 UI 文案归独立双语 diagnose.ts 目录。
+保存报告后不自动跳页，点击“结论”进入同 Tab 独立 Markdown 阅读视图，最大宽度 920px，可返回记录；直接退出无报告时没有空结论入口。ReactMarkdown + remark-gfm 复用现有依赖，跳过原始 HTML，仅允许 http/https/mailto 外链，图片显示替代文字；表格/代码局部滚动。报告读取错误只重试读取，不生成新报告。结论加载成功后，正文右上角提供纯复制图标按钮，悬停及无障碍名称为“复制结论”；点击复制已加载的完整 Markdown 原文，不重新读取接口、不截断或改写标题、列表、代码块。`components/diagnose-copy-conclusion.tsx` 独立处理复制中禁用、成功勾号短暂反馈、失败提示图标及重试，状态文字只供辅助技术播报。切换 Session/任务时按身份重新挂载结论页，避免上一份正文和复制状态进入新任务；卸载后忽略迟到的剪贴板完成反馈并清理计时器。静态 UI 文案归独立双语 diagnose.ts 目录。
 
 ## 验证与共享入口复核
 
@@ -103,6 +103,8 @@ ChatConsole 只装配菜单、Hook 和稳定 `diagnose` Tab。Tab × 隐藏页�
 上述后端回归同时验证内置 Skill 原文注入、重复同步不累积、普通 Session 无活动指引；结束后旧事件保留作历史并追加 inactive，固定头部不含 Skill。faux 请求验证接入范围，不证明真实模型的记录质量已经改善。
 
 diagnose-completion-history.test.tsx 覆盖三类任务状态回显、双语记录卡、结束工具位置、SSE/持久化结果、迟到卡片、无效/错误/未结束结果、幂等重复结束、混合正文/普通工具和失败报告保留；同时验证 Deploy/Diagnose 业务 ID 相同时仍各显示一条正确记录。原 deployment-completion-history 回归继续覆盖部署和旧记录行为。
+
+diagnose-conclusion-copy.test.tsx 覆盖纯图标及双语无障碍名称、完整 Markdown 复制、在途重复点击、成功反馈复位、剪贴板失败重试/缺失、卸载迟到结果和计时器清理，以及加载/错误状态不显示复制入口。2026-10-26 浏览器验证在隔离页面挂载真实 DiagnoseTaskPage，使用合成报告和模拟 API；检查复制图标、成功反馈，并通过浏览器原生剪贴板读取确认完整 Markdown 和任务切换后的正文，核对明暗主题变量下显示。未使用真实模型或 SSH，不替代完整产品页面和移动端验收。
 
 diagnose-records-copy.test.ts 覆盖完整分页、三个业务字段及原文保留、空数组、分页失败/缺口拒绝和取消迟到读取；复制按钮通过诊断页面静态渲染验证入口。剪贴板权限和浏览器交互仍需实际页面验收。
 

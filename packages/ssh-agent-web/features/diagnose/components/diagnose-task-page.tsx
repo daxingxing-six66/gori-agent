@@ -70,7 +70,7 @@ export function DiagnoseTaskPage({ sessionId, taskId, entry, busy, error, view, 
 				{entry?.nextBeforeSequence ? <button type="button" className="diagnose-older" disabled={olderLoading} onClick={() => { void loadOlder(); }}>{intl.formatMessage({ id: "diagnose.older" })}</button> : null}
 				<DiagnoseRecordList nodes={nodes} currentSequence={task?.currentSequence ?? 0} expanded={saved.expanded} onToggle={(sequence) => view.update(taskId, { expanded: { ...saved.expanded, [sequence]: !(saved.expanded[sequence] ?? sequence === task?.currentSequence) } })} />
 			</div>
-			{task?.conclusionAvailable ? <div hidden={page !== "conclusion"}>{page === "conclusion" ? <DiagnoseConclusionPage sessionId={sessionId} taskId={taskId} onContentReady={restoreConclusion} /> : null}</div> : null}
+			{task?.conclusionAvailable ? <div hidden={page !== "conclusion"}>{page === "conclusion" ? <DiagnoseConclusionPage key={`${sessionId}:${taskId}`} sessionId={sessionId} taskId={taskId} onContentReady={restoreConclusion} /> : null}</div> : null}
 		</div>
 		{page === "records" && hasNew ? <button type="button" className="diagnose-return" onClick={() => { if (scroll.current) scroll.current.scrollTop = scroll.current.scrollHeight; follow.current = true; setHasNew(false); }}>{intl.formatMessage({ id: "diagnose.latest" })}</button> : null}
 		<footer className="diagnose-actions">
