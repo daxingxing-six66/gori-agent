@@ -11,6 +11,7 @@ import type { TerminalGeometry } from "../../domain/terminal.ts";
 import type { Ssh2ConnectionContext, Ssh2ConnectionPool } from "./ssh2-connection-pool.ts";
 import { createSshError } from "./ssh2-errors.ts";
 import { TerminalStartupCapture } from "./terminal-startup-capture.ts";
+import { TerminalChannelDiagnostics } from "./ssh2-terminal-channel-diagnostics.ts";
 
 type TerminalPool = Pick<Ssh2ConnectionPool, "withChannelSlot">;
 
@@ -158,6 +159,7 @@ function createHandle(
 	channel: ClientChannel,
 	input: OpenTerminalChannelInput,
 ): OpenedTerminalRuntime {
+	const diagnostics = new TerminalChannelDiagnostics(input, connectionGeneration);
 	let resolveClosed: (exit: TerminalChannelExit) => void = () => undefined;
 	let resolveDisposed: () => void = () => undefined;
 	let terminalExit: Omit<TerminalChannelExit, "kind"> = {};
@@ -179,9 +181,10 @@ function createHandle(
 	const disposed = new Promise<void>((resolve) => {
 		resolveDisposed = resolve;
 	});
-	const finishClosed = (exit: TerminalChannelExit) => {
+	const finishClosed = (exit: TerminalChannelExit, source: Parameters<TerminalChannelDiagnostics["closed"]>[0]) => {
 		if (closedSettled) return;
 		closedSettled = true;
+		diagnostics.closed(source, exit.kind);
 		client.removeListener("close", onClientClose);
 		if (!readySettled) {
 			readySettled = true;
@@ -190,7 +193,7 @@ function createHandle(
 		writesClosed.abort(new Error(exit.message ?? "Terminal channel closed before the write drained"));
 		resolveClosed(exit);
 	};
-	const onClientClose = () => finishClosed({ kind: "connection_lost", ...terminalExit });
+	const onClientClose = () => finishClosed({ kind: "connection_lost", ...terminalExit }, "transport_close");
 	client.once("close", onClientClose);
 	const onOutput = (chunk: Buffer) => {
 		if (closedSettled) return;
@@ -206,20 +209,21 @@ function createHandle(
 		} catch (error) {
 			const failure = error instanceof Error ? error : new Error("Terminal startup failed");
 			if (!readySettled) { readySettled = true; rejectReady(failure); }
-			finishClosed({ kind: "error", message: failure.message });
+			finishClosed({ kind: "error", message: failure.message }, "startup_failure");
 			channel.destroy();
 		}
 	};
 	channel.on("data", onOutput);
 	channel.stderr.on("data", onOutput);
 	channel.once("exit", (code: number | null, signal?: string) => {
+		diagnostics.exited(code, signal);
 		terminalExit = {
 			...(code === null ? {} : { exitCode: code }),
 			...(signal === undefined ? {} : { exitSignal: signal }),
 		};
 	});
-	channel.once("error", (error: Error) => finishClosed({ kind: "error", message: error.message, ...terminalExit }));
-	channel.once("close", () => finishClosed({ kind: "closed", ...terminalExit }));
+	channel.once("error", (error: Error) => finishClosed({ kind: "error", message: error.message, ...terminalExit }, "channel_error"));
+	channel.once("close", () => finishClosed({ kind: "closed", ...terminalExit }, "channel_close"));
 
 	const handle: TerminalChannelHandle = {
 		connectionGeneration,
@@ -227,12 +231,16 @@ function createHandle(
 		isClosed: () => closedSettled,
 		startOutput: () => {
 			if (outputStarted) return;
+			diagnostics.startOutput();
 			outputStarted = true;
 			for (const chunk of buffered) input.onData(new Uint8Array(chunk));
 			buffered.length = 0;
 			bufferedBytes = 0;
 		},
-		write: (data) => writeChannel(channel, data, writesClosed.signal),
+		write: (data) => {
+			diagnostics.write(data.byteLength);
+			return writeChannel(channel, data, writesClosed.signal);
+		},
 		resize: async (geometry: TerminalGeometry) => {
 			if (closedSettled) throw new Error("Terminal channel is closed");
 			channel.setWindow(geometry.rows, geometry.cols, 0, 0);
@@ -248,6 +256,7 @@ function createHandle(
 		},
 		close: async () => {
 			if (closedSettled) return;
+			diagnostics.requestClose();
 			channel.end();
 			const graceful = await Promise.race([
 				closed.then(() => true),
@@ -258,6 +267,7 @@ function createHandle(
 		},
 		dispose: () => {
 			if (disposedSettled) return;
+			diagnostics.requestDispose();
 			disposedSettled = true;
 			if (!closedSettled) channel.destroy();
 			resolveDisposed();

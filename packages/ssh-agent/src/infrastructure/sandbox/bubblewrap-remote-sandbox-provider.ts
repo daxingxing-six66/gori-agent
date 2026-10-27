@@ -8,6 +8,7 @@ import { isWithinSandboxRoot, RemoteSandboxRules, requireProtectedExecutable } f
 import { SandboxCapabilityCache } from "./sandbox-capability-cache.ts";
 import { SandboxCommandRunner, sandboxCommandFailure } from "./sandbox-command-runner.ts";
 import { quoteShell, shellArgv, wrapRemoteCommand } from "./shell-command.ts";
+import { bubblewrapTerminalCommand } from "./bubblewrap-terminal-launch.ts";
 
 type Broker = RemoteCommandBroker & Partial<Pick<SshConnectionPoolControl, "snapshotWorkspace">>;
 interface Runner { path: string; version: string; }
@@ -50,9 +51,8 @@ export class BubblewrapRemoteSandboxProvider implements RemoteSandboxBackend {
 	async prepareTerminal(input: Parameters<RemoteSandboxBackend["prepareTerminal"]>[0]): Promise<PreparedRemoteTerminal> {
 		const rules = await this.#prepareRules(input.target, input.signal);
 		const marker = `gori-bubblewrap: confined version=${rules.runner.version} token=${randomBytes(16).toString("hex")}`;
-		const script = `printf '%s\\n' ${quoteShell(marker)} >&2; exec /bin/bash --login -i`;
 		return {
-			command: `exec ${shellArgv([...sandboxArgs(rules.runner.path, rules.sandboxRoots), "--", "/bin/bash", "--noprofile", "--norc", "-c", script])}`,
+			command: bubblewrapTerminalCommand([rules.runner.path, ...filesystemArgs(rules.sandboxRoots)], marker),
 			sandbox: sandboxFacts(rules), confirmation: marker,
 		};
 	}
@@ -164,8 +164,12 @@ function sandboxFacts({ runner, sandboxRoots }: Rules): PreparedRemoteTerminal["
 }
 
 function sandboxArgs(path: string, roots: readonly string[]): string[] {
+	return [path, "--new-session", ...filesystemArgs(roots)];
+}
+
+function filesystemArgs(roots: readonly string[]): string[] {
 	// Parent mounts precede nested mounts so every selected directory keeps its writable binding.
 	const mounts = [...roots].sort((a, b) => a.split("/").length - b.split("/").length);
-	return [path, "--new-session", "--ro-bind", "/", "/", ...mounts.flatMap((root) => ["--bind", root, root]), "--bind", "/tmp", "/tmp",
+	return ["--ro-bind", "/", "/", ...mounts.flatMap((root) => ["--bind", root, root]), "--bind", "/tmp", "/tmp",
 		"--tmpfs", "/dev", "--dev-bind", "/dev/null", "/dev/null", "--ro-bind", "/proc", "/proc"];
 }

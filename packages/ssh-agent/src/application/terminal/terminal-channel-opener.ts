@@ -89,6 +89,7 @@ export class TerminalChannelOpener {
 		requireOpening(signal);
 		const channel = await this.#broker.open({
 			target,
+			diagnosticContext: { sessionId: actor.sessionId, terminalSessionId: actor.id, sandboxBackend: prepared.sandbox.backend },
 			launch: prepared.launch,
 			geometry: actor.view.geometry,
 			term: actor.view.term,

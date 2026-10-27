@@ -1,6 +1,6 @@
 import type { SftpDirectoryEntry } from "../domain/file-transfer.ts";
 import type { SshTargetSnapshot } from "../domain/ssh-target.ts";
-import type { TerminalGeometry } from "../domain/terminal.ts";
+import type { TerminalGeometry, TerminalSandboxFacts } from "../domain/terminal.ts";
 
 export interface RemoteExecutionResult {
 	exitCode?: number;
@@ -82,6 +82,11 @@ export interface TerminalChannelExit {
 
 export interface OpenTerminalChannelInput {
 	readonly target: SshTargetSnapshot;
+	readonly diagnosticContext?: {
+		readonly sessionId: string;
+		readonly terminalSessionId: string;
+		readonly sandboxBackend: TerminalSandboxFacts["backend"];
+	};
 	readonly launch: { readonly kind: "login_shell" } | {
 		readonly kind: "sandboxed_exec" | "unconfined_exec";
 		readonly command: string;

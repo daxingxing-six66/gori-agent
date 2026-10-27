@@ -39,6 +39,19 @@
 新增结构诊断不记录 SQL、绑定参数、回调参数/结果、认证材料、Target、命令或输出，也不把任意业务异常正文用作诊断标签；日志 sink 失败不替换原业务异常。回归见 `test/sqlite-transaction-diagnostics.test.ts`、`test/remote-metrics-diagnostics.test.ts`，只使用内存 SQLite、假 Broker 和时钟。
 
 
+## Terminal 通道退出取证
+
+`SSH Agent Terminal channel diagnostic` 由独立 `ssh2-terminal-channel-diagnostics.ts` 记录 `terminal.channel.opened/exit/closed`。`TerminalChannelOpener` 只向 Broker 传入 Session、TerminalSession 和实际沙盒后端的诊断身份；日志另含随机 channelId、后端进程 ID、Workspace、连接 generation 和 launch kind，以同一身份关联 SSH 退出报告与数据库 Terminal 时间线。
+
+- `exit` 事件记录 SSH 服务端报告的退出码或归一化信号（如 `INT`）；`closed` 记录 Channel close、Channel error、transport close 或启动失败来源。`exitReported=false` 与 `exitCode=null` 表示未收到退出报告，不能当作退出码 0。信号只接受已知名称，错误描述、任意远端文本不进入这份结构日志。
+- `localCloseRequested/localDisposeRequested` 区分退出前是否由本地调用关闭或销毁；Actor 在远端通道结束后的正常回收不会倒写已经生成的关闭记录。`outputStarted` 说明是否已由 Actor 激活并放行输出。
+- 最近一次写入只在内存保留派发时间、批次字节数和累计批次数，在退出时随记录输出；不逐键记日志，不记录或保留按键、命令、输出、Target 配置或凭据。写入派发不等于远端执行成功，不能仅据此推断最后输入是什么。
+- 这些记录不改变 Channel 关闭分类、输入、沙盒参数、重试或状态机；日志 sink 失败不替换原结果。SSH 退出信号说明远端会话进程的终止原因，具体进程身份及前台组仍需结合启动方式与只读进程快照判断。
+
+回归见 `test/ssh2-terminal-channel-diagnostics.test.ts` 和 `test/ssh2-terminal-channel-broker.test.ts`，覆盖信号/正常退出/缺失报告、本地主动关闭、写入元数据、隐私和日志故障隔离。
+
+2026-10-27 修复前已授权真实 Linux/Bubblewrap 0.13.0 复现：只读进程快照显示 bwrap 的 PGID 等于终端 TPGID，内层 Bash 位于独立 SID 且 TPGID=-1。返回空闲提示符后，经浏览器终端输入一个 Ctrl+C 对应字节，退出记录报告 `exitSignal=INT`、本地关闭/销毁标志均为 false，关闭来源为 channel_close，随后数据库变为 closed/shell_exited、模式为 command。该证据确认当时的会话/前台组配置导致外层 bwrap 接收中断。诊断模块只负责取证；后续修复在 Bubblewrap 交互启动层保留控制终端并补 seccomp 防护，见 [交互终端修复](./remote-sandbox.md#bubblewrap-交互终端)。修复后沿用这些日志核对异常退出，不用缺少退出日志单独证明 Shell 健康。
+
 ## 上下文缓存观测
 
 `ChatContextService` 发出 `cache.prefix`（头部/工具/设置 SHA-256、消息数、首个变化组件）与 `cache.usage`（真实输入、缓存读取/写入、未缓存输入、输出、命中比例），以 requestId 关联。不记录提示词、参数或摘要正文。指纹属于应用 Context 层，不能当作最终 HTTP 字节或供应商命中证明；进程内保留最近 256 个 Session，重启从 initial 开始。Session ID 始终透传主模型调用以接通已有缓存键。细节和限制见 [runtime-context.md](./runtime-context.md)。

@@ -40,6 +40,18 @@ Operation 初始审计保存 `enforcement=none/commandMayHaveRun=false`。独立
 
 非零退出时 stderr/输出尾部的权限文案仅产生 `denialSuspected`，不冒充内核拒绝证据。此前已成功的写入仍可能保留。Tool 结果和 SQLite 保存实际 mode/backend/enforcement、后端版本与规范根、Run/Tool 身份及 Full Access 理由；没有自动重试。
 
+## Bubblewrap 交互终端
+
+普通命令与文件系统探针继续使用 `--new-session`。`prepareTerminal` 单独复用原 SSH 控制终端，不用 `setsid` 脱离它；否则内层 Bash 无作业控制、外层 monitor 仍在前台，Ctrl+C 会误杀整个终端。共同挂载参数由同一函数生成，交互路径仅补控制终端 `/dev/tty`，不暴露整个宿主 `/dev`，不创建第二个 PTY。该设备访问不扩大目录可写根，只读 Session 同样保留正常终端操作。
+
+`bubblewrap-terminal-launch.ts` 用外层无配置 Bash 的 builtin `printf` 把固定 cBPF 字节写到短生命周期内存管道，通过 `--seccomp 3` 传入。bwrap 加载并关闭 FD，在 exec 前安装规则；无远端过滤文件、编译器、运行时安装或常驻转发进程，也不在只读准备中写入缓存。`terminal-seccomp-filter.ts` 按 arch/syscall 识别 x86_64/x32/i386/aarch64/ARM EABI 的 ioctl，按内核实际使用的低 32 位 request 拒绝 TIOCSTI/TIOCLINUX（EPERM），保留正常 ioctl 和其他 syscall；未知 ABI 返回 ENOSYS，不能无过滤继续运行。规则补充终端注入防护，不改变共享 PID/网络的既有安全边界。
+
+受限引导 Bash 使用 `--noprofile --norc -i -c`，先检查 job-control 标志、stdin/stdout TTY 与 `/dev/tty` 可打开，再发原 nonce 并 exec 原 `bash --login -i`。失败返回 125 且不确认；seccomp 安装失败发生在该 Shell 启动前。账号登录脚本顺序保留，仍属信任前提，可自行修改终端设置。空闲 Ctrl+C 取消输入；普通前台命令按前台进程组接收信号；raw-mode 程序自行处理按键。主动退出和断线保留原 Channel/Actor 生命周期，不忽略 SIGINT、不自动重开或重放输入，不新增 `--die-with-parent`。
+
+该修复不改工具目录、固定提示词、人工交接正文结构或 Session 缓存键，不新增模型上下文元数据。真实 PTY 验收入口见 [内核回归](../../../native/bubblewrap-terminal/README.md)，macOS/Windows 上的单元测试不能代替内核验证。
+
+2026-10-27 验证：非 root、无 capabilities、无网络和宿主挂载的一次性 Linux arm64/Bubblewrap 0.12.0 环境通过 23 项真实 PTY/内核检查，覆盖空闲/未完成输入/前台命令/管道 Ctrl+C、Ctrl+Z/bg/fg、注入与根外写入拒绝、alternate screen/SIGWINCH、Vim/CJK、只读、exit 状态和挂断清理。另经授权在 Linux x64/Bubblewrap 0.13.0 的原会话通过内部浏览器发送同一 `0x03` 字节，确认空闲与 sleep 中断后原 Shell PID 保留，前台归属恢复，并以无效 FD 验证注入请求 EPERM、普通 ioctl EBADF。兼容 ABI 目前只有 cBPF 指令解释测试，不声称全部做过原生内核实测；未调用付费模型。
+
 ## 分发与探测
 
 Bubblewrap 只使用远端已安装的、root 拥有且非 setuid 的 0.12.0 及以上 `bwrap`。Landlock 明确不可用时自动尝试；缺失时返回 `sandbox_bubblewrap_not_installed`。Session 开启时，普通命令若要在无沙箱状态下执行，必须另经标识明确的人工例外审批，不会自行绕过沙箱。模型可先用无需审批的 `bubblewrap_inspect` 读取发行版、UID 和包管理器，再用 `bubblewrap_install` 提交服务端生成的准确安装命令。此工具无论 `autoAudit` 设置如何都要求用户批准，Command Operation 消费绑定该命令及审批时 SSH 目标身份的一次性 Full Access grant。安装失败将输出交回模型供其调整包管理器、sudo 或索引刷新后重新提案；安装成功自动重新探测，后续探测和受限沙箱使用无需安装审批。已安装但不能运行不按“未安装”处理。新 Session 创建本身不连接目标机，首次受限命令、Terminal 打开或 Overview 手动检测才触发探测。
@@ -70,6 +82,7 @@ Terminal 打开后异步探测失败时，前端保留失败卡片，展示后�
 | 准备命令、限长诊断与共同文件规则 | `packages/ssh-agent/src/infrastructure/sandbox/sandbox-command-runner.ts`、`remote-sandbox-rules.ts` |
 | 新旧审计事实的 SQLite 读取边界 | `packages/ssh-agent/src/infrastructure/sqlite/stored-command-sandbox.ts`、`stored-terminal-sandbox.ts` |
 | Bubblewrap 探测、执行与安装 | `packages/ssh-agent/src/infrastructure/sandbox/bubblewrap-remote-sandbox-provider.ts`、`packages/ssh-agent/src/application/services/bubblewrap-installation-service.ts`、`packages/ssh-agent/src/application/tools/bubblewrap-installation-tool.ts` |
+| Bubblewrap PTY 启动、seccomp 与真实内核验收 | `packages/ssh-agent/src/infrastructure/sandbox/bubblewrap-terminal-launch.ts`、`terminal-seccomp-filter.ts`、`packages/ssh-agent/test/bubblewrap-terminal-launch.test.ts`、`terminal-seccomp-filter.test.ts`、`native/bubblewrap-terminal/` |
 | Native 规则、继承与 exec | `native/landlock-run/main.c`、[构建与内核测试说明](../../../native/landlock-run/README.md) |
 | 构建和资源完整性 | `native/landlock-run/build.mjs`、`check-resources.mjs`、`packages/ssh-agent/resources/sandbox/` |
 | 命令编排与执行期策略 | `packages/ssh-agent/src/application/services/command-operation-service.ts`、`command-execution-policy.ts` |

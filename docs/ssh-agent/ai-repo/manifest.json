@@ -356,7 +356,16 @@
 				"packages/ssh-agent/src/application/terminal/terminal-human-context-delivery.ts",
 				"packages/ssh-agent/test/terminal-handoff-observation.test.ts",
 				"packages/ssh-agent/test/terminal-human-context-delivery.test.ts",
-				"packages/ssh-agent/test/terminal-human-runtime.test.ts"
+				"packages/ssh-agent/test/terminal-human-runtime.test.ts",
+				"packages/ssh-agent/src/infrastructure/ssh/ssh2-terminal-channel-diagnostics.ts",
+				"packages/ssh-agent/test/ssh2-terminal-channel-diagnostics.test.ts",
+				"packages/ssh-agent/src/infrastructure/sandbox/bubblewrap-terminal-launch.ts",
+				"packages/ssh-agent/src/infrastructure/sandbox/terminal-seccomp-filter.ts",
+				"packages/ssh-agent/test/bubblewrap-terminal-launch.test.ts",
+				"packages/ssh-agent/test/terminal-seccomp-filter.test.ts",
+				"native/bubblewrap-terminal/README.md",
+				"native/bubblewrap-terminal/kernel-test.mjs",
+				"native/bubblewrap-terminal/kernel-test.py"
 			],
 			"sourceDigests": {
 				"packages/ssh-agent/package.json": "sha256:f187c4c473ae35f618ee66a6434d173342936ddf640e7e5a03133b736b2d0911",
@@ -374,7 +383,7 @@
 				"packages/ssh-agent/src/application/services/terminal-session-service.ts": "sha256:9de229ddb30b55e7c94574db93b906f5b38f9da8917e11358905de9ecda0cf46",
 				"packages/ssh-agent/src/application/terminal/terminal-interaction-recorder.ts": "sha256:338caabb224fa802fa63463e845c108a7220516875bd0db83e1aa3c712063762",
 				"packages/ssh-agent/src/application/terminal/terminal-interaction-policy.ts": "sha256:022e0016cbf5b7f30df1a77c351d67dfdeddfcfdfaee92c76d086624aab5ddea",
-				"packages/ssh-agent/src/application/terminal/terminal-channel-opener.ts": "sha256:862610adf06e4ffab995011dfa0adb4913833195dc65988ea0fa838644cd88e9",
+				"packages/ssh-agent/src/application/terminal/terminal-channel-opener.ts": "sha256:58c51d88472efccf7f301b987858af4476af5144ab4f4e03c9d191d290ab2752",
 				"packages/ssh-agent/src/application/services/remote-sandbox-provider.ts": "sha256:883f7ff3f073b0f226fa703a6c6b57462ab491b1fd7bdb91185d828fa2ba51fe",
 				"packages/ssh-agent/src/application/tools/terminal-interaction-tool.ts": "sha256:0b8ffee9c8a3e2aa718860b393a95b28f7397c04eb91022482863d7f64e16542",
 				"packages/ssh-agent/src/application/terminal/terminal-defaults.ts": "sha256:fce5d30cfa4365468abe47b52db4b46673dc1555aaa5b1e96be058e98868d36e",
@@ -384,11 +393,11 @@
 				"packages/ssh-agent/src/application/terminal/terminal-replay-ring.ts": "sha256:f2ce4f57c14083d6d15ad038e46c3f54de4bc89d1203b637963687af4ca54092",
 				"packages/ssh-agent/src/application/terminal/terminal-runtime-registry.ts": "sha256:7f3e15dfcee69ba4f010d2db62db5812fc9db829cd6c8163b05559f4dd858d3e",
 				"packages/ssh-agent/src/application/terminal/terminal-session-actor.ts": "sha256:956ea42262ed34815695657fe012b852daafed335b59a9791f54ef73f3ec9d6d",
-				"packages/ssh-agent/src/application/ssh-channel-broker.ts": "sha256:552b2f77628d4076f26d1abd6f022f71e529749ad1f04d69a3959bc791994cab",
+				"packages/ssh-agent/src/application/ssh-channel-broker.ts": "sha256:c0498aa177ac48c11623e6c39467688e95846c19ed85dff8b473f1f4b0382f90",
 				"packages/ssh-agent/src/infrastructure/sqlite/migrations.ts": "sha256:1658f7f6096546a7c4c2020ad8c6d92dd4230eeaf26894d4c446dbd56e84bf5b",
 				"packages/ssh-agent/src/infrastructure/sqlite/sqlite-terminal-repository.ts": "sha256:4e4a6c12121193904658dc60b666da77fd948254583fdf5b1e99a61363375304",
 				"packages/ssh-agent/src/infrastructure/ssh/ssh2-channel-broker.ts": "sha256:95c3465fcbcd607824be68debdbec501e3bad40293563787682e2e7a32ac27b2",
-				"packages/ssh-agent/src/infrastructure/ssh/ssh2-terminal-channel-broker.ts": "sha256:455bf71d82c0d179182613a6498fe84534d895c10f2b7c714decd8556d02a447",
+				"packages/ssh-agent/src/infrastructure/ssh/ssh2-terminal-channel-broker.ts": "sha256:e12d1796f3a2888952bb92739cbc342ac716d3c8b05e2a5f007f13bc24965706",
 				"packages/ssh-agent/src/infrastructure/ssh/terminal-startup-capture.ts": "sha256:4ef60030ba89a125fa2a147a1bd655daee04cacc41dce4fbd1e104489796a92d",
 				"packages/ssh-agent/src/infrastructure/sandbox/landlock-remote-sandbox-provider.ts": "sha256:1cbdd20c0e6f8686d9689e28ed16a99478d99619eee478dd9cc076308cc2ef56",
 				"packages/ssh-agent/src/infrastructure/sandbox/remote-sandbox-coordinator.ts": "sha256:eecef1200f7a0a1866715fd7faece5547d39b64537337bb5ec39a0e103ede89f",
@@ -425,7 +434,7 @@
 				"packages/ssh-agent-web/features/terminal/runtime/use-terminal-mode.ts": "sha256:4886e42ac322699b90cc9de543f6f1d4c54905c866f85b1b11f4dd002d5c6ed7",
 				"packages/ssh-agent/test/session-lifecycle-coordinator.test.ts": "sha256:bd0e4f5b64862907a3a2010c6b60949b74f344dc5aeb50cecf5cc0fe47bc4e22",
 				"packages/ssh-agent/test/sqlite-terminal-repository.test.ts": "sha256:ff7ad7ad7dc6a14cd74a3eb59fce6358c3bba1f68b293aa826801539184150ea",
-				"packages/ssh-agent/test/ssh2-terminal-channel-broker.test.ts": "sha256:a3eb3b9bc43deac337c3f921ed7bea8106016529a56c22b917b7581db3a6c6db",
+				"packages/ssh-agent/test/ssh2-terminal-channel-broker.test.ts": "sha256:1756e96d8ac43743b33df7fcd8bccb2cde1fcc2e5ae4f628a8f805fad2e1fa57",
 				"packages/ssh-agent/test/terminal-canonical-state.test.ts": "sha256:6cdd53503513525201d794905b74b0b82233884efa6334e7196d7a0c3f1dd17b",
 				"packages/ssh-agent/test/terminal-replay-ring.test.ts": "sha256:2b36a2cbc451b3fbf8222aa14cfe1f43ef9323383af3ddc51b2b53dcd76d54de",
 				"packages/ssh-agent/test/terminal-session-actor.test.ts": "sha256:ac7d45f34f70ced1643a0430de832d8843806a86cb08299a633956b5d287e2c3",
@@ -452,7 +461,7 @@
 				"packages/ssh-agent/src/infrastructure/sandbox/sandbox-command-runner.ts": "sha256:0e48cc413d8c19898ff69e155616701795c204c2aaa808db05824e3c9ddad761",
 				"packages/ssh-agent/src/infrastructure/sandbox/remote-sandbox-rules.ts": "sha256:61617eae8b42ca1577c6aef8d99e1b282adbf66df8a6b7610876889d134aad38",
 				"packages/ssh-agent/src/infrastructure/sqlite/stored-terminal-sandbox.ts": "sha256:615f18eae7488d8a3dd9fc3d0b8aa6e778900d060ca28c0339d344a96353267f",
-				"packages/ssh-agent/src/infrastructure/sandbox/bubblewrap-remote-sandbox-provider.ts": "sha256:d149606912ead4b1199f34c66269ed8bb2084efa26efc4cda075898793d82ef1",
+				"packages/ssh-agent/src/infrastructure/sandbox/bubblewrap-remote-sandbox-provider.ts": "sha256:05e1dad4eb489c7af8c96c7402be4a6d7971665ea104c542beeef83f61377854",
 				"packages/ssh-agent-web/features/terminal/runtime/use-terminal-task.ts": "sha256:a2f8d7570714510236720f5cd74bde3950062cfd88b028b5adb1f7b2e4f39b13",
 				"packages/ssh-agent-web/features/terminal/components/terminal-task.tsx": "sha256:256b129c1b789fad67827c05a5883bc44b9a1a35ecfad7341aeb67011ef3ac3a",
 				"packages/ssh-agent-web/features/terminal/components/terminal-task.css": "sha256:422a048ec777a79e80bee53109263e1e9c513c55449e38dc2bb6cf2a7e8fcb99",
@@ -466,7 +475,16 @@
 				"packages/ssh-agent/src/application/terminal/terminal-human-context-delivery.ts": "sha256:3b54f455a2c0f4f64853265705b7e1cfa8e12410647568e72b25b55038861bc3",
 				"packages/ssh-agent/test/terminal-handoff-observation.test.ts": "sha256:443d08644cce269a1291a6f43d03e26b7f7ebdefda5350cdcb9801cfbdb2107b",
 				"packages/ssh-agent/test/terminal-human-context-delivery.test.ts": "sha256:e878a5a89ffc81709508122ed53428f9c20a5f6ebf9e6959bc7e1f637f0af214",
-				"packages/ssh-agent/test/terminal-human-runtime.test.ts": "sha256:2fc1fccff45bffd94613de51ddf57586240f5a84f5f5f6984d544b9649215569"
+				"packages/ssh-agent/test/terminal-human-runtime.test.ts": "sha256:2fc1fccff45bffd94613de51ddf57586240f5a84f5f5f6984d544b9649215569",
+				"packages/ssh-agent/src/infrastructure/ssh/ssh2-terminal-channel-diagnostics.ts": "sha256:21d1ed36bd16591dff6915cd7d0fad4626b9dce3ae0fd8b555a98d16e1789273",
+				"packages/ssh-agent/test/ssh2-terminal-channel-diagnostics.test.ts": "sha256:29f9aa5d43a545545bac2d6c85ba8c84746061533d4df9ab282dadf2e86d2ebc",
+				"packages/ssh-agent/src/infrastructure/sandbox/bubblewrap-terminal-launch.ts": "sha256:10794122281b0925e6e7850f3ef452e59c3887e23830e2c6b35a23b6d130a911",
+				"packages/ssh-agent/src/infrastructure/sandbox/terminal-seccomp-filter.ts": "sha256:63f1519478d0b3c6f2af10b6864356a95fc8a6793dda3590ca2d8ced1e82f7cc",
+				"packages/ssh-agent/test/bubblewrap-terminal-launch.test.ts": "sha256:b56cd7537eaae63576f16d3cf2e57feffaebe3475032ae0af1bc16a1378026d5",
+				"packages/ssh-agent/test/terminal-seccomp-filter.test.ts": "sha256:69711a53316b9fecdd70db9157bf9eecda995d76638fde5c6cc5a00a82f542a7",
+				"native/bubblewrap-terminal/README.md": "sha256:9cf296c8877c3a961c154f8014677592aca92b970acfac3a7ce4c8ad41d3d0b0",
+				"native/bubblewrap-terminal/kernel-test.mjs": "sha256:48fbfc5395ed2a1c158b0820b7855778caf1d6082a810a25c590a76c11a17155",
+				"native/bubblewrap-terminal/kernel-test.py": "sha256:49baaf912c00e16b1763896076293d130f754f3e4b0806386fb4377d728c1222"
 			}
 		},
 		{
@@ -896,7 +914,11 @@
 				"packages/ssh-agent/test/ssh2-connection-pool.test.ts",
 				"packages/ssh-agent/test/workspace-directories.test.ts",
 				"packages/ssh-agent/src/domain/sandbox-writable-roots.ts",
-				"packages/ssh-agent/test/sandbox-writable-roots.test.ts"
+				"packages/ssh-agent/test/sandbox-writable-roots.test.ts",
+				"packages/ssh-agent/src/infrastructure/ssh/ssh2-terminal-channel-diagnostics.ts",
+				"packages/ssh-agent/test/ssh2-terminal-channel-diagnostics.test.ts",
+				"packages/ssh-agent/src/infrastructure/ssh/ssh2-terminal-channel-broker.ts",
+				"packages/ssh-agent/test/ssh2-terminal-channel-broker.test.ts"
 			],
 			"sourceDigests": {
 				"packages/ssh-agent/src/application/host-key-probe.ts": "sha256:ef14bae355e5c32ab21a4d917b525f39938983f6603023058a69f9ae193bea84",
@@ -905,7 +927,7 @@
 				"packages/ssh-agent/src/domain/ssh-target.ts": "sha256:c85919bd87426c4d048948232db0b37b24c4e0225ab2e16e3851822b110e0522",
 				"packages/ssh-agent/src/domain/workspace.ts": "sha256:cc2af003c230b79aeed3b3fefcd7df8791e651404dad5791ccfa1d096b9916f4",
 				"packages/ssh-agent/src/application/services/ssh-target-resolver.ts": "sha256:44f790ddd853e5a6a894765ffaac782069eba95c065add5d0f8881ae90ef7a6b",
-				"packages/ssh-agent/src/application/ssh-channel-broker.ts": "sha256:552b2f77628d4076f26d1abd6f022f71e529749ad1f04d69a3959bc791994cab",
+				"packages/ssh-agent/src/application/ssh-channel-broker.ts": "sha256:c0498aa177ac48c11623e6c39467688e95846c19ed85dff8b473f1f4b0382f90",
 				"packages/ssh-agent/src/infrastructure/ssh/ssh-host-key.ts": "sha256:a39e729101a97ea032d4f5bdf29ffb2cd9b8a632ad6566df30a772602c457783",
 				"packages/ssh-agent/src/infrastructure/ssh/ssh2-channel-broker.ts": "sha256:95c3465fcbcd607824be68debdbec501e3bad40293563787682e2e7a32ac27b2",
 				"packages/ssh-agent/src/infrastructure/ssh/ssh2-connection-pool.ts": "sha256:97050475c0d3d7d0fcf1b2ec0f5506253cd53bb6872ce13ae38e545a9451359f",
@@ -923,7 +945,11 @@
 				"packages/ssh-agent/test/ssh2-connection-pool.test.ts": "sha256:b4f8f6e79bfa83ebfd6b88a9b7af17d0757f0144b8601d78d57f93c8f2cc9ec9",
 				"packages/ssh-agent/test/workspace-directories.test.ts": "sha256:b65a4c9a874fbff40fef736d52d7735aed4f8ffc89dc473bc651fc307a3bdf46",
 				"packages/ssh-agent/src/domain/sandbox-writable-roots.ts": "sha256:45a5286172613d0e1bba88bb870ebae10d02330df6352759ae17ab0697685313",
-				"packages/ssh-agent/test/sandbox-writable-roots.test.ts": "sha256:8923fcfa63299bb0e17413066ca35bcc4d19a440d41dfd6398830994dbbac267"
+				"packages/ssh-agent/test/sandbox-writable-roots.test.ts": "sha256:8923fcfa63299bb0e17413066ca35bcc4d19a440d41dfd6398830994dbbac267",
+				"packages/ssh-agent/src/infrastructure/ssh/ssh2-terminal-channel-diagnostics.ts": "sha256:21d1ed36bd16591dff6915cd7d0fad4626b9dce3ae0fd8b555a98d16e1789273",
+				"packages/ssh-agent/test/ssh2-terminal-channel-diagnostics.test.ts": "sha256:29f9aa5d43a545545bac2d6c85ba8c84746061533d4df9ab282dadf2e86d2ebc",
+				"packages/ssh-agent/src/infrastructure/ssh/ssh2-terminal-channel-broker.ts": "sha256:e12d1796f3a2888952bb92739cbc342ac716d3c8b05e2a5f007f13bc24965706",
+				"packages/ssh-agent/test/ssh2-terminal-channel-broker.test.ts": "sha256:1756e96d8ac43743b33df7fcd8bccb2cde1fcc2e5ae4f628a8f805fad2e1fa57"
 			}
 		},
 		{
@@ -983,7 +1009,7 @@
 				"packages/ssh-agent/src/application/tools/sftp-upload-tool.ts": "sha256:a9674d0d673b971ebea61a9a9f7f01017a313497102a7f4d67861324d7417fad",
 				"packages/ssh-agent/src/application/services/remote-metrics-service.ts": "sha256:d5380fec286ad2244d3865f55283abc89b31a2b0332735d30394fa74ec1976b5",
 				"packages/ssh-agent/src/application/services/ssh-target-resolver.ts": "sha256:44f790ddd853e5a6a894765ffaac782069eba95c065add5d0f8881ae90ef7a6b",
-				"packages/ssh-agent/src/application/ssh-channel-broker.ts": "sha256:552b2f77628d4076f26d1abd6f022f71e529749ad1f04d69a3959bc791994cab",
+				"packages/ssh-agent/src/application/ssh-channel-broker.ts": "sha256:c0498aa177ac48c11623e6c39467688e95846c19ed85dff8b473f1f4b0382f90",
 				"packages/ssh-agent/src/application/workspace-event-hub.ts": "sha256:3b677ec02e0699d712541a09b463315b8af8b2aa10e5ac4924c061434f2f9093",
 				"packages/ssh-agent/src/infrastructure/sqlite/migrations.ts": "sha256:1658f7f6096546a7c4c2020ad8c6d92dd4230eeaf26894d4c446dbd56e84bf5b",
 				"packages/ssh-agent/src/infrastructure/sqlite/sqlite-file-transfer-repository.ts": "sha256:2d09609b04b10bf272d51c5dd1f873df9acf7427c3f9c2f72f94677b43af88f2",
@@ -2105,7 +2131,7 @@
 				"packages/ssh-agent/src/application/services/sandbox-confirmation-capture.ts": "sha256:ad54caffa96fb32049f340fec070b5f1dd81c2ec110e7f7f577b1ae72a3c98e4",
 				"packages/ssh-agent/src/application/services/command-guard-evaluator.ts": "sha256:e86a76d2402cd742f17d440ea1be68d9c59ebdf97247b981a939d0f147d5a76d",
 				"packages/ssh-agent/src/application/tools/remote-server-call-tool.ts": "sha256:cbac431e34f216c21a2e1b2c942e79c9882a610903410d01358b396c87369d2b",
-				"packages/ssh-agent/src/application/ssh-channel-broker.ts": "sha256:552b2f77628d4076f26d1abd6f022f71e529749ad1f04d69a3959bc791994cab",
+				"packages/ssh-agent/src/application/ssh-channel-broker.ts": "sha256:c0498aa177ac48c11623e6c39467688e95846c19ed85dff8b473f1f4b0382f90",
 				"packages/ssh-agent/src/infrastructure/ssh/ssh2-channel-broker.ts": "sha256:95c3465fcbcd607824be68debdbec501e3bad40293563787682e2e7a32ac27b2",
 				"packages/ssh-agent/src/infrastructure/ssh/ssh2-connection-pool.ts": "sha256:97050475c0d3d7d0fcf1b2ec0f5506253cd53bb6872ce13ae38e545a9451359f",
 				"packages/ssh-agent/src/infrastructure/ssh/ssh2-errors.ts": "sha256:19066bf2a11a8897080628d29f5af1dc2beb29120ca2cf902c70dfd01b59135a",
@@ -2126,7 +2152,7 @@
 				"packages/agent/test/tool-execution-context.test.ts": "sha256:4b13d637aae25bf872c32f06e56b55c62478b0924ee73833ede390f972004dd5",
 				"packages/ssh-agent/src/domain/sandbox-writable-roots.ts": "sha256:45a5286172613d0e1bba88bb870ebae10d02330df6352759ae17ab0697685313",
 				"packages/ssh-agent/test/sandbox-writable-roots.test.ts": "sha256:8923fcfa63299bb0e17413066ca35bcc4d19a440d41dfd6398830994dbbac267",
-				"packages/ssh-agent/test/multiple-sandbox-roots.test.ts": "sha256:686371b4a73412154f5cfc9619c92e22e1d4368c02b7f6d3bd1558e2941dc46a"
+				"packages/ssh-agent/test/multiple-sandbox-roots.test.ts": "sha256:0049413c411939b4a6e95f5aa39b88c30a59ae719227f6dcb5939d31f97226ac"
 			}
 		},
 		{
@@ -2192,7 +2218,11 @@
 				"packages/ssh-agent/src/application/services/remote-metrics-service.ts",
 				"packages/ssh-agent/src/application/monitoring/remote-metrics-diagnostics.ts",
 				"packages/ssh-agent/test/sqlite-transaction-diagnostics.test.ts",
-				"packages/ssh-agent/test/remote-metrics-diagnostics.test.ts"
+				"packages/ssh-agent/test/remote-metrics-diagnostics.test.ts",
+				"packages/ssh-agent/src/infrastructure/ssh/ssh2-terminal-channel-diagnostics.ts",
+				"packages/ssh-agent/test/ssh2-terminal-channel-diagnostics.test.ts",
+				"packages/ssh-agent/src/infrastructure/ssh/ssh2-terminal-channel-broker.ts",
+				"packages/ssh-agent/test/ssh2-terminal-channel-broker.test.ts"
 			],
 			"sourceDigests": {
 				"packages/ssh-agent/src/server/file-logger.ts": "sha256:ba315a5b5819578c2de5c560e4c61714fcadac0398b1c7a05a8e64e2a6fd6823",
@@ -2208,7 +2238,11 @@
 				"packages/ssh-agent/src/application/services/remote-metrics-service.ts": "sha256:d5380fec286ad2244d3865f55283abc89b31a2b0332735d30394fa74ec1976b5",
 				"packages/ssh-agent/src/application/monitoring/remote-metrics-diagnostics.ts": "sha256:da9f7041a94f36a0503c07832c6d5947ffa5f846b941893f2f8a04b9e5cc3f95",
 				"packages/ssh-agent/test/sqlite-transaction-diagnostics.test.ts": "sha256:ff845c8aba4489cbe164ebf79eb5178366fa89c38fb053940150aaa72dbdbb91",
-				"packages/ssh-agent/test/remote-metrics-diagnostics.test.ts": "sha256:1254f7ab5d02962af4808b4fc263a6b9c1a7aeeda6f49b7096b93d08bec6f93c"
+				"packages/ssh-agent/test/remote-metrics-diagnostics.test.ts": "sha256:1254f7ab5d02962af4808b4fc263a6b9c1a7aeeda6f49b7096b93d08bec6f93c",
+				"packages/ssh-agent/src/infrastructure/ssh/ssh2-terminal-channel-diagnostics.ts": "sha256:21d1ed36bd16591dff6915cd7d0fad4626b9dce3ae0fd8b555a98d16e1789273",
+				"packages/ssh-agent/test/ssh2-terminal-channel-diagnostics.test.ts": "sha256:29f9aa5d43a545545bac2d6c85ba8c84746061533d4df9ab282dadf2e86d2ebc",
+				"packages/ssh-agent/src/infrastructure/ssh/ssh2-terminal-channel-broker.ts": "sha256:e12d1796f3a2888952bb92739cbc342ac716d3c8b05e2a5f007f13bc24965706",
+				"packages/ssh-agent/test/ssh2-terminal-channel-broker.test.ts": "sha256:1756e96d8ac43743b33df7fcd8bccb2cde1fcc2e5ae4f628a8f805fad2e1fa57"
 			}
 		},
 		{
@@ -2613,7 +2647,14 @@
 				"packages/ssh-agent-web/features/session/components/session-dialog.tsx",
 				"packages/ssh-agent-web/tests/session-edit-dialog.test.tsx",
 				"packages/ssh-agent/test/test-ssh-target.ts",
-				"packages/ssh-agent/test/read-only-sandbox.test.ts"
+				"packages/ssh-agent/test/read-only-sandbox.test.ts",
+				"packages/ssh-agent/src/infrastructure/sandbox/bubblewrap-terminal-launch.ts",
+				"packages/ssh-agent/src/infrastructure/sandbox/terminal-seccomp-filter.ts",
+				"packages/ssh-agent/test/bubblewrap-terminal-launch.test.ts",
+				"packages/ssh-agent/test/terminal-seccomp-filter.test.ts",
+				"native/bubblewrap-terminal/README.md",
+				"native/bubblewrap-terminal/kernel-test.mjs",
+				"native/bubblewrap-terminal/kernel-test.py"
 			],
 			"sourceDigests": {
 				".gitignore": "sha256:26e3f65fceac2b8267c7cda8374fa56cd919e3c0f70c7519e9e12f0e46ccf765",
@@ -2674,10 +2715,10 @@
 				"packages/ssh-agent-web/tests/remote-sandbox.test.tsx": "sha256:4c62ea403b422691131340074b0184f9ff1619f450851e5d158c7fd7b330969a",
 				"packages/ssh-agent/resources/sandbox/LICENSE": "sha256:0457f5bcec3b3b211605dfb5d1a49042fd638f3686a410fe099c24a25af13c48",
 				"native/landlock-run/ssh-smoke-test.mjs": "sha256:7658b5822e85f4cc12a182b8047053bc39d5ae3effd249486f2ca9ed536db3e6",
-				"packages/ssh-agent/src/infrastructure/sandbox/bubblewrap-remote-sandbox-provider.ts": "sha256:d149606912ead4b1199f34c66269ed8bb2084efa26efc4cda075898793d82ef1",
+				"packages/ssh-agent/src/infrastructure/sandbox/bubblewrap-remote-sandbox-provider.ts": "sha256:05e1dad4eb489c7af8c96c7402be4a6d7971665ea104c542beeef83f61377854",
 				"packages/ssh-agent/src/application/services/bubblewrap-installation-service.ts": "sha256:ad2198154877c9cece83c3de338c980893cffee5bc34dcf2d7f16f19302fc0bb",
 				"packages/ssh-agent/src/application/tools/bubblewrap-installation-tool.ts": "sha256:51c24892c2e8cef7ad417a0afc4ca9f5ce672757ceb73e05e80d20bab351fe81",
-				"packages/ssh-agent/test/bubblewrap-remote-sandbox.test.ts": "sha256:073d53eb8d5d510a8f9616aff3e1447c02c66920380cad5f63e0c006d2a00327",
+				"packages/ssh-agent/test/bubblewrap-remote-sandbox.test.ts": "sha256:be1e06b34c1b0f1bb50def230222c094b4083865f9d92365bcc14becadbf9fd1",
 				"packages/ssh-agent/test/bubblewrap-installation-approval.test.ts": "sha256:94000869a44552944d8fedf9cd724bd1548e657b5a5eb9677e593752f8f64cf7",
 				"packages/ssh-agent/src/application/tools/tool-authorization.ts": "sha256:3982797140c248cc68c50b0e0772a96e0ae7a8d9086c7890c62ea5ac32320246",
 				"packages/ssh-agent/src/application/tools/remote-command-execution-plan.ts": "sha256:0d050ea0dce38bd1315bb73f565c81747e03af6530f6eecbbf83c0310252f76a",
@@ -2697,7 +2738,7 @@
 				"packages/ssh-agent/src/application/sandbox-writable-roots.ts": "sha256:e5a994b26a62adce01afa00e9a3bbf16bba32fa66e1eaa640ce53e0f8d51276e",
 				"packages/ssh-agent/src/infrastructure/sqlite/stored-sandbox-writable-roots.ts": "sha256:458f8259ec00a7941dd7e6e23fcf948c5393c9ca19746949c3e81c506551de20",
 				"packages/ssh-agent/test/sandbox-writable-roots.test.ts": "sha256:8923fcfa63299bb0e17413066ca35bcc4d19a440d41dfd6398830994dbbac267",
-				"packages/ssh-agent/test/multiple-sandbox-roots.test.ts": "sha256:686371b4a73412154f5cfc9619c92e22e1d4368c02b7f6d3bd1558e2941dc46a",
+				"packages/ssh-agent/test/multiple-sandbox-roots.test.ts": "sha256:0049413c411939b4a6e95f5aa39b88c30a59ae719227f6dcb5939d31f97226ac",
 				"packages/ssh-agent/test/fixtures/schema-v27-sandbox.sql": "sha256:931959631b7edc6db771fec272ffb725706dd85ae126a306fcd76dfb598f5cd6",
 				"packages/ssh-agent-web/features/workspace/model/sandbox-writable-roots.ts": "sha256:fdc69269f779b6dbc0b181a8d1a75443c8ed8a4daae8f21a337086d0cec9c3a5",
 				"packages/ssh-agent-web/features/workspace/components/sandbox-writable-roots-field.tsx": "sha256:b26002f4e2d1c4396ce9f6e6be2435003548dab62dc03e16fbf72306980b3509",
@@ -2707,7 +2748,14 @@
 				"packages/ssh-agent-web/features/session/components/session-dialog.tsx": "sha256:2f2738a64f7110e2e88b2f5af0940738f90431be8b657c3b4c6cb2182862ef14",
 				"packages/ssh-agent-web/tests/session-edit-dialog.test.tsx": "sha256:e2c476502cfec0f883cf458e8556b99f7b3fdcf4e2ff1c03b6c18c3d5b6dba6e",
 				"packages/ssh-agent/test/test-ssh-target.ts": "sha256:7f75908869d2c2184eddb4a538e10779e34bdca390795736255f9a0576b0c0fd",
-				"packages/ssh-agent/test/read-only-sandbox.test.ts": "sha256:981d6f4654ddcab90b46af8ae166b894a5dafcbbbcdcf3863699a3710bd857e5"
+				"packages/ssh-agent/test/read-only-sandbox.test.ts": "sha256:981d6f4654ddcab90b46af8ae166b894a5dafcbbbcdcf3863699a3710bd857e5",
+				"packages/ssh-agent/src/infrastructure/sandbox/bubblewrap-terminal-launch.ts": "sha256:10794122281b0925e6e7850f3ef452e59c3887e23830e2c6b35a23b6d130a911",
+				"packages/ssh-agent/src/infrastructure/sandbox/terminal-seccomp-filter.ts": "sha256:63f1519478d0b3c6f2af10b6864356a95fc8a6793dda3590ca2d8ced1e82f7cc",
+				"packages/ssh-agent/test/bubblewrap-terminal-launch.test.ts": "sha256:b56cd7537eaae63576f16d3cf2e57feffaebe3475032ae0af1bc16a1378026d5",
+				"packages/ssh-agent/test/terminal-seccomp-filter.test.ts": "sha256:69711a53316b9fecdd70db9157bf9eecda995d76638fde5c6cc5a00a82f542a7",
+				"native/bubblewrap-terminal/README.md": "sha256:9cf296c8877c3a961c154f8014677592aca92b970acfac3a7ce4c8ad41d3d0b0",
+				"native/bubblewrap-terminal/kernel-test.mjs": "sha256:48fbfc5395ed2a1c158b0820b7855778caf1d6082a810a25c590a76c11a17155",
+				"native/bubblewrap-terminal/kernel-test.py": "sha256:49baaf912c00e16b1763896076293d130f754f3e4b0806386fb4377d728c1222"
 			}
 		},
 		{
@@ -3074,8 +3122,8 @@
 				"packages/ssh-agent/src/application/services/command-operation-service.ts": "sha256:425479b0b90d04d2c33c46d1a7e0534fde500d2be65226df78471b1ebe35eeab",
 				"packages/ssh-agent/src/application/services/command-execution-policy.ts": "sha256:ae637b132d3316b3e7fff8f0a05008abe2e7f7b99dcf7f642be140390442efec",
 				"packages/ssh-agent/src/application/services/terminal-session-service.ts": "sha256:9de229ddb30b55e7c94574db93b906f5b38f9da8917e11358905de9ecda0cf46",
-				"packages/ssh-agent/src/application/terminal/terminal-channel-opener.ts": "sha256:862610adf06e4ffab995011dfa0adb4913833195dc65988ea0fa838644cd88e9",
-				"packages/ssh-agent/src/application/ssh-channel-broker.ts": "sha256:552b2f77628d4076f26d1abd6f022f71e529749ad1f04d69a3959bc791994cab",
+				"packages/ssh-agent/src/application/terminal/terminal-channel-opener.ts": "sha256:58c51d88472efccf7f301b987858af4476af5144ab4f4e03c9d191d290ab2752",
+				"packages/ssh-agent/src/application/ssh-channel-broker.ts": "sha256:c0498aa177ac48c11623e6c39467688e95846c19ed85dff8b473f1f4b0382f90",
 				"packages/ssh-agent/src/application/tools/remote-server-call-tool.ts": "sha256:cbac431e34f216c21a2e1b2c942e79c9882a610903410d01358b396c87369d2b",
 				"packages/ssh-agent/src/application/tools/remote-command-execution-plan.ts": "sha256:0d050ea0dce38bd1315bb73f565c81747e03af6530f6eecbbf83c0310252f76a",
 				"packages/ssh-agent/src/application/services/chat-tool-authorization-policy.ts": "sha256:baaf6eb1054a28257aec2a0072ecb4debaa79cb686c71457a8651c9c6945fde5",
@@ -3083,7 +3131,7 @@
 				"packages/ssh-agent/src/application/services/create-chat-service.ts": "sha256:f213f04a99bfd44ae888e3aa017fe81b0bf0de654c6d57d0d7627e7fd086c490",
 				"packages/ssh-agent/src/application/services/deployment-service.ts": "sha256:4e5fc80c65bba817e9a94c880c6d88fe3ad46ab05650d6d4a10f00abe261c016",
 				"packages/ssh-agent/src/application/tools/deployment-agent-tool.ts": "sha256:0ba19250dd3122ef54f6161ed4354049335c21ff1e20812aa92bee8059161845",
-				"packages/ssh-agent/src/infrastructure/ssh/ssh2-terminal-channel-broker.ts": "sha256:455bf71d82c0d179182613a6498fe84534d895c10f2b7c714decd8556d02a447",
+				"packages/ssh-agent/src/infrastructure/ssh/ssh2-terminal-channel-broker.ts": "sha256:e12d1796f3a2888952bb92739cbc342ac716d3c8b05e2a5f007f13bc24965706",
 				"packages/ssh-agent/src/infrastructure/sqlite/migrations.ts": "sha256:1658f7f6096546a7c4c2020ad8c6d92dd4230eeaf26894d4c446dbd56e84bf5b",
 				"packages/ssh-agent/src/infrastructure/sqlite/rows.ts": "sha256:ef8fbefcad16f93452cac6d309eb82b0e929bcf9f96141e609a988412354cf7e",
 				"packages/ssh-agent/src/infrastructure/sqlite/sqlite-session-repository.ts": "sha256:dcc61ad9fcbda8b512441fa2a60c2de845408898042c37abcbb07833297d9aea",

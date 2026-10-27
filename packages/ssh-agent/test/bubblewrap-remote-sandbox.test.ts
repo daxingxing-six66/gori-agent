@@ -18,7 +18,7 @@ function broker(options: { installed?: boolean; version?: string; probeSucceeds?
 		else if (input.command.startsWith("p=$(command -v bwrap)")) output = options.installed === false
 			? "missing\n"
 			: `path=/usr/bin/bwrap\nstat=0:755\nstat=0:755\nstat=0:755\nstat=0:755\nbubblewrap ${options.version ?? "0.12.0"}\n`;
-		else if (input.command.startsWith("test -d '/srv/app")) output = `${options.root ?? "/srv/app"}\n`;
+		else if (input.command.startsWith("test -d '")) output = `${options.root ?? "/srv/app"}\n`;
 		else if (input.command === "readlink /proc/self/ns/pid && readlink /proc/self/ns/net")
 			output = `${options.hostPidNamespace ?? "pid:[4026531836]"}\n${options.hostNetworkNamespace ?? "net:[4026531992]"}\n`;
 		else if (input.command.includes("realpath -e -- /tmp")) output = "/tmp\n";
@@ -113,8 +113,25 @@ describe("Bubblewrap remote sandbox", () => {
 		const terminal = await sandbox.prepareTerminal({ target, signal });
 		expect(terminal.sandbox.backend).toBe("bubblewrap");
 		expect(terminal.command).toContain("exec /bin/bash --login -i");
-		expect(terminal.command).toContain("'--ro-bind' '/proc' '/proc'");
+		expect(terminal.command).toContain("/proc"); // Arguments are inside the Bash FD-setup wrapper.
+		expect(terminal.command).not.toContain("--new-session");
+		expect(terminal.command).toContain("--seccomp");
+		expect(terminal.command).toContain("/dev/tty");
+		expect(terminal.command).toContain("terminal job control unavailable");
 		expect(terminal.command).not.toMatch(/--unshare-(user|pid|net)|--die-with-parent|--proc/);
+	});
+
+	it("keeps a read-only Terminal limited to /tmp without installing filter files", async () => {
+		const remote = broker({ root: "/tmp" });
+		const sandbox = new BubblewrapRemoteSandboxProvider({ broker: remote });
+		const terminal = await sandbox.prepareTerminal({ target: { ...target, sandboxReadOnly: true }, signal: new AbortController().signal });
+		expect(terminal.sandbox.sandboxRoots).toEqual(["/tmp"]);
+		expect(terminal.command).not.toContain("/srv/app");
+		expect(terminal.command).toContain("--seccomp");
+		expect(terminal.command).not.toMatch(/mktemp|chmod|mkdir|base64|python/);
+		expect(remote.commands.filter((command) => command.startsWith("rm -f"))).toEqual([
+			expect.stringMatching(/^rm -f -- '\/tmp\/\.gori-bwrap-write-probe-/),
+		]);
 	});
 
 	it("distinguishes missing installation from an installed but unusable runner", async () => {

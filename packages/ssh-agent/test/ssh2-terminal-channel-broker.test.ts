@@ -71,6 +71,40 @@ const target: SshTargetSnapshot = {
 };
 
 describe("Ssh2TerminalChannelBroker", () => {
+	it("logs a remote signal before channel closure without changing the exit result or leaking input", async () => {
+		const log = vi.spyOn(console, "info").mockImplementation(() => undefined);
+		const pool = new FakePool();
+		const broker = new Ssh2TerminalChannelBroker(pool);
+		const handle = await broker.open({ target, launch: { kind: "login_shell" },
+			diagnosticContext: { sessionId: "session-1", terminalSessionId: "terminal-1", sandboxBackend: "bubblewrap" },
+			geometry: { rows: 24, cols: 80 }, term: "xterm-256color", signal: new AbortController().signal, onData: () => undefined });
+		try {
+			handle.startOutput();
+			await handle.write(Uint8Array.of(3));
+			const channel = pool.client.channels[0]!;
+			channel.emit("exit", null, "INT", false, "PRIVATE_REMOTE_DESCRIPTION"); channel.emit("close");
+			await expect(handle.closed).resolves.toEqual({ kind: "closed", exitSignal: "INT" });
+			const records = log.mock.calls.filter(([prefix]) => prefix === "SSH Agent Terminal channel diagnostic").map(([, record]) => record);
+			expect(records).toEqual([expect.objectContaining({ event: "terminal.channel.opened" }),
+				expect.objectContaining({ event: "terminal.channel.exit", exitSignal: "INT" }),
+				expect.objectContaining({ event: "terminal.channel.closed", terminalSessionId: "terminal-1", closeSource: "channel_close",
+					localCloseRequested: false, localDisposeRequested: false, lastWriteByteLength: 1, writeCount: 1 })]);
+			expect(JSON.stringify(records)).not.toContain("PRIVATE_REMOTE_DESCRIPTION");
+		} finally { handle.dispose(); log.mockRestore(); }
+	});
+
+	it("identifies locally requested closure even if no remote exit status is sent", async () => {
+		const log = vi.spyOn(console, "info").mockImplementation(() => undefined);
+		const pool = new FakePool();
+		const handle = await new Ssh2TerminalChannelBroker(pool).open({ target, launch: { kind: "login_shell" },
+			geometry: { rows: 24, cols: 80 }, term: "xterm-256color", signal: new AbortController().signal, onData: () => undefined });
+		try {
+			await handle.close();
+			expect(log).toHaveBeenCalledWith("SSH Agent Terminal channel diagnostic", expect.objectContaining({
+				event: "terminal.channel.closed", localCloseRequested: true, exitReported: false, exitCode: null, exitSignal: null }));
+		} finally { handle.dispose(); log.mockRestore(); }
+	});
+
 	it("holds the shared channel slot until the Terminal handle is disposed", async () => {
 		const pool = new FakePool();
 		const broker = new Ssh2TerminalChannelBroker(pool);

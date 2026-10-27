@@ -4,7 +4,7 @@ import type { ExecuteRemoteCommandInput } from "../src/application/ssh-channel-b
 import { evaluateRemoteSandboxRoute } from "../src/application/services/remote-sandbox-routing.ts";
 import { LandlockRemoteSandboxProvider } from "../src/infrastructure/sandbox/landlock-remote-sandbox-provider.ts";
 import { BubblewrapRemoteSandboxProvider } from "../src/infrastructure/sandbox/bubblewrap-remote-sandbox-provider.ts";
-import { shellArgv } from "../src/infrastructure/sandbox/shell-command.ts";
+import { quoteShell, shellArgv } from "../src/infrastructure/sandbox/shell-command.ts";
 import type { SshTargetSnapshot } from "../src/domain/ssh-target.ts";
 
 const target: SshTargetSnapshot = { workspaceId: "w", workspaceRevision: 1, hostname: "fixture.invalid", port: 22,
@@ -45,7 +45,9 @@ describe.each(["landlock", "bubblewrap"] as const)("multiple %s writable directo
 		expect(prepared.sandbox).toMatchObject({ sandboxRoot: "/srv/app", sandboxRoots: ["/srv/app", "/var/log/app"] });
 		for (const root of target.sandboxWritableRoots ?? []) {
 			const rule = backend === "landlock" ? shellArgv(["--rw", root]) : shellArgv(["--bind", root, root]);
-			expect(prepared.command).toContain(rule); expect(terminal.command).toContain(rule);
+			expect(prepared.command).toContain(rule);
+			// Bubblewrap has an outer Bash wrapper to supply the seccomp FD.
+			expect(terminal.command).toContain(backend === "bubblewrap" ? quoteShell(rule).slice(1, -1) : rule);
 		}
 		expect(terminal.command).toMatch(/^exec /);
 		expect(prepared.command).not.toContain(shellArgv(["--rw", "/read-only/start"]));

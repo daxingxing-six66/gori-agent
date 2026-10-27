@@ -27,6 +27,7 @@ SSH Target 不再携带默认 cwd，只保存连接身份、连接参数和沙�
 - Bootstrap 持久化成功后才建立正常认证 Connection。保存的算法和指纹在认证前严格校验；指纹或算法不匹配产生 `host_key_mismatch`，不会自动覆盖。
 - 活动 Credential 切换及 Workspace/Credential 删除会失效相关连接，但 Credential 切换不会删除 Workspace Host Trust。重新信任和 SSH CA 仍由 development backlog 路由。
 - 当前实现 exec Channel、目录/stat/上传/下载/删除 SFTP Channel，以及带 PTY 的 exec 与旧 `client.shell()` 入口。新 Terminal 的受限与 Session 主动关闭沙盒两种模式都通过带启动确认的 exec 打开；确认只在受限模式证明沙盒事实。PTY 持有共享 slot 到 actor dispose，并按 Connection generation 额外限制长期 Channel 数；断线不迁移或重放。
+- PTY adapter 的独立退出诊断按 Session/Terminal/Channel 身份记录服务端退出码或信号、是否缺少报告、关闭来源及本地关闭/销毁标志；只在生命周期节点输出最近写入的时间和字节数，不记录输入内容，也不改变 Channel 或连接池策略。见 [logging.md](./logging.md#terminal-通道退出取证)。
 - SFTP upload 接收异步字节流，逐块写入并回调已传输字节数。目标同目录的隐藏临时文件关闭成功后才重命名；覆盖只允许 OpenSSH 原子 rename。下载只读取普通文件，删除允许普通文件和符号链接。
 - 上传阶段断线不会改变最终目标，失败可重试；最终 rename 阶段断线无法判断提交结果，返回 `upload_result_uncertain`，不会自动重放。
 
