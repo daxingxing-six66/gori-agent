@@ -3810,7 +3810,10 @@
 				"packages/ssh-agent/test/environment-proxy.test.ts",
 				"packages/ssh-agent-web/features/llm-provider/api/llm-provider-api.ts",
 				"packages/ssh-agent-web/features/llm-provider/components/provider-models-panel.tsx",
-				"packages/ssh-agent-web/tests/provider-models.test.tsx"
+				"packages/ssh-agent-web/tests/provider-models.test.tsx",
+				"packages/ssh-agent/src/infrastructure/chatgpt/chatgpt-model-metadata.ts",
+				"packages/ssh-agent/src/infrastructure/chatgpt/chatgpt-model-capabilities.ts",
+				"packages/ssh-agent/test/chatgpt-model-capabilities.test.ts"
 			],
 			"sourceDigests": {
 				"packages/ssh-agent/src/domain/chatgpt.ts": "sha256:72494a75d51d945be094fdf1bb4925834b3627e58a63af12935526cfff945231",
@@ -3821,7 +3824,7 @@
 				"packages/ssh-agent/src/infrastructure/chatgpt/chatgpt-login.ts": "sha256:44c24fe61580eb2f3193df16c9c99b786dac75d9246f7f99389eec65203f20b0",
 				"packages/ssh-agent/src/infrastructure/chatgpt/chatgpt-callback-page.ts": "sha256:7ef14e799a83ba643ce8d5363fb1fa5adff2e2ef0f7eadd2d5cb64152e48cf27",
 				"packages/ssh-agent/src/infrastructure/chatgpt/chatgpt-registration-store.ts": "sha256:ffa29264114ac3616a4675eccfdf9077b9c15faad225544cc42d7de68a1a6757",
-				"packages/ssh-agent/src/infrastructure/chatgpt/chatgpt-provider.ts": "sha256:c0e6ce7ec68c3f31e5581bf441e1e2bdbe6034abb49f4a7725da1694a5240ffe",
+				"packages/ssh-agent/src/infrastructure/chatgpt/chatgpt-provider.ts": "sha256:d1f1abcd730c67a51e64f56301cf25d7c433f3694842e16ec3859e35849d0783",
 				"packages/ssh-agent/src/infrastructure/chatgpt/chatgpt-responses.ts": "sha256:c1057cc25eb50195626b10a0126a12274a36affe574b8385c92901ba00dd3987",
 				"packages/ssh-agent/src/application/services/llm-model-catalog.ts": "sha256:4ca50e7882da217ba25f91e371b92acb73b2895111939cf9ba6bcf7da8ec47de",
 				"packages/ssh-agent/src/application/services/llm-provider-service.ts": "sha256:c25456784c53d5e141f3eb24e66b308605978dcecda4422e112f290419009dc8",
@@ -3845,7 +3848,10 @@
 				"packages/ssh-agent/test/environment-proxy.test.ts": "sha256:5dc1775092319c31c4826f636df79a3d029da485296b2de7daa0f41794692dce",
 				"packages/ssh-agent-web/features/llm-provider/api/llm-provider-api.ts": "sha256:7572df60bd4d6e9ec2dae01d5e7f8e57f025e1c73b0f40265aa5f34097f106dd",
 				"packages/ssh-agent-web/features/llm-provider/components/provider-models-panel.tsx": "sha256:a9ab6a4b8a38d22b5493d898db6ab29c6b992e80ea8d517ad158cd9bb6e72577",
-				"packages/ssh-agent-web/tests/provider-models.test.tsx": "sha256:38fcbc4fc8b0b5c9d51bbd9a1df238089ea171edbd6f516ffd1640ef171ea86a"
+				"packages/ssh-agent-web/tests/provider-models.test.tsx": "sha256:38fcbc4fc8b0b5c9d51bbd9a1df238089ea171edbd6f516ffd1640ef171ea86a",
+				"packages/ssh-agent/src/infrastructure/chatgpt/chatgpt-model-metadata.ts": "sha256:94872ac77b258c6de9fd3a933b763f2103446c3f45f8d47ecdaad691a920102b",
+				"packages/ssh-agent/src/infrastructure/chatgpt/chatgpt-model-capabilities.ts": "sha256:7a32bfbfd09f435a0b7dc9db149bc3ee598f02ccec521fa9d4cbffbbaa65cb0a",
+				"packages/ssh-agent/test/chatgpt-model-capabilities.test.ts": "sha256:26003b0be99c0361279d19b6cafe98f14f90f6c8eb78102c5949b652830bf067"
 			}
 		},
 		{

@@ -2,6 +2,7 @@ import { createProvider, type Model, type OAuthCredential, type Provider, type T
 import { CHATGPT_PROVIDER_ID, CHATGPT_RESOURCE, isChatGptCredential } from "../../domain/chatgpt.ts";
 import type { ChatGptOAuthClient } from "./chatgpt-oauth.ts";
 import { chatGptResponsesApi } from "./chatgpt-responses.ts";
+import { chatGptCapabilityCatalog, type ChatGptCapabilitySnapshot } from "./chatgpt-model-capabilities.ts";
 
 // Exact model capabilities supplement models newer than the bundled OpenAI baseline.
 // https://developers.openai.com/api/docs/models/gpt-6-sol (and the other exact model pages)
@@ -13,8 +14,19 @@ const GPT6_THINKING_LEVEL_MAPS: ReadonlyMap<string, ThinkingLevelMap> = new Map(
 	["gpt-6-luna", { ...GPT6_EFFORTS, off: "none" }],
 ]);
 
+export interface ChatGptModel extends Model<"openai-responses"> {
+	/** Local provenance only; not a request field or an account entitlement. */
+	chatGptCapabilities: {
+		source: "official-docs" | "baseline" | "bundled" | "fallback";
+		checkedAt: number | null;
+		stale: boolean;
+		url?: string;
+	};
+}
+
 export function chatGptProvider(options: { oauth: ChatGptOAuthClient; baseline: readonly Model<"openai-responses">[]; fetch?: typeof fetch }): Provider<"openai-responses"> {
 	const fetchModels = options.fetch ?? fetch;
+	const capabilities = chatGptCapabilityCatalog(fetchModels);
 	const provider = createProvider<"openai-responses">({
 		id: CHATGPT_PROVIDER_ID, name: "ChatGPT", baseUrl: CHATGPT_RESOURCE,
 		auth: { oauth: {
@@ -36,7 +48,11 @@ export function chatGptProvider(options: { oauth: ChatGptOAuthClient; baseline: 
 				signal, redirect: "error", headers: { authorization: `Bearer ${credential.access}`, accept: "application/json" },
 			});
 			if (!response.ok) throw new Error(`ChatGPT model discovery failed (HTTP ${response.status})`);
-			return parseChatGptModels(await response.json(), options.baseline);
+			const value: unknown = await response.json();
+			// Validate entitlements first; public documentation can only enrich these exact models.
+			const discovered = parseChatGptModels(value, options.baseline);
+			const snapshots = await capabilities.refresh(discovered.map((model) => model.id), signal);
+			return parseChatGptModels(value, options.baseline, snapshots);
 		},
 		api: chatGptResponsesApi(),
 	});
@@ -46,7 +62,8 @@ export function chatGptProvider(options: { oauth: ChatGptOAuthClient; baseline: 
 	return provider;
 }
 
-export function parseChatGptModels(value: unknown, baseline: readonly Model<"openai-responses">[]): Model<"openai-responses">[] {
+export function parseChatGptModels(value: unknown, baseline: readonly Model<"openai-responses">[],
+	snapshots: ReadonlyMap<string, ChatGptCapabilitySnapshot> = new Map()): ChatGptModel[] {
 	if (!value || typeof value !== "object" || !("models" in value) || !Array.isArray(value.models)) throw new Error("Invalid ChatGPT model catalog");
 	const seen = new Set<string>();
 	return value.models.flatMap((entry: unknown) => {
@@ -55,20 +72,24 @@ export function parseChatGptModels(value: unknown, baseline: readonly Model<"ope
 			!("display_name" in entry) || typeof entry.display_name !== "string" || !entry.display_name.trim() || seen.has(entry.slug)) throw new Error("Invalid ChatGPT model entry");
 		seen.add(entry.slug);
 		const known = baseline.find((model) => model.id === entry.slug);
+		const snapshot = snapshots.get(entry.slug);
 		const thinkingLevelMap = GPT6_THINKING_LEVEL_MAPS.get(entry.slug);
 		const documented = thinkingLevelMap ? {
 			reasoning: true, thinkingLevelMap: { ...thinkingLevelMap },
 			input: ["text", "image"], contextWindow: 1_050_000, maxTokens: 128_000,
 		} satisfies Pick<Model<"openai-responses">, "reasoning" | "thinkingLevelMap" | "input" | "contextWindow" | "maxTokens"> : undefined;
-		// Discovery determines entitlement. Prefer the baseline, then exact documented capabilities.
-		// Unknown models keep conservative local limits and text input.
+		// Discovery alone determines visibility. Fresh/cached official facts enrich exact matches;
+		// the baseline and bundled values only bootstrap offline operation. Unknowns stay conservative.
 		return [{
 			...(known ?? documented ?? { reasoning: false, input: ["text"], contextWindow: 32_768, maxTokens: 4_096 }),
+			...(snapshot ? structuredClone(snapshot.capabilities) : {}),
+			chatGptCapabilities: snapshot ? { source: "official-docs", checkedAt: snapshot.checkedAt, stale: snapshot.stale, url: snapshot.url } :
+				{ source: known ? "baseline" : documented ? "bundled" : "fallback", checkedAt: null, stale: false },
 			id: entry.slug, name: entry.display_name, provider: CHATGPT_PROVIDER_ID,
 			api: "openai-responses", baseUrl: CHATGPT_RESOURCE,
 			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
 			// Support the flag so ordinary functions emit strict: false instead of relying on Responses defaults.
 			compat: { supportsStrictMode: true, supportsDeveloperRole: true, supportsLongCacheRetention: false, supportsAdditionalTools: false, supportsToolSearch: false },
-		} satisfies Model<"openai-responses">];
+		} satisfies ChatGptModel];
 	});
 }
